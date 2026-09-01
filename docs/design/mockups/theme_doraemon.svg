@@ -1,0 +1,319 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1580 960" width="1580" height="960" style="background:#0B1528; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'PingFang SC', sans-serif;">
+  <defs>
+    <filter id="ios27-glass-doraemon" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="rgba(0,0,0,0.4)" />
+    </filter>
+    <filter id="glow-mascot-doraemon" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="0" stdDeviation="12" flood-color="#F59E0B" flood-opacity="0.6" />
+    </filter>
+    <linearGradient id="island-grad-doraemon" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1E293B" stop-opacity="0.95" />
+      <stop offset="100%" stop-color="#0F172A" stop-opacity="0.98" />
+    </linearGradient>
+    <linearGradient id="card-glass-grad-doraemon" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.96" />
+      <stop offset="100%" stop-color="#F8FAFC" stop-opacity="0.88" />
+    </linearGradient>
+    <clipPath id="screen27-clip-doraemon">
+      <rect x="14" y="18" width="412" height="776" rx="46" />
+    </clipPath>
+  </defs>
+
+  <!-- 顶部主标题横幅 -->
+  <rect x="40" y="24" width="1500" height="84" rx="26" fill="#1E293B" fill-opacity="0.6" stroke="rgba(255,255,255,0.12)" stroke-width="1.5" />
+  <rect x="58" y="38" width="56" height="56" rx="18" fill="#0284C7" />
+  <text x="86" y="74" font-size="28" text-anchor="middle" fill="#FFFFFF">🔔🚪</text>
+  
+  <text x="130" y="58" font-size="22" font-weight="900" fill="#F8FAFC">3. 哆啦A梦主题 · 哆啦A梦的口袋 (iOS 27 Future Capsule)</text>
+  <text x="130" y="82" font-size="13" fill="#94A3B8">未来极光胶囊 · 悬浮拟态气泡 · 蓝胖与四次元道具 · 【灵动岛吉祥物常驻 + iOS 27 超拟态液态玻璃 + AI多模态拟人对话】全景图</text>
+  
+  <!-- 右上角特征标签 -->
+  <g transform="translate(1180, 44)">
+    <rect x="0" y="0" width="340" height="44" rx="14" fill="#0284C7" fill-opacity="0.15" stroke="#0284C7" stroke-width="1" />
+    <text x="170" y="27" font-size="13" font-weight="800" fill="#F8FAFC" text-anchor="middle">✨ iOS 27 Liquid Glass &amp; AI 伴侣已激活</text>
+  </g>
+
+  <!-- 左侧：iPhone 18 Pro (iOS 27 概念机身与界面) -->
+  <g transform="translate(40, 128)">
+    <text x="10" y="-8" font-size="15" font-weight="800" fill="#94A3B8">📱 iPhone 18 Pro · iOS 27 超拟态液态玻璃界面</text>
+
+    <!-- 手机钛金属边框 -->
+    <rect x="0" y="4" width="440" height="804" rx="54" fill="#020617" stroke="#334155" stroke-width="5" filter="url(#ios27-glass-doraemon)" />
+    
+    <!-- 屏幕区域 -->
+    <g clip-path="url(#screen27-clip-doraemon)">
+      <rect x="14" y="18" width="412" height="776" fill="#FFFFFF" />
+      <circle cx="60" cy="120" r="140" fill="#0284C7" fill-opacity="0.08" />
+      <circle cx="360" cy="380" r="180" fill="#F59E0B" fill-opacity="0.06" />
+
+      <!-- iOS 27 状态栏 -->
+      <text x="44" y="48" font-size="13" font-weight="800" fill="#1E293B">09:41</text>
+      <g transform="translate(350, 38)" fill="#1E293B">
+        <text x="0" y="10" font-size="11" font-weight="700">5G</text>
+        <rect x="22" y="1" width="20" height="10" rx="3" fill="none" stroke="#1E293B" stroke-width="1.2" />
+        <rect x="24" y="3" width="14" height="6" rx="1.5" fill="#1E293B" />
+      </g>
+
+      <!-- 动态灵动岛吉祥物常驻胶囊 -->
+      <g transform="translate(85, 28)">
+        <rect x="0" y="0" width="270" height="38" rx="19" fill="url(#island-grad-doraemon)" stroke="rgba(255,255,255,0.2)" stroke-width="1.2" filter="url(#glow-mascot-doraemon)" />
+        <circle cx="22" cy="19" r="13" fill="#0284C7" />
+        <text x="22" y="24" font-size="13" text-anchor="middle">🔔🚪</text>
+        <text x="44" y="18" font-size="11" font-weight="800" fill="#FFFFFF">哆啦A梦 (四次元伙伴)</text>
+        <text x="44" y="30" font-size="9.5" fill="#94A3B8">实时守护中 · 2件临期待处</text>
+        <circle cx="248" cy="19" r="4" fill="#10B981" />
+      </g>
+
+      <!-- App 顶部导航区 -->
+      <g transform="translate(32, 78)">
+        <text x="0" y="24" font-size="20" font-weight="900" fill="#1E293B">早安，主人</text>
+        <text x="0" y="42" font-size="12" fill="#64748B">全家 18 件物品 · NAS 局域网实时增量互联</text>
+        <rect x="314" y="4" width="46" height="46" rx="18" fill="#0284C7" />
+        <text x="337" y="33" font-size="20" text-anchor="middle" fill="#FFFFFF">⛶</text>
+      </g>
+
+      <!-- 首页首屏吉祥物 AI 拟人化气泡卡片 -->
+      <g transform="translate(30, 136)">
+        <rect x="0" y="0" width="378" height="96" rx="24" fill="url(#card-glass-grad-doraemon)" stroke="#BAE6FD" stroke-width="1.5" />
+        <circle cx="36" cy="38" r="24" fill="#0284C7" fill-opacity="0.15" stroke="#0284C7" stroke-width="1" />
+        <text x="36" y="46" font-size="24" text-anchor="middle">🔔🚪</text>
+        
+        <text x="70" y="28" font-size="12" font-weight="900" fill="#0284C7">哆啦A梦 (四次元伙伴) · 效期预警播报</text>
+        <text x="70" y="44" font-size="10.5" fill="#1E293B" font-weight="600">"哎呀大雄！你放在冰箱里的明治鲜牛奶已经过期整整 2 天啦，不能喝了哦..."</text>
+        
+        <rect x="70" y="58" width="138" height="26" rx="13" fill="#0284C7" />
+        <text x="139" y="75" font-size="10.5" font-weight="800" fill="#FFFFFF" text-anchor="middle">✨ 与 哆啦A 语音对话</text>
+
+        <rect x="216" y="58" width="144" height="26" rx="13" fill="rgba(0,0,0,0.05)" stroke="rgba(0,0,0,0.1)" stroke-width="0.8" />
+        <text x="288" y="75" font-size="10.5" font-weight="700" fill="#1E293B" text-anchor="middle">一键处理过期 (1件)</text>
+      </g>
+
+      <!-- 搜索栏 -->
+      <g transform="translate(30, 242)">
+        <rect x="0" y="0" width="378" height="42" rx="18" fill="rgba(255,255,255,0.85)" stroke="#BAE6FD" stroke-width="1.2" />
+        <text x="16" y="26" font-size="14" fill="#94A3B8">🔍</text>
+        <text x="40" y="26" font-size="11.5" fill="#64748B">搜索物品、药品说明书、开封批次...</text>
+      </g>
+
+      <!-- 4格状态统计胶囊 -->
+      <g transform="translate(30, 294)">
+        <rect x="0" y="0" width="88" height="48" rx="16" fill="rgba(255,255,255,0.9)" stroke="#BAE6FD" stroke-width="1" />
+        <text x="44" y="20" font-size="10.5" fill="#64748B" text-anchor="middle">藏品总数</text>
+        <text x="44" y="38" font-size="15" font-weight="900" fill="#1E293B" text-anchor="middle">18</text>
+
+        <rect x="96" y="0" width="88" height="48" rx="16" fill="#FFFBEB" stroke="#FDE68A" stroke-width="1" />
+        <text x="140" y="20" font-size="10.5" font-weight="700" fill="#D97706" text-anchor="middle">即将失效 2</text>
+        <text x="140" y="38" font-size="15" font-weight="900" fill="#D97706" text-anchor="middle">2</text>
+
+        <rect x="192" y="0" width="88" height="48" rx="16" fill="#FEF2F2" stroke="#FECACA" stroke-width="1" />
+        <text x="236" y="20" font-size="10.5" font-weight="700" fill="#DC2626" text-anchor="middle">已失效 1</text>
+        <text x="236" y="38" font-size="15" font-weight="900" fill="#DC2626" text-anchor="middle">1</text>
+
+        <rect x="288" y="0" width="90" height="48" rx="16" fill="#F3E8FF" stroke="#E9D5FF" stroke-width="1" />
+        <text x="333" y="20" font-size="10.5" font-weight="700" fill="#7E22CE" text-anchor="middle">道具告急 3</text>
+        <text x="333" y="38" font-size="15" font-weight="900" fill="#7E22CE" text-anchor="middle">3</text>
+      </g>
+
+      <!-- 物品 1: 芬必得布洛芬 (临期预警) -->
+      <g transform="translate(30, 352)">
+        <rect x="0" y="0" width="378" height="106" rx="20" fill="url(#card-glass-grad-doraemon)" stroke="#BAE6FD" stroke-width="1.2" />
+        <rect x="14" y="14" width="50" height="50" rx="16" fill="#FEF3C7" stroke="#FDE68A" stroke-width="1" />
+        <text x="39" y="47" font-size="24" text-anchor="middle">💊</text>
+        
+        <text x="74" y="32" font-size="13.5" font-weight="900" fill="#1E293B">芬必得 布洛芬缓释胶囊</text>
+        <text x="74" y="50" font-size="11" fill="#64748B">0.3g*20粒 · 客厅主药箱上层</text>
+        <text x="74" y="66" font-size="10.5" font-weight="700" fill="#D97706">存量: 2 盒 (未开封 · 剩12天到期)</text>
+        
+        <rect x="272" y="14" width="92" height="24" rx="12" fill="#FEF3C7" stroke="#FDE68A" stroke-width="1" />
+        <text x="318" y="30" font-size="10.5" font-weight="800" fill="#D97706" text-anchor="middle">剩 12 天到期</text>
+        
+        <line x1="14" y1="74" x2="364" y2="74" stroke="rgba(0,0,0,0.06)" stroke-width="1" />
+        <text x="14" y="93" font-size="10" fill="#64748B">AI 问答: 已解析说明书 · 孕妇慎用</text>
+        
+        <rect x="306" y="80" width="58" height="20" rx="8" fill="#0284C7" />
+        <text x="335" y="94" font-size="10" font-weight="800" fill="#FFFFFF" text-anchor="middle">消耗-1</text>
+      </g>
+
+      <!-- 物品 2: 明治鲜牛奶 (已过期) -->
+      <g transform="translate(30, 468)">
+        <rect x="0" y="0" width="378" height="106" rx="20" fill="url(#card-glass-grad-doraemon)" stroke="#BAE6FD" stroke-width="1.2" />
+        <rect x="14" y="14" width="50" height="50" rx="16" fill="#FEE2E2" stroke="#FECACA" stroke-width="1" />
+        <text x="39" y="47" font-size="24" text-anchor="middle">🥛</text>
+        
+        <text x="74" y="32" font-size="13.5" font-weight="900" fill="#1E293B">明治 醇浓巴氏鲜牛奶</text>
+        <text x="74" y="50" font-size="11" fill="#64748B">950ml · 厨房双门冰箱冷藏室</text>
+        <text x="74" y="66" font-size="10.5" font-weight="700" fill="#DC2626">存量: 1 瓶 (已开封超7天)</text>
+        
+        <rect x="272" y="14" width="92" height="24" rx="12" fill="#FEE2E2" stroke="#FECACA" stroke-width="1" />
+        <text x="318" y="30" font-size="10.5" font-weight="800" fill="#DC2626" text-anchor="middle">已过期 2 天</text>
+        
+        <line x1="14" y1="74" x2="364" y2="74" stroke="rgba(0,0,0,0.06)" stroke-width="1" />
+        <text x="14" y="93" font-size="10" font-weight="700" fill="#DC2626">⚠️ 哆啦A 建议：立即报废</text>
+        
+        <rect x="294" y="80" width="70" height="20" rx="8" fill="#DC2626" />
+        <text x="329" y="94" font-size="10" font-weight="800" fill="#FFFFFF" text-anchor="middle">确认报废</text>
+      </g>
+
+      <!-- 物品 3: 海飞丝洗发露 -->
+      <g transform="translate(30, 584)">
+        <rect x="0" y="0" width="378" height="96" rx="20" fill="url(#card-glass-grad-doraemon)" stroke="#BAE6FD" stroke-width="1.2" />
+        <rect x="14" y="14" width="50" height="50" rx="16" fill="#DCFCE7" stroke="#BBF7D0" stroke-width="1" />
+        <text x="39" y="47" font-size="24" text-anchor="middle">🧴</text>
+        
+        <text x="74" y="32" font-size="13.5" font-weight="900" fill="#1E293B">海飞丝 丝质柔滑洗发露</text>
+        <text x="74" y="50" font-size="11" fill="#64748B">500ml · 主卫洗漱台置物架</text>
+        <text x="74" y="66" font-size="10.5" font-weight="700" fill="#16A34A">总存量: 3 瓶 (2个批次 · 剩480天)</text>
+        
+        <rect x="272" y="14" width="92" height="24" rx="12" fill="#DCFCE7" stroke="#BBF7D0" stroke-width="1" />
+        <text x="318" y="30" font-size="10.5" font-weight="800" fill="#16A34A" text-anchor="middle">安全充裕</text>
+      </g>
+
+      <!-- iOS 27 悬浮水晶底部 Tabbar -->
+      <g transform="translate(30, 692)">
+        <rect x="0" y="0" width="378" height="66" rx="28" fill="rgba(255,255,255,0.92)" stroke="rgba(255,255,255,0.6)" stroke-width="1.5" />
+        
+        <g transform="translate(24, 8)">
+          <rect x="0" y="0" width="60" height="34" rx="14" fill="#0284C7" />
+          <text x="30" y="22" font-size="16" text-anchor="middle" fill="#FFFFFF">📦</text>
+          <text x="30" y="44" font-size="9.5" font-weight="900" fill="#0284C7" text-anchor="middle">四次元袋</text>
+        </g>
+
+        <g transform="translate(120, 8)">
+          <text x="24" y="22" font-size="16" text-anchor="middle">🛒</text>
+          <text x="24" y="44" font-size="9.5" font-weight="600" fill="#64748B" text-anchor="middle">补给单</text>
+        </g>
+
+        <g transform="translate(210, 8)">
+          <circle cx="34" cy="8" r="3.5" fill="#DC2626" />
+          <text x="24" y="22" font-size="16" text-anchor="middle">⚡</text>
+          <text x="24" y="44" font-size="9.5" font-weight="600" fill="#64748B" text-anchor="middle">道具雷达</text>
+        </g>
+
+        <g transform="translate(300, 8)">
+          <text x="24" y="22" font-size="16" text-anchor="middle">⚙️</text>
+          <text x="24" y="44" font-size="9.5" font-weight="600" fill="#64748B" text-anchor="middle">秘密基地</text>
+        </g>
+      </g>
+    </g>
+  </g>
+
+  <!-- 右侧：【吉祥物 AI 专属对话与多模态交互全景】 -->
+  <g transform="translate(520, 128)">
+    <text x="10" y="-8" font-size="15" font-weight="800" fill="#94A3B8">🤖 AI 增强应用落地 · 与【哆啦A梦 (四次元伙伴)】性格化对话交互台</text>
+
+    <!-- 主展示面板 -->
+    <rect x="0" y="4" width="1020" height="804" rx="36" fill="#1E293B" fill-opacity="0.75" stroke="rgba(255,255,255,0.12)" stroke-width="2" filter="url(#ios27-glass-doraemon)" />
+
+    <g transform="translate(24, 24)">
+      <!-- 顶部吉祥物人格 Profile 卡片 -->
+      <rect x="0" y="0" width="972" height="92" rx="24" fill="#FFFFFF" stroke="#BAE6FD" stroke-width="1.5" />
+      
+      <circle cx="48" cy="46" r="32" fill="#0284C7" />
+      <text x="48" y="57" font-size="34" text-anchor="middle">🔔🚪</text>
+      
+      <text x="96" y="36" font-size="17" font-weight="900" fill="#1E293B">哆啦A梦 (四次元伙伴) (AI 专属伴侣)</text>
+      <text x="96" y="56" font-size="12" fill="#64748B">性格基调：<tspan font-weight="700" fill="#0284C7">活泼热心 · 动漫未来 · 道具专家</tspan> · 支持视觉/OCR/本地 Ollama 私有化大模型</text>
+      <text x="96" y="74" font-size="11.5" font-weight="600" fill="#10B981">● 哆啦A梦正在四次元口袋里搜寻时光包袱皮...</text>
+
+      <rect x="740" y="24" width="216" height="44" rx="14" fill="#0284C7" fill-opacity="0.1" stroke="#0284C7" stroke-width="1" />
+      <text x="848" y="44" font-size="12" font-weight="800" fill="#1E293B" text-anchor="middle">🧠 本地 Ollama (qwen2.5) 驱动</text>
+      <text x="848" y="58" font-size="10" fill="#10B981" text-anchor="middle">数据不出家庭 · 0 费用运行</text>
+
+      <!-- 对话交互区 (Chat Interface) -->
+      <g transform="translate(0, 108)">
+        <rect x="0" y="0" width="972" height="340" rx="24" fill="rgba(15,23,42,0.6)" stroke="rgba(255,255,255,0.08)" stroke-width="1.2" />
+        <text x="24" y="28" font-size="13" font-weight="900" fill="#94A3B8">💬 与吉祥物性格化交互实录 (用户与 哆啦A梦 (四次元伙伴) 的多轮对话):</text>
+
+        <!-- 对话 1: 用户拍照提问 -->
+        <g transform="translate(24, 44)">
+          <rect x="360" y="0" width="564" height="64" rx="18" fill="#0284C7" />
+          <text x="380" y="24" font-size="12.5" font-weight="700" fill="#FFFFFF">主人 [拍照上传了布洛芬包装与说明书]:</text>
+          <text x="380" y="44" font-size="12" fill="#FFFFFF">"帮我看下这盒药什么时间过期？我有点感冒发烧，成人一次能吃几粒？"</text>
+          <circle cx="940" cy="32" r="16" fill="#475569" />
+          <text x="940" y="38" font-size="14" text-anchor="middle" fill="#FFFFFF">👤</text>
+        </g>
+
+        <!-- 对话 2: 吉祥物性格化长回复 -->
+        <g transform="translate(24, 122)">
+          <circle cx="20" cy="32" r="20" fill="#0284C7" />
+          <text x="20" y="39" font-size="20" text-anchor="middle">🔔🚪</text>
+          
+          <rect x="52" y="0" width="872" height="114" rx="20" fill="#FFFFFF" stroke="#BAE6FD" stroke-width="1.2" />
+          <text x="74" y="26" font-size="13" font-weight="900" fill="#0284C7">哆啦A梦 (四次元伙伴) (智能多模态解答):</text>
+          <text x="74" y="48" font-size="12" font-weight="600" fill="#1E293B">"哎呀大雄！你放在冰箱里的明治鲜牛奶已经过期整整 2 天啦，不能喝了哦！布洛芬还有 12 天，我帮你在未来补给清单里加上了新鲜牛奶，快掏出道具消灭过期物品吧！"</text>
+          <text x="74" y="70" font-size="11.5" fill="#64748B">【说明书 OCR 用法】成人及 12 岁以上儿童：一次 1 粒，一日 2 次（早晚各 1 次）。</text>
+          <text x="74" y="90" font-size="11" font-weight="700" fill="#DC2626">【安全警示】本品为对症治疗药，用于止痛不得超过 5 天；用药请严格遵医嘱！</text>
+
+          <rect x="670" y="74" width="118" height="26" rx="8" fill="#0284C7" />
+          <text x="729" y="91" font-size="10.5" font-weight="800" fill="#FFFFFF" text-anchor="middle">已建档入库并设提醒</text>
+
+          <rect x="796" y="74" width="114" height="26" rx="8" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="1" />
+          <text x="853" y="91" font-size="10.5" font-weight="700" fill="#1E293B" text-anchor="middle">查看批次日历</text>
+        </g>
+
+        <!-- 底部输入条 -->
+        <g transform="translate(24, 252)">
+          <rect x="0" y="0" width="924" height="52" rx="18" fill="#FFFFFF" stroke="#BAE6FD" stroke-width="1.2" />
+          <text x="20" y="32" font-size="13" fill="#94A3B8">🎙️ 按住向 哆啦A梦 (四次元伙伴) 语音提问 / 拍照识别商品条码或说明书...</text>
+          
+          <rect x="800" y="8" width="112" height="36" rx="12" fill="#0284C7" />
+          <text x="856" y="31" font-size="12" font-weight="800" fill="#FFFFFF" text-anchor="middle">✨ AI 提问</text>
+        </g>
+      </g>
+
+      <!-- 下半部分：4大核心 AI 落地能力架构矩阵 -->
+      <g transform="translate(0, 464)">
+        <text x="8" y="18" font-size="14" font-weight="900" fill="#F8FAFC">⚡ MomoBox 4 大 AI 增强应用落地场景解析：</text>
+
+        <g transform="translate(0, 32)">
+          <!-- AI 能力 1 -->
+          <rect x="0" y="0" width="232" height="136" rx="18" fill="#FFFFFF" stroke="#BAE6FD" stroke-width="1.2" />
+          <text x="16" y="28" font-size="12.5" font-weight="900" fill="#0284C7">1. 拍照多模态结构化</text>
+          <text x="16" y="48" font-size="10.5" fill="#64748B">拍包装/喷码即可识别：</text>
+          <text x="16" y="68" font-size="11" font-weight="700" fill="#1E293B">· 生产日期+保质期计算</text>
+          <text x="16" y="86" font-size="11" font-weight="700" fill="#1E293B">· 开封后有效天数推演</text>
+          <text x="16" y="104" font-size="11" font-weight="700" fill="#1E293B">· 自动匹配同款历史档案</text>
+          <rect x="16" y="112" width="200" height="14" rx="4" fill="#0284C7" fill-opacity="0.1" />
+          <text x="116" y="123" font-size="9" font-weight="700" fill="#0284C7" text-anchor="middle">支持 ML Kit 本地离线 OCR</text>
+
+          <!-- AI 能力 2 -->
+          <rect x="246" y="0" width="232" height="136" rx="18" fill="#FFFFFF" stroke="#BAE6FD" stroke-width="1.2" />
+          <text x="262" y="28" font-size="12.5" font-weight="900" fill="#F59E0B">2. 智能消耗补货预测</text>
+          <text x="262" y="48" font-size="10.5" fill="#64748B">分析近 60 天消耗速度：</text>
+          <text x="262" y="68" font-size="11" font-weight="700" fill="#1E293B">· 生抽酱油预计 4 天耗尽</text>
+          <text x="262" y="86" font-size="11" font-weight="700" fill="#1E293B">· 自动推送建议进采买单</text>
+          <text x="262" y="104" font-size="11" font-weight="700" fill="#1E293B">· 避免囤积与断货痛点</text>
+          <rect x="262" y="112" width="200" height="14" rx="4" fill="#F59E0B" fill-opacity="0.15" />
+          <text x="362" y="123" font-size="9" font-weight="700" fill="#F59E0B" text-anchor="middle">基于概率统计+LLM生成建议</text>
+
+          <!-- AI 能力 3 -->
+          <rect x="492" y="0" width="232" height="136" rx="18" fill="#FFFFFF" stroke="#BAE6FD" stroke-width="1.2" />
+          <text x="508" y="28" font-size="12.5" font-weight="900" fill="#0284C7">3. 说明书 OCR 智能问答</text>
+          <text x="508" y="48" font-size="10.5" fill="#64748B">药品/食品说明书解析：</text>
+          <text x="508" y="68" font-size="11" font-weight="700" fill="#1E293B">· 孕妇/儿童用药禁忌</text>
+          <text x="508" y="86" font-size="11" font-weight="700" fill="#1E293B">· 用法用量与储存条件</text>
+          <text x="508" y="104" font-size="11" font-weight="700" fill="#1E293B">· 强制免责声明提示</text>
+          <rect x="508" y="112" width="200" height="14" rx="4" fill="#0284C7" fill-opacity="0.1" />
+          <text x="608" y="123" font-size="9" font-weight="700" fill="#0284C7" text-anchor="middle">结合 RAG 本地知识库检索</text>
+
+          <!-- AI 能力 4 -->
+          <rect x="738" y="0" width="234" height="136" rx="18" fill="#FFFFFF" stroke="#BAE6FD" stroke-width="1.2" />
+          <text x="754" y="28" font-size="12.5" font-weight="900" fill="#10B981">4. AI 主题与文案生成</text>
+          <text x="754" y="48" font-size="10.5" fill="#64748B">用户一句话生成皮肤：</text>
+          <text x="754" y="68" font-size="11" font-weight="700" fill="#1E293B">· 自动匹配色彩与圆角</text>
+          <text x="754" y="86" font-size="11" font-weight="700" fill="#1E293B">· 生成专属吉祥物设定</text>
+          <text x="754" y="104" font-size="11" font-weight="700" fill="#1E293B">· 适配全套通知语气文案</text>
+          <rect x="754" y="112" width="200" height="14" rx="4" fill="#10B981" fill-opacity="0.1" />
+          <text x="854" y="123" font-size="9" font-weight="700" fill="#10B981" text-anchor="middle">支持 JSON 主题包导出</text>
+        </g>
+      </g>
+
+      <!-- 底部系统说明条 -->
+      <g transform="translate(0, 660)">
+        <rect x="0" y="0" width="972" height="42" rx="12" fill="#0284C7" fill-opacity="0.15" stroke="#0284C7" stroke-width="1" />
+        <text x="20" y="26" font-size="11.5" font-weight="800" fill="#F8FAFC">💡 吉祥物性格交互规范：</text>
+        <text x="175" y="26" font-size="11.5" fill="#CBD5E1">AI 对话根据当前激活的主题自动切换角色口吻（默认=理性小箱灵，嬷嬷=慈祥内务管家，哆啦A梦=动漫伙伴），保证功能专业性的同时兼具情感温度。</text>
+      </g>
+    </g>
+  </g>
+</svg>
