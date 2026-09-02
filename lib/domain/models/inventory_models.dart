@@ -14,6 +14,8 @@ class IntakeDraft {
     this.batchNo,
     this.productionDate,
     this.expiryDate,
+    this.shelfLifeAmount,
+    this.shelfLifeUnit = ShelfLifeUnit.days,
   });
 
   final String name;
@@ -28,6 +30,8 @@ class IntakeDraft {
   final String? batchNo;
   final DateTime? productionDate;
   final DateTime? expiryDate;
+  final int? shelfLifeAmount;
+  final ShelfLifeUnit shelfLifeUnit;
 }
 
 class InventoryBatch {
@@ -99,6 +103,22 @@ class InventoryItem {
 
   ExpiryStatus get overallExpiryStatus =>
       nearestDatedBatch?.expiryStatus ?? ExpiryStatus.noExpiry;
+}
+
+class StockMovement {
+  const StockMovement({
+    required this.id,
+    required this.type,
+    required this.quantity,
+    required this.note,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String type;
+  final int quantity;
+  final String? note;
+  final DateTime createdAt;
 }
 
 class ShoppingEntry {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../domain/models/inventory_models.dart';
 import '../presentation/controllers/providers.dart';
 import '../presentation/screens/alerts_screen.dart';
 import '../presentation/screens/inventory_screen.dart';
@@ -27,11 +28,22 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   );
 });
 
-class MomoBoxApp extends ConsumerWidget {
+class MomoBoxApp extends ConsumerStatefulWidget {
   const MomoBoxApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MomoBoxApp> createState() => _MomoBoxAppState();
+}
+
+class _MomoBoxAppState extends ConsumerState<MomoBoxApp> {
+  @override
+  Widget build(BuildContext context) {
+    ref.listen<AsyncValue<List<InventoryItem>>>(inventoryProvider, (_, next) {
+      next.whenData((items) {
+        // 通知是增强能力；平台调度失败不能阻塞本地库存页面。
+        ref.read(localNotificationServiceProvider).sync(items).catchError((_) {});
+      });
+    }, fireImmediately: true);
     final storedTheme = ref.watch(themeNameProvider).valueOrNull;
     final palette = MomoPalette.fromStoredValue(storedTheme);
     return MaterialApp.router(

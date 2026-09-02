@@ -1,0 +1,21 @@
+# Flutter/Dart generated files
+.dart_tool/
+.packages
+.pub/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+*.g.dart
+
+# CI-generated native platform shells (the source of truth is scripts/ci/)
+android/
+ios/
+
+# Local/editor files
+.DS_Store
+.idea/
+.vscode/
+*.iml
+
+# Coverage and test output
+coverage/

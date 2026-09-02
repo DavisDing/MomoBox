@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/inventory_models.dart';
 import '../controllers/providers.dart';
+import '../widgets/intake_sheet.dart';
 
 class ShoppingScreen extends ConsumerWidget {
   const ShoppingScreen({super.key});
@@ -107,7 +108,20 @@ class _EntrySection extends ConsumerWidget {
               child: ListTile(
                 leading: Checkbox(
                   value: entry.isCompleted,
-                  onChanged: (value) => ref.read(shoppingRepositoryProvider).setCompleted(entry.id, value ?? false),
+                  onChanged: (value) async {
+                    final completed = value ?? false;
+                    await ref.read(shoppingRepositoryProvider).setCompleted(entry.id, completed);
+                    if (!completed || !context.mounted) return;
+                    await showModalBottomSheet<void>(
+                      context: context,
+                      isScrollControlled: true,
+                      builder: (_) => IntakeSheet(
+                        initialName: entry.itemName,
+                        initialCategory: entry.category,
+                        initialQuantity: entry.targetQuantity,
+                      ),
+                    );
+                  },
                 ),
                 title: Text(entry.itemName, style: TextStyle(decoration: entry.isCompleted ? TextDecoration.lineThrough : null)),
                 subtitle: Text('${entry.targetQuantity} 件 · ${entry.reason}'),

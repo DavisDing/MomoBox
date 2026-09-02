@@ -4,29 +4,32 @@
 
 ## 当前范围
 
-已实现单机 P0 核心：商品/批次入库、多批次库存、到期/临期/低库存提醒、FEFO 消耗、批次补充与报废、采购清单、主题设置、JSON 备份导入导出。
+已实现单机 MVP：商品/批次入库、多批次库存、到期/临期/低库存提醒计划、FEFO 消耗、批次补充与报废、变动历史、采购清单、主题设置、日期计算、JSON 备份导入导出和本地通知调度。
 
-尚未实现：扫码/OCR、系统级本地通知、NAS/家庭账号同步、AI 与说明书能力。这些按 `docs/DESIGN.md` 的后续阶段接入。
+尚未实现：扫码/OCR、NAS/家庭账号同步、AI 与说明书能力、统计图表。这些按 `docs/DESIGN.md` 的后续阶段接入。
 
-## 本地开发
+## 开发与验证
 
-本机需安装 Flutter SDK。首次需要补齐原生工程壳：
+本项目**不要求本地安装 Flutter**。仓库不提交 Flutter 自动生成的 Android/iOS 平台目录和 Drift 生成文件，统一由 GitHub Actions 生成并验证：
 
-```bash
-flutter create --platforms=android,ios .
-flutter pub get
-dart run build_runner build --delete-conflicting-outputs
-flutter analyze
-flutter test
-```
+- CI：生成平台壳、依赖安装、Drift 代码生成、`flutter analyze`、`flutter test`、Android debug build、iOS unsigned build；
+- Release：在默认分支按 Conventional Commit 构建并上传 Android APK/AAB；
+- 真机：下载 GitHub Release APK 后执行安装验收。
 
-> 当前仓库不提交默认 Android/iOS 模板；GitHub Actions 会在验证时生成相同的原生工程壳。开始修改原生权限、通知或相机配置前，应在本地生成并提交对应平台目录。
+平台壳和通知配置由 `scripts/ci/prepare-flutter-platforms.sh` 注入；对应的无 Flutter 回归测试在 `scripts/ci/test-prepare-flutter-platforms.sh`。`.gitignore` 明确排除生成的 Android/iOS 目录和 Drift 文件，防止将 CI 产物误提交。完整流程、当前验证状态和安装清单见 `docs/VALIDATION.md`。
 
 ## CI 与自动发布
 
 - `.github/workflows/flutter-ci.yml` 会在 Pull Request 和分支推送时固定 Flutter `3.24.5`，生成原生工程壳、执行 Drift 代码生成、静态检查、单元测试，以及 Android/iOS 无签名构建。
 - `.github/workflows/release.yml` 会在**默认分支**上的每次推送后读取自最近一个 `vX.Y.Z` 标签以来的 Conventional Commit，自动计算版本、先执行 Drift 代码生成与 `flutter analyze` / `flutter test`，再构建 Android 安装包并创建 GitHub Release。它不硬编码 `main`，会使用仓库在 GitHub 中设置的默认分支；对同一版本重跑时会替换已存在 Release 的发布附件。
 - `scripts/release/test-next-version.sh` 覆盖首次发布、patch/minor/major 优先级及非发布提交，Flutter CI 会执行该版本计算回归测试。
+
+### 发布范围与预留项
+
+当前自动发布范围仅包含 **Android APK/AAB**。iOS 和后端 Docker 发布已预留为后续工作，但当前不会创建 IPA、Docker 镜像或额外 GitHub Release 附件：
+
+- **iOS**：CI 保留无签名构建验证；待确定 Bundle ID，并配置 Apple 证书、Provisioning Profile 和 App Store Connect 凭据后，再增加签名 IPA / TestFlight 发布。
+- **后端 Docker**：待后端工程及 `Dockerfile` 落地后，再构建并发布镜像至 GitHub Container Registry（GHCR）；不创建没有实际服务内容的占位镜像。
 
 ### 发布提交规范
 

@@ -60,27 +60,52 @@ class InventoryRepository {
     );
   }
 
+  Future<List<StockMovement>> loadMovements(String productId) async {
+    final rows = await (_database.select(_database.stockMovements)
+          ..where((movement) => movement.productId.equals(productId))
+          ..orderBy([(movement) => OrderingTerm.desc(movement.createdAt)]))
+        .get();
+    return rows
+        .map(
+          (row) => StockMovement(
+            id: row.id,
+            type: row.type,
+            quantity: row.quantity,
+            note: row.note,
+            createdAt: row.createdAt,
+          ),
+        )
+        .toList(growable: false);
+  }
+
   Future<String> createProductWithBatch(IntakeDraft draft) async {
     final now = DateTime.now();
-    final productId = _uuid.v4();
     final batchId = _uuid.v4();
 
-    await _database.transaction(() async {
-      await _database.into(_database.products).insert(
-            ProductsCompanion.insert(
-              id: productId,
-              name: draft.name.trim(),
-              category: draft.category,
-              brand: Value(_trimToNull(draft.brand)),
-              specification: Value(_trimToNull(draft.specification)),
-              barcode: Value(_trimToNull(draft.barcode)),
-              location: Value(_trimToNull(draft.location)),
-              unit: draft.unit,
-              lowStockThreshold: draft.lowStockThreshold,
-              createdAt: now,
-              updatedAt: now,
-            ),
-          );
+    return _database.transaction(() async {
+      final existing = await _findMatchingProduct(draft);
+      final productId = existing?.id ?? _uuid.v4();
+      if (existing == null) {
+        await _database.into(_database.products).insert(
+              ProductsCompanion.insert(
+                id: productId,
+                name: draft.name.trim(),
+                category: draft.category,
+                brand: Value(_trimToNull(draft.brand)),
+                specification: Value(_trimToNull(draft.specification)),
+                barcode: Value(_trimToNull(draft.barcode)),
+                location: Value(_trimToNull(draft.location)),
+                unit: draft.unit,
+                lowStockThreshold: draft.lowStockThreshold,
+                createdAt: now,
+                updatedAt: now,
+              ),
+            );
+      } else {
+        await (_database.update(_database.products)
+              ..where((product) => product.id.equals(productId)))
+            .write(ProductsCompanion(updatedAt: Value(now)));
+      }
       await _insertBatch(
         batchId: batchId,
         productId: productId,
@@ -98,8 +123,8 @@ class InventoryRepository {
         note: '手动入库',
         now: now,
       );
+      return productId;
     });
-    return productId;
   }
 
   Future<String> addBatch({
@@ -199,6 +224,9 @@ class InventoryRepository {
           updatedAt: Value(now),
         ),
       );
+      await (_database.update(_database.products)
+            ..where((product) => product.id.equals(batch.productId)))
+          .write(ProductsCompanion(updatedAt: Value(now)));
       await _insertMovement(
         productId: batch.productId,
         batchId: batch.id,
@@ -216,6 +244,7 @@ class InventoryRepository {
       final batch = await (_database.select(_database.productBatches)
             ..where((entry) => entry.id.equals(batchId)))
           .getSingle();
+      if (batch.isDiscarded) throw StateError('批次已经报废。');
       await (_database.update(_database.productBatches)
             ..where((entry) => entry.id.equals(batchId)))
           .write(
@@ -225,6 +254,9 @@ class InventoryRepository {
           updatedAt: Value(now),
         ),
       );
+      await (_database.update(_database.products)
+            ..where((product) => product.id.equals(batch.productId)))
+          .write(ProductsCompanion(updatedAt: Value(now)));
       await _insertMovement(
         productId: batch.productId,
         batchId: batch.id,
@@ -235,6 +267,25 @@ class InventoryRepository {
       );
     });
   }
+
+  Future<ProductRecord?> _findMatchingProduct(IntakeDraft draft) async {
+    final barcode = _trimToNull(draft.barcode);
+    final products = await _database.select(_database.products).get();
+    for (final product in products) {
+      if (barcode != null && product.barcode == barcode) return product;
+      if (barcode == null &&
+          product.name.trim().toLowerCase() == draft.name.trim().toLowerCase() &&
+          _sameText(product.brand, draft.brand) &&
+          _sameText(product.specification, draft.specification) &&
+          product.category == draft.category) {
+        return product;
+      }
+    }
+    return null;
+  }
+
+  bool _sameText(String? left, String? right) =>
+      _trimToNull(left)?.toLowerCase() == _trimToNull(right)?.toLowerCase();
 
   Future<void> _insertBatch({
     required String batchId,

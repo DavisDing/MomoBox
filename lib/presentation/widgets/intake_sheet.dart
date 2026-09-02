@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../domain/inventory/expiry_rules.dart';
 import '../../domain/models/inventory_models.dart';
 import '../controllers/providers.dart';
 
 class IntakeSheet extends ConsumerStatefulWidget {
-  const IntakeSheet({super.key});
+  const IntakeSheet({this.initialName, this.initialCategory, this.initialQuantity = 1, super.key});
+
+  final String? initialName;
+  final String? initialCategory;
+  final int initialQuantity;
 
   @override
   ConsumerState<IntakeSheet> createState() => _IntakeSheetState();
@@ -21,10 +26,22 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
   final _barcode = TextEditingController();
   final _batchNo = TextEditingController();
   final _threshold = TextEditingController(text: '1');
+  final _shelfLife = TextEditingController();
   String _category = '药品保健';
+  ShelfLifeUnit _shelfLifeUnit = ShelfLifeUnit.days;
   DateTime? _productionDate;
   DateTime? _expiryDate;
   bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _name.text = widget.initialName ?? '';
+    _quantity.text = widget.initialQuantity.toString();
+    if (widget.initialCategory != null && const ['药品保健', '食品生鲜', '美妆个护', '母婴用品', '其他物品'].contains(widget.initialCategory)) {
+      _category = widget.initialCategory!;
+    }
+  }
 
   @override
   void dispose() {
@@ -36,6 +53,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
     _barcode.dispose();
     _batchNo.dispose();
     _threshold.dispose();
+    _shelfLife.dispose();
     super.dispose();
   }
 
@@ -76,6 +94,8 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
               lowStockThreshold: int.parse(_threshold.text),
               productionDate: _productionDate,
               expiryDate: _expiryDate,
+              shelfLifeAmount: int.tryParse(_shelfLife.text),
+              shelfLifeUnit: _shelfLifeUnit,
             ),
           );
       if (!mounted) return;
@@ -183,6 +203,32 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
                   value: _expiryDate,
                   onTap: () => _pickDate(true),
                   onClear: () => setState(() => _expiryDate = null),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _shelfLife,
+                        decoration: const InputDecoration(labelText: '保质期（可选）', hintText: '填写后可自动算到期日'),
+                        keyboardType: TextInputType.number,
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) return null;
+                          final parsed = int.tryParse(value);
+                          return parsed == null || parsed < 1 ? '请输入大于 0 的整数' : null;
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    DropdownButton<ShelfLifeUnit>(
+                      value: _shelfLifeUnit,
+                      onChanged: (value) => setState(() => _shelfLifeUnit = value ?? _shelfLifeUnit),
+                      items: const [
+                        DropdownMenuItem(value: ShelfLifeUnit.days, child: Text('天')),
+                        DropdownMenuItem(value: ShelfLifeUnit.months, child: Text('个月')),
+                      ],
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 18),
                 SizedBox(

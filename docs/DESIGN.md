@@ -1,8 +1,8 @@
 # DESIGN
 
 > Architecture Agent 维护。
-> 本文基于 `docs/产品需求文档（PRD）核心摘要.md` V3.0（2026-09-01，待评审）整理。
-> 当前仓库暂无业务源码、构建配置或可复用模块；以下为正式编码前的架构提案，不代表已有实现。
+> 本文基于 `docs/产品需求文档（PRD）核心摘要.md` V3.0（2026-09-01）整理。
+> 单机 MVP 已落地在 `lib/`；本文的 Phase 2–4 仍是后续架构路线，不代表已实现。
 
 ---
 
@@ -58,26 +58,25 @@ PRD 当前同时包含 P0、P1、P2 和多个平台/后端能力，范围偏大�
 
 ## 2.1 当前仓库状态
 
-当前项目目录主要包含：
+当前仓库已经包含 Flutter 单机 MVP：
 
 ```text
 MomoBox/
-└── docs/
-    ├── AI_CONTEXT.md
-    ├── DESIGN.md
-    ├── REQUIREMENT.md
-    └── 产品需求文档（PRD）核心摘要.md
+├── lib/                       # Flutter 客户端、领域规则、Drift 数据层和页面
+├── test/domain/               # 日期、FEFO、提醒规则测试
+├── scripts/ci/                # CI 生成平台壳和通知平台配置
+├── .github/workflows/         # CI、Android 发布
+└── docs/                      # 需求、设计、上下文和验证基线
 ```
 
-目前未发现：
+当前仍没有：
 
-- 前端工程；
-- 后端工程；
-- 数据库迁移；
-- Dockerfile 或 docker-compose 配置；
-- CI/CD、测试或构建脚本。
+- NAS 后端工程；
+- PostgreSQL 迁移；
+- Dockerfile / docker-compose；
+- 扫码、OCR、AI 和说明书模块。
 
-因此，下面的技术选型均属于建议，后续 Full-stack Agent 需要先完成工程初始化。
+Flutter 的 Android/iOS 原生壳和 Drift 生成文件不提交到仓库，由 GitHub Actions 在每次验证/发布时按脚本生成。
 
 ## 2.2 PRD 已明确的内容
 

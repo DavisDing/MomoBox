@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../app/momo_theme.dart';
+import '../../services/local_notification_service.dart';
 import '../controllers/providers.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -64,6 +65,14 @@ class SettingsScreen extends ConsumerWidget {
               subtitle: Text('数据保存在本机 SQLite；NAS 同步将在后续阶段接入。'),
             ),
           ),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.notifications_active_outlined),
+              title: const Text('重新请求通知权限'),
+              subtitle: const Text('用于临期、过期和低库存提醒。'),
+              onTap: () => _requestNotificationPermission(context, ref),
+            ),
+          ),
           const SizedBox(height: 24),
           Text(
             '注：主题名称和资源的正式发布授权仍需产品确认；当前未接入 AI、OCR、扫码或 NAS，不会伪装成已连接状态。',
@@ -72,6 +81,19 @@ class SettingsScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _requestNotificationPermission(BuildContext context, WidgetRef ref) async {
+    try {
+      await ref.read(localNotificationServiceProvider).requestPermission();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已重新请求通知权限。')));
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('请求通知权限失败：$error')));
+      }
+    }
   }
 
   Future<void> _exportBackup(BuildContext context, WidgetRef ref) async {

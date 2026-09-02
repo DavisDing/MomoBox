@@ -1,226 +1,99 @@
 # REQUIREMENT
 
-## 1. Project
+## 1. 项目
 
-### Name
+- **名称**：嬷嬷的小箱子（MomoBox）
+- **目标**：本地优先管理家庭物品库存、批次效期、消耗记录和采购清单，降低过期与漏买。
+- **目标用户**：家庭主力采购者、有老人/小孩的家庭、希望减少浪费的用户。
 
-项目名称
+## 2. 当前版本范围（单机 MVP）
 
-### Goal
+### 已包含
 
-一句话描述这个软件解决什么问题。
+- 商品和多批次手动入库；
+- 允许到期日期为空；
+- 生产日期 + 保质期按天/月计算到期日期；
+- 库存总量、搜索、分类筛选、效期/低库存筛选；
+- FEFO 消耗、批次补充、批次报废；
+- 库存变动历史；
+- 采购清单，勾选已买后打开入库表单；
+- 临期、过期、低库存本地提醒计划；
+- JSON 导入/导出；
+- 默认、嬷嬷、哆啦A梦三套主题和系统深色模式。
 
-### Target User
+### 不包含
 
-主要使用者。
+- 条码扫描；
+- OCR、图片和说明书问答；
+- AI 服务或用户 API Key 配置；
+- NAS、家庭账号、多设备同步；
+- 后端服务、PostgreSQL、Docker 部署；
+- 统计图表和社区共享数据。
 
----
+## 3. 核心验收标准
 
-# 2. Background
+### AC-001 单机启动
 
-为什么需要这个软件。
+Given App 未连接 NAS；
+When 用户打开 App；
+Then App 可以使用本地 SQLite 完成核心功能，不需要账号或网络。
 
-当前存在什么问题。
+### AC-002 入库与批次
 
----
+Given 用户填写商品名称、分类和正整数数量；
+When 确认入库；
+Then 商品和批次写入本地数据库，并生成一条入库变动记录；相同条码或相同商品特征的再次入库归并到同一商品下的新批次。
 
-# 3. Core Features
+### AC-003 日期规则
 
-## Feature 1
+Given 用户填写生产日期与保质期天数/月数；
+When 保存入库；
+Then 系统计算到期日期；到期当天仍有效，次日才算过期；没有到期日期的批次不参与效期提醒。
 
-### Name
+### AC-004 库存操作
 
-功能名称
+Given 商品存在多个可用批次；
+When 用户消耗库存；
+Then 系统优先消耗最早到期且未过期的批次，禁止产生负库存；补充和报废均生成变动记录。
 
-### Description
+### AC-005 提醒
 
-功能描述。
+Given 商品存在临期、过期或低库存状态；
+When App 启动或库存发生变化；
+Then 系统重算并注册本地提醒，提醒按商品和类型稳定去重；打开提醒页可看到对应项目。
 
-### Input
+### AC-006 采购清单
 
-输入什么。
+Given 用户有待采购项目；
+When 勾选“已购买”；
+Then 项目进入已完成区，并打开预填商品名称和数量的入库表单。
 
-### Output
+### AC-007 备份恢复
 
-输出什么。
+Given 用户导出 JSON；
+When 在另一份空数据库导入；
+Then 商品、批次、库存变动、采购清单和设置可恢复；重复 ID 默认跳过，不覆盖已有数据；格式错误必须显示失败。
 
-### Rules
+### AC-008 CI 与安装验证
 
-核心规则。
+Given 仓库不提交 Flutter 生成的原生目录；
+When GitHub Actions 运行 CI 或 Release；
+Then Action 自动生成平台壳、生成 Drift 文件、执行分析/测试并构建 Android APK/AAB；发布包可下载并安装验证。
 
----
+## 4. 技术约束
 
-## Feature 2
+- Flutter 3.24.5（GitHub Actions 固定版本）；
+- Riverpod + GoRouter；
+- Drift + SQLite 作为本地数据源；
+- 本地通知使用平台通知插件；
+- 本地开发机不要求安装 Flutter，以 GitHub Actions 为编译和静态验证基线。
 
-### Name
+## 5. 状态
 
-功能名称
+`testing`：单机 MVP 代码已实现，等待 GitHub Actions 首次验证和真实 Android 安装验收。
 
-### Description
+## 6. Open Questions
 
-功能描述。
-
-### Input
-
-输入什么。
-
-### Output
-
-输出什么。
-
-### Rules
-
-核心规则。
-
----
-
-# 4. User Flow
-
-```text
-用户
- ↓
-操作
- ↓
-系统处理
- ↓
-结果
-```
-
----
-
-# 5. UI Requirements
-
-需要哪些页面。
-
-例如：
-
-- Main
-- Settings
-- About
-
-页面核心要求：
-
-- 简洁
-- 易用
-- 响应式
-- 深色模式
-
-如果没有特殊 UI 要求：
-
-写：
-
-No special requirements.
-
----
-
-# 6. Technical Requirements
-
-## Platform
-
-例如：
-
-- macOS
-- Windows
-- Web
-- Linux
-
-## Technology Constraints
-
-已有技术限制。
-
-## Performance
-
-如果有性能要求，在这里说明。
-
-## Compatibility
-
-兼容性要求。
-
----
-
-# 7. Non-functional Requirements
-
-只记录真正重要的：
-
-- Security
-- Performance
-- Compatibility
-- Reliability
-
-没有要求可以写：
-
-No special requirements.
-
----
-
-# 8. Acceptance Criteria
-
-## AC-001
-
-Given：
-
-前置条件。
-
-When：
-
-用户执行操作。
-
-Then：
-
-系统应该：
-
-预期结果。
-
----
-
-## AC-002
-
-Given：
-
-前置条件。
-
-When：
-
-用户执行操作。
-
-Then：
-
-系统应该：
-
-预期结果。
-
----
-
-# 9. Out of Scope
-
-明确当前版本不做什么。
-
-例如：
-
-- 不支持 XXX
-- 不做 XXX
-- 后续版本再考虑 XXX
-
----
-
-# 10. Open Questions
-
-需要用户确认的问题。
-
-如果没有：
-
-None.
-
----
-
-# 11. Status
-
-pending
-
-可选：
-
-- pending
-- designing
-- implementing
-- testing
-- completed
+- 嬷嬷/哆啦A梦主题资源的正式发布授权；
+- 说明书外部链接和内容责任边界；
+- 是否需要消耗统计图表和社区共享数据。

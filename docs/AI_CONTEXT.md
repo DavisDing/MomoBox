@@ -1,305 +1,95 @@
 # AI CONTEXT
 
-> 项目长期上下文。
->
-> 所有 AI Agent 开始工作前应读取。
->
-> 只记录长期有效的信息。
-> 不记录临时任务过程。
+## 1. 项目概览
 
----
+- **名称**：MomoBox / 嬷嬷的小箱子
+- **类型**：Flutter 手机应用
+- **目的**：本地优先管理家庭物品库存、批次效期、消耗和采购。
 
-# 1. Project Overview
+## 2. 技术栈
 
-## Name
+- Frontend：Flutter / Dart
+- State：flutter_riverpod
+- Routing：go_router
+- Local database：Drift + SQLite
+- Local notifications：flutter_local_notifications + timezone
+- Platform validation：GitHub Actions；仓库不提交 Flutter 自动生成的 Android/iOS 壳
 
-项目名称。
-
-## Type
-
-例如：
-
-- Desktop Application
-- Web Application
-- CLI Tool
-- Developer Tool
-- Automation Tool
-
-## Purpose
-
-项目主要解决的问题。
-
----
-
-# 2. Development Philosophy
-
-本项目采用：
-
-- 简单优先
-- 实用优先
-- 小步迭代
-- 优先复用
-- 避免过度设计
-- 避免无意义重构
-- 保持代码清晰
-
-不要为了“企业级架构”而增加不必要的复杂度。
-
----
-
-# 3. Technology Stack
-
-## Frontend
-
-例如：
-
-React + TypeScript
-
-## Backend
-
-例如：
-
-Python + FastAPI
-
-## Database
-
-例如：
-
-SQLite
-
-## Build
-
-例如：
-
-Vite
-
-## Package Manager
-
-例如：
-
-pnpm
-
----
-
-# 4. Project Structure
+## 3. 当前结构
 
 ```text
-project/
-├── frontend/
-├── backend/
-├── database/
-└── docs/
+lib/
+├── app/                       # App、路由、主题
+├── application/               # 用例编排与校验
+├── core/database/             # Drift 表、数据库和迁移入口
+├── data/repositories/         # 库存、采购、设置、备份数据访问
+├── domain/                    # 日期、FEFO、提醒规则、领域模型
+├── presentation/              # 页面、控制器和组件
+└── services/                  # 平台能力适配（本地通知）
+
+test/domain/                  # 可在 Flutter CI 中运行的领域测试
+scripts/ci/                   # CI 平台壳生成、补丁回归测试
 ```
 
-根据实际项目填写。
-
----
-
-# 5. Important Architecture
-
-记录项目长期有效的架构信息。
-
-例如：
+## 4. 长期架构
 
 ```text
-Frontend
-   ↓
-API
-   ↓
-Backend
-   ↓
-Database
+Presentation
+  ↓
+Application / Use Cases
+  ↓
+Domain rules
+  ↓
+Repositories
+  ↓
+Drift / SQLite
 ```
 
----
+单机模式不依赖 NAS、账号或网络。未来 NAS 同步必须作为独立 Data/Sync 实现，不能破坏本地数据源和离线操作。
 
-# 6. Important Modules
+## 5. 已确认业务规则
 
-## Module A
+- 库存单位为整数“件”；
+- 数量和低库存阈值必须大于 0；
+- 到期日当天仍有效，次日过期；
+- 到期日期可以为空；无效期批次不进入效期提醒，但参与库存、搜索、消耗和采购；
+- 保质期按月使用日历加月，月末超出日期取目标月最后一天；
+- FEFO 只消耗未过期可用批次，无足够库存时拒绝操作；
+- 入库时同条码优先归并；无条码时按名称、分类、品牌、规格的精确特征归并；
+- 本地提醒在 App 启动和库存变化后重算，使用稳定 ID 去重；
+- JSON 导入默认不覆盖已有主键记录；
+- AI、OCR、扫码、NAS 不得成为单机核心的硬依赖。
 
-职责：
+## 6. 当前实现状态
 
-待填写。
+已实现：商品/批次、库存列表和筛选、FEFO、补充/报废、采购清单、历史、日期计算、主题、JSON 备份、本地提醒调度计划。
 
-## Module B
+未实现：扫码/OCR、AI、说明书、NAS/家庭账号/同步、后端 PostgreSQL、Docker、统计图表。
 
-职责：
+## 7. 开发规则
 
-待填写。
+- 先读取 docs 和当前代码，再修改；
+- 小范围修改，保护已确认 UI；
+- Controller 不堆业务，业务规则放 Application/Domain；
+- 修改数据库结构必须增加 schemaVersion 和迁移；
+- 不把 Mock 当真实能力，不伪造测试结果；
+- 本机没有 Flutter 时不得声称已通过 analyze/test/build；应标记 `NOT_EXECUTED`，交给 GitHub Actions 验证。
 
----
+## 8. 验证基线
 
-# 7. Important Decisions
+CI 固定使用 Flutter 3.24.5，并执行：
 
-记录长期有效的技术决策。
+1. 生成 Android/iOS 平台壳；
+2. 运行平台壳补丁回归测试，并注入通知权限、重启恢复 receiver、Android desugaring、通知图标保留和 iOS 通知 delegate；
+3. `flutter pub get`；
+4. Drift `build_runner`；
+5. `flutter analyze`；
+6. `flutter test`；
+7. Android debug build；
+8. Release 工作流额外构建 APK/AAB 并上传 SHA256。
 
-## Decision 001
+本地安装验证以 GitHub Release 的 Android APK 为准，重点检查首次启动、入库、日期计算、消耗、提醒权限、采购勾选入库和备份恢复。
 
-### Decision
+## 9. AI_CONTEXT Update Proposal
 
-采用 XXX。
-
-### Reason
-
-XXX。
-
-### Date
-
-YYYY-MM-DD
-
----
-
-# 8. Coding Rules
-
-## General
-
-- 优先复用
-- 小范围修改
-- 不无意义重构
-- 不删除未知代码
-- 不修改无关模块
-- 保持现有代码风格
-
-## Frontend
-
-- 组件化
-- 类型明确
-- 避免重复
-- 优先使用现有组件
-
-## Backend
-
-- 保持职责清晰
-- Controller 不堆复杂业务
-- Service 负责核心业务
-- 数据访问独立
-
-## Database
-
-- 谨慎修改已有结构
-- 避免危险操作
-- 关注数据兼容性
-
----
-
-# 9. UI Rules
-
-如果存在已经确认的 UI：
-
-记录：
-
-页面：
-
-待填写。
-
-保护：
-
-- Layout
-- Visual Style
-- Component Structure
-
-允许：
-
-- API
-- Data
-- State
-- Business Logic
-
-如果没有：
-
-No confirmed UI yet.
-
----
-
-# 10. Environment
-
-只记录项目运行需要知道的环境。
-
-例如：
-
-- macOS
-- Node.js 22
-- pnpm
-- Python 3.13
-- Docker
-
-不要记录：
-
-- Password
-- Token
-- API Key
-- Secret
-
----
-
-# 11. Dependencies
-
-记录真正重要的长期依赖。
-
-例如：
-
-- Electron
-- React
-- FastAPI
-- SQLite
-
-普通 npm/pip 依赖不需要全部记录。
-
----
-
-# 12. Known Constraints
-
-记录项目长期约束。
-
-例如：
-
-- 必须支持 macOS
-- 不使用云端数据库
-- 数据必须本地保存
-- 不允许增加重量级依赖
-
----
-
-# 13. AI Rules
-
-所有 Agent 必须遵守：
-
-1. 先理解项目，再修改。
-2. 优先读取现有代码。
-3. 优先复用已有能力。
-4. 不编造不存在的信息。
-5. 不进行无关重构。
-6. 不删除未知代码。
-7. 不修改无关文件。
-8. 不把 Mock 当真实数据。
-9. 不伪造测试结果。
-10. 遇到不确定信息必须明确说明。
-
----
-
-# 14. AI_CONTEXT Update Proposal
-
-只有长期有效的信息才需要更新本文件。
-
-例如：
-
-- 技术栈变化
-- 架构变化
-- 重要模块变化
-- 重要技术决策
-- 长期约束变化
-
-普通功能开发不需要更新。
-
-如果需要更新：
-
-输出：
-
-AI_CONTEXT UPDATE PROPOSAL
-
-包括：
-
-- Change
-- Reason
-- Impact
-- Proposed Update
+本次已将历史模板更新为实际 Flutter 单机 MVP 架构。后续只有技术栈、长期架构、核心业务决策或验证基线发生变化时才更新本文件。

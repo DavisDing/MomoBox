@@ -1,0 +1,106 @@
+name: Release Android package
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # Only publish from the repository's configured default branch. This also
+    # lets workflow_dispatch safely run from that branch without hard-coding
+    # a branch name such as main.
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source and tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Validate release version calculation
+        run: scripts/release/test-next-version.sh
+      - name: Validate platform preparation script
+        run: scripts/ci/test-prepare-flutter-platforms.sh
+
+      - name: Calculate the release version
+        id: version
+        run: scripts/release/next-version.sh
+
+      - name: Explain why no release was created
+        if: steps.version.outputs.release_required != 'true'
+        run: |
+          echo 'No feat/fix/perf/revert or breaking Conventional Commit was found.'
+          echo 'No package or GitHub Release is needed for this push.'
+
+      - name: Set up Flutter
+        if: steps.version.outputs.release_required == 'true'
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.24.5
+          cache: true
+
+      - name: Generate the Android project shell
+        if: steps.version.outputs.release_required == 'true'
+        run: scripts/ci/prepare-flutter-platforms.sh
+
+      - name: Install Dart packages
+        if: steps.version.outputs.release_required == 'true'
+        run: flutter pub get
+
+      - name: Generate Drift files
+        if: steps.version.outputs.release_required == 'true'
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Verify release candidate
+        if: steps.version.outputs.release_required == 'true'
+        run: |
+          flutter analyze
+          flutter test
+
+      - name: Build versioned Android packages
+        if: steps.version.outputs.release_required == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          flutter build apk --release --build-name "$VERSION" --build-number "$BUILD_NUMBER"
+          flutter build appbundle --release --build-name "$VERSION" --build-number "$BUILD_NUMBER"
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk "dist/MomoBox-v${VERSION}.apk"
+          cp build/app/outputs/bundle/release/app-release.aab "dist/MomoBox-v${VERSION}.aab"
+          sha256sum dist/* > dist/SHA256SUMS.txt
+
+      - name: Create or update GitHub Release and upload packages
+        if: steps.version.outputs.release_required == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TARGET: ${{ github.sha }}
+        run: |
+          assets=(
+            "dist/MomoBox-v${VERSION}.apk"
+            "dist/MomoBox-v${VERSION}.aab"
+            'dist/SHA256SUMS.txt'
+          )
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; replacing its package assets."
+            gh release upload "$TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$TAG" \
+              --target "$TARGET" \
+              --title "MomoBox v${VERSION}" \
+              --generate-notes \
+              "${assets[@]}"
+          fi

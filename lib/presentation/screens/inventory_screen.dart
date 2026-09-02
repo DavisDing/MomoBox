@@ -251,6 +251,28 @@ class _ItemDetailSheet extends ConsumerWidget {
               Text('批次', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
               ...item.batches.map((batch) => _BatchTile(item: item, batch: batch)),
+              const SizedBox(height: 16),
+              Text('变动历史', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              FutureBuilder<List<StockMovement>>(
+                future: ref.read(inventoryRepositoryProvider).loadMovements(item.id),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()));
+                  }
+                  if (snapshot.hasError) return Text('历史加载失败：${snapshot.error}');
+                  final movements = snapshot.data ?? const <StockMovement>[];
+                  if (movements.isEmpty) return const Text('暂无变动记录。');
+                  return Column(children: movements.take(20).map((movement) => ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(movement.quantity < 0 ? Icons.remove_circle_outline : Icons.add_circle_outline),
+                    title: Text(movement.note ?? movement.type),
+                    subtitle: Text(_dateTimeText(movement.createdAt)),
+                    trailing: Text(movement.quantity > 0 ? '+${movement.quantity}' : '${movement.quantity}'),
+                  )).toList());
+                },
+              ),
             ],
           ),
         ),
@@ -323,3 +345,5 @@ String _categoryEmoji(String category) => switch (category) {
     };
 
 String _dateText(DateTime date) => '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+String _dateTimeText(DateTime value) => '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')} ${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';

@@ -8,6 +8,7 @@ import '../../data/repositories/settings_repository.dart';
 import '../../data/repositories/shopping_repository.dart';
 import '../../domain/inventory/expiry_rules.dart';
 import '../../domain/models/inventory_models.dart';
+import '../../services/local_notification_service.dart';
 
 final databaseProvider = Provider<AppDatabase>((ref) {
   final database = AppDatabase();
@@ -58,4 +59,8 @@ final reminderSummaryProvider = Provider<ReminderSummary>((ref) {
         .toList(growable: false),
     lowStock: items.where((item) => item.isLowStock).toList(growable: false),
   );
+});
+
+final localNotificationServiceProvider = Provider<LocalNotificationService>((ref) {
+  return LocalNotificationService();
 });
