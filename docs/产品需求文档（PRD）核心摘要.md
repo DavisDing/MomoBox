@@ -1267,8 +1267,8 @@
 
   ### 8.5 兼容性
 
-  - Android 8.0+
-  - iOS 13.0+
+  - Android 16.0+
+  - iOS 27.0+
   - 绿联DX4600 Docker
   - Ollama（可选，不绑定）
 

@@ -55,16 +55,18 @@ class BackupRepository {
     final movements = await _database.select(_database.stockMovements).get();
     final shopping = await _database.select(_database.shoppingEntries).get();
     final settings = await _database.select(_database.appSettings).get();
+    final acknowledgements = await _database.select(_database.reminderAcknowledgments).get();
 
     return const JsonEncoder.withIndent('  ').convert({
       'format': 'momobox-backup',
-      'version': 1,
+      'version': 2,
       'exported_at': DateTime.now().toIso8601String(),
       'products': products.map(_productToJson).toList(),
       'batches': batches.map(_batchToJson).toList(),
       'stock_movements': movements.map(_movementToJson).toList(),
       'shopping_entries': shopping.map(_shoppingToJson).toList(),
       'settings': settings.map(_settingToJson).toList(),
+      'reminder_acknowledgements': acknowledgements.map(_acknowledgementToJson).toList(),
     });
   }
 
@@ -75,12 +77,14 @@ class BackupRepository {
     final movements = _records(document, 'stock_movements');
     final shopping = _records(document, 'shopping_entries');
     final settings = _records(document, 'settings');
+    final acknowledgements = _records(document, 'reminder_acknowledgements');
     final failures = await _validateReferences(
       products: products,
       batches: batches,
       movements: movements,
       shopping: shopping,
       settings: settings,
+      acknowledgements: acknowledgements,
     );
     if (failures.isNotEmpty) {
       throw BackupImportException(List.unmodifiable(failures));
@@ -135,6 +139,19 @@ class BackupRepository {
         await _database.into(_database.appSettings).insert(_settingFromJson(row));
         imported++;
       }
+      for (final raw in acknowledgements) {
+        final row = raw;
+        if (await _exists(
+          _database.reminderAcknowledgments,
+          row['reminder_key'] as String,
+          column: 'reminder_key',
+        )) {
+          skipped++;
+          continue;
+        }
+        await _database.into(_database.reminderAcknowledgments).insert(_acknowledgementFromJson(row));
+        imported++;
+      }
     });
     return ImportReport(imported: imported, skipped: skipped);
   }
@@ -158,6 +175,7 @@ class BackupRepository {
     required List<Map<String, dynamic>> movements,
     required List<Map<String, dynamic>> shopping,
     required List<Map<String, dynamic>> settings,
+    required List<Map<String, dynamic>> acknowledgements,
   }) async {
     final existingProducts =
         (await _database.select(_database.products).get()).map((row) => row.id).toSet();
@@ -186,6 +204,7 @@ class BackupRepository {
     checkUnique('stock_movements', movements, 'id');
     checkUnique('shopping_entries', shopping, 'id');
     checkUnique('settings', settings, 'key');
+    checkUnique('reminder_acknowledgements', acknowledgements, 'reminder_key');
 
     final incomingProducts = products.map((row) => row['id'] as String).toSet();
     final allProductIds = {...existingProducts, ...incomingProducts};
@@ -323,6 +342,12 @@ class BackupRepository {
         'updated_at': row.updatedAt.toIso8601String(),
       };
 
+  Map<String, Object?> _acknowledgementToJson(ReminderAcknowledgmentRecord row) => {
+        'reminder_key': row.reminderKey,
+        'fingerprint': row.fingerprint,
+        'acknowledged_at': row.acknowledgedAt.toIso8601String(),
+      };
+
   ProductsCompanion _productFromJson(Map<String, dynamic> row) => ProductsCompanion.insert(
         id: row['id'] as String,
         name: row['name'] as String,
@@ -383,6 +408,15 @@ class BackupRepository {
         key: row['key'] as String,
         value: row['value'] as String,
         updatedAt: DateTime.parse(row['updated_at'] as String),
+      );
+
+  ReminderAcknowledgmentsCompanion _acknowledgementFromJson(
+    Map<String, dynamic> row,
+  ) =>
+      ReminderAcknowledgmentsCompanion.insert(
+        reminderKey: row['reminder_key'] as String,
+        fingerprint: row['fingerprint'] as String,
+        acknowledgedAt: DateTime.parse(row['acknowledged_at'] as String),
       );
 
   DateTime? _date(Object? value) => value is String ? DateTime.parse(value) : null;

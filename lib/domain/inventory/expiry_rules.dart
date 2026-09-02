@@ -43,15 +43,16 @@ class ExpiryRules {
     if (amount < 1) throw ArgumentError.value(amount, 'amount', '保质期必须大于 0');
     final expiry = dateOnly(expiryDate);
     if (unit == ShelfLifeUnit.days) return expiry.subtract(Duration(days: amount));
-    var result = expiry;
-    for (var index = 0; index < amount; index++) {
-      final previousMonth = result.month == 1
-          ? DateTime(result.year - 1, 12, 1)
-          : DateTime(result.year, result.month - 1, 1);
-      final lastDay = DateTime(previousMonth.year, previousMonth.month + 1, 0).day;
-      result = DateTime(previousMonth.year, previousMonth.month, result.day > lastDay ? lastDay : result.day);
-    }
-    return result;
+    // 一次性定位目标月份，避免逐月截断日期导致误差：
+    // 例如 2026-03-31 反推 2 个月应得到 2026-01-31，
+    // 不能先截成 2026-02-28 后再得到 2026-01-28。
+    final targetMonth = DateTime(expiry.year, expiry.month - amount, 1);
+    final lastDay = DateTime(targetMonth.year, targetMonth.month + 1, 0).day;
+    return DateTime(
+      targetMonth.year,
+      targetMonth.month,
+      expiry.day > lastDay ? lastDay : expiry.day,
+    );
   }
 
   static DateTime addCalendarMonths(DateTime source, int months) {

@@ -22,46 +22,74 @@ class AppScaffold extends ConsumerWidget {
       _ => 0,
     };
     const locations = ['/', '/alerts', '/shopping', '/settings'];
+    final useNavigationRail = MediaQuery.sizeOf(context).width >= 840;
+    final destinations = [
+      NavigationDestination(
+        icon: const Icon(Icons.inventory_2_outlined),
+        selectedIcon: const Icon(Icons.inventory_2),
+        label: palette.inventoryLabel,
+      ),
+      NavigationDestination(
+        icon: const Icon(Icons.notifications_none),
+        selectedIcon: const Icon(Icons.notifications),
+        label: palette.alertLabel,
+      ),
+      NavigationDestination(
+        icon: const Icon(Icons.shopping_bag_outlined),
+        selectedIcon: const Icon(Icons.shopping_bag),
+        label: palette.shoppingLabel,
+      ),
+      const NavigationDestination(
+        icon: Icon(Icons.settings_outlined),
+        selectedIcon: Icon(Icons.settings),
+        label: '设置',
+      ),
+    ];
 
     return Scaffold(
-      body: child,
+      body: useNavigationRail
+          ? Row(
+              children: [
+                SafeArea(
+                  child: NavigationRail(
+                    selectedIndex: currentIndex,
+                    labelType: NavigationRailLabelType.all,
+                    onDestinationSelected: (index) => context.go(locations[index]),
+                    destinations: destinations
+                        .map(
+                          (destination) => NavigationRailDestination(
+                            icon: destination.icon,
+                            selectedIcon: destination.selectedIcon,
+                            label: Text(destination.label),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+                const VerticalDivider(width: 1),
+                Expanded(child: child),
+              ],
+            )
+          : child,
       floatingActionButton: currentIndex == 0
           ? FloatingActionButton.extended(
               onPressed: () => showModalBottomSheet<void>(
                 context: context,
                 isScrollControlled: true,
+                useSafeArea: true,
                 builder: (_) => const IntakeSheet(),
               ),
               icon: const Icon(Icons.add_box_outlined),
               label: const Text('手动入库'),
             )
           : null,
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: currentIndex,
-        onDestinationSelected: (index) => context.go(locations[index]),
-        destinations: [
-          NavigationDestination(
-            icon: const Icon(Icons.inventory_2_outlined),
-            selectedIcon: const Icon(Icons.inventory_2),
-            label: palette.inventoryLabel,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.notifications_none),
-            selectedIcon: const Icon(Icons.notifications),
-            label: palette.alertLabel,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.shopping_bag_outlined),
-            selectedIcon: const Icon(Icons.shopping_bag),
-            label: palette.shoppingLabel,
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
-            label: '设置',
-          ),
-        ],
-      ),
+      bottomNavigationBar: useNavigationRail
+          ? null
+          : NavigationBar(
+              selectedIndex: currentIndex,
+              onDestinationSelected: (index) => context.go(locations[index]),
+              destinations: destinations,
+            ),
     );
   }
 }

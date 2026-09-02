@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:momo_box/core/database/app_database.dart';
 import 'package:momo_box/data/repositories/backup_repository.dart';
 import 'package:momo_box/data/repositories/inventory_repository.dart';
+import 'package:momo_box/data/repositories/reminder_repository.dart';
 import 'package:momo_box/domain/models/inventory_models.dart';
 
 Map<String, Object?> validProduct() => {
@@ -101,5 +102,24 @@ void main() {
     expect(await importedDatabase.select(importedDatabase.products).get(), hasLength(1));
     expect(await importedDatabase.select(importedDatabase.productBatches).get(), hasLength(1));
     expect(await importedDatabase.select(importedDatabase.stockMovements).get(), hasLength(2));
+  });
+
+  test('备份会导出并恢复提醒已处理记录', () async {
+    final reminderRepository = ReminderRepository(database);
+    await reminderRepository.acknowledge(
+      reminderKey: 'product-1:low-stock',
+      fingerprint: 'threshold:1',
+    );
+    final backup = await repository.exportJson();
+    expect(backup, contains('reminder_acknowledgements'));
+
+    final restoreDatabase = AppDatabase.forTesting(NativeDatabase.memory());
+    extraDatabases.add(restoreDatabase);
+    final restoreRepository = BackupRepository(restoreDatabase);
+    await restoreRepository.importJson(backup);
+    final records =
+        await restoreDatabase.select(restoreDatabase.reminderAcknowledgments).get();
+    expect(records, hasLength(1));
+    expect(records.single.reminderKey, 'product-1:low-stock');
   });
 }

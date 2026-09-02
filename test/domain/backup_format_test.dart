@@ -11,6 +11,7 @@ Map<String, Object?> validDocument() => {
       'stock_movements': [],
       'shopping_entries': [],
       'settings': [],
+      'reminder_acknowledgements': [],
     };
 
 Map<String, Object?> validProduct() => {
@@ -67,5 +68,27 @@ void main() {
         throwsA(isA<FormatException>()),
       );
     }
+  });
+  test('v1 备份缺少提醒确认段时按空列表兼容导入', () {
+    final legacy = validDocument()
+      ..['version'] = 1
+      ..remove('reminder_acknowledgements');
+    final document = BackupFormat.parse(jsonEncode(legacy));
+    expect(BackupFormat.records(document, 'reminder_acknowledgements'), isEmpty);
+  });
+
+  test('校验提醒确认记录的必填字段和日期', () {
+    final invalid = validDocument()
+      ..['reminder_acknowledgements'] = [
+        {
+          'reminder_key': 'product-1:low-stock',
+          'fingerprint': 'threshold:1',
+          'acknowledged_at': 'not-a-date',
+        },
+      ];
+    expect(
+      () => BackupFormat.records(BackupFormat.parse(jsonEncode(invalid)), 'reminder_acknowledgements'),
+      throwsA(isA<FormatException>()),
+    );
   });
 }

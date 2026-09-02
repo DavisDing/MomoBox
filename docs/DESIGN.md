@@ -78,12 +78,14 @@ MomoBox/
 
 Flutter 的 Android/iOS 原生壳和 Drift 生成文件不提交到仓库，由 GitHub Actions 在每次验证/发布时按脚本生成。
 
+平台壳生成后必须由 `scripts/ci/prepare-flutter-platforms.sh` 注入兼容性基线：Android `minSdk` 为 API 36（Android 16），`compileSdk`/`targetSdk` 为 API 37（Android 17），iOS deployment target 为 27.0；Android 16 强制 edge-to-edge 后的系统栏/输入法 inset 与大屏布局由 Flutter Scaffold、SafeArea 和宽屏 NavigationRail 共同处理；未完成 CI 和真机验证前，不得把兼容性标记为已验证。
+
 ## 2.2 PRD 已明确的内容
 
 - 双模式：本地 SQLite + 可选 NAS 后端；
 - 商品、批次、消耗、采购、分类、提醒、历史、图片/OCR、AI 配置；
 - NAS 侧包含账号、家庭组、角色权限和同步；
-- 预期 Android 8+、iOS 13+、绿联 DX4600 Docker；
+- Android 16.0+（API 36+）、iOS 27.0+、绿联 DX4600 Docker；
 - 所有 AI 结果需要用户确认，且没有 AI 时仍可手动完成任务。
 
 ---
@@ -235,7 +237,7 @@ AI 解析输出可能格式错误、出现幻觉或包含说明书中的提示�
 
 采用 **Flutter + Dart**：
 
-- 一套代码覆盖 Android 8+ 和 iOS 13+；
+- 一套代码最低覆盖 Android 16.0（API 36）和 iOS 27.0；Android 构建以 Android 17 API 37 编译并 target。
 - 适合相机、扫码、本地通知和主题系统；
 - 主题配置、页面结构和跨平台业务逻辑易于复用。
 
@@ -340,6 +342,17 @@ Data
 ### Data
 
 负责 Drift DAO、文件资源、API 调用、token、outbox、同步游标和第三方适配。
+
+### 提醒确认记录（单机 MVP）
+
+提醒确认记录由本地 Drift 表 `reminder_acknowledgments` 持久化，字段为：
+
+- `reminder_key`：稳定的商品 + 提醒类型标识，例如 `product-id:low-stock`；
+- `fingerprint`：当前提醒状态指纹；低库存使用 `threshold:<阈值>`，效期提醒使用最近有效批次 ID + 到期日；低库存商品恢复到阈值以上时删除对应确认记录，使再次跌破阈值进入新的提醒周期；
+- `acknowledged_at`：用户确认处理的时间。
+
+提醒页支持单条和分组批量“标记已处理”。确认记录只影响提醒展示和本地通知调度，不会替代消耗、补充、报废或加入采购清单等库存/采购业务动作。重新计算提醒时必须同时匹配 `reminder_key` 和 `fingerprint`，状态指纹变化后重新显示；低库存从正常状态再次跌破阈值时必须进入新的提醒周期；同一 `reminder_key` 再次确认时更新原记录，避免无限增长。
+
 
 ## 5.2 领域模块
 
@@ -641,7 +654,7 @@ App Shell
 3. 批次数量不得小于 0；MVP 支持整数件，不支持小数单位；
 4. 消耗默认采用 FEFO（最早到期优先），允许用户改选；
 5. `used_up` 由数量为 0 触发；`expired` 由日期计算产生，但已用完/已丢弃状态优先保留；
-6. 提醒必须排除已用完、已丢弃和未设置效期的批次；
+6. 提醒必须排除已用完、已丢弃和未设置效期的批次；用户标记已处理时写入独立确认记录，展示/通知过滤必须同时匹配提醒 key 和 fingerprint；
 7. 低库存按商品维度汇总所有有效批次的总量触发，不按单个批次触发；
 8. 任何 AI 结果先进入草稿，用户确认后才落库；
 9. 本地模式所有核心功能不依赖网络；

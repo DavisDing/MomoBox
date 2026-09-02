@@ -6,9 +6,23 @@ set -euo pipefail
 # the generated shell is always reproducible.
 flutter create --platforms=android,ios --project-name momo_box .
 
+# Android 16 is the minimum supported OS (API 36). Compile and target
+# Android 17 (API 37) so CI catches Android 17 behavior changes as well.
+# iOS uses the deployment-target version directly.
+export MOMO_ANDROID_MIN_SDK=36
+export MOMO_ANDROID_COMPILE_SDK=37
+export MOMO_ANDROID_TARGET_SDK=37
+export MOMO_IOS_DEPLOYMENT_TARGET=27.0
+
 python3 - <<'PY'
 from pathlib import Path
+import os
 import re
+
+ANDROID_MIN_SDK = os.environ['MOMO_ANDROID_MIN_SDK']
+ANDROID_COMPILE_SDK = os.environ['MOMO_ANDROID_COMPILE_SDK']
+ANDROID_TARGET_SDK = os.environ['MOMO_ANDROID_TARGET_SDK']
+IOS_DEPLOYMENT_TARGET = os.environ['MOMO_IOS_DEPLOYMENT_TARGET']
 
 manifest = Path('android/app/src/main/AndroidManifest.xml')
 if manifest.exists():
@@ -64,6 +78,20 @@ for gradle in (Path('android/app/build.gradle'), Path('android/app/build.gradle.
     if not gradle.exists():
         continue
     text = gradle.read_text()
+
+    # Flutter templates have used both Groovy and Kotlin DSL spellings over
+    # time. Pin all Android SDK levels so a generated shell cannot silently
+    # fall back to the template's older defaults.
+    replacements = (
+        (r'(?m)^(\s*compileSdk(?:Version)?\s*(?:=\s*|\s+)).*$', r'\g<1>' + ANDROID_COMPILE_SDK),
+        (r'(?m)^(\s*targetSdk(?:Version)?\s*(?:=\s*|\s+)).*$', r'\g<1>' + ANDROID_TARGET_SDK),
+        (r'(?m)^(\s*minSdk(?:Version)?\s*(?:=\s*|\s+)).*$', r'\g<1>' + ANDROID_MIN_SDK),
+    )
+    for pattern, replacement in replacements:
+        text = re.sub(pattern, replacement, text)
+    # Keep desugaring because flutter_local_notifications uses Java 8 APIs
+    # for scheduled notifications; this is a plugin build requirement, not an
+    # Android 8 compatibility branch.
     if 'coreLibraryDesugaringEnabled' not in text and 'isCoreLibraryDesugaringEnabled' not in text:
         if gradle.suffix == '.kts':
             text = text.replace('compileOptions {', 'compileOptions {\n        isCoreLibraryDesugaringEnabled = true', 1)
@@ -79,6 +107,42 @@ for gradle in (Path('android/app/build.gradle'), Path('android/app/build.gradle.
         else:
             text += '\n\ndependencies {\n' + dependency + '}\n'
     gradle.write_text(text)
+
+# Keep iOS project, CocoaPods, and Flutter framework metadata aligned with the
+# same minimum supported OS. These files are generated and therefore patched
+# on every CI/release run rather than committed to the repository.
+podfile = Path('ios/Podfile')
+if podfile.exists():
+    text = podfile.read_text()
+    if re.search(r'(?m)^\s*platform :ios,', text):
+        text = re.sub(
+            r"(?m)^(\s*platform :ios,\s*)['\"][^'\"]+['\"](.*)$",
+            r"\g<1>'" + IOS_DEPLOYMENT_TARGET + r"'\g<2>",
+            text,
+            count=1,
+        )
+    else:
+        text = "platform :ios, '" + IOS_DEPLOYMENT_TARGET + "'\n" + text
+    podfile.write_text(text)
+
+for pbxproj in Path('ios').glob('**/*.pbxproj'):
+    text = pbxproj.read_text()
+    text = re.sub(
+        r'(IPHONEOS_DEPLOYMENT_TARGET\s*=\s*)[^;]+;',
+        r'\g<1>' + IOS_DEPLOYMENT_TARGET + ';',
+        text,
+    )
+    pbxproj.write_text(text)
+
+framework_plist = Path('ios/Flutter/AppFrameworkInfo.plist')
+if framework_plist.exists():
+    text = framework_plist.read_text()
+    text = re.sub(
+        r'(<key>MinimumOSVersion</key>\s*<string>)[^<]+(</string>)',
+        r'\g<1>' + IOS_DEPLOYMENT_TARGET + r'\g<2>',
+        text,
+    )
+    framework_plist.write_text(text)
 
 app_delegate = Path('ios/Runner/AppDelegate.swift')
 if app_delegate.exists():

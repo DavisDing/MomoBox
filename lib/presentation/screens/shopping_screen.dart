@@ -128,6 +128,7 @@ class _EntrySection extends ConsumerWidget {
                     await showModalBottomSheet<void>(
                       context: context,
                       isScrollControlled: true,
+                      useSafeArea: true,
                       builder: (_) => IntakeSheet(
                         initialName: entry.itemName,
                         initialCategory: entry.category,

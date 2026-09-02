@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 enum MomoSkin { defaultSkin, momo, doraemon }
 
@@ -98,6 +99,15 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
     secondary: palette.secondary,
     surface: surface,
   );
+  final systemUiOverlayStyle = SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+    statusBarBrightness: brightness,
+    systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+    systemStatusBarContrastEnforced: false,
+    systemNavigationBarContrastEnforced: false,
+  );
 
   return ThemeData(
     useMaterial3: true,
@@ -114,6 +124,11 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
       foregroundColor: text,
       elevation: 0,
       centerTitle: false,
+      systemOverlayStyle: systemUiOverlayStyle,
+    ),
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: surface,
+      indicatorColor: palette.primary.withOpacity(isDark ? 0.28 : 0.16),
     ),
     textTheme: ThemeData(brightness: brightness).textTheme.apply(
           bodyColor: text,

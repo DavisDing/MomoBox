@@ -3,13 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../application/backup_service.dart';
 import '../../application/inventory_service.dart';
 import '../../application/settings_service.dart';
+import '../../application/reminder_service.dart';
 import '../../application/shopping_service.dart';
 import '../../core/database/app_database.dart';
 import '../../data/repositories/backup_repository.dart';
 import '../../data/repositories/inventory_repository.dart';
 import '../../data/repositories/settings_repository.dart';
+import '../../data/repositories/reminder_repository.dart';
 import '../../data/repositories/shopping_repository.dart';
 import '../../domain/inventory/expiry_rules.dart';
+import '../../domain/inventory/reminder_rules.dart';
 import '../../domain/models/inventory_models.dart';
 import '../../services/local_notification_service.dart';
 
@@ -63,16 +66,38 @@ final backupServiceProvider = Provider<BackupService>(
   (ref) => BackupService(ref.watch(backupRepositoryProvider)),
 );
 
+final reminderRepositoryProvider = Provider<ReminderRepository>(
+  (ref) => ReminderRepository(ref.watch(databaseProvider)),
+);
+
+final reminderServiceProvider = Provider<ReminderService>(
+  (ref) => ReminderService(ref.watch(reminderRepositoryProvider)),
+);
+
+final reminderAcknowledgementsProvider = StreamProvider<List<ReminderAcknowledgement>>(
+  (ref) => ref.watch(reminderServiceProvider).watchAcknowledgements(),
+);
+
 final reminderSummaryProvider = Provider<ReminderSummary>((ref) {
   final items = ref.watch(inventoryProvider).valueOrNull ?? const <InventoryItem>[];
+  final acknowledgements = ref.watch(reminderAcknowledgementsProvider).valueOrNull ??
+      const <ReminderAcknowledgement>[];
+  final visible = ReminderRules.sortByUrgency(
+    ReminderRules.visibleCandidates(items, acknowledgements),
+  );
   return ReminderSummary(
-    expired: items
-        .where((item) => item.overallExpiryStatus == ExpiryStatus.expired)
+    expired: visible
+        .where((candidate) => candidate.type == ReminderType.expired)
+        .map((candidate) => candidate.item)
         .toList(growable: false),
-    expiring: items
-        .where((item) => item.overallExpiryStatus == ExpiryStatus.expiring)
+    expiring: visible
+        .where((candidate) => candidate.type == ReminderType.expiring)
+        .map((candidate) => candidate.item)
         .toList(growable: false),
-    lowStock: items.where((item) => item.isLowStock).toList(growable: false),
+    lowStock: visible
+        .where((candidate) => candidate.type == ReminderType.lowStock)
+        .map((candidate) => candidate.item)
+        .toList(growable: false),
   );
 });
 

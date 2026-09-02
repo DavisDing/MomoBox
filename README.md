@@ -20,7 +20,7 @@
 
 ## CI 与自动发布
 
-- `.github/workflows/flutter-ci.yml` 会在 Pull Request 和分支推送时固定 Flutter `3.24.5`，生成原生工程壳、执行 Drift 代码生成、静态检查、单元测试，以及 Android/iOS 无签名构建。
+- `.github/workflows/flutter-ci.yml` 会在 Pull Request 和分支推送时使用 Flutter stable channel，安装 Android 17 SDK、确认 iOS 27 SDK 可用，随后生成原生工程壳、执行 Drift 代码生成、静态检查、单元测试，以及 Android/iOS 无签名构建。
 - `.github/workflows/release.yml` 会在**默认分支**上的每次推送后读取自最近一个 `vX.Y.Z` 标签以来的 Conventional Commit，自动计算版本、先执行 Drift 代码生成与 `flutter analyze` / `flutter test`，再构建 Android 安装包并创建 GitHub Release。它不硬编码 `main`，会使用仓库在 GitHub 中设置的默认分支；对同一版本重跑时会替换已存在 Release 的发布附件。
 - `scripts/release/test-next-version.sh` 覆盖首次发布、patch/minor/major 优先级及非发布提交，Flutter CI 会执行该版本计算回归测试。
 

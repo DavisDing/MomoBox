@@ -76,6 +76,17 @@ class ShoppingEntries extends Table {
   Set<Column<Object>> get primaryKey => {id};
 }
 
+
+@DataClassName('ReminderAcknowledgmentRecord')
+class ReminderAcknowledgments extends Table {
+  TextColumn get reminderKey => text()();
+  TextColumn get fingerprint => text()();
+  DateTimeColumn get acknowledgedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {reminderKey};
+}
+
 @DataClassName('AppSettingRecord')
 class AppSettings extends Table {
   TextColumn get key => text()();
@@ -87,7 +98,7 @@ class AppSettings extends Table {
 }
 
 @DriftDatabase(
-  tables: [Products, ProductBatches, StockMovements, ShoppingEntries, AppSettings],
+  tables: [Products, ProductBatches, StockMovements, ShoppingEntries, AppSettings, ReminderAcknowledgments],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
@@ -95,13 +106,15 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(QueryExecutor executor) : super(executor);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (migrator) async => migrator.createAll(),
         onUpgrade: (migrator, from, to) async {
-          // 发布后新增 schema 时在这里写入按版本递进的迁移，禁止删表重建。
+          if (from < 2) {
+            await migrator.createTable(reminderAcknowledgments);
+          }
         },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = ON');

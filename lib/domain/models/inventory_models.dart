@@ -166,6 +166,18 @@ class ShoppingEntry {
   final bool isCompleted;
 }
 
+class ReminderAcknowledgement {
+  const ReminderAcknowledgement({
+    required this.reminderKey,
+    required this.fingerprint,
+    required this.acknowledgedAt,
+  });
+
+  final String reminderKey;
+  final String fingerprint;
+  final DateTime acknowledgedAt;
+}
+
 class ReminderSummary {
   const ReminderSummary({
     required this.expired,
@@ -176,4 +188,20 @@ class ReminderSummary {
   final List<InventoryItem> expired;
   final List<InventoryItem> expiring;
   final List<InventoryItem> lowStock;
+
+  int get expiryAlertCount => expired.length + expiring.length;
+
+  /// Includes products whose nearest usable batch expires today through the
+  /// requested number of days from today. Expired products are counted
+  /// separately and are intentionally excluded.
+  int expiringWithinDays(int days, {DateTime? today}) {
+    if (days < 0) return 0;
+    return expiring.where((item) {
+      final remainingDays = ExpiryRules.daysUntil(
+        item.nearestDatedBatch?.expiryDate,
+        today: today,
+      );
+      return remainingDays != null && remainingDays >= 0 && remainingDays <= days;
+    }).length;
+  }
 }

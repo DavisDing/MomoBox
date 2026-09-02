@@ -60,7 +60,7 @@ Then 系统默认优先消耗最早到期且未过期的批次；用户也可输
 
 Given 商品存在临期、过期或低库存状态；
 When App 启动或库存发生变化；
-Then 系统重算并注册本地提醒，提醒按商品和类型稳定去重；打开提醒页可看到对应项目。
+Then 系统重算并注册本地提醒，提醒按商品和类型稳定去重；打开提醒页可看到对应项目；用户可单条或按分组批量标记“已处理”，该状态持久化到本地数据库，不把消耗、报废或加入采购清单等业务动作自动视为已处理；低库存恢复到阈值以上后确认状态失效，下一次重新跌破阈值时进入新的提醒周期。
 
 ### AC-006 采购清单
 
@@ -82,7 +82,7 @@ Then Action 自动生成平台壳、生成 Drift 文件、执行分析/测试并
 
 ## 4. 技术约束
 
-- Flutter 3.24.5（GitHub Actions 固定版本）；
+- Flutter stable channel（GitHub Actions 在每次运行时获取当前 stable SDK，以跟进 Android 17 / iOS 27 工具链）；
 - Riverpod + GoRouter；
 - Drift + SQLite 作为本地数据源；
 - 本地通知使用平台通知插件；
@@ -101,3 +101,13 @@ Then Action 自动生成平台壳、生成 Drift 文件、执行分析/测试并
 
 - 说明书外部链接和内容责任边界；
 - 是否需要消耗统计图表和社区共享数据。
+
+
+## 8. 兼容性
+
+- Android 16.0+（最低 API 36）；
+- Android 构建使用 Android 17（API 37）的 `compileSdk` 和 `targetSdk`，以覆盖 Android 16/17 的目标 SDK 行为；
+- iOS 27.0+；
+- Android 16/17：应用必须以 edge-to-edge 方式处理系统栏与输入法 insets，在大屏/横屏下保持可用；通知继续使用运行时权限、重启恢复 receiver 和非精确闹钟调度，不申请精确闹钟权限。
+- iOS 27：deployment target、CocoaPods、Xcode project 和 Flutter framework metadata 必须一致；通知 delegate 必须在 AppDelegate 中注册。
+- 当前 CI/Release 会在生成 Flutter 原生平台壳后，将 Android 的 `minSdk` 固定为 API 36、`compileSdk`/`targetSdk` 固定为 API 37，并将 iOS deployment target 固定为 27.0；iOS CI 会先确认 runner 提供 iOS 27 SDK。实际构建和真机安装仍以 GitHub Actions 与设备验收结果为准。

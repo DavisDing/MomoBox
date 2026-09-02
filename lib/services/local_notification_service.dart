@@ -65,11 +65,19 @@ class LocalNotificationService {
     return true;
   }
 
-  Future<void> sync(List<InventoryItem> items, {DateTime? now}) async {
+  Future<void> sync(
+    List<InventoryItem> items, {
+    DateTime? now,
+    Iterable<ReminderAcknowledgement> acknowledgements = const [],
+  }) async {
     if (!_initialized) return;
     await _plugin.cancelAll();
     final reference = now ?? DateTime.now();
-    final candidates = ReminderRules.candidates(items, today: reference);
+    final candidates = ReminderRules.unacknowledgedCandidates(
+      items,
+      acknowledgements,
+      today: reference,
+    );
     for (final candidate in candidates) {
       final scheduled = _nextNineAm(candidate.date, reference);
       await _plugin.zonedSchedule(

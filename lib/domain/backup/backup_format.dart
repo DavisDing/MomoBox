@@ -2,13 +2,15 @@ import 'dart:convert';
 
 class BackupFormat {
   static const formatName = 'momobox-backup';
-  static const supportedVersion = 1;
+  static const supportedVersion = 2;
+  static const legacyVersions = {1, 2};
   static const requiredSections = [
     'products',
     'batches',
     'stock_movements',
     'shopping_entries',
     'settings',
+    'reminder_acknowledgements',
   ];
 
   static const _requiredStringFields = <String, List<String>>{
@@ -30,6 +32,7 @@ class BackupFormat {
       'updated_at',
     ],
     'settings': ['key', 'value', 'updated_at'],
+    'reminder_acknowledgements': ['reminder_key', 'fingerprint', 'acknowledged_at'],
   };
 
   static const _nullableStringFields = <String, List<String>>{
@@ -38,6 +41,7 @@ class BackupFormat {
     'stock_movements': ['batch_id', 'note'],
     'shopping_entries': ['product_id', 'category'],
     'settings': [],
+    'reminder_acknowledgements': [],
   };
 
   static const _requiredIntFields = <String, List<String>>{
@@ -46,6 +50,7 @@ class BackupFormat {
     'stock_movements': ['quantity'],
     'shopping_entries': ['target_quantity'],
     'settings': [],
+    'reminder_acknowledgements': [],
   };
 
   static const _requiredBoolFields = <String, List<String>>{
@@ -54,6 +59,7 @@ class BackupFormat {
     'stock_movements': [],
     'shopping_entries': ['is_completed'],
     'settings': [],
+    'reminder_acknowledgements': [],
   };
 
   static const _dateFields = <String, List<String>>{
@@ -62,6 +68,7 @@ class BackupFormat {
     'stock_movements': ['created_at'],
     'shopping_entries': ['created_at', 'updated_at'],
     'settings': ['updated_at'],
+    'reminder_acknowledgements': ['acknowledged_at'],
   };
 
   static Map<String, dynamic> parse(String content) {
@@ -77,15 +84,22 @@ class BackupFormat {
     if (decoded['format'] != formatName) {
       throw const FormatException('不是有效的 MomoBox JSON 备份文件。');
     }
-    if (decoded['version'] is! int || decoded['version'] != supportedVersion) {
+    final version = decoded['version'];
+    if (version is! int || !legacyVersions.contains(version)) {
       throw const FormatException('当前版本不支持该备份格式。');
     }
+    final document = Map<String, dynamic>.from(decoded);
     for (final section in requiredSections) {
-      if (decoded[section] is! List<dynamic>) {
+      final isLegacyOptional = version == 1 && section == 'reminder_acknowledgements';
+      if (isLegacyOptional && document[section] == null) {
+        document[section] = <dynamic>[];
+        continue;
+      }
+      if (document[section] is! List<dynamic>) {
         throw FormatException('备份文件缺少或损坏 "$section" 数据段。');
       }
     }
-    return Map<String, dynamic>.from(decoded);
+    return document;
   }
 
   static List<Map<String, dynamic>> records(
@@ -181,6 +195,7 @@ class BackupFormat {
           _recordError(section, index, '“target_quantity”必须大于 0。');
         }
       case 'settings':
+      case 'reminder_acknowledgements':
         return;
     }
   }

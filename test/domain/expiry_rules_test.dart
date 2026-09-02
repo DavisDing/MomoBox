@@ -24,6 +24,41 @@ void main() {
       expect(ExpiryRules.addCalendarMonths(DateTime(2025, 1, 31), 1), DateTime(2025, 2, 28));
     });
 
+    test('按月反推生产日期正确处理月末和跨年', () {
+      expect(
+        ExpiryRules.calculateProduction(
+          expiryDate: DateTime(2026, 3, 31),
+          amount: 1,
+          unit: ShelfLifeUnit.months,
+        ),
+        DateTime(2026, 2, 28),
+      );
+      expect(
+        ExpiryRules.calculateProduction(
+          expiryDate: DateTime(2024, 3, 31),
+          amount: 1,
+          unit: ShelfLifeUnit.months,
+        ),
+        DateTime(2024, 2, 29),
+      );
+      expect(
+        ExpiryRules.calculateProduction(
+          expiryDate: DateTime(2026, 3, 31),
+          amount: 2,
+          unit: ShelfLifeUnit.months,
+        ),
+        DateTime(2026, 1, 31),
+      );
+      expect(
+        ExpiryRules.calculateProduction(
+          expiryDate: DateTime(2026, 1, 31),
+          amount: 1,
+          unit: ShelfLifeUnit.months,
+        ),
+        DateTime(2025, 12, 31),
+      );
+    });
+
     test('支持按天或按月计算到期日和生产日', () {
       expect(
         ExpiryRules.calculateExpiry(startDate: DateTime(2026, 1, 31), amount: 1, unit: ShelfLifeUnit.months),

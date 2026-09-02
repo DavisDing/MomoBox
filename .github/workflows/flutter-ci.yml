@@ -18,9 +18,10 @@ jobs:
         run: scripts/ci/test-prepare-flutter-platforms.sh
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.5'
           channel: stable
           cache: true
+      - name: Install Android 17 SDK platform
+        run: $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "platforms;android-37"
       - name: Generate Android and iOS project shells
         run: scripts/ci/prepare-flutter-platforms.sh
       - name: Resolve dependencies
@@ -41,9 +42,22 @@ jobs:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.5'
           channel: stable
           cache: true
+      - name: Verify iOS 27 SDK is available
+        run: |
+          sdk_version=$(xcrun --sdk iphoneos --show-sdk-version)
+          python3 - "$sdk_version" <<'PY'
+          import sys
+
+          actual = tuple(int(part) for part in sys.argv[1].split('.') if part.isdigit())
+          required = (27, 0)
+          if actual < required:
+              raise SystemExit(
+                  f'iOS 27 SDK is required for this build; runner only provides {sys.argv[1]}.'
+              )
+          print(f'Using iOS SDK {sys.argv[1]}.')
+          PY
       - name: Generate Android and iOS project shells
         run: scripts/ci/prepare-flutter-platforms.sh
       - name: Resolve dependencies
