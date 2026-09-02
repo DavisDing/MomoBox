@@ -16,6 +16,8 @@ class IntakeDraft {
     this.expiryDate,
     this.shelfLifeAmount,
     this.shelfLifeUnit = ShelfLifeUnit.days,
+    this.dateSource = 'manual',
+    this.datePrecision = 'day',
   });
 
   final String name;
@@ -32,6 +34,29 @@ class IntakeDraft {
   final DateTime? expiryDate;
   final int? shelfLifeAmount;
   final ShelfLifeUnit shelfLifeUnit;
+
+  /// 日期信息的真实来源，当前 MVP 支持 manual / calculated。
+  /// 预留 ai 供后续 OCR/AI 接入时使用。
+  final String dateSource;
+  final String datePrecision;
+}
+
+class ProductMatchCandidate {
+  const ProductMatchCandidate({
+    required this.id,
+    required this.name,
+    required this.category,
+    required this.brand,
+    required this.specification,
+    required this.barcode,
+  });
+
+  final String id;
+  final String name;
+  final String category;
+  final String? brand;
+  final String? specification;
+  final String? barcode;
 }
 
 class InventoryBatch {

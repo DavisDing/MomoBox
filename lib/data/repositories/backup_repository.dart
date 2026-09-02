@@ -3,12 +3,45 @@ import 'dart:convert';
 import 'package:drift/drift.dart';
 
 import '../../core/database/app_database.dart';
+import '../../domain/backup/backup_format.dart';
+
+class ImportFailure {
+  const ImportFailure({
+    required this.section,
+    required this.index,
+    required this.message,
+  });
+
+  final String section;
+  final int index;
+  final String message;
+
+  @override
+  String toString() => '$section 第 $index 条：$message';
+}
+
+class BackupImportException implements Exception {
+  const BackupImportException(this.failures);
+
+  final List<ImportFailure> failures;
+
+  @override
+  String toString() =>
+      '备份导入失败：\n${failures.map((failure) => '• $failure').join('\n')}';
+}
 
 class ImportReport {
-  const ImportReport({required this.imported, required this.skipped});
+  const ImportReport({
+    required this.imported,
+    required this.skipped,
+    this.failures = const [],
+  });
 
   final int imported;
   final int skipped;
+  final List<ImportFailure> failures;
+
+  bool get hasFailures => failures.isNotEmpty;
 }
 
 class BackupRepository {
@@ -36,25 +69,29 @@ class BackupRepository {
   }
 
   Future<ImportReport> importJson(String content) async {
-    final decoded = jsonDecode(content);
-    if (decoded is! Map<String, dynamic> || decoded['format'] != 'momobox-backup') {
-      throw const FormatException('不是有效的 MomoBox JSON 备份文件。');
-    }
-    if (decoded['version'] != 1) {
-      throw const FormatException('当前版本不支持该备份格式。');
+    final document = BackupFormat.parse(content);
+    final products = _records(document, 'products');
+    final batches = _records(document, 'batches');
+    final movements = _records(document, 'stock_movements');
+    final shopping = _records(document, 'shopping_entries');
+    final settings = _records(document, 'settings');
+    final failures = await _validateReferences(
+      products: products,
+      batches: batches,
+      movements: movements,
+      shopping: shopping,
+      settings: settings,
+    );
+    if (failures.isNotEmpty) {
+      throw BackupImportException(List.unmodifiable(failures));
     }
 
-    final products = _asList(decoded['products']);
-    final batches = _asList(decoded['batches']);
-    final movements = _asList(decoded['stock_movements']);
-    final shopping = _asList(decoded['shopping_entries']);
-    final settings = _asList(decoded['settings']);
     var imported = 0;
     var skipped = 0;
 
     await _database.transaction(() async {
       for (final raw in products) {
-        final row = _asMap(raw);
+        final row = raw;
         if (await _exists(_database.products, row['id'] as String)) {
           skipped++;
           continue;
@@ -63,7 +100,7 @@ class BackupRepository {
         imported++;
       }
       for (final raw in batches) {
-        final row = _asMap(raw);
+        final row = raw;
         if (await _exists(_database.productBatches, row['id'] as String)) {
           skipped++;
           continue;
@@ -72,7 +109,7 @@ class BackupRepository {
         imported++;
       }
       for (final raw in movements) {
-        final row = _asMap(raw);
+        final row = raw;
         if (await _exists(_database.stockMovements, row['id'] as String)) {
           skipped++;
           continue;
@@ -81,7 +118,7 @@ class BackupRepository {
         imported++;
       }
       for (final raw in shopping) {
-        final row = _asMap(raw);
+        final row = raw;
         if (await _exists(_database.shoppingEntries, row['id'] as String)) {
           skipped++;
           continue;
@@ -90,7 +127,7 @@ class BackupRepository {
         imported++;
       }
       for (final raw in settings) {
-        final row = _asMap(raw);
+        final row = raw;
         if (await _exists(_database.appSettings, row['key'] as String, column: 'key')) {
           skipped++;
           continue;
@@ -100,6 +137,119 @@ class BackupRepository {
       }
     });
     return ImportReport(imported: imported, skipped: skipped);
+  }
+
+  List<Map<String, dynamic>> _records(
+    Map<String, dynamic> document,
+    String section,
+  ) {
+    try {
+      return BackupFormat.records(document, section);
+    } on FormatException catch (error) {
+      throw BackupImportException([
+        ImportFailure(section: section, index: 0, message: error.message),
+      ]);
+    }
+  }
+
+  Future<List<ImportFailure>> _validateReferences({
+    required List<Map<String, dynamic>> products,
+    required List<Map<String, dynamic>> batches,
+    required List<Map<String, dynamic>> movements,
+    required List<Map<String, dynamic>> shopping,
+    required List<Map<String, dynamic>> settings,
+  }) async {
+    final existingProducts =
+        (await _database.select(_database.products).get()).map((row) => row.id).toSet();
+    final existingBatches = await _database.select(_database.productBatches).get();
+    final existingBatchProductById = {
+      for (final row in existingBatches) row.id: row.productId,
+    };
+    final failures = <ImportFailure>[];
+
+    void checkUnique(String section, List<Map<String, dynamic>> rows, String field) {
+      final seen = <String>{};
+      for (var i = 0; i < rows.length; i++) {
+        final value = rows[i][field] as String;
+        if (!seen.add(value)) {
+          failures.add(ImportFailure(
+            section: section,
+            index: i + 1,
+            message: '备份内部存在重复的 $field：$value。',
+          ));
+        }
+      }
+    }
+
+    checkUnique('products', products, 'id');
+    checkUnique('batches', batches, 'id');
+    checkUnique('stock_movements', movements, 'id');
+    checkUnique('shopping_entries', shopping, 'id');
+    checkUnique('settings', settings, 'key');
+
+    final incomingProducts = products.map((row) => row['id'] as String).toSet();
+    final allProductIds = {...existingProducts, ...incomingProducts};
+    final incomingBatchById = {
+      for (final row in batches) row['id'] as String: row,
+    };
+    final allBatchIds = {...existingBatchProductById.keys, ...incomingBatchById.keys};
+
+    for (var i = 0; i < batches.length; i++) {
+      final row = batches[i];
+      final productId = row['product_id'] as String;
+      if (!allProductIds.contains(productId)) {
+        failures.add(ImportFailure(
+          section: 'batches',
+          index: i + 1,
+          message: '引用的商品不存在：$productId。',
+        ));
+      }
+    }
+
+    for (var i = 0; i < movements.length; i++) {
+      final row = movements[i];
+      final productId = row['product_id'] as String;
+      if (!allProductIds.contains(productId)) {
+        failures.add(ImportFailure(
+          section: 'stock_movements',
+          index: i + 1,
+          message: '引用的商品不存在：$productId。',
+        ));
+      }
+      final batchId = row['batch_id'] as String?;
+      if (batchId != null) {
+        if (!allBatchIds.contains(batchId)) {
+          failures.add(ImportFailure(
+            section: 'stock_movements',
+            index: i + 1,
+            message: '引用的批次不存在：$batchId。',
+          ));
+        } else {
+          final batchProductId =
+              incomingBatchById[batchId]?['product_id'] as String? ??
+              existingBatchProductById[batchId];
+          if (batchProductId != null && batchProductId != productId) {
+            failures.add(ImportFailure(
+              section: 'stock_movements',
+              index: i + 1,
+              message: '流水引用的批次不属于商品：$productId。',
+            ));
+          }
+        }
+      }
+    }
+
+    for (var i = 0; i < shopping.length; i++) {
+      final productId = shopping[i]['product_id'] as String?;
+      if (productId != null && !allProductIds.contains(productId)) {
+        failures.add(ImportFailure(
+          section: 'shopping_entries',
+          index: i + 1,
+          message: '引用的商品不存在：$productId。',
+        ));
+      }
+    }
+    return failures;
   }
 
   Future<bool> _exists<T extends Table>(
@@ -234,14 +384,6 @@ class BackupRepository {
         value: row['value'] as String,
         updatedAt: DateTime.parse(row['updated_at'] as String),
       );
-
-  List<dynamic> _asList(Object? value) => value is List ? value : const [];
-
-  Map<String, dynamic> _asMap(Object? value) {
-    if (value is Map<String, dynamic>) return value;
-    if (value is Map) return value.cast<String, dynamic>();
-    throw const FormatException('备份记录格式错误。');
-  }
 
   DateTime? _date(Object? value) => value is String ? DateTime.parse(value) : null;
 }

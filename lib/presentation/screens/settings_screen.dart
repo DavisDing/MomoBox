@@ -29,7 +29,7 @@ class SettingsScreen extends ConsumerWidget {
               child: RadioListTile<MomoSkin>(
                 value: palette.skin,
                 groupValue: active.skin,
-                onChanged: (_) => ref.read(settingsRepositoryProvider).setValue('theme', palette.storedValue),
+                onChanged: (_) => ref.read(settingsServiceProvider).setValue('theme', palette.storedValue),
                 title: Text(palette.label),
                 subtitle: Text('${palette.mascot} ${palette.inventoryLabel} / ${palette.alertLabel} / ${palette.shoppingLabel}'),
                 secondary: CircleAvatar(backgroundColor: palette.primary, child: Text(palette.mascot)),
@@ -75,7 +75,7 @@ class SettingsScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 24),
           Text(
-            '注：主题名称和资源的正式发布授权仍需产品确认；当前未接入 AI、OCR、扫码或 NAS，不会伪装成已连接状态。',
+            '注：当前主题仅供本人本地使用和私有设备验证；若未来公开发布、上架或分发，需重新完成资源授权/合规审查。当前未接入 AI、OCR、扫码或 NAS，不会伪装成已连接状态。',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
@@ -85,10 +85,15 @@ class SettingsScreen extends ConsumerWidget {
 
   Future<void> _requestNotificationPermission(BuildContext context, WidgetRef ref) async {
     try {
-      await ref.read(localNotificationServiceProvider).requestPermission();
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已重新请求通知权限。')));
-      }
+      final granted = await ref.read(localNotificationServiceProvider).requestPermission();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            granted ? '通知权限请求已完成。' : '通知服务未初始化或权限未开启，请检查系统设置。',
+          ),
+        ),
+      );
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('请求通知权限失败：$error')));
@@ -98,7 +103,7 @@ class SettingsScreen extends ConsumerWidget {
 
   Future<void> _exportBackup(BuildContext context, WidgetRef ref) async {
     try {
-      final contents = await ref.read(backupRepositoryProvider).exportJson();
+      final contents = await ref.read(backupServiceProvider).exportJson();
       final directory = await getTemporaryDirectory();
       final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
       final file = File('${directory.path}/momobox-backup-$timestamp.json');
@@ -124,7 +129,7 @@ class SettingsScreen extends ConsumerWidget {
       final content = file.bytes != null
           ? String.fromCharCodes(file.bytes!)
           : await File(file.path!).readAsString();
-      final report = await ref.read(backupRepositoryProvider).importJson(content);
+      final report = await ref.read(backupServiceProvider).importJson(content);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('导入完成：新增 ${report.imported} 条，跳过 ${report.skipped} 条。')),

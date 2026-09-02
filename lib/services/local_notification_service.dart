@@ -42,17 +42,27 @@ class LocalNotificationService {
     await requestPermission();
   }
 
-  Future<void> requestPermission() async {
-    if (!_initialized) return;
+  /// 请求通知权限并返回结果。
+  ///
+  /// 初始化失败时返回 false，调用方不能将这次操作展示为成功。
+  Future<bool> requestPermission() async {
+    if (!_initialized) return false;
     if (Platform.isAndroid) {
-      await _plugin
-          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-          ?.requestNotificationsPermission();
-    } else if (Platform.isIOS) {
-      await _plugin
-          .resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>()
-          ?.requestPermissions(alert: true, badge: true, sound: true);
+      return await _plugin
+              .resolvePlatformSpecificImplementation<
+                  AndroidFlutterLocalNotificationsPlugin>()
+              ?.requestNotificationsPermission() ??
+          false;
     }
+    if (Platform.isIOS) {
+      return await _plugin
+              .resolvePlatformSpecificImplementation<
+                  IOSFlutterLocalNotificationsPlugin>()
+              ?.requestPermissions(alert: true, badge: true, sound: true) ??
+          false;
+    }
+    // 其他平台不需要调用移动端权限 API；初始化成功即视为可用。
+    return true;
   }
 
   Future<void> sync(List<InventoryItem> items, {DateTime? now}) async {

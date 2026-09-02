@@ -81,23 +81,32 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     setState(() => _saving = true);
     try {
-      await ref.read(inventoryServiceProvider).intake(
-            IntakeDraft(
-              name: _name.text,
-              category: _category,
-              quantity: int.parse(_quantity.text),
-              brand: _brand.text,
-              specification: _specification.text,
-              barcode: _barcode.text,
-              location: _location.text,
-              batchNo: _batchNo.text,
-              lowStockThreshold: int.parse(_threshold.text),
-              productionDate: _productionDate,
-              expiryDate: _expiryDate,
-              shelfLifeAmount: int.tryParse(_shelfLife.text),
-              shelfLifeUnit: _shelfLifeUnit,
-            ),
-          );
+      final draft = IntakeDraft(
+        name: _name.text,
+        category: _category,
+        quantity: int.parse(_quantity.text),
+        brand: _brand.text,
+        specification: _specification.text,
+        barcode: _barcode.text,
+        location: _location.text,
+        batchNo: _batchNo.text,
+        lowStockThreshold: int.parse(_threshold.text),
+        productionDate: _productionDate,
+        expiryDate: _expiryDate,
+        shelfLifeAmount: int.tryParse(_shelfLife.text),
+        shelfLifeUnit: _shelfLifeUnit,
+      );
+      final service = ref.read(inventoryServiceProvider);
+      final matches = await service.findMatchingProducts(draft);
+      String? mergeProductId;
+      if (matches.isNotEmpty) {
+        final decision = await _showMatchConfirmation(matches);
+        if (!mounted || decision.choice == _MatchChoice.cancel) return;
+        if (decision.choice == _MatchChoice.merge) {
+          mergeProductId = decision.candidate!.id;
+        }
+      }
+      await service.intake(draft, mergeProductId: mergeProductId);
       if (!mounted) return;
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已入库。')));
@@ -107,6 +116,86 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<_MatchDecision> _showMatchConfirmation(
+    List<ProductMatchCandidate> matches,
+  ) async {
+    var selectedIndex = 0;
+    final decision = await showDialog<_MatchDecision>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final selected = matches[selectedIndex];
+          return AlertDialog(
+            title: const Text('发现相似商品'),
+            content: SizedBox(
+              width: 420,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('请选择如何处理本次入库：'),
+                    const SizedBox(height: 10),
+                    for (var index = 0; index < matches.length; index++)
+                      RadioListTile<int>(
+                        value: index,
+                        groupValue: selectedIndex,
+                        onChanged: (value) {
+                          if (value != null) {
+                            setDialogState(() => selectedIndex = value);
+                          }
+                        },
+                        title: Text(matches[index].name),
+                        subtitle: Text(_candidateDetails(matches[index])),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '选中的已有商品：${selected.name}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(
+                  const _MatchDecision(_MatchChoice.cancel),
+                ),
+                child: const Text('取消'),
+              ),
+              OutlinedButton(
+                onPressed: () => Navigator.of(dialogContext).pop(
+                  const _MatchDecision(_MatchChoice.create),
+                ),
+                child: const Text('新建独立商品'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(
+                  _MatchDecision(_MatchChoice.merge, candidate: selected),
+                ),
+                child: const Text('合并到已有商品'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    return decision ?? const _MatchDecision(_MatchChoice.cancel);
+  }
+
+  String _candidateDetails(ProductMatchCandidate candidate) {
+    final details = <String>[
+      '分类：${candidate.category}',
+      if (candidate.brand != null) '品牌：${candidate.brand}',
+      if (candidate.specification != null) '规格：${candidate.specification}',
+      if (candidate.barcode != null) '条码：${candidate.barcode}',
+    ];
+    return details.join(' · ');
   }
 
   @override
@@ -253,6 +342,15 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
     final parsed = int.tryParse(value ?? '');
     return parsed == null || parsed < 1 ? '请输入大于 0 的整数' : null;
   }
+}
+
+enum _MatchChoice { merge, create, cancel }
+
+class _MatchDecision {
+  const _MatchDecision(this.choice, {this.candidate});
+
+  final _MatchChoice choice;
+  final ProductMatchCandidate? candidate;
 }
 
 class _DateField extends StatelessWidget {

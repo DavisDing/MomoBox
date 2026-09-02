@@ -7,10 +7,19 @@ class InventoryService {
 
   final InventoryRepository _repository;
 
-  Future<String> intake(IntakeDraft draft) {
+  Future<List<ProductMatchCandidate>> findMatchingProducts(IntakeDraft draft) {
     _validateDraft(draft);
+    return _repository.findMatchingProducts(draft);
+  }
+
+  Future<String> intake(IntakeDraft draft, {String? mergeProductId}) {
+    _validateDraft(draft);
+    final isCalculatedExpiry =
+        draft.expiryDate == null &&
+        draft.productionDate != null &&
+        draft.shelfLifeAmount != null;
     final expiryDate = draft.expiryDate ??
-        (draft.productionDate != null && draft.shelfLifeAmount != null
+        (isCalculatedExpiry
             ? ExpiryRules.calculateExpiry(
                 startDate: draft.productionDate!,
                 amount: draft.shelfLifeAmount!,
@@ -33,13 +42,26 @@ class InventoryService {
         expiryDate: expiryDate,
         shelfLifeAmount: draft.shelfLifeAmount,
         shelfLifeUnit: draft.shelfLifeUnit,
+        dateSource: isCalculatedExpiry ? 'calculated' : draft.dateSource,
+        datePrecision: draft.datePrecision,
       ),
+      existingProductId: mergeProductId,
     );
   }
+
+  Stream<List<InventoryItem>> watchInventory() => _repository.watchInventory();
+
+  Future<List<StockMovement>> loadMovements(String productId) =>
+      _repository.loadMovements(productId);
 
   Future<void> consume(String productId, int quantity) {
     if (quantity < 1) throw ArgumentError('消耗数量必须为大于 0 的整数。');
     return _repository.consumeByFefo(productId, quantity);
+  }
+
+  Future<void> consumeBatch(String productId, String batchId, int quantity) {
+    if (quantity < 1) throw ArgumentError('消耗数量必须为大于 0 的整数。');
+    return _repository.consumeBatch(productId, batchId, quantity);
   }
 
   Future<void> replenishBatch(String batchId, int quantity) {

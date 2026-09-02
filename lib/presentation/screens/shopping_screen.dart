@@ -24,7 +24,20 @@ class ShoppingScreen extends ConsumerWidget {
       ),
       body: shopping.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(child: Text('采购清单加载失败：$error')),
+        error: (error, _) => Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('采购清单加载失败：$error', textAlign: TextAlign.center),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => ref.invalidate(shoppingProvider),
+                icon: const Icon(Icons.refresh),
+                label: const Text('重试'),
+              ),
+            ],
+          ),
+        ),
         data: (entries) {
           if (entries.isEmpty) return const Center(child: Text('暂无待采买物品。'));
           final pending = entries.where((entry) => !entry.isCompleted).toList();
@@ -65,7 +78,7 @@ class ShoppingScreen extends ConsumerWidget {
             onPressed: () async {
               final count = int.tryParse(quantity.text);
               try {
-                await ref.read(shoppingRepositoryProvider).addOrMerge(
+                await ref.read(shoppingServiceProvider).addOrMerge(
                       itemName: name.text,
                       targetQuantity: count ?? 0,
                       reason: reason.text,
@@ -110,7 +123,7 @@ class _EntrySection extends ConsumerWidget {
                   value: entry.isCompleted,
                   onChanged: (value) async {
                     final completed = value ?? false;
-                    await ref.read(shoppingRepositoryProvider).setCompleted(entry.id, completed);
+                    await ref.read(shoppingServiceProvider).setCompleted(entry.id, completed);
                     if (!completed || !context.mounted) return;
                     await showModalBottomSheet<void>(
                       context: context,
@@ -127,7 +140,7 @@ class _EntrySection extends ConsumerWidget {
                 subtitle: Text('${entry.targetQuantity} 件 · ${entry.reason}'),
                 trailing: IconButton(
                   tooltip: '删除',
-                  onPressed: () => ref.read(shoppingRepositoryProvider).delete(entry.id),
+                  onPressed: () => ref.read(shoppingServiceProvider).delete(entry.id),
                   icon: const Icon(Icons.delete_outline),
                 ),
               ),

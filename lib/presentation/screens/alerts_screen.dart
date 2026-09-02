@@ -16,7 +16,20 @@ class AlertsScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('效期与库存提醒')),
       body: inventory.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(child: Text('提醒数据加载失败：$error')),
+        error: (error, _) => Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('提醒数据加载失败：$error', textAlign: TextAlign.center),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => ref.invalidate(inventoryProvider),
+                icon: const Icon(Icons.refresh),
+                label: const Text('重试'),
+              ),
+            ],
+          ),
+        ),
         data: (_) {
           if (summary.expired.isEmpty && summary.expiring.isEmpty && summary.lowStock.isEmpty) {
             return const Center(child: Text('当前无待处理提醒。'));
