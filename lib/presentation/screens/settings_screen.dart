@@ -9,6 +9,8 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../app/momo_theme.dart';
 import '../../services/local_notification_service.dart';
+import '../../application/ai_draft_service.dart';
+import '../../application/barcode_lookup_service.dart';
 import '../controllers/providers.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -56,6 +58,25 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 14),
+          Text('识别与 AI（可选）', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.qr_code_2_outlined),
+              title: const Text('外部条码 API'),
+              subtitle: const Text('默认关闭；填写地址后，扫描结果会缓存 30 天。地址可使用 {barcode} 占位符。'),
+              onTap: () => _configureBarcodeApi(context, ref),
+            ),
+          ),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.auto_awesome_outlined),
+              title: const Text('AI 解析配置'),
+              subtitle: const Text('兼容 OpenAI Chat Completions 的自有服务；API Key 使用系统安全存储。'),
+              onTap: () => _configureAi(context, ref),
+            ),
+          ),
+          const SizedBox(height: 14),
           Text('连接状态', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           const Card(
@@ -73,14 +94,92 @@ class SettingsScreen extends ConsumerWidget {
               onTap: () => _requestNotificationPermission(context, ref),
             ),
           ),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.cleaning_services_outlined),
+              title: const Text('清理媒体缓存'),
+              subtitle: const Text('删除孤儿图片、丢失图片记录和超过 1 天未确认的入库草稿图片。'),
+              onTap: () => _cleanupMedia(context, ref),
+            ),
+          ),
           const SizedBox(height: 24),
           Text(
-            '注：当前主题仅供本人本地使用和私有设备验证；若未来公开发布、上架或分发，需重新完成资源授权/合规审查。当前未接入 AI、OCR、扫码或 NAS，不会伪装成已连接状态。',
+            '注：当前主题仅供本人本地使用和私有设备验证；若未来公开发布、上架或分发，需重新完成资源授权/合规审查。AI、OCR 和扫码均为可选增强能力；未配置时单机库存仍可离线使用，NAS 尚未接入。',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _configureBarcodeApi(BuildContext context, WidgetRef ref) async {
+    final endpoint = TextEditingController(text: await ref.read(settingsServiceProvider).getValue(BarcodeLookupService.endpointKey) ?? '');
+    var enabled = (await ref.read(settingsServiceProvider).getValue(BarcodeLookupService.enabledKey)) == 'true';
+    if (!context.mounted) { endpoint.dispose(); return; }
+    await showDialog<void>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('外部条码 API'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('启用外部查询'), value: enabled, onChanged: (value) => setState(() => enabled = value)),
+              TextField(controller: endpoint, decoration: const InputDecoration(labelText: '请求地址', hintText: 'https://example.com/barcode/{barcode}'), keyboardType: TextInputType.url),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+            FilledButton(onPressed: () async { await ref.read(settingsServiceProvider).setValue(BarcodeLookupService.enabledKey, '$enabled'); await ref.read(settingsServiceProvider).setValue(BarcodeLookupService.endpointKey, endpoint.text.trim()); if (context.mounted) Navigator.pop(context); }, child: const Text('保存')),
+          ],
+        ),
+      ),
+    );
+    endpoint.dispose();
+  }
+
+  Future<void> _configureAi(BuildContext context, WidgetRef ref) async {
+    final settings = ref.read(settingsServiceProvider);
+    final endpoint = TextEditingController(text: await settings.getValue(AiDraftService.endpointKey) ?? '');
+    final model = TextEditingController(text: await settings.getValue(AiDraftService.modelKey) ?? '');
+    final key = TextEditingController();
+    if (!context.mounted) { endpoint.dispose(); model.dispose(); key.dispose(); return; }
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('AI 解析配置'),
+        content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('AI 只生成可编辑草稿；你必须确认后才会应用到入库表单。默认不上传原图。'),
+          const SizedBox(height: 10),
+          TextField(controller: endpoint, decoration: const InputDecoration(labelText: '服务地址', hintText: 'https://example.com/v1'), keyboardType: TextInputType.url),
+          const SizedBox(height: 8),
+          TextField(controller: model, decoration: const InputDecoration(labelText: '模型名称')),
+          const SizedBox(height: 8),
+          TextField(controller: key, decoration: const InputDecoration(labelText: 'API Key（留空表示不修改）'), obscureText: true),
+        ])),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+          FilledButton(onPressed: () async { await settings.setValue(AiDraftService.endpointKey, endpoint.text.trim()); await settings.setValue(AiDraftService.modelKey, model.text.trim()); if (key.text.trim().isNotEmpty) await ref.read(secureSettingsServiceProvider).writeAiApiKey(key.text); if (context.mounted) Navigator.pop(context); }, child: const Text('保存')),
+        ],
+      ),
+    );
+    endpoint.dispose(); model.dispose(); key.dispose();
+  }
+
+  Future<void> _cleanupMedia(BuildContext context, WidgetRef ref) async {
+    try {
+      final report = await ref.read(mediaServiceProvider).reconcile();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('媒体缓存清理完成：删除文件 ${report.deletedFiles} 个，清理记录 ${report.deletedMetadata} 条。'),
+        ),
+      );
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('清理媒体缓存失败：$error')));
+      }
+    }
   }
 
   Future<void> _requestNotificationPermission(BuildContext context, WidgetRef ref) async {

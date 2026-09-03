@@ -56,10 +56,11 @@ class BackupRepository {
     final shopping = await _database.select(_database.shoppingEntries).get();
     final settings = await _database.select(_database.appSettings).get();
     final acknowledgements = await _database.select(_database.reminderAcknowledgments).get();
+    final barcodeCache = await _database.select(_database.barcodeLookupCache).get();
 
     return const JsonEncoder.withIndent('  ').convert({
       'format': 'momobox-backup',
-      'version': 2,
+      'version': 3,
       'exported_at': DateTime.now().toIso8601String(),
       'products': products.map(_productToJson).toList(),
       'batches': batches.map(_batchToJson).toList(),
@@ -67,6 +68,7 @@ class BackupRepository {
       'shopping_entries': shopping.map(_shoppingToJson).toList(),
       'settings': settings.map(_settingToJson).toList(),
       'reminder_acknowledgements': acknowledgements.map(_acknowledgementToJson).toList(),
+      'barcode_lookup_cache': barcodeCache.map(_barcodeCacheToJson).toList(),
     });
   }
 
@@ -78,6 +80,7 @@ class BackupRepository {
     final shopping = _records(document, 'shopping_entries');
     final settings = _records(document, 'settings');
     final acknowledgements = _records(document, 'reminder_acknowledgements');
+    final barcodeCache = _records(document, 'barcode_lookup_cache');
     final failures = await _validateReferences(
       products: products,
       batches: batches,
@@ -85,6 +88,7 @@ class BackupRepository {
       shopping: shopping,
       settings: settings,
       acknowledgements: acknowledgements,
+      barcodeCache: barcodeCache,
     );
     if (failures.isNotEmpty) {
       throw BackupImportException(List.unmodifiable(failures));
@@ -152,6 +156,15 @@ class BackupRepository {
         await _database.into(_database.reminderAcknowledgments).insert(_acknowledgementFromJson(row));
         imported++;
       }
+      for (final raw in barcodeCache) {
+        final row = raw;
+        if (await _exists(_database.barcodeLookupCache, row['barcode'] as String, column: 'barcode')) {
+          skipped++;
+          continue;
+        }
+        await _database.into(_database.barcodeLookupCache).insert(_barcodeCacheFromJson(row));
+        imported++;
+      }
     });
     return ImportReport(imported: imported, skipped: skipped);
   }
@@ -176,6 +189,7 @@ class BackupRepository {
     required List<Map<String, dynamic>> shopping,
     required List<Map<String, dynamic>> settings,
     required List<Map<String, dynamic>> acknowledgements,
+    required List<Map<String, dynamic>> barcodeCache,
   }) async {
     final existingProducts =
         (await _database.select(_database.products).get()).map((row) => row.id).toSet();
@@ -205,6 +219,7 @@ class BackupRepository {
     checkUnique('shopping_entries', shopping, 'id');
     checkUnique('settings', settings, 'key');
     checkUnique('reminder_acknowledgements', acknowledgements, 'reminder_key');
+    checkUnique('barcode_lookup_cache', barcodeCache, 'barcode');
 
     final incomingProducts = products.map((row) => row['id'] as String).toSet();
     final allProductIds = {...existingProducts, ...incomingProducts};
@@ -417,6 +432,22 @@ class BackupRepository {
         reminderKey: row['reminder_key'] as String,
         fingerprint: row['fingerprint'] as String,
         acknowledgedAt: DateTime.parse(row['acknowledged_at'] as String),
+      );
+
+  Map<String, Object?> _barcodeCacheToJson(BarcodeCacheRecord row) => {
+        'barcode': row.barcode,
+        'payload_json': row.payloadJson,
+        'source': row.source,
+        'fetched_at': row.fetchedAt.toIso8601String(),
+        'expires_at': row.expiresAt.toIso8601String(),
+      };
+
+  BarcodeLookupCacheCompanion _barcodeCacheFromJson(Map<String, dynamic> row) => BarcodeLookupCacheCompanion.insert(
+        barcode: row['barcode'] as String,
+        payloadJson: Value(row['payload_json'] as String?),
+        source: row['source'] as String,
+        fetchedAt: DateTime.parse(row['fetched_at'] as String),
+        expiresAt: DateTime.parse(row['expires_at'] as String),
       );
 
   DateTime? _date(Object? value) => value is String ? DateTime.parse(value) : null;

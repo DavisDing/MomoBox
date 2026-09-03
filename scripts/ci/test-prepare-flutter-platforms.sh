@@ -58,6 +58,10 @@ android {
 dependencies {
 }
 KTS
+cat > ios/Runner/Info.plist <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict></dict></plist>
+PLIST
 cat > ios/Runner/AppDelegate.swift <<'SWIFT'
 import UIKit
 import Flutter
@@ -94,7 +98,9 @@ cp "$script_dir/prepare-flutter-platforms.sh" "$temporary_root/project/prepare.s
 
   grep -q 'android.permission.POST_NOTIFICATIONS' android/app/src/main/AndroidManifest.xml
   grep -q 'android.permission.RECEIVE_BOOT_COMPLETED' android/app/src/main/AndroidManifest.xml
+  grep -q 'android.permission.CAMERA' android/app/src/main/AndroidManifest.xml
   test "$(grep -c 'POST_NOTIFICATIONS' android/app/src/main/AndroidManifest.xml)" -eq 1
+  test "$(grep -c 'android.permission.CAMERA' android/app/src/main/AndroidManifest.xml)" -eq 1
   test "$(grep -c 'ScheduledNotificationReceiver' android/app/src/main/AndroidManifest.xml)" -eq 1
   test "$(grep -c 'ScheduledNotificationBootReceiver' android/app/src/main/AndroidManifest.xml)" -eq 1
   grep -q 'compileSdk = 37' android/app/build.gradle
@@ -113,6 +119,10 @@ cp "$script_dir/prepare-flutter-platforms.sh" "$temporary_root/project/prepare.s
   grep -q "platform :ios, '27.0'" ios/Podfile
   grep -q 'IPHONEOS_DEPLOYMENT_TARGET = 27.0;' ios/Runner.xcodeproj/project.pbxproj
   grep -q '<string>27.0</string>' ios/Flutter/AppFrameworkInfo.plist
+  grep -q 'NSCameraUsageDescription' ios/Runner/Info.plist
+  grep -q 'NSPhotoLibraryUsageDescription' ios/Runner/Info.plist
+  test "$(grep -c 'NSCameraUsageDescription' ios/Runner/Info.plist)" -eq 1
+  test "$(grep -c 'NSPhotoLibraryUsageDescription' ios/Runner/Info.plist)" -eq 1
 )
 
 printf 'PASS: platform preparation regression tests\n'

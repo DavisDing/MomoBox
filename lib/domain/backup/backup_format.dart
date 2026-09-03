@@ -2,8 +2,8 @@ import 'dart:convert';
 
 class BackupFormat {
   static const formatName = 'momobox-backup';
-  static const supportedVersion = 2;
-  static const legacyVersions = {1, 2};
+  static const supportedVersion = 3;
+  static const legacyVersions = {1, 2, 3};
   static const requiredSections = [
     'products',
     'batches',
@@ -11,6 +11,7 @@ class BackupFormat {
     'shopping_entries',
     'settings',
     'reminder_acknowledgements',
+    'barcode_lookup_cache',
   ];
 
   static const _requiredStringFields = <String, List<String>>{
@@ -33,6 +34,7 @@ class BackupFormat {
     ],
     'settings': ['key', 'value', 'updated_at'],
     'reminder_acknowledgements': ['reminder_key', 'fingerprint', 'acknowledged_at'],
+    'barcode_lookup_cache': ['barcode', 'source', 'fetched_at', 'expires_at'],
   };
 
   static const _nullableStringFields = <String, List<String>>{
@@ -42,6 +44,7 @@ class BackupFormat {
     'shopping_entries': ['product_id', 'category'],
     'settings': [],
     'reminder_acknowledgements': [],
+    'barcode_lookup_cache': ['payload_json'],
   };
 
   static const _requiredIntFields = <String, List<String>>{
@@ -51,6 +54,7 @@ class BackupFormat {
     'shopping_entries': ['target_quantity'],
     'settings': [],
     'reminder_acknowledgements': [],
+    'barcode_lookup_cache': [],
   };
 
   static const _requiredBoolFields = <String, List<String>>{
@@ -60,6 +64,7 @@ class BackupFormat {
     'shopping_entries': ['is_completed'],
     'settings': [],
     'reminder_acknowledgements': [],
+    'barcode_lookup_cache': [],
   };
 
   static const _dateFields = <String, List<String>>{
@@ -69,6 +74,7 @@ class BackupFormat {
     'shopping_entries': ['created_at', 'updated_at'],
     'settings': ['updated_at'],
     'reminder_acknowledgements': ['acknowledged_at'],
+    'barcode_lookup_cache': ['fetched_at', 'expires_at'],
   };
 
   static Map<String, dynamic> parse(String content) {
@@ -90,7 +96,7 @@ class BackupFormat {
     }
     final document = Map<String, dynamic>.from(decoded);
     for (final section in requiredSections) {
-      final isLegacyOptional = version == 1 && section == 'reminder_acknowledgements';
+      final isLegacyOptional = version < 3 && (section == 'reminder_acknowledgements' || section == 'barcode_lookup_cache');
       if (isLegacyOptional && document[section] == null) {
         document[section] = <dynamic>[];
         continue;
@@ -196,6 +202,7 @@ class BackupFormat {
         }
       case 'settings':
       case 'reminder_acknowledgements':
+      case 'barcode_lookup_cache':
         return;
     }
   }

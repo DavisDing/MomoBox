@@ -44,6 +44,20 @@ class MomoBoxApp extends ConsumerStatefulWidget {
 
 class _MomoBoxAppState extends ConsumerState<MomoBoxApp> {
   @override
+  void initState() {
+    super.initState();
+    Future<void>.microtask(_reconcileMedia);
+  }
+
+  Future<void> _reconcileMedia() async {
+    try {
+      await ref.read(mediaServiceProvider).reconcile();
+    } catch (_) {
+      // 媒体清理失败不应阻塞本地库存核心启动；设置页仍可重试。
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     void syncNotifications() {
       final items = ref.read(inventoryProvider).valueOrNull;

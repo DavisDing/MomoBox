@@ -35,8 +35,7 @@ class IntakeDraft {
   final int? shelfLifeAmount;
   final ShelfLifeUnit shelfLifeUnit;
 
-  /// 日期信息的真实来源，当前 MVP 支持 manual / calculated。
-  /// 预留 ai 供后续 OCR/AI 接入时使用。
+  /// 日期信息的真实来源，支持 manual / calculated / ai。
   final String dateSource;
   final String datePrecision;
 }

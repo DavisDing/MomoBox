@@ -7,6 +7,13 @@ class SettingsRepository {
 
   final AppDatabase _database;
 
+  Future<String?> getValue(String key) async {
+    final entry = await (_database.select(_database.appSettings)
+          ..where((setting) => setting.key.equals(key)))
+        .getSingleOrNull();
+    return entry?.value;
+  }
+
   Stream<String?> watchValue(String key) {
     return (_database.select(_database.appSettings)
           ..where((setting) => setting.key.equals(key)))

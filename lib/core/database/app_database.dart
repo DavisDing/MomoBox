@@ -87,6 +87,39 @@ class ReminderAcknowledgments extends Table {
   Set<Column<Object>> get primaryKey => {reminderKey};
 }
 
+@DataClassName('BarcodeCacheRecord')
+class BarcodeLookupCache extends Table {
+  TextColumn get barcode => text()();
+  TextColumn get payloadJson => text().nullable()();
+  TextColumn get source => text()();
+  DateTimeColumn get fetchedAt => dateTime()();
+  DateTimeColumn get expiresAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {barcode};
+}
+
+@DataClassName('MediaAssetRecord')
+class MediaAssets extends Table {
+  TextColumn get id => text()();
+  TextColumn get entityType => text()();
+  TextColumn get entityId => text()();
+  TextColumn get mediaType => text()();
+  TextColumn get localPath => text()();
+  TextColumn get mimeType => text()();
+  IntColumn get sizeBytes => integer()();
+  IntColumn get width => integer().nullable()();
+  IntColumn get height => integer().nullable()();
+  TextColumn get sha256 => text()();
+  TextColumn get ocrText => text().nullable()();
+  DateTimeColumn get ocrUpdatedAt => dateTime().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
 @DataClassName('AppSettingRecord')
 class AppSettings extends Table {
   TextColumn get key => text()();
@@ -98,7 +131,16 @@ class AppSettings extends Table {
 }
 
 @DriftDatabase(
-  tables: [Products, ProductBatches, StockMovements, ShoppingEntries, AppSettings, ReminderAcknowledgments],
+  tables: [
+    Products,
+    ProductBatches,
+    StockMovements,
+    ShoppingEntries,
+    AppSettings,
+    ReminderAcknowledgments,
+    BarcodeLookupCache,
+    MediaAssets,
+  ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
@@ -106,7 +148,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(QueryExecutor executor) : super(executor);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -114,6 +156,10 @@ class AppDatabase extends _$AppDatabase {
         onUpgrade: (migrator, from, to) async {
           if (from < 2) {
             await migrator.createTable(reminderAcknowledgments);
+          }
+          if (from < 3) {
+            await migrator.createTable(barcodeLookupCache);
+            await migrator.createTable(mediaAssets);
           }
         },
         beforeOpen: (details) async {

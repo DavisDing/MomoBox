@@ -1,8 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../domain/inventory/expiry_rules.dart';
 import '../../domain/models/inventory_models.dart';
+import '../../domain/models/recognition_models.dart';
 import '../controllers/providers.dart';
 import '../widgets/status_badge.dart';
 
@@ -68,6 +72,8 @@ class _ProductDetailBody extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
       children: [
         _ProductOverview(item: item),
+        const SizedBox(height: 16),
+        _ProductMediaSection(item: item),
         const SizedBox(height: 16),
         FilledButton.icon(
           onPressed: fefoAvailableQuantity == 0
@@ -590,4 +596,163 @@ void _showMessage(BuildContext context, String message) {
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
     ..showSnackBar(SnackBar(content: Text(message)));
+}
+
+
+class _ProductMediaSection extends ConsumerStatefulWidget {
+  const _ProductMediaSection({required this.item});
+
+  final InventoryItem item;
+
+  @override
+  ConsumerState<_ProductMediaSection> createState() => _ProductMediaSectionState();
+}
+
+class _ProductMediaSectionState extends ConsumerState<_ProductMediaSection> {
+  final _picker = ImagePicker();
+  bool _ocrRunning = false;
+
+  Future<void> _addImage() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(leading: const Icon(Icons.camera_alt_outlined), title: const Text('拍照'), onTap: () => Navigator.pop(context, ImageSource.camera)),
+            ListTile(leading: const Icon(Icons.photo_library_outlined), title: const Text('从相册选择'), onTap: () => Navigator.pop(context, ImageSource.gallery)),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+    try {
+      final image = await _picker.pickImage(source: source, imageQuality: 100);
+      if (image == null) return;
+      await ref.read(mediaServiceProvider).attachImage(
+            source: image,
+            entityType: 'product',
+            entityId: widget.item.id,
+            type: MediaAssetType.productImage,
+          );
+      if (mounted) _showMessage('商品图片已保存到本机。');
+    } catch (error) {
+      if (mounted) _showMessage('添加图片失败：$error');
+    }
+  }
+
+  Future<void> _ocr(List<MediaAsset> assets) async {
+    final targets = assets.where((asset) => asset.type == MediaAssetType.instructionImage).toList();
+    if (targets.isEmpty) {
+      _showMessage('请先添加说明书图片。');
+      return;
+    }
+    setState(() => _ocrRunning = true);
+    try {
+      for (final asset in targets) {
+        await ref.read(mediaServiceProvider).runOcr(asset);
+      }
+      if (mounted) _showMessage('已完成本地 OCR，识别文本只保存在本机。');
+    } catch (error) {
+      if (mounted) _showMessage('OCR 失败：$error');
+    } finally {
+      if (mounted) setState(() => _ocrRunning = false);
+    }
+  }
+
+  Future<void> _delete(MediaAsset asset) async {
+    try {
+      await ref.read(mediaServiceProvider).delete(asset);
+      if (mounted) _showMessage('图片已删除。');
+    } catch (error) {
+      if (mounted) _showMessage('删除图片失败：$error');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final media = ref.watch(mediaAssetsProvider((entityType: 'product', entityId: widget.item.id)));
+    final assets = media.valueOrNull ?? const <MediaAsset>[];
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(child: Text('商品图片与说明书', style: Theme.of(context).textTheme.titleMedium)),
+                IconButton(onPressed: _addImage, tooltip: '添加商品图片', icon: const Icon(Icons.add_a_photo_outlined)),
+              ],
+            ),
+            const Text('图片压缩后保存在本机；说明书图片可执行本地 OCR。'),
+            const SizedBox(height: 8),
+            if (assets.isEmpty) const Text('暂无图片。可在此保存包装或说明书照片。'),
+            if (assets.isNotEmpty)
+              SizedBox(
+                height: 112,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: assets.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) {
+                    final asset = assets[index];
+                    return SizedBox(
+                      width: 138,
+                      child: Stack(
+                        children: [
+                          Positioned.fill(child: ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.file(File(asset.localPath), fit: BoxFit.cover, errorBuilder: (_, __, ___) => const ColoredBox(color: Color(0xFFE0E0E0), child: Icon(Icons.broken_image_outlined))))),
+                          Positioned(left: 4, bottom: 4, child: DecoratedBox(decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)), child: Padding(padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2), child: Text(asset.type.label, style: const TextStyle(color: Colors.white, fontSize: 10))))),
+                          Positioned(right: 0, top: 0, child: IconButton(iconSize: 16, style: IconButton.styleFrom(backgroundColor: Colors.black54, foregroundColor: Colors.white), onPressed: () => _delete(asset), icon: const Icon(Icons.close))),
+                          if (asset.hasOcrText) const Positioned(left: 5, top: 5, child: Icon(Icons.text_snippet, color: Colors.white, size: 18)),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(onPressed: _addInstructionImage, icon: const Icon(Icons.description_outlined), label: const Text('添加说明书图片')),
+                FilledButton.tonalIcon(onPressed: _ocrRunning ? null : () => _ocr(assets), icon: _ocrRunning ? const SizedBox.square(dimension: 14, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.document_scanner_outlined), label: Text(_ocrRunning ? '识别中…' : '本地 OCR')),
+              ],
+            ),
+            for (final asset in assets.where((asset) => asset.hasOcrText)) ...[
+              const SizedBox(height: 8),
+              ExpansionTile(title: Text('${asset.type.label} OCR 文本'), children: [Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 12), child: SelectableText(asset.ocrText!))]),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _addInstructionImage() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(leading: const Icon(Icons.camera_alt_outlined), title: const Text('拍照'), onTap: () => Navigator.pop(context, ImageSource.camera)),
+            ListTile(leading: const Icon(Icons.photo_library_outlined), title: const Text('从相册选择'), onTap: () => Navigator.pop(context, ImageSource.gallery)),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+    try {
+      final image = await _picker.pickImage(source: source, imageQuality: 100);
+      if (image == null) return;
+      await ref.read(mediaServiceProvider).attachImage(source: image, entityType: 'product', entityId: widget.item.id, type: MediaAssetType.instructionImage);
+      if (mounted) _showMessage('说明书图片已保存到本机。');
+    } catch (error) {
+      if (mounted) _showMessage('添加说明书图片失败：$error');
+    }
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(content: Text(message)));
+  }
 }

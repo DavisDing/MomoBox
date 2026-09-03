@@ -12,6 +12,7 @@ Map<String, Object?> validDocument() => {
       'shopping_entries': [],
       'settings': [],
       'reminder_acknowledgements': [],
+      'barcode_lookup_cache': [],
     };
 
 Map<String, Object?> validProduct() => {

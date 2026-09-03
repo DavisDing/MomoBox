@@ -30,6 +30,7 @@ if manifest.exists():
     permissions = (
         '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n'
         '    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />\n'
+        '    <uses-permission android:name="android.permission.CAMERA" />\n'
     )
     missing_permissions = ''.join(
         line for line in permissions.splitlines(keepends=True)
@@ -145,6 +146,21 @@ if framework_plist.exists():
     framework_plist.write_text(text)
 
 app_delegate = Path('ios/Runner/AppDelegate.swift')
+info_plist = Path('ios/Runner/Info.plist')
+if info_plist.exists():
+    text = info_plist.read_text()
+    camera_key = '<key>NSCameraUsageDescription</key>\n\t<string>用于扫描商品条码和拍摄商品/说明书图片。</string>'
+    photo_key = '<key>NSPhotoLibraryUsageDescription</key>\n\t<string>用于选择商品和说明书图片。</string>'
+    missing_usage_descriptions = ''.join(
+        f'\t{key}\n' for key, marker in (
+            (camera_key, 'NSCameraUsageDescription'),
+            (photo_key, 'NSPhotoLibraryUsageDescription'),
+        ) if marker not in text
+    )
+    if missing_usage_descriptions:
+        text = text.replace('</dict>', f'{missing_usage_descriptions}</dict>', 1)
+    info_plist.write_text(text)
+
 if app_delegate.exists():
     text = app_delegate.read_text()
     if 'import UserNotifications' not in text:
