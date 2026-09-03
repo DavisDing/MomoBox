@@ -64,9 +64,15 @@ void main() {
         ExpiryRules.calculateExpiry(startDate: DateTime(2026, 1, 31), amount: 1, unit: ShelfLifeUnit.months),
         DateTime(2026, 2, 28),
       );
+      // 2026 is not a leap year: 30 elapsed days before March 1 is January 30.
+      // This also keeps day-based production/expiry calculations reversible.
       expect(
         ExpiryRules.calculateProduction(expiryDate: DateTime(2026, 3, 1), amount: 30, unit: ShelfLifeUnit.days),
-        DateTime(2026, 1, 31),
+        DateTime(2026, 1, 30),
+      );
+      expect(
+        ExpiryRules.calculateExpiry(startDate: DateTime(2026, 1, 30), amount: 30, unit: ShelfLifeUnit.days),
+        DateTime(2026, 3, 1),
       );
     });
   });

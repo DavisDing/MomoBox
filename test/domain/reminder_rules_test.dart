@@ -132,7 +132,9 @@ void main() {
   });
 
   test('批次切换后效期 fingerprint 变化会重新显示提醒', () {
-    final target = item('效期物品', expiry: DateTime(2026, 10, 15));
+    // Use an already-visible expiring item. Future candidates are scheduled but
+    // deliberately excluded from the pending-reminders screen.
+    final target = item('效期物品', expiry: DateTime(2026, 9, 10));
     final candidate = ReminderRules.candidates([target], today: today)
         .firstWhere((entry) => entry.type == ReminderType.expiring);
     final visible = ReminderRules.visibleCandidates(
@@ -140,7 +142,7 @@ void main() {
       [
         ReminderAcknowledgement(
           reminderKey: candidate.key,
-          fingerprint: 'other-batch:2026-10-15T00:00:00.000',
+          fingerprint: 'other-batch:2026-09-10T00:00:00.000',
           acknowledgedAt: today,
         ),
       ],

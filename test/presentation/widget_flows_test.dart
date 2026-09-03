@@ -39,7 +39,7 @@ void main() {
     await _submitSheet(tester);
     expect(find.text('发现相似商品'), findsOneWidget);
     await tester.tap(find.text('取消'));
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
     expect(find.text('发现相似商品'), findsNothing);
     expect(_fieldController(tester, '物品名称 *').text, '待确认商品');
     expect(_fieldController(tester, '条码').text, '6900000000001');
@@ -47,7 +47,7 @@ void main() {
 
     await _submitSheet(tester);
     await tester.tap(find.text('合并到已有商品'));
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
     expect(await database.select(database.products).get(), hasLength(1));
     expect(await database.select(database.productBatches).get(), hasLength(2));
 
@@ -56,7 +56,7 @@ void main() {
     await _enterField(tester, '条码', '6900000000001');
     await _submitSheet(tester);
     await tester.tap(find.text('新建独立商品'));
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
     expect(await database.select(database.products).get(), hasLength(2));
     expect(await database.select(database.productBatches).get(), hasLength(3));
   });
@@ -73,14 +73,14 @@ void main() {
     await _pumpScreen(tester, database, const ShoppingScreen());
     expect(find.text('洗衣液'), findsOneWidget);
     await tester.tap(find.byType(Checkbox));
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
 
-    expect(find.text('手动入库'), findsOneWidget);
+    expect(find.text('入库'), findsOneWidget);
     expect(_fieldController(tester, '物品名称 *').text, '洗衣液');
     expect(_fieldController(tester, '入库数量 *').text, '3');
     expect((await database.select(database.shoppingEntries).get()).single.isCompleted, isTrue);
     await tester.pageBack();
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
   });
 
   testWidgets('提醒支持单条和分组已处理，确认状态持久化', (tester) async {
@@ -111,12 +111,12 @@ void main() {
     expect(find.text('低库存物品'), findsOneWidget);
 
     await tester.tap(find.byTooltip('标记已处理').first);
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
     expect(find.text('过期物品'), findsNothing);
     expect((await database.select(database.reminderAcknowledgments).get()), hasLength(1));
 
     await tester.tap(find.text('全部标记已处理').first);
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
     expect(find.text('临期物品'), findsNothing);
     expect((await database.select(database.reminderAcknowledgments).get()), hasLength(2));
   });
@@ -133,17 +133,17 @@ void main() {
 
     await _pumpApp(tester, database);
     await tester.tap(find.text('提醒'));
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
     expect(find.text('周期性低库存'), findsOneWidget);
 
     await tester.tap(find.byTooltip('标记已处理'));
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
     expect(find.text('周期性低库存'), findsNothing);
 
     await inventory.replenishBatch(batchId, 2);
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
     await inventory.consumeBatch(productId, batchId, 2);
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
     expect(find.text('周期性低库存'), findsOneWidget);
   });
 
@@ -173,44 +173,44 @@ void main() {
     expect(find.text('远批次'), findsOneWidget);
 
     await _tapBatchMenu(tester, 0);
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
     await tester.tap(find.text('消耗指定数量'));
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
     await tester.enterText(find.byType(TextField), '2');
     await tester.tap(find.text('确认消耗'));
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
 
     var batches = await database.select(database.productBatches).get();
     final nearBatch = batches.singleWhere((batch) => batch.batchNo == '近批次');
     expect(nearBatch.remainingQuantity, 1);
 
     await _tapBatchMenu(tester, 1);
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
     await tester.tap(find.text('补充指定数量'));
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
     await tester.enterText(find.byType(TextField), '2');
     await tester.tap(find.text('确认补充'));
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
 
     batches = await database.select(database.productBatches).get();
     final farBatch = batches.singleWhere((batch) => batch.batchNo == '远批次');
     expect(farBatch.remainingQuantity, 6);
 
     await _tapBatchMenu(tester, 1);
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
     await tester.tap(find.text('报废批次'));
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
     expect(find.text('确认报废批次？'), findsOneWidget);
     await tester.tap(find.text('取消'));
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
     expect((await database.select(database.productBatches).get()).singleWhere((batch) => batch.batchNo == '远批次').isDiscarded, isFalse);
 
     await _tapBatchMenu(tester, 1);
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
     await tester.tap(find.text('报废批次'));
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
     await tester.tap(find.text('确认报废'));
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
     expect((await database.select(database.productBatches).get()).singleWhere((batch) => batch.batchNo == '远批次').isDiscarded, isTrue);
   });
 
@@ -223,22 +223,29 @@ void main() {
     expect(find.text('手动入库'), findsOneWidget);
 
     await tester.tap(find.text('提醒'));
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
     expect(find.text('效期与库存提醒'), findsOneWidget);
     await tester.tap(find.text('采买'));
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
     expect(find.text('待采买清单'), findsOneWidget);
     await tester.tap(find.text('库存'));
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
     expect(find.text('嬷嬷的小箱子'), findsOneWidget);
 
     await tester.tap(find.text('手动入库'));
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
     final nameField = _field('物品名称 *');
     await tester.showKeyboard(nameField);
     tester.view.viewInsets = const FakeViewPadding(bottom: 280);
     await tester.pump();
-    await tester.ensureVisible(find.text('确认入库'));
+    await tester.scrollUntilVisible(
+      find.text('确认入库'),
+      240,
+      scrollable: find.descendant(
+        of: find.byType(DraggableScrollableSheet),
+        matching: find.byType(Scrollable),
+      ),
+    );
     expect(find.text('确认入库'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
@@ -248,8 +255,16 @@ void main() {
     expect(find.text('确认入库'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pageBack();
-    await tester.pumpAndSettle();
+    await _pumpForUi(tester);
   });
+}
+
+// Several screens intentionally show indeterminate loading indicators while
+// repository streams connect. Avoid pumpAndSettle, which waits forever for
+// those animations; two bounded frames still allow routes and async UI work to render.
+Future<void> _pumpForUi(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 300));
 }
 
 Future<void> _pumpSheet(WidgetTester tester, AppDatabase database) async {
@@ -282,7 +297,7 @@ Future<void> _tapBatchMenu(WidgetTester tester, int index) async {
   final menu = find.byTooltip('批次操作').at(index);
   await tester.ensureVisible(menu);
   await tester.tap(menu);
-  await tester.pumpAndSettle();
+  await _pumpForUi(tester);
 }
 
 Future<void> _enterField(WidgetTester tester, String label, String value) async {
@@ -294,7 +309,7 @@ Future<void> _enterField(WidgetTester tester, String label, String value) async 
 Future<void> _submitSheet(WidgetTester tester) async {
   await tester.ensureVisible(find.text('确认入库'));
   await tester.tap(find.text('确认入库'));
-  await tester.pumpAndSettle();
+  await _pumpForUi(tester);
 }
 
 Finder _field(String label) => find.byWidgetPredicate(
