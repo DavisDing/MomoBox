@@ -236,13 +236,13 @@ void main() {
     await tester.pumpAndSettle();
     final nameField = _field('物品名称 *');
     await tester.showKeyboard(nameField);
-    tester.view.viewInsets = const EdgeInsets.only(bottom: 280);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 280);
     await tester.pump();
     await tester.ensureVisible(find.text('确认入库'));
     expect(find.text('确认入库'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
-    tester.view.viewInsets = EdgeInsets.zero;
+    tester.view.viewInsets = const FakeViewPadding();
     tester.view.physicalSize = const Size(800, 480);
     await tester.pump();
     expect(find.text('确认入库'), findsOneWidget);
@@ -298,12 +298,12 @@ Future<void> _submitSheet(WidgetTester tester) async {
 }
 
 Finder _field(String label) => find.byWidgetPredicate(
-      (widget) => widget is TextFormField && widget.decoration.labelText == label,
-      description: 'TextFormField($label)',
+      (widget) => widget is TextField && widget.decoration?.labelText == label,
+      description: 'TextField($label)',
     );
 
 TextEditingController _fieldController(WidgetTester tester, String label) =>
-    tester.widget<TextFormField>(_field(label)).controller!;
+    tester.widget<TextField>(_field(label)).controller!;
 
 DateTime _today() {
   final now = DateTime.now();

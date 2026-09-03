@@ -16,7 +16,6 @@ import '../../data/repositories/inventory_repository.dart';
 import '../../data/repositories/settings_repository.dart';
 import '../../data/repositories/reminder_repository.dart';
 import '../../data/repositories/shopping_repository.dart';
-import '../../domain/inventory/expiry_rules.dart';
 import '../../domain/inventory/reminder_rules.dart';
 import '../../domain/models/inventory_models.dart';
 import '../../domain/models/recognition_models.dart';

@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../inventory/expiry_rules.dart';
 import '../models/recognition_models.dart';
 
 class AiDraftParser {

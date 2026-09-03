@@ -95,6 +95,8 @@ class LocalNotificationService {
           ),
           iOS: DarwinNotificationDetails(threadIdentifier: _channelId),
         ),
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
         payload: candidate.item.id,
       );

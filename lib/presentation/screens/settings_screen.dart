@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:cross_file/cross_file.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,7 +7,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../app/momo_theme.dart';
-import '../../services/local_notification_service.dart';
 import '../../application/ai_draft_service.dart';
 import '../../application/barcode_lookup_service.dart';
 import '../controllers/providers.dart';
