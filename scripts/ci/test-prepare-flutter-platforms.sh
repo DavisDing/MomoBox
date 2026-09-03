@@ -26,7 +26,12 @@ mkdir -p "$temporary_root/bin" "$temporary_root/project"
 cat > "$temporary_root/bin/flutter" <<'FLUTTER'
 #!/usr/bin/env bash
 set -euo pipefail
-mkdir -p android/app/src/main/res/values ios/Runner ios/Flutter ios/Runner.xcodeproj
+mkdir -p android/app/src/main/res/values ios/Runner ios/Flutter ios/Runner.xcodeproj test
+cat > test/widget_test.dart <<'DART'
+void main() {
+  MyApp();
+}
+DART
 cat > android/app/src/main/AndroidManifest.xml <<'XML'
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
@@ -112,6 +117,7 @@ cp "$script_dir/prepare-flutter-platforms.sh" "$temporary_root/project/prepare.s
   PATH="$temporary_root/bin:$PATH" bash ./prepare.sh
   PATH="$temporary_root/bin:$PATH" bash ./prepare.sh
 
+  test ! -e test/widget_test.dart
   grep -q 'android.permission.POST_NOTIFICATIONS' android/app/src/main/AndroidManifest.xml
   grep -q 'android.permission.RECEIVE_BOOT_COMPLETED' android/app/src/main/AndroidManifest.xml
   grep -q 'android.permission.CAMERA' android/app/src/main/AndroidManifest.xml

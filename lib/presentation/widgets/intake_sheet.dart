@@ -384,15 +384,23 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
                   children: [
                     const Text('请选择如何处理本次入库：'),
                     const SizedBox(height: 10),
-                    for (var index = 0; index < matches.length; index++)
-                      RadioListTile<int>(
-                        value: index,
-                        groupValue: selectedIndex,
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(matches[index].name),
-                        subtitle: Text(_matchDescription(matches[index])),
-                        onChanged: (value) => setDialogState(() => selectedIndex = value!),
+                    RadioGroup<int>(
+                      groupValue: selectedIndex,
+                      onChanged: (value) {
+                        if (value != null) setDialogState(() => selectedIndex = value);
+                      },
+                      child: Column(
+                        children: [
+                          for (var index = 0; index < matches.length; index++)
+                            RadioListTile<int>(
+                              value: index,
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(matches[index].name),
+                              subtitle: Text(_matchDescription(matches[index])),
+                            ),
+                        ],
                       ),
+                    ),
                     const SizedBox(height: 6),
                     Text('当前选择：${selected.name}', style: Theme.of(context).textTheme.bodySmall),
                     const SizedBox(height: 12),
@@ -495,7 +503,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
                   TextFormField(controller: _name, decoration: const InputDecoration(labelText: '物品名称 *'), validator: (value) => value == null || value.trim().isEmpty ? '请填写物品名称' : null),
                   const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
-                    value: _category,
+                    initialValue: _category,
                     decoration: const InputDecoration(labelText: '分类 *'),
                     items: _categories.map((category) => DropdownMenuItem(value: category, child: Text(category))).toList(),
                     onChanged: (value) => setState(() => _category = value ?? _category),

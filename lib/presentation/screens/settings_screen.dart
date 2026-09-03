@@ -24,16 +24,30 @@ class SettingsScreen extends ConsumerWidget {
         children: [
           Text('主题中心', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
-          ...[MomoPalette.defaultPalette, MomoPalette.momoPalette, MomoPalette.doraemonPalette].map(
-            (palette) => Card(
-              child: RadioListTile<MomoSkin>(
-                value: palette.skin,
-                groupValue: active.skin,
-                onChanged: (_) => ref.read(settingsServiceProvider).setValue('theme', palette.storedValue),
-                title: Text(palette.label),
-                subtitle: Text('${palette.mascot} ${palette.inventoryLabel} / ${palette.alertLabel} / ${palette.shoppingLabel}'),
-                secondary: CircleAvatar(backgroundColor: palette.primary, child: Text(palette.mascot)),
-              ),
+          RadioGroup<MomoSkin>(
+            groupValue: active.skin,
+            onChanged: (skin) {
+              if (skin == null) return;
+              final palette = [
+                MomoPalette.defaultPalette,
+                MomoPalette.momoPalette,
+                MomoPalette.doraemonPalette,
+              ].firstWhere((palette) => palette.skin == skin);
+              ref.read(settingsServiceProvider).setValue('theme', palette.storedValue);
+            },
+            child: Column(
+              children: [
+                ...[MomoPalette.defaultPalette, MomoPalette.momoPalette, MomoPalette.doraemonPalette].map(
+                  (palette) => Card(
+                    child: RadioListTile<MomoSkin>(
+                      value: palette.skin,
+                      title: Text(palette.label),
+                      subtitle: Text('${palette.mascot} ${palette.inventoryLabel} / ${palette.alertLabel} / ${palette.shoppingLabel}'),
+                      secondary: CircleAvatar(backgroundColor: palette.primary, child: Text(palette.mascot)),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 14),

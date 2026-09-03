@@ -6,6 +6,11 @@ set -euo pipefail
 # the generated shell is always reproducible.
 flutter create --platforms=android,ios --project-name momo_box .
 
+# `flutter create` restores its template widget test when this repository has
+# no file at that path. That template references `MyApp`, which this app does
+# not define, so keep CI focused on the repository's maintained test suite.
+rm -f test/widget_test.dart
+
 # Android 16 is the minimum supported OS (API 36). Compile and target
 # Android 17 (API 37) so CI catches Android 17 behavior changes as well.
 # iOS uses the deployment-target version directly.
