@@ -12,7 +12,7 @@
 
 - Flutter stable channel；
 - 运行平台壳补丁回归测试；
-- Ubuntu job 安装 Android 17 SDK platform；macOS iOS job 在构建前确认 iOS 27 SDK 可用；
+- Ubuntu job 安装 Android 17 SDK platform；Xcode 27 iOS job（`runs-on: xcode-27`）在构建前确认 iOS 27 SDK 可用；
 - 生成 Android/iOS 平台壳；
 - 注入 Android API 36（`minSdk`）、Android API 37（`compileSdk`/`targetSdk`）和 iOS 27.0 deployment target；
 - 注入本地通知权限、重启恢复 receiver、flutter_local_notifications Java 8 desugaring、通知图标保留和 iOS delegate；
@@ -28,7 +28,7 @@
 `.github/workflows/release.yml` 在 Conventional Commit 触发发布时执行：
 
 - 运行平台壳补丁回归测试；
-- 安装 Android 17 SDK platform，再生成 Android/iOS 平台壳并注入 Android API 36 minSdk、Android API 37 compile/target SDK、iOS 27.0 及本地通知平台设置；iOS 27 SDK 的实际构建验证由 Pull Request / 分支推送中的 macOS job 执行；
+- 安装 Android 17 SDK platform，再生成 Android/iOS 平台壳并注入 Android API 36 minSdk、Android API 37 compile/target SDK、iOS 27.0 及本地通知平台设置；iOS 27 SDK 的实际构建验证由 Pull Request / 分支推送中的 `xcode-27` job 执行；
 - 生成 Drift 文件；
 - analyze/test；
 - 构建 APK/AAB；

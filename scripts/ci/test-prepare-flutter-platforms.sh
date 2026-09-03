@@ -6,6 +6,22 @@ readonly script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly temporary_root="$(mktemp -d)"
 trap 'rm -rf "$temporary_root"' EXIT
 
+# Keep both GitHub workflows aligned with the Android 17 SDK package ID.
+for workflow in "$script_dir/../../.github/workflows/flutter-ci.yml" \
+                "$script_dir/../../.github/workflows/release.yml"; do
+  grep -q 'platforms;android-37.0' "$workflow"
+  if grep -q 'platforms;android-37"' "$workflow"; then
+    printf 'FAIL: stale Android SDK package reference in %s\n' "$workflow" >&2
+    exit 1
+  fi
+done
+
+grep -q '^    runs-on: xcode-27$' "$script_dir/../../.github/workflows/flutter-ci.yml"
+if grep -q '^    runs-on: macos-latest$' "$script_dir/../../.github/workflows/flutter-ci.yml"; then
+  printf 'FAIL: iOS CI must use the Xcode 27 runner\n' >&2
+  exit 1
+fi
+
 mkdir -p "$temporary_root/bin" "$temporary_root/project"
 cat > "$temporary_root/bin/flutter" <<'FLUTTER'
 #!/usr/bin/env bash

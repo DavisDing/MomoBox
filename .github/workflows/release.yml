@@ -50,7 +50,7 @@ jobs:
 
       - name: Install Android 17 SDK platform
         if: steps.version.outputs.release_required == 'true'
-        run: $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "platforms;android-37"
+        run: $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "platforms;android-37.0"
 
       - name: Generate the Android project shell
         if: steps.version.outputs.release_required == 'true'

@@ -21,7 +21,7 @@ jobs:
           channel: stable
           cache: true
       - name: Install Android 17 SDK platform
-        run: $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "platforms;android-37"
+        run: $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "platforms;android-37.0"
       - name: Generate Android and iOS project shells
         run: scripts/ci/prepare-flutter-platforms.sh
       - name: Resolve dependencies
@@ -36,14 +36,19 @@ jobs:
         run: flutter build apk --debug
 
   ios-build:
-    name: iOS unsigned build
-    runs-on: macos-latest
+    name: iOS unsigned build (Xcode 27)
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
+      - name: Select Xcode 27
+        run: |
+          sudo xcode-select --switch /Applications/Xcode_27.0.0.app/Contents/Developer
+          echo "DEVELOPER_DIR=/Applications/Xcode_27.0.0.app/Contents/Developer" >> "$GITHUB_ENV"
+          xcodebuild -version
       - name: Verify iOS 27 SDK is available
         run: |
           sdk_version=$(xcrun --sdk iphoneos --show-sdk-version)
