@@ -168,7 +168,7 @@ class _StatTile extends StatelessWidget {
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
         decoration: BoxDecoration(
-          color: color.withOpacity(.1),
+          color: color.withValues(alpha: .1),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(

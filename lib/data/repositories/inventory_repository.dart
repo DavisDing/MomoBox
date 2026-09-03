@@ -13,7 +13,7 @@ class InventoryRepository {
   final Uuid _uuid;
 
   Stream<List<InventoryItem>> watchInventory() {
-    return _database.select(_database.products).watch().asyncMap(_loadInventory);
+    return _database.select(_database.products).watch().asyncMap(loadInventory);
   }
 
   Future<List<InventoryItem>> loadInventory([List<ProductRecord>? source]) async {
@@ -134,8 +134,8 @@ class InventoryRepository {
                 specification: Value(_trimToNull(draft.specification)),
                 barcode: Value(_trimToNull(draft.barcode)),
                 location: Value(_trimToNull(draft.location)),
-                unit: draft.unit,
-                lowStockThreshold: draft.lowStockThreshold,
+                unit: Value(draft.unit),
+                lowStockThreshold: Value(draft.lowStockThreshold),
                 createdAt: now,
                 updatedAt: now,
               ),
@@ -386,8 +386,8 @@ class InventoryRepository {
             batchNo: Value(_trimToNull(batchNo)),
             productionDate: Value(productionDate),
             expiryDate: Value(expiryDate),
-            dateSource: dateSource,
-            datePrecision: datePrecision,
+            dateSource: Value(dateSource),
+            datePrecision: Value(datePrecision),
             initialQuantity: quantity,
             remainingQuantity: quantity,
             createdAt: now,

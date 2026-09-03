@@ -128,7 +128,7 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
     ),
     navigationBarTheme: NavigationBarThemeData(
       backgroundColor: surface,
-      indicatorColor: palette.primary.withOpacity(isDark ? 0.28 : 0.16),
+      indicatorColor: palette.primary.withValues(alpha: isDark ? 0.28 : 0.16),
     ),
     textTheme: ThemeData(brightness: brightness).textTheme.apply(
           bodyColor: text,
@@ -143,7 +143,7 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: palette.primary.withOpacity(0.14)),
+        borderSide: BorderSide(color: palette.primary.withValues(alpha: 0.14)),
       ),
     ),
   );

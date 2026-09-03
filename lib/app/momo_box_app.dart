@@ -46,6 +46,16 @@ class _MomoBoxAppState extends ConsumerState<MomoBoxApp> {
   @override
   void initState() {
     super.initState();
+    ref.listenManual<AsyncValue<List<InventoryItem>>>(
+      inventoryProvider,
+      (_, next) => next.whenData(_reconcileInventoryAndSync),
+      fireImmediately: true,
+    );
+    ref.listenManual<AsyncValue<List<ReminderAcknowledgement>>>(
+      reminderAcknowledgementsProvider,
+      (_, next) => next.whenData((_) => _syncNotifications()),
+      fireImmediately: true,
+    );
     Future<void>.microtask(_reconcileMedia);
   }
 
@@ -57,36 +67,30 @@ class _MomoBoxAppState extends ConsumerState<MomoBoxApp> {
     }
   }
 
+  Future<void> _reconcileInventoryAndSync(List<InventoryItem> items) async {
+    // 低库存确认只在一个提醒周期内有效；库存恢复正常时清除旧确认。
+    try {
+      await ref.read(reminderServiceProvider).reconcile(items);
+    } catch (_) {
+      // 提醒状态清理失败不应阻塞库存页面或通知同步。
+    }
+    _syncNotifications(items: items);
+  }
+
+  void _syncNotifications({List<InventoryItem>? items}) {
+    final currentItems = items ?? ref.read(inventoryProvider).valueOrNull;
+    final acknowledgements = ref.read(reminderAcknowledgementsProvider).valueOrNull ??
+        const <ReminderAcknowledgement>[];
+    if (currentItems == null) return;
+    // 通知是增强能力；平台调度失败不能阻塞本地库存页面。
+    ref.read(localNotificationServiceProvider).sync(
+      currentItems,
+      acknowledgements: acknowledgements,
+    ).catchError((_) {});
+  }
+
   @override
   Widget build(BuildContext context) {
-    void syncNotifications() {
-      final items = ref.read(inventoryProvider).valueOrNull;
-      final acknowledgements = ref.read(reminderAcknowledgementsProvider).valueOrNull ??
-          const <ReminderAcknowledgement>[];
-      if (items == null) return;
-      // 通知是增强能力；平台调度失败不能阻塞本地库存页面。
-      ref.read(localNotificationServiceProvider).sync(
-        items,
-        acknowledgements: acknowledgements,
-      ).catchError((_) {});
-    }
-
-    ref.listen<AsyncValue<List<InventoryItem>>>(inventoryProvider, (_, next) {
-      next.whenData((items) async {
-        // 低库存确认只在一个提醒周期内有效；库存恢复正常时清除旧确认。
-        try {
-          await ref.read(reminderServiceProvider).reconcile(items);
-        } catch (_) {
-          // 提醒状态清理失败不应阻塞库存页面或通知同步。
-        }
-        syncNotifications();
-      });
-    }, fireImmediately: true);
-    ref.listen<AsyncValue<List<ReminderAcknowledgement>>>(
-      reminderAcknowledgementsProvider,
-      (_, next) => next.whenData((_) => syncNotifications()),
-      fireImmediately: true,
-    );
     final storedTheme = ref.watch(themeNameProvider).valueOrNull;
     final palette = MomoPalette.fromStoredValue(storedTheme);
     return MaterialApp.router(
