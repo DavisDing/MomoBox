@@ -79,7 +79,7 @@ void main() {
     expect(_fieldController(tester, '物品名称 *').text, '洗衣液');
     expect(_fieldController(tester, '入库数量 *').text, '3');
     expect((await database.select(database.shoppingEntries).get()).single.isCompleted, isTrue);
-    await tester.pageBack();
+    await tester.binding.handlePopRoute();
     await _pumpForUi(tester);
   });
 
@@ -134,7 +134,7 @@ void main() {
     await _pumpApp(tester, database);
     await tester.tap(find.text('提醒'));
     await _pumpForUi(tester);
-    expect(find.text('周期性低库存'), findsOneWidget);
+    expect(find.text('周期性低库存').first, findsOneWidget);
 
     await tester.tap(find.byTooltip('标记已处理'));
     await _pumpForUi(tester);
@@ -144,7 +144,7 @@ void main() {
     await _pumpForUi(tester);
     await inventory.consumeBatch(productId, batchId, 2);
     await _pumpForUi(tester);
-    expect(find.text('周期性低库存'), findsOneWidget);
+    expect(find.text('周期性低库存').first, findsOneWidget);
   });
 
   testWidgets('商品详情支持补充、指定批次消耗和报废二次确认', (tester) async {
@@ -242,9 +242,9 @@ void main() {
       find.text('确认入库'),
       240,
       scrollable: find.descendant(
-        of: find.byType(DraggableScrollableSheet),
+        of: find.byType(DraggableScrollableSheet).first,
         matching: find.byType(Scrollable),
-      ),
+      ).first,
     );
     expect(find.text('确认入库'), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -254,7 +254,7 @@ void main() {
     await tester.pump();
     expect(find.text('确认入库'), findsOneWidget);
     expect(tester.takeException(), isNull);
-    await tester.pageBack();
+    await tester.binding.handlePopRoute();
     await _pumpForUi(tester);
   });
 }
@@ -263,8 +263,14 @@ void main() {
 // repository streams connect. Avoid pumpAndSettle, which waits forever for
 // those animations; two bounded frames still allow routes and async UI work to render.
 Future<void> _pumpForUi(WidgetTester tester) async {
+  // Riverpod streams and modal route transitions can require more than one
+  // frame on the GitHub Actions runner. Keep this bounded instead of using
+  // pumpAndSettle because some screens intentionally show indeterminate
+  // progress indicators.
   await tester.pump();
-  await tester.pump(const Duration(milliseconds: 300));
+  for (var index = 0; index < 4; index++) {
+    await tester.pump(const Duration(milliseconds: 150));
+  }
 }
 
 Future<void> _pumpSheet(WidgetTester tester, AppDatabase database) async {
@@ -278,8 +284,7 @@ Future<void> _pumpScreen(WidgetTester tester, AppDatabase database, Widget child
       child: MaterialApp(home: Scaffold(body: child)),
     ),
   );
-  await tester.pump();
-  await tester.pump(const Duration(milliseconds: 100));
+  await _pumpForUi(tester);
 }
 
 Future<void> _pumpApp(WidgetTester tester, AppDatabase database) async {
@@ -289,8 +294,7 @@ Future<void> _pumpApp(WidgetTester tester, AppDatabase database) async {
       child: const MomoBoxApp(),
     ),
   );
-  await tester.pump();
-  await tester.pump(const Duration(milliseconds: 100));
+  await _pumpForUi(tester);
 }
 
 Future<void> _tapBatchMenu(WidgetTester tester, int index) async {
