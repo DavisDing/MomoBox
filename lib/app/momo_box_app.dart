@@ -36,7 +36,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 });
 
 class MomoBoxApp extends ConsumerStatefulWidget {
-  const MomoBoxApp({super.key});
+  const MomoBoxApp({
+    super.key,
+    this.enableMediaReconciliation = true,
+  });
+
+  /// 允许测试跳过依赖平台目录的媒体清理；生产环境默认仍在启动时执行。
+  final bool enableMediaReconciliation;
 
   @override
   ConsumerState<MomoBoxApp> createState() => _MomoBoxAppState();
@@ -56,7 +62,9 @@ class _MomoBoxAppState extends ConsumerState<MomoBoxApp> {
       (_, next) => next.whenData((_) => _syncNotifications()),
       fireImmediately: true,
     );
-    Future<void>.microtask(_reconcileMedia);
+    if (widget.enableMediaReconciliation) {
+      Future<void>.microtask(_reconcileMedia);
+    }
   }
 
   Future<void> _reconcileMedia() async {

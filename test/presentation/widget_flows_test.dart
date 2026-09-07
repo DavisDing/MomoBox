@@ -34,12 +34,13 @@ void main() {
     ));
 
     await _pumpSheet(tester, database);
+    await _pumpUntilFound(tester, _field('物品名称 *'));
     await _enterField(tester, '物品名称 *', '待确认商品');
     await _enterField(tester, '条码', '6900000000001');
     await _submitSheet(tester);
     expect(find.text('发现相似商品'), findsOneWidget);
     await tester.tap(find.text('取消'));
-    await _pumpForUi(tester);
+    await _pumpUntilAbsent(tester, find.text('发现相似商品'));
     expect(find.text('发现相似商品'), findsNothing);
     expect(_fieldController(tester, '物品名称 *').text, '待确认商品');
     expect(_fieldController(tester, '条码').text, '6900000000001');
@@ -71,16 +72,16 @@ void main() {
     );
 
     await _pumpScreen(tester, database, const ShoppingScreen());
+    await _pumpUntilFound(tester, find.text('洗衣液'));
     expect(find.text('洗衣液'), findsOneWidget);
     await tester.tap(find.byType(Checkbox));
     await _pumpForUi(tester);
 
+    await _pumpUntilFound(tester, _field('物品名称 *'));
     expect(find.text('入库'), findsOneWidget);
     expect(_fieldController(tester, '物品名称 *').text, '洗衣液');
     expect(_fieldController(tester, '入库数量 *').text, '3');
     expect((await database.select(database.shoppingEntries).get()).single.isCompleted, isTrue);
-    await tester.binding.handlePopRoute();
-    await _pumpForUi(tester);
   });
 
   testWidgets('提醒支持单条和分组已处理，确认状态持久化', (tester) async {
@@ -106,6 +107,7 @@ void main() {
     ));
 
     await _pumpScreen(tester, database, const AlertsScreen());
+    await _pumpUntilFound(tester, find.text('低库存物品'));
     expect(find.text('过期物品'), findsOneWidget);
     expect(find.text('临期物品'), findsOneWidget);
     expect(find.text('低库存物品'), findsOneWidget);
@@ -133,18 +135,22 @@ void main() {
 
     await _pumpApp(tester, database);
     await tester.tap(find.text('提醒'));
-    await _pumpForUi(tester);
-    expect(find.text('周期性低库存').first, findsOneWidget);
+    final alertItem = find.descendant(
+      of: find.byType(AlertsScreen),
+      matching: find.text('周期性低库存'),
+    );
+    await _pumpUntilFound(tester, alertItem);
+    expect(alertItem, findsOneWidget);
 
     await tester.tap(find.byTooltip('标记已处理'));
     await _pumpForUi(tester);
-    expect(find.text('周期性低库存'), findsNothing);
+    expect(alertItem, findsNothing);
 
     await inventory.replenishBatch(batchId, 2);
     await _pumpForUi(tester);
     await inventory.consumeBatch(productId, batchId, 2);
-    await _pumpForUi(tester);
-    expect(find.text('周期性低库存').first, findsOneWidget);
+    await _pumpUntilFound(tester, alertItem);
+    expect(alertItem, findsOneWidget);
   });
 
   testWidgets('商品详情支持补充、指定批次消耗和报废二次确认', (tester) async {
@@ -169,6 +175,7 @@ void main() {
     );
 
     await _pumpScreen(tester, database, ProductDetailScreen(productId: productId));
+    await _pumpUntilFound(tester, find.text('近批次'));
     expect(find.text('近批次'), findsOneWidget);
     expect(find.text('远批次'), findsOneWidget);
 
@@ -219,22 +226,23 @@ void main() {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(320, 640);
     await _pumpApp(tester, database);
+    await _pumpUntilFound(tester, find.byType(NavigationBar));
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.text('手动入库'), findsOneWidget);
 
     await tester.tap(find.text('提醒'));
-    await _pumpForUi(tester);
+    await _pumpUntilFound(tester, find.text('效期与库存提醒'));
     expect(find.text('效期与库存提醒'), findsOneWidget);
     await tester.tap(find.text('采买'));
-    await _pumpForUi(tester);
+    await _pumpUntilFound(tester, find.text('待采买清单'));
     expect(find.text('待采买清单'), findsOneWidget);
     await tester.tap(find.text('库存'));
-    await _pumpForUi(tester);
+    await _pumpUntilFound(tester, find.text('嬷嬷的小箱子'));
     expect(find.text('嬷嬷的小箱子'), findsOneWidget);
 
     await tester.tap(find.text('手动入库'));
-    await _pumpForUi(tester);
     final nameField = _field('物品名称 *');
+    await _pumpUntilFound(tester, nameField);
     await tester.showKeyboard(nameField);
     tester.view.viewInsets = const FakeViewPadding(bottom: 280);
     await tester.pump();
@@ -254,14 +262,12 @@ void main() {
     await tester.pump();
     expect(find.text('确认入库'), findsOneWidget);
     expect(tester.takeException(), isNull);
-    await tester.binding.handlePopRoute();
-    await _pumpForUi(tester);
   });
 }
 
 // Several screens intentionally show indeterminate loading indicators while
 // repository streams connect. Avoid pumpAndSettle, which waits forever for
-// those animations; two bounded frames still allow routes and async UI work to render.
+// those animations; bounded frames still allow routes and async UI work to render.
 Future<void> _pumpForUi(WidgetTester tester) async {
   // Riverpod streams and modal route transitions can require more than one
   // frame on the GitHub Actions runner. Keep this bounded instead of using
@@ -271,6 +277,40 @@ Future<void> _pumpForUi(WidgetTester tester) async {
   for (var index = 0; index < 4; index++) {
     await tester.pump(const Duration(milliseconds: 150));
   }
+}
+
+Future<void> _pumpUntilFound(
+  WidgetTester tester,
+  Finder finder, {
+  Duration step = const Duration(milliseconds: 100),
+  int maxPumps = 30,
+}) async {
+  for (var attempt = 0; attempt < maxPumps; attempt++) {
+    if (finder.evaluate().isNotEmpty) return;
+    await tester.pump(step);
+  }
+
+  if (finder.evaluate().isEmpty) {
+    throw TestFailure(
+      'Timed out after ${step.inMilliseconds * maxPumps} ms waiting for ${finder.description}.',
+    );
+  }
+}
+
+Future<void> _pumpUntilAbsent(
+  WidgetTester tester,
+  Finder finder, {
+  Duration step = const Duration(milliseconds: 100),
+  int maxPumps = 30,
+}) async {
+  for (var attempt = 0; attempt < maxPumps; attempt++) {
+    if (finder.evaluate().isEmpty) return;
+    await tester.pump(step);
+  }
+
+  throw TestFailure(
+    'Timed out after ${step.inMilliseconds * maxPumps} ms waiting for ${finder.description} to disappear.',
+  );
 }
 
 Future<void> _pumpSheet(WidgetTester tester, AppDatabase database) async {
@@ -291,7 +331,7 @@ Future<void> _pumpApp(WidgetTester tester, AppDatabase database) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [databaseProvider.overrideWithValue(database)],
-      child: const MomoBoxApp(),
+      child: const MomoBoxApp(enableMediaReconciliation: false),
     ),
   );
   await _pumpForUi(tester);
