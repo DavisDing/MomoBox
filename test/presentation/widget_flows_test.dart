@@ -292,7 +292,7 @@ Future<void> _pumpUntilFound(
 
   if (finder.evaluate().isEmpty) {
     throw TestFailure(
-      'Timed out after ${step.inMilliseconds * maxPumps} ms waiting for ${finder.description}.',
+      'Timed out after ${step.inMilliseconds * maxPumps} ms waiting for ${finder.describeMatch(Plurality.many)}.',
     );
   }
 }
@@ -309,7 +309,7 @@ Future<void> _pumpUntilAbsent(
   }
 
   throw TestFailure(
-    'Timed out after ${step.inMilliseconds * maxPumps} ms waiting for ${finder.description} to disappear.',
+    'Timed out after ${step.inMilliseconds * maxPumps} ms waiting for ${finder.describeMatch(Plurality.many)} to disappear.',
   );
 }
 
