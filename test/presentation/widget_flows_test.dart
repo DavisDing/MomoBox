@@ -41,6 +41,7 @@ void main() {
     expect(find.text('发现相似商品'), findsOneWidget);
     await tester.tap(find.text('取消'));
     await _pumpUntilAbsent(tester, find.text('发现相似商品'));
+    await _pumpUntilFound(tester, _field('物品名称 *'));
     expect(find.text('发现相似商品'), findsNothing);
     expect(_fieldController(tester, '物品名称 *').text, '待确认商品');
     expect(_fieldController(tester, '条码').text, '6900000000001');
