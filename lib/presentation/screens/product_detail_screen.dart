@@ -503,54 +503,50 @@ Future<int?> _showQuantityDialog(
   required String unit,
   int? maxQuantity,
 }) async {
-  final controller = TextEditingController(text: '1');
-  try {
-    return await showDialog<int>(
-      context: context,
-      builder: (context) {
-        String? errorText;
-        return StatefulBuilder(
-          builder: (context, setState) => AlertDialog(
-            title: Text(title),
-            content: TextField(
-              controller: controller,
-              autofocus: true,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: maxQuantity == null
-                    ? '$quantityLabel（$unit）'
-                    : '$quantityLabel（最多 $maxQuantity $unit）',
-                errorText: errorText,
-              ),
+  var quantityText = '1';
+  return showDialog<int>(
+    context: context,
+    builder: (context) {
+      String? errorText;
+      return StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text(title),
+          content: TextField(
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            onChanged: (value) => quantityText = value,
+            decoration: InputDecoration(
+              labelText: maxQuantity == null
+                  ? '$quantityLabel（$unit）'
+                  : '$quantityLabel（最多 $maxQuantity $unit）',
+              errorText: errorText,
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('取消'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  final quantity = int.tryParse(controller.text.trim());
-                  if (quantity == null || quantity < 1) {
-                    setState(() => errorText = '请输入大于 0 的整数。');
-                    return;
-                  }
-                  if (maxQuantity != null && quantity > maxQuantity) {
-                    setState(() => errorText = '数量不能超过当前可消耗库存。');
-                    return;
-                  }
-                  Navigator.pop(context, quantity);
-                },
-                child: Text(confirmLabel),
-              ),
-            ],
           ),
-        );
-      },
-    );
-  } finally {
-    controller.dispose();
-  }
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final quantity = int.tryParse(quantityText.trim());
+                if (quantity == null || quantity < 1) {
+                  setState(() => errorText = '请输入大于 0 的整数。');
+                  return;
+                }
+                if (maxQuantity != null && quantity > maxQuantity) {
+                  setState(() => errorText = '数量不能超过当前可消耗库存。');
+                  return;
+                }
+                Navigator.pop(context, quantity);
+              },
+              child: Text(confirmLabel),
+            ),
+          ],
+        ),
+      );
+    },
+  );
 }
 
 Future<bool> _showDiscardConfirmationDialog(
