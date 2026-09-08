@@ -74,10 +74,9 @@ if manifest.exists():
 
 keep = Path('android/app/src/main/res/values/keep.xml')
 keep.parent.mkdir(parents=True, exist_ok=True)
-if not keep.exists():
-    keep.write_text('''<resources xmlns:tools="http://schemas.android.com/tools">
-    <keep tools:keep="@mipmap/ic_launcher" />
-</resources>
+keep.write_text('''<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@mipmap/ic_launcher" />
 ''')
 
 for gradle in (Path('android/app/build.gradle'), Path('android/app/build.gradle.kts')):
