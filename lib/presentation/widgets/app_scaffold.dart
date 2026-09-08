@@ -86,6 +86,8 @@ class AppScaffold extends ConsumerWidget {
       bottomNavigationBar: useNavigationRail
           ? null
           : NavigationBar(
+              height: 62,
+              labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
               selectedIndex: currentIndex,
               onDestinationSelected: (index) => context.go(locations[index]),
               destinations: destinations,

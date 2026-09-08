@@ -11,6 +11,51 @@ import '../../domain/models/inventory_models.dart';
 import '../../domain/models/recognition_models.dart';
 import '../controllers/providers.dart';
 
+class _IntakeDraftMemory {
+  String? name;
+  String? brand;
+  String? specification;
+  String quantity = '1';
+  String? location;
+  String? barcode;
+  String? batchNo;
+  String threshold = '1';
+  String? shelfLife;
+  String category = '药品保健';
+  ShelfLifeUnit shelfLifeUnit = ShelfLifeUnit.days;
+  DateTime? productionDate;
+  DateTime? expiryDate;
+  String dateSource = 'manual';
+  String datePrecision = 'day';
+
+  bool get hasContent =>
+      (name != null && name!.trim().isNotEmpty) ||
+      (brand != null && brand!.trim().isNotEmpty) ||
+      (barcode != null && barcode!.trim().isNotEmpty) ||
+      productionDate != null ||
+      expiryDate != null;
+
+  void clear() {
+    name = null;
+    brand = null;
+    specification = null;
+    quantity = '1';
+    location = null;
+    barcode = null;
+    batchNo = null;
+    threshold = '1';
+    shelfLife = null;
+    category = '药品保健';
+    shelfLifeUnit = ShelfLifeUnit.days;
+    productionDate = null;
+    expiryDate = null;
+    dateSource = 'manual';
+    datePrecision = 'day';
+  }
+}
+
+final _intakeDraft = _IntakeDraftMemory();
+
 class IntakeSheet extends ConsumerStatefulWidget {
   const IntakeSheet({this.initialName, this.initialCategory, this.initialQuantity = 1, super.key});
 
@@ -50,15 +95,57 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
   @override
   void initState() {
     super.initState();
-    _name.text = widget.initialName ?? '';
-    _quantity.text = widget.initialQuantity.toString();
-    if (widget.initialCategory != null && _categories.contains(widget.initialCategory)) {
-      _category = widget.initialCategory!;
+    if (widget.initialName != null || widget.initialCategory != null) {
+      _name.text = widget.initialName ?? '';
+      _quantity.text = widget.initialQuantity.toString();
+      if (widget.initialCategory != null && _categories.contains(widget.initialCategory)) {
+        _category = widget.initialCategory!;
+      }
+    } else if (_intakeDraft.hasContent) {
+      _name.text = _intakeDraft.name ?? '';
+      _brand.text = _intakeDraft.brand ?? '';
+      _specification.text = _intakeDraft.specification ?? '';
+      _quantity.text = _intakeDraft.quantity;
+      _location.text = _intakeDraft.location ?? '';
+      _barcode.text = _intakeDraft.barcode ?? '';
+      _batchNo.text = _intakeDraft.batchNo ?? '';
+      _threshold.text = _intakeDraft.threshold;
+      _shelfLife.text = _intakeDraft.shelfLife ?? '';
+      _category = _intakeDraft.category;
+      _shelfLifeUnit = _intakeDraft.shelfLifeUnit;
+      _productionDate = _intakeDraft.productionDate;
+      _expiryDate = _intakeDraft.expiryDate;
+      _dateSource = _intakeDraft.dateSource;
+      _datePrecision = _intakeDraft.datePrecision;
+    } else {
+      _name.text = '';
+      _quantity.text = widget.initialQuantity.toString();
+    }
+  }
+
+  void _saveDraft() {
+    if (_name.text.isNotEmpty || _barcode.text.isNotEmpty || _productionDate != null || _expiryDate != null) {
+      _intakeDraft.name = _name.text;
+      _intakeDraft.brand = _brand.text;
+      _intakeDraft.specification = _specification.text;
+      _intakeDraft.quantity = _quantity.text;
+      _intakeDraft.location = _location.text;
+      _intakeDraft.barcode = _barcode.text;
+      _intakeDraft.batchNo = _batchNo.text;
+      _intakeDraft.threshold = _threshold.text;
+      _intakeDraft.shelfLife = _shelfLife.text;
+      _intakeDraft.category = _category;
+      _intakeDraft.shelfLifeUnit = _shelfLifeUnit;
+      _intakeDraft.productionDate = _productionDate;
+      _intakeDraft.expiryDate = _expiryDate;
+      _intakeDraft.dateSource = _dateSource;
+      _intakeDraft.datePrecision = _datePrecision;
     }
   }
 
   @override
   void dispose() {
+    _saveDraft();
     _name.dispose();
     _brand.dispose();
     _specification.dispose();
@@ -353,6 +440,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
         mediaWarning = '库存已入库，但图片关联失败：$error。可稍后在设置中清理媒体缓存。';
       }
       if (!mounted) return;
+      _intakeDraft.clear();
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(mediaWarning ?? '已入库。')),
@@ -468,12 +556,18 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
                 padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
                 children: [
                   Center(
-                    child: Container(
-                      width: 42,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.outlineVariant,
-                        borderRadius: BorderRadius.circular(8),
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Container(
+                          width: 48,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.outlineVariant,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -668,6 +762,8 @@ class _BarcodeScannerSheet extends StatefulWidget {
 class _BarcodeScannerSheetState extends State<_BarcodeScannerSheet> {
   final _controller = MobileScannerController();
   bool _completed = false;
+  bool _torchOn = false;
+  String? _errorMessage;
 
   @override
   void dispose() {
@@ -688,18 +784,100 @@ class _BarcodeScannerSheetState extends State<_BarcodeScannerSheet> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('扫描商品条码')),
-        body: Column(
-          children: [
-            Expanded(child: MobileScanner(controller: _controller, onDetect: _onDetect)),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text('将 EAN/UPC 等商品条码置于取景框内。相机不可用时可返回手动输入。', textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall),
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        title: const Text('扫描商品条码', style: TextStyle(color: Colors.white)),
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        actions: [
+          IconButton(
+            icon: Icon(_torchOn ? Icons.flash_on : Icons.flash_off, color: Colors.white),
+            tooltip: '开关手电筒',
+            onPressed: () async {
+              try {
+                await _controller.toggleTorch();
+                if (mounted) setState(() => _torchOn = !_torchOn);
+              } catch (_) {}
+            },
+          ),
+        ],
+      ),
+      body: Stack(
+        children: [
+          MobileScanner(
+            controller: _controller,
+            onDetect: _onDetect,
+            errorBuilder: (context, error) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.videocam_off_outlined, color: Colors.white70, size: 56),
+                      const SizedBox(height: 16),
+                      const Text(
+                        '摄像头启动失败或未获得相机权限',
+                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '请在系统设置中为应用授予相机权限，或直接返回进行手动输入。',
+                        style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 13),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 20),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Colors.white54)),
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.keyboard_return),
+                        label: const Text('返回手动输入'),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+          Center(
+            child: Container(
+              width: 260,
+              height: 180,
+              decoration: BoxDecoration(
+                border: Border.all(color: theme.colorScheme.primary, width: 2),
+                borderRadius: BorderRadius.circular(16),
+                color: Colors.transparent,
+              ),
             ),
-          ],
-        ),
-      );
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 24,
+            child: SafeArea(
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 24),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.65),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  '将商品包装上的条码置于取景框中即可自动识别',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white, fontSize: 13),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _CandidateLine extends StatelessWidget {

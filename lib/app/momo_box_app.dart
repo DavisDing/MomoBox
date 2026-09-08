@@ -1,3 +1,4 @@
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -104,6 +105,16 @@ class _MomoBoxAppState extends ConsumerState<MomoBoxApp> {
     return MaterialApp.router(
       title: '嬷嬷的小箱子',
       debugShowCheckedModeBanner: false,
+      locale: const Locale('zh', 'CN'),
+      supportedLocales: const [
+        Locale('zh', 'CN'),
+        Locale('en', 'US'),
+      ],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       theme: buildMomoTheme(palette, Brightness.light),
       darkTheme: buildMomoTheme(palette, Brightness.dark),
       themeMode: ThemeMode.system,

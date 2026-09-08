@@ -18,6 +18,8 @@ class BarcodeLookupService {
 
   static const enabledKey = 'barcode_api_enabled';
   static const endpointKey = 'barcode_api_endpoint';
+  static const profilesKey = 'barcode_api_profiles';
+  static const defaultFreeEndpoint = 'https://world.openfoodfacts.org/api/v2/product/{barcode}.json';
 
   final BarcodeCacheRepository _cache;
   final SettingsService _settings;
@@ -31,8 +33,11 @@ class BarcodeLookupService {
     if (cached != null) return cached;
 
     final enabled = await _settings.getValue(enabledKey);
-    final endpoint = await _settings.getValue(endpointKey);
-    if (enabled != 'true' || endpoint == null || endpoint.trim().isEmpty) return null;
+    var endpoint = await _settings.getValue(endpointKey);
+    if (enabled != 'true') return null;
+    if (endpoint == null || endpoint.trim().isEmpty) {
+      endpoint = defaultFreeEndpoint;
+    }
 
     final uri = _buildLookupUri(endpoint, barcode);
     try {

@@ -19,6 +19,7 @@ class AiDraftService {
 
   static const endpointKey = 'ai_api_endpoint';
   static const modelKey = 'ai_model';
+  static const profilesKey = 'ai_api_profiles';
 
   final SettingsRepository _settings;
   final SecureSettingsService _secureSettings;

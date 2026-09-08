@@ -26,100 +26,185 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
   Widget build(BuildContext context) {
     final inventory = ref.watch(inventoryProvider);
     final summary = ref.watch(reminderSummaryProvider);
-    return Scaffold(
-      appBar: AppBar(
-        title: const Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('嬷嬷的小箱子'),
-            Text('单机模式 · 本地 SQLite', style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal)),
-          ],
+    return inventory.when(
+      loading: () => Scaffold(
+        appBar: AppBar(
+          title: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('嬷嬷的小箱子'),
+              Text('单机模式 · 本地 SQLite', style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal)),
+            ],
+          ),
         ),
+        body: const Center(child: CircularProgressIndicator()),
       ),
-      body: inventory.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => _ErrorState(
-          message: '本地数据库暂时不可用：$error',
+      error: (error, _) => Scaffold(
+        appBar: AppBar(
+          title: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('嬷嬷的小箱子'),
+              Text('单机模式 · 本地 SQLite', style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal)),
+            ],
+          ),
+        ),
+        body: _ErrorState(
+          message: '本地数据库暂时不可用：',
           onRetry: () => ref.invalidate(inventoryProvider),
         ),
-        data: (items) {
-          final categories = {'全部', ...items.map((item) => item.category)}.toList();
-          final filtered = items.where((item) {
-            final normalized = _query.trim().toLowerCase();
-            final matchesQuery = normalized.isEmpty ||
-                [item.name, item.brand, item.location, item.barcode]
-                    .whereType<String>()
-                    .any((value) => value.toLowerCase().contains(normalized));
-            final matchesCategory = _category == '全部' || item.category == _category;
-            final matchesStatus = switch (_status) {
-              '临期' => item.overallExpiryStatus == ExpiryStatus.expiring,
-              '已过期' => item.overallExpiryStatus == ExpiryStatus.expired,
-              '低库存' => item.isLowStock,
-              _ => true,
-            };
-            return matchesQuery && matchesCategory && matchesStatus;
-          }).toList();
-          final sorted = sortInventoryItems(filtered, _sortOption);
+      ),
+      data: (items) {
+        final categories = {'全部', ...items.map((item) => item.category)}.toList();
+        final filtered = items.where((item) {
+          final normalized = _query.trim().toLowerCase();
+          final matchesQuery = normalized.isEmpty ||
+              [item.name, item.brand, item.location, item.barcode]
+                  .whereType<String>()
+                  .any((value) => value.toLowerCase().contains(normalized));
+          final matchesCategory = _category == '全部' || item.category == _category;
+          final matchesStatus = switch (_status) {
+            '临期' => item.overallExpiryStatus == ExpiryStatus.expiring,
+            '已过期' => item.overallExpiryStatus == ExpiryStatus.expired,
+            '低库存' => item.isLowStock,
+            _ => true,
+          };
+          return matchesQuery && matchesCategory && matchesStatus;
+        }).toList();
+        final sorted = sortInventoryItems(filtered, _sortOption);
 
-          return RefreshIndicator(
+        return Scaffold(
+          body: RefreshIndicator(
             onRefresh: () async => ref.invalidate(inventoryProvider),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 104),
-              children: [
-                _SummaryCard(summary: summary),
-                const SizedBox(height: 14),
-                TextField(
-                  decoration: const InputDecoration(
-                    hintText: '搜索名称、品牌、位置或条码',
-                    prefixIcon: Icon(Icons.search),
-                  ),
-                  onChanged: (value) => setState(() => _query = value),
-                ),
-                const SizedBox(height: 12),
-                _FilterRow(
-                  values: categories,
-                  current: _category,
-                  onChanged: (value) => setState(() => _category = value),
-                ),
-                const SizedBox(height: 8),
-                _FilterRow(
-                  values: const ['全部', '临期', '已过期', '低库存'],
-                  current: _status,
-                  onChanged: (value) => setState(() => _status = value),
-                ),
-                const SizedBox(height: 12),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: _SortSelector(
-                    current: _sortOption,
-                    onSelected: (value) => setState(() => _sortOption = value),
+            child: CustomScrollView(
+              slivers: [
+                SliverAppBar(
+                  floating: true,
+                  snap: true,
+                  title: const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('嬷嬷的小箱子'),
+                      Text('单机模式 · 本地 SQLite', style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal)),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 8),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _SummaryCard(summary: summary),
+                        const SizedBox(height: 14),
+                        TextField(
+                          decoration: const InputDecoration(
+                            hintText: '搜索名称、品牌、位置或条码',
+                            prefixIcon: Icon(Icons.search),
+                          ),
+                          onChanged: (value) => setState(() => _query = value),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: _StickyFilterHeaderDelegate(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).scaffoldBackgroundColor,
+                        border: Border(
+                          bottom: BorderSide(
+                            color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+                          ),
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _FilterRow(
+                            values: categories,
+                            current: _category,
+                            onChanged: (value) => setState(() => _category = value),
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _FilterRow(
+                                  values: const ['全部', '临期', '已过期', '低库存'],
+                                  current: _status,
+                                  onChanged: (value) => setState(() => _status = value),
+                                ),
+                              ),
+                              _SortSelector(
+                                current: _sortOption,
+                                onSelected: (value) => setState(() => _sortOption = value),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    height: 104,
+                  ),
+                ),
                 if (sorted.isEmpty)
-                  _EmptyInventory(
-                    hasItems: items.isNotEmpty,
-                    onAdd: items.isEmpty
-                        ? () => showModalBottomSheet<void>(
-                              context: context,
-                              isScrollControlled: true,
-                              useSafeArea: true,
-                              builder: (_) => const IntakeSheet(),
-                            )
-                        : null,
+                  SliverToBoxAdapter(
+                    child: _EmptyInventory(
+                      hasItems: items.isNotEmpty,
+                      onAdd: items.isEmpty
+                          ? () => showModalBottomSheet<void>(
+                                context: context,
+                                isScrollControlled: true,
+                                useSafeArea: true,
+                                builder: (_) => const IntakeSheet(),
+                              )
+                          : null,
+                    ),
                   )
                 else
-                  ...sorted.map((item) => Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: _InventoryCard(item: item),
-                      )),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 120),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) => Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _InventoryCard(item: sorted[index]),
+                        ),
+                        childCount: sorted.length,
+                      ),
+                    ),
+                  ),
               ],
             ),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
+}
+
+class _StickyFilterHeaderDelegate extends SliverPersistentHeaderDelegate {
+  _StickyFilterHeaderDelegate({required this.child, required this.height});
+
+  final Widget child;
+  final double height;
+
+  @override
+  double get minExtent => height;
+
+  @override
+  double get maxExtent => height;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) => child;
+
+  @override
+  bool shouldRebuild(covariant _StickyFilterHeaderDelegate oldDelegate) =>
+      oldDelegate.child != child || oldDelegate.height != height;
 }
 
 class _SummaryCard extends StatelessWidget {
