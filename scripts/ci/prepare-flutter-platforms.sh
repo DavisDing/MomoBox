@@ -101,13 +101,13 @@ for gradle in (Path('android/app/build.gradle'), Path('android/app/build.gradle.
     if 'coreLibraryDesugaringEnabled' not in text and 'isCoreLibraryDesugaringEnabled' not in text:
         if gradle.suffix == '.kts':
             text = text.replace('compileOptions {', 'compileOptions {\n        isCoreLibraryDesugaringEnabled = true', 1)
-            dependency = '    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")\n'
         else:
             text = text.replace('compileOptions {', 'compileOptions {\n        coreLibraryDesugaringEnabled true', 1)
+    if 'desugar_jdk_libs' not in text:
+        if gradle.suffix == '.kts':
+            dependency = '    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")\n'
+        else:
             dependency = '    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.0.3"\n'
-        text = text.replace('dependencies {', 'dependencies {\n' + dependency, 1)
-    elif gradle.suffix != '.kts' and 'desugar_jdk_libs' not in text:
-        dependency = '    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.0.3"\n'
         if 'dependencies {' in text:
             text = text.replace('dependencies {', 'dependencies {\n' + dependency, 1)
         else:

@@ -75,9 +75,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_1_8
     }
 }
-
-dependencies {
-}
 KTS
 cat > ios/Runner/Info.plist <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -135,6 +132,7 @@ cp "$script_dir/prepare-flutter-platforms.sh" "$temporary_root/project/prepare.s
   grep -q 'coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")' android/app/build.gradle.kts
   grep -q 'coreLibraryDesugaringEnabled true' android/app/build.gradle
   test "$(grep -c 'desugar_jdk_libs' android/app/build.gradle)" -eq 1
+  test "$(grep -c 'desugar_jdk_libs' android/app/build.gradle.kts)" -eq 1
   grep -q 'tools:keep="@mipmap/ic_launcher"' android/app/src/main/res/values/keep.xml
   grep -q 'import UserNotifications' ios/Runner/AppDelegate.swift
   grep -q 'UNUserNotificationCenter.current().delegate = self' ios/Runner/AppDelegate.swift
