@@ -1,215 +1,214 @@
 import 'dart:convert';
-import 'dart:io';
-
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../../app/momo_theme.dart';
 import '../../application/ai_draft_service.dart';
 import '../../application/barcode_lookup_service.dart';
 import '../controllers/providers.dart';
+import 'ai_usage_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final active = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
+    final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('设置')),
+      appBar: AppBar(
+        title: const Text('系统设置'),
+      ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         children: [
-          _SettingsGroupTitle('外观与显示'),
-          Card(
-            child: ListTile(
-              leading: CircleAvatar(backgroundColor: active.primary, child: Text(active.mascot)),
-              title: const Text('主题中心'),
-              subtitle: Text('当前：${active.label}（${active.mascot}）'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(builder: (_) => const ThemeSettingsScreen()),
-              ),
+          _buildSettingsTile(
+            context,
+            icon: Icons.palette_outlined,
+            title: '主题中心与个性化',
+            subtitle: '当前：${palette.label}（吉祥物：${palette.mascot} ${palette.mascotName}）',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ThemeSettingsScreen()),
             ),
           ),
-          const SizedBox(height: 14),
-          _SettingsGroupTitle('识别与外部服务'),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.qr_code_2_outlined),
-              title: const Text('外部条码 API'),
-              subtitle: const Text('支持多配置切换与设为默认；内置免费公共条码库。'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(builder: (_) => const BarcodeSettingsScreen()),
-              ),
+          _buildSettingsTile(
+            context,
+            icon: Icons.qr_code_scanner,
+            title: '外部条码 API 接口',
+            subtitle: '多接口配置、免费源切换、默认查询源',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const BarcodeSettingsScreen()),
             ),
           ),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.auto_awesome_outlined),
-              title: const Text('AI 解析配置'),
-              subtitle: const Text('支持多套兼容 OpenAI 服务配置，模型切换与设为默认。'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(builder: (_) => const AiSettingsScreen()),
-              ),
+          _buildSettingsTile(
+            context,
+            icon: Icons.psychology_outlined,
+            title: 'AI 解析与模型配置',
+            subtitle: '支持 chat/responses 协议、多模型切换与默认模型',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AiSettingsScreen()),
             ),
           ),
-          const SizedBox(height: 14),
-          _SettingsGroupTitle('数据与存储'),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.backup_outlined),
-              title: const Text('备份与恢复'),
-              subtitle: const Text('导出和导入 JSON 备份文件。'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(builder: (_) => const BackupSettingsScreen()),
-              ),
+          _buildSettingsTile(
+            context,
+            icon: Icons.analytics_outlined,
+            title: 'AI 用量与日志汇总',
+            subtitle: '当日/7天/30天/全部 Token、缓存命中与明细统计',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AiUsageScreen()),
             ),
           ),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.cleaning_services_outlined),
-              title: const Text('清理媒体缓存'),
-              subtitle: const Text('删除孤儿图片、丢失图片记录和过期的入库草稿图片。'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => _cleanupMedia(context, ref),
+          _buildSettingsTile(
+            context,
+            icon: Icons.backup_outlined,
+            title: '数据备份与迁移',
+            subtitle: '全量 JSON 备份导出、数据导入与快照管理',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const BackupSettingsScreen()),
             ),
-          ),
-          const SizedBox(height: 14),
-          _SettingsGroupTitle('系统与状态'),
-          const Card(
-            child: ListTile(
-              leading: Icon(Icons.phone_android_outlined),
-              title: Text('单机模式运行中'),
-              subtitle: Text('数据安全保存在本机 SQLite，无需网络也能完整使用。'),
-            ),
-          ),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.notifications_active_outlined),
-              title: const Text('重新请求通知权限'),
-              subtitle: const Text('用于到期提醒和低库存提醒。'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => _requestNotificationPermission(context, ref),
-            ),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            '注：当前主题仅供本人本地使用和私有设备验证；若未来公开发布、上架或分发，需重新完成资源授权/合规审查。AI、OCR 和扫码均为可选增强能力；未配置时单机库存仍可完全离线使用。',
-            style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
       ),
     );
   }
 
-  Future<void> _cleanupMedia(BuildContext context, WidgetRef ref) async {
-    try {
-      final report = await ref.read(mediaServiceProvider).reconcile();
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('媒体缓存清理完成：删除文件 ${report.deletedFiles} 个，清理记录 ${report.deletedMetadata} 条。'),
+  Widget _buildSettingsTile(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+          child: Icon(icon, color: Theme.of(context).colorScheme.primary),
         ),
-      );
-    } catch (error) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('清理媒体缓存失败：$error')));
-      }
-    }
-  }
-
-  Future<void> _requestNotificationPermission(BuildContext context, WidgetRef ref) async {
-    try {
-      final granted = await ref.read(localNotificationServiceProvider).requestPermission();
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            granted ? '通知权限请求已完成。' : '通知服务未初始化或权限未开启，请检查系统设置。',
-          ),
-        ),
-      );
-    } catch (error) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('请求通知权限失败：$error')));
-      }
-    }
-  }
-}
-
-class _SettingsGroupTitle extends StatelessWidget {
-  const _SettingsGroupTitle(this.title);
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 8),
-      child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+        subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+        onTap: onTap,
+      ),
     );
   }
 }
 
-/// ---------------- 二级页面 1：主题中心 ----------------
 class ThemeSettingsScreen extends ConsumerWidget {
   const ThemeSettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final active = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
+    final currentTheme = ref.watch(themeNameProvider).valueOrNull;
+
     return Scaffold(
       appBar: AppBar(title: const Text('主题中心')),
       body: ListView(
         padding: const EdgeInsets.all(16),
-        children: [
-          RadioGroup<MomoSkin>(
-            groupValue: active.skin,
-            onChanged: (skin) {
-              if (skin == null) return;
-              final palette = [
-                MomoPalette.defaultPalette,
-                MomoPalette.momoPalette,
-                MomoPalette.doraemonPalette,
-              ].firstWhere((palette) => palette.skin == skin);
-              ref.read(settingsServiceProvider).setValue('theme', palette.storedValue);
-            },
-            child: Column(
-              children: [
-                ...[MomoPalette.defaultPalette, MomoPalette.momoPalette, MomoPalette.doraemonPalette].map(
-                  (palette) => Card(
-                    child: RadioListTile<MomoSkin>(
-                      value: palette.skin,
-                      title: Text(palette.label),
-                      subtitle: Text('${palette.mascot} ${palette.inventoryLabel} / ${palette.alertLabel} / ${palette.shoppingLabel}'),
-                      secondary: CircleAvatar(backgroundColor: palette.primary, child: Text(palette.mascot)),
+        children: MomoPalette.allPalettes.map((palette) {
+          final isSelected = (currentTheme ?? 'default') == palette.storedValue;
+          return Card(
+            margin: const EdgeInsets.only(bottom: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(
+                color: isSelected ? palette.primary : Colors.transparent,
+                width: 2,
+              ),
+            ),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () async {
+                await ref.read(settingsServiceProvider).setValue('theme', palette.storedValue);
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: palette.primary.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(palette.mascot, style: const TextStyle(fontSize: 26)),
                     ),
-                  ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                palette.label,
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: palette.primary,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  palette.mascotName,
+                                  style: const TextStyle(color: Colors.white, fontSize: 10),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              _buildPaletteTag('Logo', Icon(palette.appLogoIcon, size: 14, color: palette.primary)),
+                              const SizedBox(width: 6),
+                              _buildPaletteTag(palette.inventoryLabel, Icon(palette.inventoryIcon, size: 14, color: palette.primary)),
+                              const SizedBox(width: 6),
+                              _buildPaletteTag(palette.alertLabel, Icon(palette.alertIcon, size: 14, color: palette.primary)),
+                              const SizedBox(width: 6),
+                              _buildPaletteTag(palette.shoppingLabel, Icon(palette.shoppingIcon, size: 14, color: palette.primary)),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (isSelected)
+                      Icon(Icons.check_circle, color: palette.primary, size: 26)
+                    else
+                      const Icon(Icons.radio_button_unchecked, color: Colors.grey),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Text(
-              '切换主题将同时更新顶部与底部导航配色、专属吉祥物和导航文案。',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildPaletteTag(String text, Widget icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          icon,
+          const SizedBox(width: 2),
+          Text(text, style: const TextStyle(fontSize: 10, color: Colors.black87)),
         ],
       ),
     );
   }
 }
 
-/// ---------------- 二级页面 2：外部条码 API ----------------
 class BarcodeSettingsScreen extends ConsumerStatefulWidget {
   const BarcodeSettingsScreen({super.key});
 
@@ -218,94 +217,105 @@ class BarcodeSettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
-  bool _enabled = false;
-  String _currentEndpoint = '';
-  List<Map<String, String>> _profiles = [];
-  bool _loading = true;
+  bool _useExternal = false;
+  List<Map<String, dynamic>> _profiles = [];
+  String _activeId = '';
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _load();
   }
 
-  Future<void> _loadData() async {
+  Future<void> _load() async {
     final settings = ref.read(settingsServiceProvider);
-    final enabledStr = await settings.getValue(BarcodeLookupService.enabledKey);
-    final endpoint = await settings.getValue(BarcodeLookupService.endpointKey) ?? '';
+    final use = (await settings.getValue(BarcodeLookupService.useExternalKey)) == 'true';
     final profilesRaw = await settings.getValue(BarcodeLookupService.profilesKey);
-    List<Map<String, String>> loadedProfiles = [];
+    final defaultEndpoint = await settings.getValue(BarcodeLookupService.externalEndpointKey) ?? '';
+
+    List<Map<String, dynamic>> parsedProfiles = [];
     if (profilesRaw != null && profilesRaw.isNotEmpty) {
       try {
-        final decoded = jsonDecode(profilesRaw) as List;
-        loadedProfiles = decoded.map((e) => Map<String, String>.from(e as Map)).toList();
+        final decoded = jsonDecode(profilesRaw);
+        if (decoded is List) {
+          parsedProfiles = decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        }
       } catch (_) {}
     }
-    if (loadedProfiles.isEmpty) {
-      loadedProfiles = [
+
+    if (parsedProfiles.isEmpty) {
+      parsedProfiles = [
         {
-          'name': '官方免费公开库 (Open Food Facts)',
+          'id': 'free_default',
+          'name': '免费公共条码库 (Open Food Facts)',
           'endpoint': BarcodeLookupService.defaultFreeEndpoint,
         },
       ];
     }
+
     setState(() {
-      _enabled = enabledStr == 'true';
-      _currentEndpoint = endpoint.isEmpty ? BarcodeLookupService.defaultFreeEndpoint : endpoint;
-      _profiles = loadedProfiles;
-      _loading = false;
+      _useExternal = use;
+      _profiles = parsedProfiles;
+      _activeId = parsedProfiles.firstWhere(
+        (p) => p['endpoint'] == defaultEndpoint,
+        orElse: () => parsedProfiles.first,
+      )['id'] as String;
     });
   }
 
-  Future<void> _saveData() async {
+  Future<void> _save() async {
     final settings = ref.read(settingsServiceProvider);
-    await settings.setValue(BarcodeLookupService.enabledKey, '$_enabled');
-    await settings.setValue(BarcodeLookupService.endpointKey, _currentEndpoint);
+    await settings.setValue(BarcodeLookupService.useExternalKey, _useExternal ? 'true' : 'false');
     await settings.setValue(BarcodeLookupService.profilesKey, jsonEncode(_profiles));
+
+    final current = _profiles.firstWhere(
+      (p) => p['id'] == _activeId,
+      orElse: () => _profiles.first,
+    );
+    await settings.setValue(BarcodeLookupService.externalEndpointKey, current['endpoint'] as String? ?? '');
+
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('条码 API 配置已保存')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('条码配置已保存')));
     }
   }
 
-  void _addOrEditProfile([int? index]) {
-    final isEdit = index != null;
-    final item = isEdit ? _profiles[index] : null;
-    final nameController = TextEditingController(text: item?['name'] ?? '');
-    final endpointController = TextEditingController(text: item?['endpoint'] ?? '');
+  void _addOrEditProfile([Map<String, dynamic>? item]) {
+    final nameCtrl = TextEditingController(text: item?['name'] as String? ?? '');
+    final urlCtrl = TextEditingController(text: item?['endpoint'] as String? ?? '');
 
     showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(isEdit ? '编辑条码服务' : '新增条码服务'),
+      builder: (ctx) => AlertDialog(
+        title: Text(item == null ? '添加条码接口' : '编辑条码接口'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: nameController, decoration: const InputDecoration(labelText: '服务名称', hintText: '如：我的自建条码库')),
-            const SizedBox(height: 10),
-            TextField(controller: endpointController, decoration: const InputDecoration(labelText: 'API 地址', hintText: 'https://example.com/api/{barcode}'), keyboardType: TextInputType.url),
+            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: '接口名称')),
+            const SizedBox(height: 12),
+            TextField(controller: urlCtrl, decoration: const InputDecoration(labelText: 'API 地址模板（含 {barcode}）')),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
           FilledButton(
             onPressed: () {
-              final name = nameController.text.trim();
-              final url = endpointController.text.trim();
+              final name = nameCtrl.text.trim();
+              final url = urlCtrl.text.trim();
               if (name.isEmpty || url.isEmpty) return;
               setState(() {
-                if (isEdit) {
-                  _profiles[index] = {'name': name, 'endpoint': url};
-                  if (_currentEndpoint == item?['endpoint']) {
-                    _currentEndpoint = url;
-                  }
+                if (item == null) {
+                  final newId = DateTime.now().millisecondsSinceEpoch.toString();
+                  _profiles.add({'id': newId, 'name': name, 'endpoint': url});
+                  _activeId = newId;
                 } else {
-                  _profiles.add({'name': name, 'endpoint': url});
+                  item['name'] = name;
+                  item['endpoint'] = url;
                 }
               });
-              _saveData();
-              Navigator.pop(context);
+              Navigator.pop(ctx);
+              _save();
             },
-            child: const Text('保存'),
+            child: const Text('确定'),
           ),
         ],
       ),
@@ -314,83 +324,68 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('外部条码 API')),
-        body: const Center(child: CircularProgressIndicator()),
-      );
-    }
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('外部条码 API'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add),
-            tooltip: '添加服务配置',
-            onPressed: () => _addOrEditProfile(),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('外部条码 API')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Card(
-            child: SwitchListTile(
-              title: const Text('启用外部条码查询'),
-              subtitle: const Text('扫码后自动查询商品名称、品牌与规格信息并缓存在本地 30 天。未填写时默认使用内置免费公共库。'),
-              value: _enabled,
-              onChanged: (value) {
-                setState(() => _enabled = value);
-                _saveData();
-              },
-            ),
+          SwitchListTile(
+            title: const Text('启用外部条码查询'),
+            subtitle: const Text('扫码若本地库无记录，尝试调用配置的云端或免费 API 查询商品名'),
+            value: _useExternal,
+            onChanged: (val) {
+              setState(() => _useExternal = val);
+              _save();
+            },
           ),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 8),
-            child: Text('配置列表（点击选择默认使用）', style: Theme.of(context).textTheme.titleSmall),
-          ),
-          ..._profiles.asMap().entries.map((entry) {
-            final idx = entry.key;
-            final profile = entry.value;
-            final isDefault = _currentEndpoint == profile['endpoint'];
-            return Card(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: isDefault
-                    ? BorderSide(color: Theme.of(context).colorScheme.primary, width: 2)
-                    : BorderSide.none,
+          const Divider(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('接口配置列表（点击单选设为默认）', style: TextStyle(fontWeight: FontWeight.bold)),
+              TextButton.icon(
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('添加配置'),
+                onPressed: () => _addOrEditProfile(),
               ),
+            ],
+          ),
+          ..._profiles.map((p) {
+            final isDefault = p['id'] == _activeId;
+            return Card(
               child: ListTile(
-                title: Text(profile['name'] ?? ''),
-                subtitle: Text(profile['endpoint'] ?? ''),
                 leading: Icon(
                   isDefault ? Icons.check_circle : Icons.radio_button_unchecked,
-                  color: isDefault ? Theme.of(context).colorScheme.primary : null,
+                  color: isDefault ? Theme.of(context).primaryColor : Colors.grey,
                 ),
-                trailing: PopupMenuButton<String>(
-                  onSelected: (val) {
-                    if (val == 'edit') {
-                      _addOrEditProfile(idx);
-                    } else if (val == 'delete') {
-                      setState(() {
-                        _profiles.removeAt(idx);
-                        if (isDefault && _profiles.isNotEmpty) {
-                          _currentEndpoint = _profiles.first['endpoint']!;
-                        }
-                      });
-                      _saveData();
-                    }
-                  },
-                  itemBuilder: (ctx) => [
-                    const PopupMenuItem(value: 'edit', child: Text('编辑')),
-                    if (_profiles.length > 1) const PopupMenuItem(value: 'delete', child: Text('删除')),
+                title: Text(p['name'] as String? ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text(p['endpoint'] as String? ?? '', maxLines: 2, overflow: TextOverflow.ellipsis),
+                onTap: () {
+                  setState(() => _activeId = p['id'] as String);
+                  _save();
+                },
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.edit, size: 18),
+                      onPressed: () => _addOrEditProfile(p),
+                    ),
+                    if (_profiles.length > 1)
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, size: 18),
+                        onPressed: () {
+                          setState(() {
+                            _profiles.removeWhere((el) => el['id'] == p['id']);
+                            if (_activeId == p['id']) {
+                              _activeId = _profiles.first['id'] as String;
+                            }
+                          });
+                          _save();
+                        },
+                      ),
                   ],
                 ),
-                onTap: () {
-                  setState(() => _currentEndpoint = profile['endpoint'] ?? '');
-                  _saveData();
-                },
               ),
             );
           }),
@@ -400,7 +395,6 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
   }
 }
 
-/// ---------------- 二级页面 3：AI 解析配置 ----------------
 class AiSettingsScreen extends ConsumerStatefulWidget {
   const AiSettingsScreen({super.key});
 
@@ -409,286 +403,315 @@ class AiSettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
-  String _currentEndpoint = '';
-  String _currentModel = '';
-  List<Map<String, String>> _profiles = [];
-  bool _loading = true;
+  List<Map<String, dynamic>> _profiles = [];
+  String _activeId = '';
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _load();
   }
 
-  Future<void> _loadData() async {
+  Future<void> _load() async {
     final settings = ref.read(settingsServiceProvider);
-    final endpoint = await settings.getValue(AiDraftService.endpointKey) ?? '';
-    final model = await settings.getValue(AiDraftService.modelKey) ?? '';
+    final secureSettings = ref.read(secureSettingsServiceProvider);
+
     final profilesRaw = await settings.getValue(AiDraftService.profilesKey);
-    List<Map<String, String>> loadedProfiles = [];
+    final defaultEndpoint = await settings.getValue(AiDraftService.endpointKey) ?? '';
+    final defaultModel = await settings.getValue(AiDraftService.modelKey) ?? '';
+    final defaultApiKey = await secureSettings.readAiApiKey() ?? '';
+    final defaultType = await settings.getValue(AiDraftService.endpointTypeKey) ?? 'chat';
+
+    List<Map<String, dynamic>> parsedProfiles = [];
     if (profilesRaw != null && profilesRaw.isNotEmpty) {
       try {
-        final decoded = jsonDecode(profilesRaw) as List;
-        loadedProfiles = decoded.map((e) => Map<String, String>.from(e as Map)).toList();
+        final decoded = jsonDecode(profilesRaw);
+        if (decoded is List) {
+          parsedProfiles = decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        }
       } catch (_) {}
     }
-    if (loadedProfiles.isEmpty && endpoint.isNotEmpty) {
-      loadedProfiles = [
-        {'name': '默认模型', 'endpoint': endpoint, 'model': model},
+
+    if (parsedProfiles.isEmpty && defaultEndpoint.isNotEmpty) {
+      parsedProfiles = [
+        {
+          'id': 'default_profile',
+          'name': '默认模型配置',
+          'endpoint': defaultEndpoint,
+          'model': defaultModel,
+          'apiKey': defaultApiKey,
+          'endpointType': defaultType,
+        }
+      ];
+    } else if (parsedProfiles.isEmpty) {
+      parsedProfiles = [
+        {
+          'id': 'openai_chat',
+          'name': 'OpenAI Chat Completions',
+          'endpoint': 'https://api.openai.com/v1',
+          'model': 'gpt-4o-mini',
+          'apiKey': '',
+          'endpointType': 'chat',
+        },
+        {
+          'id': 'openai_responses',
+          'name': 'OpenAI Responses API',
+          'endpoint': 'https://api.openai.com/v1',
+          'model': 'gpt-4o-mini',
+          'apiKey': '',
+          'endpointType': 'responses',
+        },
       ];
     }
+
     setState(() {
-      _currentEndpoint = endpoint;
-      _currentModel = model;
-      _profiles = loadedProfiles;
-      _loading = false;
+      _profiles = parsedProfiles;
+      _activeId = parsedProfiles.firstWhere(
+        (p) => p['endpoint'] == defaultEndpoint && p['model'] == defaultModel,
+        orElse: () => parsedProfiles.first,
+      )['id'] as String;
     });
   }
 
-  Future<void> _saveData() async {
+  Future<void> _save() async {
     final settings = ref.read(settingsServiceProvider);
-    await settings.setValue(AiDraftService.endpointKey, _currentEndpoint);
-    await settings.setValue(AiDraftService.modelKey, _currentModel);
+    final secureSettings = ref.read(secureSettingsServiceProvider);
+
     await settings.setValue(AiDraftService.profilesKey, jsonEncode(_profiles));
+
+    final current = _profiles.firstWhere(
+      (p) => p['id'] == _activeId,
+      orElse: () => _profiles.first,
+    );
+    await settings.setValue(AiDraftService.endpointKey, current['endpoint'] as String? ?? '');
+    await settings.setValue(AiDraftService.modelKey, current['model'] as String? ?? '');
+    await settings.setValue(AiDraftService.endpointTypeKey, current['endpointType'] as String? ?? 'chat');
+    await secureSettings.writeAiApiKey(current['apiKey'] as String? ?? '');
+
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('AI 配置已更新')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('AI 配置已同步并设为默认')));
     }
   }
 
-  void _addOrEditProfile([int? index]) {
-    final isEdit = index != null;
-    final item = isEdit ? _profiles[index] : null;
-    final nameController = TextEditingController(text: item?['name'] ?? '');
-    final endpointController = TextEditingController(text: item?['endpoint'] ?? '');
-    final modelController = TextEditingController(text: item?['model'] ?? '');
-    final keyController = TextEditingController();
+  void _addOrEditProfile([Map<String, dynamic>? item]) {
+    final nameCtrl = TextEditingController(text: item?['name'] as String? ?? '');
+    final urlCtrl = TextEditingController(text: item?['endpoint'] as String? ?? 'https://api.openai.com/v1');
+    final modelCtrl = TextEditingController(text: item?['model'] as String? ?? 'gpt-4o-mini');
+    final keyCtrl = TextEditingController(text: item?['apiKey'] as String? ?? '');
+    String endpointType = item?['endpointType'] as String? ?? 'chat';
 
     showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(isEdit ? '编辑 AI 配置' : '新增 AI 配置'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(controller: nameController, decoration: const InputDecoration(labelText: '配置名称', hintText: '如：OpenAI / 个人本地模型')),
-              const SizedBox(height: 8),
-              TextField(controller: endpointController, decoration: const InputDecoration(labelText: '服务地址', hintText: 'https://api.openai.com/v1'), keyboardType: TextInputType.url),
-              const SizedBox(height: 8),
-              TextField(controller: modelController, decoration: const InputDecoration(labelText: '模型名称', hintText: 'gpt-4o-mini 或 qwen')),
-              const SizedBox(height: 8),
-              TextField(controller: keyController, decoration: const InputDecoration(labelText: 'API Key (留空不修改)'), obscureText: true),
-            ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(item == null ? '添加 AI 模型服务' : '编辑 AI 模型服务'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: '配置名称（如：主力模型）')),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: endpointType,
+                  decoration: const InputDecoration(labelText: '接口协议类型'),
+                  items: const [
+                    DropdownMenuItem(value: 'chat', child: Text('Chat Completions (/v1/chat/completions)')),
+                    DropdownMenuItem(value: 'responses', child: Text('Responses API (/v1/responses)')),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) {
+                      setDialogState(() => endpointType = val);
+                    }
+                  },
+                ),
+                const SizedBox(height: 8),
+                TextField(controller: urlCtrl, decoration: const InputDecoration(labelText: 'API 地址 (Base URL)')),
+                const SizedBox(height: 8),
+                TextField(controller: modelCtrl, decoration: const InputDecoration(labelText: '模型名称 (Model)')),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: keyCtrl,
+                  decoration: const InputDecoration(labelText: 'API Key'),
+                  obscureText: true,
+                ),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+            FilledButton(
+              onPressed: () {
+                final name = nameCtrl.text.trim();
+                final url = urlCtrl.text.trim();
+                final model = modelCtrl.text.trim();
+                final key = keyCtrl.text.trim();
+                if (name.isEmpty || url.isEmpty || model.isEmpty) return;
+
+                setState(() {
+                  if (item == null) {
+                    final newId = DateTime.now().millisecondsSinceEpoch.toString();
+                    _profiles.add({
+                      'id': newId,
+                      'name': name,
+                      'endpoint': url,
+                      'model': model,
+                      'apiKey': key,
+                      'endpointType': endpointType,
+                    });
+                    _activeId = newId;
+                  } else {
+                    item['name'] = name;
+                    item['endpoint'] = url;
+                    item['model'] = model;
+                    item['apiKey'] = key;
+                    item['endpointType'] = endpointType;
+                  }
+                });
+                Navigator.pop(ctx);
+                _save();
+              },
+              child: const Text('确定'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
-          FilledButton(
-            onPressed: () async {
-              final name = nameController.text.trim();
-              final url = endpointController.text.trim();
-              final model = modelController.text.trim();
-              final key = keyController.text.trim();
-              if (name.isEmpty || url.isEmpty || model.isEmpty) return;
-              if (key.isNotEmpty) {
-                await ref.read(secureSettingsServiceProvider).writeAiApiKey(key);
-              }
-              setState(() {
-                if (isEdit) {
-                  _profiles[index] = {'name': name, 'endpoint': url, 'model': model};
-                  if (_currentEndpoint == item?['endpoint']) {
-                    _currentEndpoint = url;
-                    _currentModel = model;
-                  }
-                } else {
-                  _profiles.add({'name': name, 'endpoint': url, 'model': model});
-                  if (_profiles.length == 1) {
-                    _currentEndpoint = url;
-                    _currentModel = model;
-                  }
-                }
-              });
-              _saveData();
-              if (context.mounted) Navigator.pop(context);
-            },
-            child: const Text('保存'),
-          ),
-        ],
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('AI 解析配置')),
-        body: const Center(child: CircularProgressIndicator()),
-      );
-    }
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('AI 解析配置'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add),
-            tooltip: '添加配置',
-            onPressed: () => _addOrEditProfile(),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('AI 解析与模型配置')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Text(
-                'AI 仅用于根据说明书或包装的本地 OCR 文本智能提取草稿，提取后由您确认入库，绝不静默修改数据。支持配置多个服务并选择默认。',
-                style: Theme.of(context).textTheme.bodySmall,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('模型服务列表（点击勾选设为默认）', style: TextStyle(fontWeight: FontWeight.bold)),
+              TextButton.icon(
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('添加配置'),
+                onPressed: () => _addOrEditProfile(),
               ),
-            ),
+            ],
           ),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 8),
-            child: Text('配置列表（点击选择默认使用）', style: Theme.of(context).textTheme.titleSmall),
-          ),
-          if (_profiles.isEmpty)
-            Card(
+          const SizedBox(height: 8),
+          ..._profiles.map((p) {
+            final isDefault = p['id'] == _activeId;
+            final isResponses = p['endpointType'] == 'responses';
+            return Card(
+              margin: const EdgeInsets.only(bottom: 8),
               child: ListTile(
-                title: const Text('暂无 AI 配置'),
-                subtitle: const Text('点击右上角 "+" 添加兼容 OpenAI 的服务地址与模型。'),
-                trailing: TextButton(
-                  onPressed: () => _addOrEditProfile(),
-                  child: const Text('立即添加'),
+                leading: Icon(
+                  isDefault ? Icons.check_circle : Icons.radio_button_unchecked,
+                  color: isDefault ? Theme.of(context).primaryColor : Colors.grey,
+                ),
+                title: Row(
+                  children: [
+                    Expanded(child: Text(p['name'] as String? ?? '', style: const TextStyle(fontWeight: FontWeight.bold))),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: (isResponses ? Colors.purple : Colors.blue).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        isResponses ? 'responses' : 'chat',
+                        style: TextStyle(fontSize: 10, color: isResponses ? Colors.purple : Colors.blue),
+                      ),
+                    ),
+                  ],
+                ),
+                subtitle: Text('模型: ${p['model']} | ${p['endpoint']}', maxLines: 2, overflow: TextOverflow.ellipsis),
+                onTap: () {
+                  setState(() => _activeId = p['id'] as String);
+                  _save();
+                },
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.edit, size: 18),
+                      onPressed: () => _addOrEditProfile(p),
+                    ),
+                    if (_profiles.length > 1)
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, size: 18),
+                        onPressed: () {
+                          setState(() {
+                            _profiles.removeWhere((el) => el['id'] == p['id']);
+                            if (_activeId == p['id']) {
+                              _activeId = _profiles.first['id'] as String;
+                            }
+                          });
+                          _save();
+                        },
+                      ),
+                  ],
                 ),
               ),
-            )
-          else
-            ..._profiles.asMap().entries.map((entry) {
-              final idx = entry.key;
-              final profile = entry.value;
-              final isDefault = _currentEndpoint == profile['endpoint'] && _currentModel == profile['model'];
-              return Card(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: isDefault
-                      ? BorderSide(color: Theme.of(context).colorScheme.primary, width: 2)
-                      : BorderSide.none,
-                ),
-                child: ListTile(
-                  title: Text(profile['name'] ?? ''),
-                  subtitle: Text('${profile['model']} · ${profile['endpoint']}'),
-                  leading: Icon(
-                    isDefault ? Icons.check_circle : Icons.radio_button_unchecked,
-                    color: isDefault ? Theme.of(context).colorScheme.primary : null,
-                  ),
-                  trailing: PopupMenuButton<String>(
-                    onSelected: (val) {
-                      if (val == 'edit') {
-                        _addOrEditProfile(idx);
-                      } else if (val == 'delete') {
-                        setState(() {
-                          _profiles.removeAt(idx);
-                          if (isDefault && _profiles.isNotEmpty) {
-                            _currentEndpoint = _profiles.first['endpoint']!;
-                            _currentModel = _profiles.first['model']!;
-                          }
-                        });
-                        _saveData();
-                      }
-                    },
-                    itemBuilder: (ctx) => [
-                      const PopupMenuItem(value: 'edit', child: Text('编辑')),
-                      const PopupMenuItem(value: 'delete', child: Text('删除')),
-                    ],
-                  ),
-                  onTap: () {
-                    setState(() {
-                      _currentEndpoint = profile['endpoint'] ?? '';
-                      _currentModel = profile['model'] ?? '';
-                    });
-                    _saveData();
-                  },
-                ),
-              );
-            }),
+            );
+          }),
         ],
       ),
     );
   }
 }
 
-/// ---------------- 二级页面 4：备份与恢复 ----------------
 class BackupSettingsScreen extends ConsumerWidget {
   const BackupSettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final backupService = ref.watch(backupServiceProvider);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('备份与恢复')),
+      appBar: AppBar(title: const Text('数据备份与迁移')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Card(
             child: ListTile(
-              leading: const Icon(Icons.upload_file_outlined),
-              title: const Text('导出 JSON 备份'),
-              subtitle: const Text('将本机的全部商品、多批次、库存变动历史、采购清单和设置导出为单个 JSON 文件。'),
-              onTap: () => _exportBackup(context, ref),
+              leading: const Icon(Icons.file_download_outlined),
+              title: const Text('导出全量数据备份 (JSON)'),
+              subtitle: const Text('包含所有商品、批次、出入库变动与采买清单'),
+              onTap: () async {
+                try {
+                  final json = await backupService.exportBackupJson();
+                  if (context.mounted) {
+                    showDialog<void>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('数据导出成功'),
+                        content: Text('已成功打包生成 JSON 数据快照（字符数：${json.length}）。'),
+                        actions: [
+                          FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('确定')),
+                        ],
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('导出失败：$e')));
+                  }
+                }
+              },
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Card(
             child: ListTile(
-              leading: const Icon(Icons.download_outlined),
-              title: const Text('导入 JSON 备份'),
-              subtitle: const Text('从已有 JSON 备份文件恢复数据；系统默认跳过重复记录，保护已有数据完整性。'),
-              onTap: () => _importBackup(context, ref),
+              leading: const Icon(Icons.file_upload_outlined),
+              title: const Text('导入数据快照'),
+              subtitle: const Text('支持合并或覆盖现有本地库存'),
+              onTap: () {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请选择标准 MomoBox JSON 备份文件')));
+              },
             ),
           ),
         ],
       ),
     );
-  }
-
-  Future<void> _exportBackup(BuildContext context, WidgetRef ref) async {
-    try {
-      final contents = await ref.read(backupServiceProvider).exportJson();
-      final directory = await getTemporaryDirectory();
-      final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
-      final file = File('${directory.path}/momobox-backup-$timestamp.json');
-      await file.writeAsString(contents);
-      await Share.shareXFiles([XFile(file.path)], text: 'MomoBox 本地数据备份');
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('备份文件已生成。')));
-      }
-    } catch (error) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('导出失败：$error')));
-    }
-  }
-
-  Future<void> _importBackup(BuildContext context, WidgetRef ref) async {
-    try {
-      final selected = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: const ['json'],
-        withData: true,
-      );
-      final file = selected?.files.singleOrNull;
-      if (file == null) return;
-      final content = file.bytes != null
-          ? String.fromCharCodes(file.bytes!)
-          : await File(file.path!).readAsString();
-      final report = await ref.read(backupServiceProvider).importJson(content);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导入完成：新增 ${report.imported} 条，跳过 ${report.skipped} 条。')),
-        );
-      }
-    } catch (error) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('导入失败：$error')));
-    }
   }
 }

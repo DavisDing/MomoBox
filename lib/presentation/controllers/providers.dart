@@ -1,22 +1,25 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../application/backup_service.dart';
+import '../../application/ai_assistant_service.dart';
 import '../../application/ai_draft_service.dart';
+import '../../application/ai_usage_service.dart';
+import '../../application/backup_service.dart';
 import '../../application/barcode_lookup_service.dart';
 import '../../application/inventory_service.dart';
 import '../../application/media_service.dart';
-import '../../application/settings_service.dart';
 import '../../application/reminder_service.dart';
+import '../../application/settings_service.dart';
 import '../../application/shopping_service.dart';
 import '../../core/database/app_database.dart';
-import '../../data/repositories/barcode_cache_repository.dart';
 import '../../data/repositories/backup_repository.dart';
-import '../../data/repositories/media_repository.dart';
+import '../../data/repositories/barcode_cache_repository.dart';
 import '../../data/repositories/inventory_repository.dart';
-import '../../data/repositories/settings_repository.dart';
+import '../../data/repositories/media_repository.dart';
 import '../../data/repositories/reminder_repository.dart';
+import '../../data/repositories/settings_repository.dart';
 import '../../data/repositories/shopping_repository.dart';
 import '../../domain/inventory/reminder_rules.dart';
+import '../../domain/models/ai_usage_models.dart';
 import '../../domain/models/inventory_models.dart';
 import '../../domain/models/recognition_models.dart';
 import '../../services/local_notification_service.dart';
@@ -109,7 +112,6 @@ final reminderSummaryProvider = Provider<ReminderSummary>((ref) {
   );
 });
 
-
 final barcodeCacheRepositoryProvider = Provider<BarcodeCacheRepository>(
   (ref) => BarcodeCacheRepository(ref.watch(databaseProvider)),
 );
@@ -152,10 +154,28 @@ final secureSettingsServiceProvider = Provider<SecureSettingsService>(
   (ref) => SecureSettingsService(),
 );
 
+final aiUsageServiceProvider = Provider<AiUsageService>(
+  (ref) => AiUsageService(ref.watch(settingsRepositoryProvider)),
+);
+
+final aiUsageLogsProvider = StreamProvider<List<AiUsageRecord>>(
+  (ref) => ref.watch(aiUsageServiceProvider).watchLogs(),
+);
+
 final aiDraftServiceProvider = Provider<AiDraftService>(
   (ref) => AiDraftService(
     ref.watch(settingsRepositoryProvider),
     ref.watch(secureSettingsServiceProvider),
+    usageService: ref.watch(aiUsageServiceProvider),
+  ),
+);
+
+final aiAssistantServiceProvider = Provider<AiAssistantService>(
+  (ref) => AiAssistantService(
+    ref.watch(settingsRepositoryProvider),
+    ref.watch(secureSettingsServiceProvider),
+    ref.watch(inventoryRepositoryProvider),
+    usageService: ref.watch(aiUsageServiceProvider),
   ),
 );
 
