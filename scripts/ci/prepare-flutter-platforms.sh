@@ -158,7 +158,7 @@ subprojects {
     }
 }
 subprojects {
-    afterEvaluate {
+    val updateCompileSdk = {
         val androidExt = extensions.findByName("android")
         if (androidExt != null) {
             try {
@@ -185,6 +185,13 @@ subprojects {
             }
         }
     }
+    if (state.executed) {
+        updateCompileSdk()
+    } else {
+        afterEvaluate {
+            updateCompileSdk()
+        }
+    }
 }
 '''
         else:
@@ -197,7 +204,7 @@ subprojects {
     }
 }
 subprojects {
-    afterEvaluate { project ->
+    def updateCompileSdk = {
         if (project.extensions.findByName("android") != null) {
             try {
                 def currentSdk = null
@@ -217,6 +224,13 @@ subprojects {
                     }
                 }
             } catch (Exception ignored) {}
+        }
+    }
+    if (project.state.executed) {
+        updateCompileSdk()
+    } else {
+        project.afterEvaluate {
+            updateCompileSdk()
         }
     }
 }
