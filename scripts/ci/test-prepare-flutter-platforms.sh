@@ -39,6 +39,16 @@ cat > android/app/src/main/AndroidManifest.xml <<'XML'
     </application>
 </manifest>
 XML
+cat > android/gradle.properties <<'PROP'
+org.gradle.jvmargs=-Xmx4G
+android.useAndroidX=true
+PROP
+cat > android/build.gradle <<'ROOTGRADLE'
+allprojects { repositories { google() } }
+ROOTGRADLE
+cat > android/build.gradle.kts <<'ROOTKTS'
+allprojects { repositories { google() } }
+ROOTKTS
 cat > android/app/build.gradle <<'GRADLE'
 plugins { id 'com.android.application' }
 
@@ -129,6 +139,9 @@ cp "$script_dir/prepare-flutter-platforms.sh" "$temporary_root/project/prepare.s
   grep -q 'minSdk = 36' android/app/build.gradle.kts
   grep -q 'targetSdk = 37' android/app/build.gradle.kts
   grep -q 'isCoreLibraryDesugaringEnabled = true' android/app/build.gradle.kts
+  grep -q 'kotlin.jvm.target.validation.mode=warning' android/gradle.properties
+  grep -q 'jvmTarget' android/build.gradle
+  grep -q 'jvmTarget' android/build.gradle.kts
   grep -q 'coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")' android/app/build.gradle.kts
   grep -q 'coreLibraryDesugaringEnabled true' android/app/build.gradle
   test "$(grep -c 'desugar_jdk_libs' android/app/build.gradle)" -eq 1

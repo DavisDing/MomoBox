@@ -114,6 +114,45 @@ for gradle in (Path('android/app/build.gradle'), Path('android/app/build.gradle.
             text += '\n\ndependencies {\n' + dependency + '}\n'
     gradle.write_text(text)
 
+gradle_props = Path('android/gradle.properties')
+if gradle_props.exists():
+    text = gradle_props.read_text()
+    if 'kotlin.jvm.target.validation.mode' not in text:
+        text += '\n# Prevent plugin JVM target mismatch errors (e.g. Java 11 vs Kotlin 1.8)\nkotlin.jvm.target.validation.mode=warning\n'
+        gradle_props.write_text(text)
+
+for root_gradle in (Path('android/build.gradle'), Path('android/build.gradle.kts')):
+    if not root_gradle.exists():
+        continue
+    text = root_gradle.read_text()
+    if 'tasks.withType' not in text or 'jvmTarget' not in text:
+        if root_gradle.suffix == '.kts':
+            subproject_config = '''
+subprojects {
+    afterEvaluate {
+        tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+            compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
+    }
+}
+'''
+        else:
+            subproject_config = '''
+subprojects {
+    afterEvaluate { project ->
+        if (project.hasProperty('android')) {
+            project.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+                kotlinOptions {
+                    jvmTarget = '17'
+                }
+            }
+        }
+    }
+}
+'''
+        text += subproject_config
+        root_gradle.write_text(text)
+
 # Keep iOS project, CocoaPods, and Flutter framework metadata aligned with the
 # same minimum supported OS. These files are generated and therefore patched
 # on every CI/release run rather than committed to the repository.
