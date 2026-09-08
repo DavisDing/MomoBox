@@ -162,14 +162,13 @@ class ThemeSettingsScreen extends ConsumerWidget {
                             ],
                           ),
                           const SizedBox(height: 6),
-                          Row(
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
                             children: [
                               _buildPaletteTag('Logo', Icon(palette.appLogoIcon, size: 14, color: palette.primary)),
-                              const SizedBox(width: 6),
                               _buildPaletteTag(palette.inventoryLabel, Icon(palette.inventoryIcon, size: 14, color: palette.primary)),
-                              const SizedBox(width: 6),
                               _buildPaletteTag(palette.alertLabel, Icon(palette.alertIcon, size: 14, color: palette.primary)),
-                              const SizedBox(width: 6),
                               _buildPaletteTag(palette.shoppingLabel, Icon(palette.shoppingIcon, size: 14, color: palette.primary)),
                             ],
                           ),
@@ -229,9 +228,9 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
 
   Future<void> _load() async {
     final settings = ref.read(settingsServiceProvider);
-    final use = (await settings.getValue(BarcodeLookupService.useExternalKey)) == 'true';
+    final use = (await settings.getValue(BarcodeLookupService.enabledKey)) == 'true';
     final profilesRaw = await settings.getValue(BarcodeLookupService.profilesKey);
-    final defaultEndpoint = await settings.getValue(BarcodeLookupService.externalEndpointKey) ?? '';
+    final defaultEndpoint = await settings.getValue(BarcodeLookupService.endpointKey) ?? '';
 
     List<Map<String, dynamic>> parsedProfiles = [];
     if (profilesRaw != null && profilesRaw.isNotEmpty) {
@@ -265,14 +264,14 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
 
   Future<void> _save() async {
     final settings = ref.read(settingsServiceProvider);
-    await settings.setValue(BarcodeLookupService.useExternalKey, _useExternal ? 'true' : 'false');
+    await settings.setValue(BarcodeLookupService.enabledKey, _useExternal ? 'true' : 'false');
     await settings.setValue(BarcodeLookupService.profilesKey, jsonEncode(_profiles));
 
     final current = _profiles.firstWhere(
       (p) => p['id'] == _activeId,
       orElse: () => _profiles.first,
     );
-    await settings.setValue(BarcodeLookupService.externalEndpointKey, current['endpoint'] as String? ?? '');
+    await settings.setValue(BarcodeLookupService.endpointKey, current['endpoint'] as String? ?? '');
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('条码配置已保存')));
@@ -512,7 +511,7 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                 TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: '配置名称（如：主力模型）')),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  value: endpointType,
+                  initialValue: endpointType,
                   decoration: const InputDecoration(labelText: '接口协议类型'),
                   items: const [
                     DropdownMenuItem(value: 'chat', child: Text('Chat Completions (/v1/chat/completions)')),
@@ -678,7 +677,7 @@ class BackupSettingsScreen extends ConsumerWidget {
               subtitle: const Text('包含所有商品、批次、出入库变动与采买清单'),
               onTap: () async {
                 try {
-                  final json = await backupService.exportBackupJson();
+                  final json = await backupService.exportJson();
                   if (context.mounted) {
                     showDialog<void>(
                       context: context,

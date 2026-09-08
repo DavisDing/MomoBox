@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 class AiUsageRecord {
   const AiUsageRecord({
     required this.id,

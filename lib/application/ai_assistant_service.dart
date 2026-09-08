@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../data/repositories/inventory_repository.dart';
 import '../data/repositories/settings_repository.dart';
 import '../domain/models/ai_usage_models.dart';
+import '../domain/models/inventory_models.dart';
 import '../services/secure_settings_service.dart';
 import 'ai_draft_service.dart';
 import 'ai_usage_service.dart';
@@ -51,26 +52,31 @@ class AiAssistantService {
     }
 
     // 获取当前完整库存和批次快照作为上下文
-    final inventory = await _inventoryRepository.watchInventory().first;
-    final now = DateTime.now();
+    final inventory = await _inventoryRepository
+        .watchInventory()
+        .first
+        .timeout(const Duration(seconds: 3), onTimeout: () => const <InventoryItem>[]);
 
     final buffer = StringBuffer();
-    buffer.writeln('【当前时间】：${now.toIso8601String().substring(0, 10)}');
+    buffer.writeln('【当前时间】：${DateTime.now().toIso8601String().substring(0, 10)}');
     buffer.writeln('【当前家庭库存物品清单】：');
     if (inventory.isEmpty) {
       buffer.writeln('（目前库存为空，暂无物品）');
     } else {
       for (final item in inventory) {
-        final p = item.product;
-        buffer.writeln('- 商品名: ${p.name}, 分类: ${p.category}, 品牌: ${p.brand ?? "无"}, 规格: ${p.specification ?? "无"}, 存放位置: ${p.location ?? "未指定"}, 总余量: ${item.totalQuantity} ${p.unit}');
+        buffer.writeln(
+          '- 商品名: ${item.name}, 分类: ${item.category}, 品牌: ${item.brand ?? "无"}, 规格: ${item.specification ?? "无"}, 存放位置: ${item.location ?? "未指定"}, 总余量: ${item.totalStock} ${item.unit}',
+        );
         for (final b in item.batches) {
           final exp = b.expiryDate != null ? b.expiryDate!.toIso8601String().substring(0, 10) : '未记录';
           final prod = b.productionDate != null ? b.productionDate!.toIso8601String().substring(0, 10) : '未记录';
-          final days = b.daysUntilExpiry(now);
+          final days = b.daysUntilExpiry;
           final state = b.isDiscarded
               ? '已丢弃'
               : (days != null && days < 0 ? '已过期 ${-days} 天' : (days != null ? '剩余 $days 天到期' : '无明确到期日'));
-          buffer.writeln('  * 批次 ${b.batchNo ?? "默认"}: 余量 ${b.remainingQuantity}, 生产日期: $prod, 保质期/到期日: $exp ($state), 开封状态: ${b.isOpened ? "已开封" : "未开封"}');
+          buffer.writeln(
+            '  * 批次 ${b.batchNo ?? "默认"}: 余量 ${b.remainingQuantity}, 生产日期: $prod, 保质期/到期日: $exp ($state)',
+          );
         }
       }
     }
@@ -201,7 +207,8 @@ ${buffer.toString()}
   }
 
   Uri _chatCompletionUri(String endpoint) {
-    final parsed = Uri.tryParse(endpoint.trim());
+    final clean = endpoint.trim().replaceAll(RegExp(r'/+$'), '');
+    final parsed = Uri.tryParse(clean);
     if (parsed == null || !parsed.hasScheme || !parsed.hasAuthority) {
       throw ArgumentError('AI 服务地址无效。');
     }
@@ -210,7 +217,8 @@ ${buffer.toString()}
   }
 
   Uri _responsesUri(String endpoint) {
-    final parsed = Uri.tryParse(endpoint.trim());
+    final clean = endpoint.trim().replaceAll(RegExp(r'/+$'), '');
+    final parsed = Uri.tryParse(clean);
     if (parsed == null || !parsed.hasScheme || !parsed.hasAuthority) {
       throw ArgumentError('AI 服务地址无效。');
     }
