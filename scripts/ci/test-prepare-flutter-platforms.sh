@@ -64,6 +64,12 @@ android {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.debug
+        }
+    }
 }
 
 dependencies {
@@ -83,6 +89,12 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
+    }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.getByName("debug")
+        }
     }
 }
 KTS
@@ -147,6 +159,12 @@ cp "$script_dir/prepare-flutter-platforms.sh" "$temporary_root/project/prepare.s
   test "$(grep -c 'desugar_jdk_libs' android/app/build.gradle)" -eq 1
   test "$(grep -c 'desugar_jdk_libs' android/app/build.gradle.kts)" -eq 1
   grep -q 'tools:keep="@mipmap/ic_launcher"' android/app/src/main/res/values/keep.xml
+  grep -Fq -- '-dontwarn com.google.mlkit.vision.text.**' android/app/proguard-rules.pro
+  grep -q 'proguardFiles' android/app/build.gradle
+  grep -q 'proguardFiles' android/app/build.gradle.kts
+  grep -q 'compileSdk' android/build.gradle
+  grep -q 'compileSdk' android/build.gradle.kts
+  grep -q "pod 'GoogleMLKit/TextRecognitionChinese'" ios/Podfile
   grep -q 'import UserNotifications' ios/Runner/AppDelegate.swift
   grep -q 'UNUserNotificationCenter.current().delegate = self' ios/Runner/AppDelegate.swift
   grep -q "platform :ios, '27.0'" ios/Podfile

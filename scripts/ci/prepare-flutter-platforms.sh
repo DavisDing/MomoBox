@@ -79,6 +79,15 @@ keep.write_text('''<?xml version="1.0" encoding="utf-8"?>
     tools:keep="@mipmap/ic_launcher" />
 ''')
 
+proguard = Path('android/app/proguard-rules.pro')
+mlkit_rules = '''# ProGuard / R8 rules for optional ML Kit text recognition language models
+-dontwarn com.google.mlkit.vision.text.**
+'''
+if not proguard.exists():
+    proguard.write_text(mlkit_rules)
+elif '-dontwarn com.google.mlkit.vision.text.**' not in proguard.read_text():
+    proguard.write_text(proguard.read_text().rstrip() + '\n\n' + mlkit_rules)
+
 for gradle in (Path('android/app/build.gradle'), Path('android/app/build.gradle.kts')):
     if not gradle.exists():
         continue
@@ -111,6 +120,22 @@ for gradle in (Path('android/app/build.gradle'), Path('android/app/build.gradle.
             text = text.replace('dependencies {', 'dependencies {\n' + dependency, 1)
         else:
             text += '\n\ndependencies {\n' + dependency + '}\n'
+
+    if 'proguardFiles' not in text:
+        if gradle.suffix == '.kts':
+            text = re.sub(
+                r'(?m)^(\s*release\s*\{)',
+                r'\g<1>\n            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")',
+                text,
+                count=1,
+            )
+        else:
+            text = re.sub(
+                r'(?m)^(\s*release\s*\{)',
+                r"\g<1>\n            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'",
+                text,
+                count=1,
+            )
     gradle.write_text(text)
 
 gradle_props = Path('android/gradle.properties')
@@ -132,6 +157,35 @@ subprojects {
         compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
+subprojects {
+    afterEvaluate {
+        val androidExt = extensions.findByName("android")
+        if (androidExt != null) {
+            try {
+                val getCompileSdk = androidExt.javaClass.getMethod("getCompileSdk")
+                val currentSdk = getCompileSdk.invoke(androidExt) as? Int
+                if (currentSdk == null || currentSdk < 36) {
+                    try {
+                        androidExt.javaClass.getMethod("setCompileSdk", java.lang.Integer::class.java).invoke(androidExt, 36)
+                    } catch (_: Throwable) {
+                        try {
+                            androidExt.javaClass.getMethod("setCompileSdkVersion", java.lang.Integer.TYPE).invoke(androidExt, 36)
+                        } catch (_: Throwable) {}
+                    }
+                }
+            } catch (_: Throwable) {
+                try {
+                    val getCompileSdkVersion = androidExt.javaClass.getMethod("getCompileSdkVersion")
+                    val currentSdkStr = getCompileSdkVersion.invoke(androidExt)?.toString() ?: ""
+                    val num = currentSdkStr.filter { it.isDigit() }.toIntOrNull()
+                    if (num == null || num < 36) {
+                        androidExt.javaClass.getMethod("compileSdkVersion", java.lang.Integer.TYPE).invoke(androidExt, 36)
+                    }
+                } catch (_: Throwable) {}
+            }
+        }
+    }
+}
 '''
         else:
             subproject_config = '''
@@ -139,6 +193,30 @@ subprojects {
     tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
         kotlinOptions {
             jvmTarget = '17'
+        }
+    }
+}
+subprojects {
+    afterEvaluate { project ->
+        if (project.extensions.findByName("android") != null) {
+            try {
+                def currentSdk = null
+                try {
+                    currentSdk = project.android.compileSdk
+                } catch (Exception ignored) {
+                    try {
+                        def sdkStr = project.android.compileSdkVersion?.toString()?.replaceAll("[^0-9]", "")
+                        if (sdkStr) currentSdk = Integer.parseInt(sdkStr)
+                    } catch (Exception ignored2) {}
+                }
+                if (currentSdk == null || currentSdk < 36) {
+                    try {
+                        project.android.compileSdk = 36
+                    } catch (Exception ignored) {
+                        project.android.compileSdkVersion = 36
+                    }
+                }
+            } catch (Exception ignored) {}
         }
     }
 }
@@ -161,6 +239,25 @@ if podfile.exists():
         )
     else:
         text = "platform :ios, '" + IOS_DEPLOYMENT_TARGET + "'\n" + text
+
+    chinese_pod = "  pod 'GoogleMLKit/TextRecognitionChinese', '~> 6.0.0'\n"
+    if 'GoogleMLKit/TextRecognitionChinese' not in text:
+        if 'flutter_install_all_ios_pods' in text:
+            text = re.sub(
+                r'(?m)^(\s*flutter_install_all_ios_pods.*$)',
+                r'\1\n' + chinese_pod,
+                text,
+                count=1,
+            )
+        elif "target 'Runner' do" in text or 'target "Runner" do' in text:
+            text = re.sub(
+                r'''(?m)^(target ['"]Runner['"] do)''',
+                r'\1\n' + chinese_pod,
+                text,
+                count=1,
+            )
+        else:
+            text += "\ntarget 'Runner' do\n" + chinese_pod + "end\n"
     podfile.write_text(text)
 
 for pbxproj in Path('ios').glob('**/*.pbxproj'):
