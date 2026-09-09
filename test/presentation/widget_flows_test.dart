@@ -45,6 +45,7 @@ void main() {
     await _pumpUntilFound(tester, _field('物品名称 *'));
     expect(find.text('发现相似商品'), findsNothing);
     expect(_fieldController(tester, '物品名称 *').text, '待确认商品');
+    await _scrollSheetUntilFound(tester, _field('条码'));
     expect(_fieldController(tester, '条码').text, '6900000000001');
     expect(await database.select(database.products).get(), hasLength(1));
 
@@ -378,6 +379,18 @@ Future<void> _scrollSheetToTop(WidgetTester tester) async {
   final scrollable = tester.state<ScrollableState>(sheetScrollView);
   scrollable.position.jumpTo(scrollable.position.minScrollExtent);
   await tester.pump();
+}
+
+Future<void> _scrollSheetUntilFound(WidgetTester tester, Finder finder) async {
+  final sheetScrollView = find.descendant(
+    of: find.byType(DraggableScrollableSheet),
+    matching: find.byType(Scrollable),
+  ).first;
+  await tester.scrollUntilVisible(
+    finder,
+    120,
+    scrollable: sheetScrollView,
+  );
 }
 
 Future<void> _dismissModalRoute(WidgetTester tester) async {

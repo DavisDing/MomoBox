@@ -148,7 +148,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                         ],
                       ),
                     ),
-                    height: 104,
+                    height: 116,
                   ),
                 ),
                 if (sorted.isEmpty)
@@ -200,7 +200,7 @@ class _StickyFilterHeaderDelegate extends SliverPersistentHeaderDelegate {
   double get maxExtent => height;
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) => child;
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) => SizedBox.expand(child: child);
 
   @override
   bool shouldRebuild(covariant _StickyFilterHeaderDelegate oldDelegate) =>
