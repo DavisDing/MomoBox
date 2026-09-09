@@ -158,8 +158,8 @@ subprojects {
     }
 }
 subprojects {
-    val updateSdk: (org.gradle.api.Project) -> Unit = { p ->
-        val androidExt = p.extensions.findByName("android")
+    val updateCompileSdk = {
+        val androidExt = extensions.findByName("android")
         if (androidExt != null) {
             try {
                 val getCompileSdk = androidExt.javaClass.getMethod("getCompileSdk")
@@ -185,13 +185,12 @@ subprojects {
             }
         }
     }
-
-    // 优先在插件加载完成时立即设置 compileSdk，无需等待 evaluation 完成
-    plugins.withId("com.android.library") {
-        updateSdk(this@subprojects)
-    }
-    plugins.withId("com.android.application") {
-        updateSdk(this@subprojects)
+    if (state.executed) {
+        updateCompileSdk()
+    } else {
+        afterEvaluate {
+            updateCompileSdk()
+        }
     }
 }
 '''
@@ -205,34 +204,34 @@ subprojects {
     }
 }
 subprojects {
-    def updateSdk = { p ->
-        if (p.extensions.findByName("android") != null) {
+    def updateCompileSdk = {
+        if (project.extensions.findByName("android") != null) {
             try {
                 def currentSdk = null
                 try {
-                    currentSdk = p.android.compileSdk
+                    currentSdk = project.android.compileSdk
                 } catch (Exception ignored) {
                     try {
-                        def sdkStr = p.android.compileSdkVersion?.toString()?.replaceAll("[^0-9]", "")
+                        def sdkStr = project.android.compileSdkVersion?.toString()?.replaceAll("[^0-9]", "")
                         if (sdkStr) currentSdk = Integer.parseInt(sdkStr)
                     } catch (Exception ignored2) {}
                 }
                 if (currentSdk == null || currentSdk < 36) {
                     try {
-                        p.android.compileSdk = 36
+                        project.android.compileSdk = 36
                     } catch (Exception ignored) {
-                        p.android.compileSdkVersion = 36
+                        project.android.compileSdkVersion = 36
                     }
                 }
             } catch (Exception ignored) {}
         }
     }
-
-    plugins.withId("com.android.library") {
-        updateSdk(project)
-    }
-    plugins.withId("com.android.application") {
-        updateSdk(project)
+    if (project.state.executed) {
+        updateCompileSdk()
+    } else {
+        project.afterEvaluate {
+            updateCompileSdk()
+        }
     }
 }
 '''
