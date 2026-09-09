@@ -308,34 +308,6 @@ class _SummaryCard extends StatelessWidget {
   }
 }
 
-class _FilterRow extends StatelessWidget {
-  const _FilterRow({required this.values, required this.current, required this.onChanged});
-  final List<String> values;
-  final String current;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: values
-            .map(
-              (value) => Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: ChoiceChip(
-                  label: Text(value),
-                  selected: current == value,
-                  onSelected: (_) => onChanged(value),
-                ),
-              ),
-            )
-            .toList(),
-      ),
-    );
-  }
-}
-
 class _SortSelector extends StatelessWidget {
   const _SortSelector({required this.current, required this.onSelected});
 
