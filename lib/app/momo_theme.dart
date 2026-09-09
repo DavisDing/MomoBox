@@ -164,8 +164,9 @@ class MomoPalette {
 
 ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
   final isDark = brightness == Brightness.dark;
-  final background = isDark ? const Color(0xFF101827) : palette.background;
-  final surface = isDark ? const Color(0xFF1F2937) : palette.surface;
+  // 对标 Xiaomi HyperOS 4 与 iOS 27 柔光半透底色
+  final background = isDark ? const Color(0xFF0F172A) : palette.background;
+  final surface = isDark ? const Color(0xFF1E293B) : palette.surface;
   final text = isDark ? const Color(0xFFF8FAFC) : palette.text;
   final colorScheme = ColorScheme.fromSeed(
     seedColor: palette.primary,
@@ -189,21 +190,44 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
     brightness: brightness,
     colorScheme: colorScheme,
     scaffoldBackgroundColor: background,
+    // HyperOS 4 / iOS 27 超椭圆与柔光微边框卡片
     cardTheme: CardThemeData(
       color: surface,
       elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(
+          color: (isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.04)),
+          width: 0.8,
+        ),
+      ),
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: surface,
+      elevation: 6,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(28),
+      ),
+    ),
+    bottomSheetTheme: BottomSheetThemeData(
+      backgroundColor: surface,
+      surfaceTintColor: Colors.transparent,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
     ),
     appBarTheme: AppBarTheme(
       backgroundColor: background,
       foregroundColor: text,
       elevation: 0,
+      scrolledUnderElevation: 0,
       centerTitle: false,
       systemOverlayStyle: systemUiOverlayStyle,
     ),
     navigationBarTheme: NavigationBarThemeData(
-      backgroundColor: surface,
-      indicatorColor: palette.primary.withValues(alpha: isDark ? 0.28 : 0.16),
+      backgroundColor: Colors.transparent,
+      indicatorColor: palette.primary.withValues(alpha: isDark ? 0.32 : 0.18),
+      elevation: 0,
     ),
     textTheme: ThemeData(brightness: brightness).textTheme.apply(
           bodyColor: text,
@@ -211,26 +235,29 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
         ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: surface,
+      fillColor: isDark ? const Color(0xFF1E293B) : surface,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         borderSide: BorderSide(color: palette.primary.withValues(alpha: 0.2)),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: palette.primary.withValues(alpha: 0.2)),
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(
+          color: (isDark ? Colors.white.withValues(alpha: 0.1) : palette.primary.withValues(alpha: 0.18)),
+        ),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: palette.primary, width: 1.8),
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: palette.primary, width: 2.0),
       ),
       errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         borderSide: BorderSide(color: colorScheme.error),
       ),
       focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: colorScheme.error, width: 1.8),
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: colorScheme.error, width: 2.0),
       ),
     ),
   );

@@ -33,6 +33,15 @@ class SettingsScreen extends ConsumerWidget {
           ),
           _buildSettingsTile(
             context,
+            icon: Icons.format_size_rounded,
+            title: '界面字体大小设置',
+            subtitle: '支持紧凑、标准、大号及关怀超大号字号',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const FontScaleSettingsScreen()),
+            ),
+          ),
+          _buildSettingsTile(
+            context,
             icon: Icons.qr_code_scanner,
             title: '外部条码 API 接口',
             subtitle: '多接口配置、免费源切换、默认查询源',
@@ -512,6 +521,9 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
                   initialValue: endpointType,
+                  isDense: true,
+                  menuMaxHeight: 280,
+                  borderRadius: BorderRadius.circular(16),
                   decoration: const InputDecoration(labelText: '接口协议类型'),
                   items: const [
                     DropdownMenuItem(value: 'chat', child: Text('Chat Completions (/v1/chat/completions)')),
@@ -707,6 +719,110 @@ class BackupSettingsScreen extends ConsumerWidget {
               onTap: () {
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请选择标准 MomoBox JSON 备份文件')));
               },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class FontScaleSettingsScreen extends ConsumerWidget {
+  const FontScaleSettingsScreen({super.key});
+
+  static const _options = [
+    (scale: 0.9, label: '紧凑 (0.9x)', desc: '适合喜欢一屏查看更多物品清单的用户'),
+    (scale: 1.0, label: '标准 (1.0x - 默认)', desc: '系统标准字体排版比例'),
+    (scale: 1.15, label: '大号 (1.15x)', desc: '字迹更加清晰醒目'),
+    (scale: 1.3, label: '关怀超大号 (1.3x)', desc: '专为长辈设计，大字易读不易看错'),
+  ];
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final currentScale = ref.watch(fontScaleProvider).valueOrNull ?? 1.0;
+    final theme = Theme.of(context);
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('字体大小设置')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            margin: const EdgeInsets.only(bottom: 20),
+            color: theme.colorScheme.primaryContainer.withValues(alpha: 0.5),
+            child: const Padding(
+              padding: EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, size: 22),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      '设置字体大小后将即时应用于全应用界面，方便不同视力习惯与家庭长辈轻松查看效期与库存。',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          ..._options.map((opt) {
+            final isSelected = (currentScale - opt.scale).abs() < 0.01;
+            return Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(
+                  color: isSelected ? theme.colorScheme.primary : Colors.transparent,
+                  width: 2,
+                ),
+              ),
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                leading: CircleAvatar(
+                  backgroundColor: isSelected
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.surfaceContainerHighest,
+                  foregroundColor: isSelected ? Colors.white : theme.colorScheme.onSurface,
+                  child: Text(
+                    '${(opt.scale * 10).round() / 10}',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                ),
+                title: Text(
+                  opt.label,
+                  style: TextStyle(
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+                subtitle: Text(opt.desc, style: const TextStyle(fontSize: 12)),
+                trailing: isSelected
+                    ? Icon(Icons.check_circle, color: theme.colorScheme.primary)
+                    : null,
+                onTap: () async {
+                  await ref
+                      .read(settingsServiceProvider)
+                      .setValue('font_scale', opt.scale.toString());
+                },
+              ),
+            );
+          }),
+          const SizedBox(height: 20),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('实时字号效果预览：', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const Divider(height: 20),
+                  Text('布洛芬缓释胶囊 · 剩余 2 盒', style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 4),
+                  Text('到期日期：2027-06-30（效期充足）', style: theme.textTheme.bodyMedium),
+                  const SizedBox(height: 4),
+                  Text('存放位置：客厅电视柜医药箱', style: theme.textTheme.bodySmall),
+                ],
+              ),
             ),
           ),
         ],

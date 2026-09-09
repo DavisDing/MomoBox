@@ -101,6 +101,7 @@ class _MomoBoxAppState extends ConsumerState<MomoBoxApp> {
   @override
   Widget build(BuildContext context) {
     final storedTheme = ref.watch(themeNameProvider).valueOrNull;
+    final fontScale = ref.watch(fontScaleProvider).valueOrNull ?? 1.0;
     final palette = MomoPalette.fromStoredValue(storedTheme);
     return MaterialApp.router(
       title: '嬷嬷的小箱子',
@@ -119,6 +120,15 @@ class _MomoBoxAppState extends ConsumerState<MomoBoxApp> {
       darkTheme: buildMomoTheme(palette, Brightness.dark),
       themeMode: ThemeMode.system,
       routerConfig: ref.watch(appRouterProvider),
+      builder: (context, child) {
+        final media = MediaQuery.of(context);
+        return MediaQuery(
+          data: media.copyWith(
+            textScaler: TextScaler.linear(fontScale),
+          ),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
     );
   }
 }

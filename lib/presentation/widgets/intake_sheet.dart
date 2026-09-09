@@ -181,11 +181,11 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
   }
 
   Future<void> _scanBarcode() async {
-    final barcode = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (_) => const _BarcodeScannerSheet(),
+    final barcode = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => const _BarcodeScannerScreen(),
+      ),
     );
     if (barcode == null || !mounted) return;
     setState(() => _barcode.text = barcode);
@@ -598,6 +598,9 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
                   const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
                     initialValue: _category,
+                    isDense: true,
+                    menuMaxHeight: 280,
+                    borderRadius: BorderRadius.circular(16),
                     decoration: const InputDecoration(labelText: '分类 *'),
                     items: _categories.map((category) => DropdownMenuItem(value: category, child: Text(category))).toList(),
                     onChanged: (value) => setState(() => _category = value ?? _category),
@@ -636,7 +639,18 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
                     children: [
                       Expanded(child: TextFormField(controller: _shelfLife, decoration: const InputDecoration(labelText: '保质期（可选）', hintText: '填写后可自动算到期日'), keyboardType: TextInputType.number, validator: (value) { if (value == null || value.trim().isEmpty) return null; final parsed = int.tryParse(value); return parsed == null || parsed < 1 ? '请输入大于 0 的整数' : null; })),
                       const SizedBox(width: 10),
-                      DropdownButton<ShelfLifeUnit>(value: _shelfLifeUnit, onChanged: (value) => setState(() => _shelfLifeUnit = value ?? _shelfLifeUnit), items: const [DropdownMenuItem(value: ShelfLifeUnit.days, child: Text('天')), DropdownMenuItem(value: ShelfLifeUnit.months, child: Text('个月'))]),
+                      DropdownButton<ShelfLifeUnit>(
+                        value: _shelfLifeUnit,
+                        isDense: true,
+                        menuMaxHeight: 200,
+                        borderRadius: BorderRadius.circular(12),
+                        underline: const SizedBox.shrink(),
+                        onChanged: (value) => setState(() => _shelfLifeUnit = value ?? _shelfLifeUnit),
+                        items: const [
+                          DropdownMenuItem(value: ShelfLifeUnit.days, child: Text('天')),
+                          DropdownMenuItem(value: ShelfLifeUnit.months, child: Text('个月')),
+                        ],
+                      ),
                     ],
                   ),
                   const SizedBox(height: 20),
@@ -752,15 +766,18 @@ class _MediaDraftSection extends StatelessWidget {
       );
 }
 
-class _BarcodeScannerSheet extends StatefulWidget {
-  const _BarcodeScannerSheet();
+class _BarcodeScannerScreen extends StatefulWidget {
+  const _BarcodeScannerScreen();
 
   @override
-  State<_BarcodeScannerSheet> createState() => _BarcodeScannerSheetState();
+  State<_BarcodeScannerScreen> createState() => _BarcodeScannerScreenState();
 }
 
-class _BarcodeScannerSheetState extends State<_BarcodeScannerSheet> {
-  final _controller = MobileScannerController();
+class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
+  final _controller = MobileScannerController(
+    detectionSpeed: DetectionSpeed.normal,
+    facing: CameraFacing.back,
+  );
   bool _completed = false;
   bool _torchOn = false;
 
@@ -788,10 +805,15 @@ class _BarcodeScannerSheetState extends State<_BarcodeScannerSheet> {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: const Text('扫描商品条码', style: TextStyle(color: Colors.white)),
+        title: const Text('扫描商品条码', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600)),
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.close, color: Colors.white),
+          tooltip: '关闭',
+          onPressed: () => Navigator.of(context).pop(),
+        ),
         actions: [
           IconButton(
             icon: Icon(_torchOn ? Icons.flash_on : Icons.flash_off, color: Colors.white),
@@ -805,75 +827,101 @@ class _BarcodeScannerSheetState extends State<_BarcodeScannerSheet> {
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          MobileScanner(
-            controller: _controller,
-            onDetect: _onDetect,
-            errorBuilder: (context, error, child) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.videocam_off_outlined, color: Colors.white70, size: 56),
-                      const SizedBox(height: 16),
-                      const Text(
-                        '摄像头启动失败或未获得相机权限',
-                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    MobileScanner(
+                      controller: _controller,
+                      onDetect: _onDetect,
+                      errorBuilder: (context, error, child) {
+                        return Center(
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.no_photography_outlined, color: Colors.white70, size: 52),
+                                const SizedBox(height: 16),
+                                const Text(
+                                  '无法访问摄像头',
+                                  style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  '请检查应用是否有相机权限；若系统未授权或暂未就绪，可随时直接返回手动录入。',
+                                  style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 13, height: 1.4),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 24),
+                                FilledButton.icon(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: theme.colorScheme.primary,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                  ),
+                                  onPressed: () => Navigator.of(context).pop(),
+                                  icon: const Icon(Icons.edit_note, size: 18),
+                                  label: const Text('返回手动填写'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    Center(
+                      child: Container(
+                        width: 260,
+                        height: 170,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.9), width: 2.5),
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: theme.colorScheme.primary.withValues(alpha: 0.25),
+                              blurRadius: 16,
+                              spreadRadius: 2,
+                            ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '请在系统设置中为应用授予相机权限，或直接返回进行手动输入。',
-                        style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 13),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 20),
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Colors.white54)),
-                        onPressed: () => Navigator.of(context).pop(),
-                        icon: const Icon(Icons.keyboard_return),
-                        label: const Text('返回手动输入'),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              );
-            },
-          ),
-          Center(
-            child: Container(
-              width: 260,
-              height: 180,
-              decoration: BoxDecoration(
-                border: Border.all(color: theme.colorScheme.primary, width: 2),
-                borderRadius: BorderRadius.circular(16),
-                color: Colors.transparent,
               ),
             ),
-          ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 24,
-            child: SafeArea(
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 14, 24, 16),
               child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 24),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.65),
-                  borderRadius: BorderRadius.circular(20),
+                  color: Colors.white.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
                 ),
-                child: const Text(
-                  '将商品包装上的条码置于取景框中即可自动识别',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white, fontSize: 13),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.center_focus_strong, color: Colors.white70, size: 18),
+                    SizedBox(width: 8),
+                    Text(
+                      '对准包装条码即可自动识别',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white, fontSize: 13),
+                    ),
+                  ],
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

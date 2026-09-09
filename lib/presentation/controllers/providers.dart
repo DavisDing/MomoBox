@@ -69,6 +69,10 @@ final themeNameProvider = StreamProvider<String?>(
   (ref) => ref.watch(settingsServiceProvider).watchValue('theme'),
 );
 
+final fontScaleProvider = StreamProvider<double>(
+  (ref) => ref.watch(settingsServiceProvider).watchValue('font_scale').map((val) => double.tryParse(val ?? '1.0') ?? 1.0),
+);
+
 final backupRepositoryProvider = Provider<BackupRepository>(
   (ref) => BackupRepository(ref.watch(databaseProvider)),
 );

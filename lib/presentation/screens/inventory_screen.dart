@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,6 +22,16 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
   String _category = '全部';
   String _status = '全部';
   InventorySortOption _sortOption = InventorySortOption.expirySoonest;
+  bool _searchExpanded = false;
+  final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -81,74 +92,136 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                 SliverAppBar(
                   floating: true,
                   snap: true,
-                  title: const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('嬷嬷的小箱子'),
-                      Text('单机模式 · 本地 SQLite', style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal)),
-                    ],
-                  ),
+                  titleSpacing: 16,
+                  elevation: 0,
+                  title: _searchExpanded
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(24),
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                            child: Container(
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.85),
+                                borderRadius: BorderRadius.circular(24),
+                                border: Border.all(
+                                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
+                                ),
+                              ),
+                              child: TextField(
+                                controller: _searchController,
+                                focusNode: _searchFocusNode,
+                                style: const TextStyle(fontSize: 14),
+                                decoration: InputDecoration(
+                                  isDense: true,
+                                  hintText: '搜索名称、品牌、位置或条码',
+                                  hintStyle: TextStyle(fontSize: 13, color: Theme.of(context).hintColor),
+                                  prefixIcon: const Icon(Icons.search, size: 20),
+                                  suffixIcon: IconButton(
+                                    icon: const Icon(Icons.clear, size: 18),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setState(() {
+                                        _query = '';
+                                        _searchExpanded = false;
+                                      });
+                                    },
+                                  ),
+                                  border: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
+                                  focusedBorder: InputBorder.none,
+                                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                                ),
+                                onChanged: (value) => setState(() => _query = value),
+                              ),
+                            ),
+                          ),
+                        )
+                      : const Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('嬷嬷的小箱子', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+                            Text('单机模式 · 本地 SQLite', style: TextStyle(fontSize: 11, fontWeight: FontWeight.normal)),
+                          ],
+                        ),
+                  actions: [
+                    if (!_searchExpanded)
+                      IconButton(
+                        tooltip: '搜索物品',
+                        icon: const Icon(Icons.search_rounded),
+                        onPressed: () {
+                          setState(() => _searchExpanded = true);
+                          Future.microtask(() => _searchFocusNode.requestFocus());
+                        },
+                      ),
+                    _SortSelector(
+                      current: _sortOption,
+                      onSelected: (value) => setState(() => _sortOption = value),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                 ),
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _SummaryCard(summary: summary),
-                        const SizedBox(height: 14),
-                        TextField(
-                          decoration: const InputDecoration(
-                            hintText: '搜索名称、品牌、位置或条码',
-                            prefixIcon: Icon(Icons.search),
-                          ),
-                          onChanged: (value) => setState(() => _query = value),
-                        ),
-                      ],
-                    ),
+                    padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+                    child: _SummaryCard(summary: summary),
                   ),
                 ),
                 SliverPersistentHeader(
                   pinned: true,
                   delegate: _StickyFilterHeaderDelegate(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).scaffoldBackgroundColor,
-                        border: Border(
-                          bottom: BorderSide(
-                            color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+                    child: ClipRRect(
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.88),
+                            border: Border(
+                              bottom: BorderSide(
+                                color: Theme.of(context).dividerColor.withValues(alpha: 0.08),
+                              ),
+                            ),
+                          ),
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                ...categories.map(
+                                  (cat) => Padding(
+                                    padding: const EdgeInsets.only(right: 6),
+                                    child: ChoiceChip(
+                                      visualDensity: VisualDensity.compact,
+                                      label: Text(cat, style: const TextStyle(fontSize: 12)),
+                                      selected: _category == cat,
+                                      onSelected: (_) => setState(() => _category = cat),
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  height: 20,
+                                  width: 1,
+                                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                                  color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
+                                ),
+                                ...['全部', '临期', '已过期', '低库存'].map(
+                                  (st) => Padding(
+                                    padding: const EdgeInsets.only(right: 6),
+                                    child: FilterChip(
+                                      visualDensity: VisualDensity.compact,
+                                      label: Text(st, style: const TextStyle(fontSize: 12)),
+                                      selected: _status == st,
+                                      onSelected: (_) => setState(() => _status = st),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _FilterRow(
-                            values: categories,
-                            current: _category,
-                            onChanged: (value) => setState(() => _category = value),
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _FilterRow(
-                                  values: const ['全部', '临期', '已过期', '低库存'],
-                                  current: _status,
-                                  onChanged: (value) => setState(() => _status = value),
-                                ),
-                              ),
-                              _SortSelector(
-                                current: _sortOption,
-                                onSelected: (value) => setState(() => _sortOption = value),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
                     ),
-                    height: 116,
+                    height: 48,
                   ),
                 ),
                 if (sorted.isEmpty)
@@ -271,8 +344,9 @@ class _SortSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => PopupMenuButton<InventorySortOption>(
-        tooltip: '选择排序方式',
+        tooltip: '排序：${current.label}',
         onSelected: onSelected,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         itemBuilder: (context) => InventorySortOption.values
             .map(
               (option) => PopupMenuItem(
@@ -280,19 +354,34 @@ class _SortSelector extends StatelessWidget {
                 child: Row(
                   children: [
                     if (option == current)
-                      const Icon(Icons.check, size: 18)
+                      Icon(Icons.check_rounded, size: 18, color: Theme.of(context).colorScheme.primary)
                     else
                       const SizedBox(width: 18),
                     const SizedBox(width: 8),
-                    Text(option.label),
+                    Text(option.label, style: const TextStyle(fontSize: 13)),
                   ],
                 ),
               ),
             )
             .toList(growable: false),
-        child: Chip(
-          avatar: const Icon(Icons.sort, size: 18),
-          label: Text('排序：${current.label}'),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.swap_vert_rounded, size: 18),
+              const SizedBox(width: 4),
+              Text(
+                current.label,
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+              ),
+            ],
+          ),
         ),
       );
 }
