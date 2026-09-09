@@ -173,33 +173,28 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
                           ),
                         ],
                       ),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(28),
-                          onTap: () => showModalBottomSheet<void>(
-                            context: context,
-                            isScrollControlled: true,
-                            useSafeArea: true,
-                            builder: (_) => const IntakeSheet(),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.add_box_rounded, color: palette.primary, size: 22),
-                                const SizedBox(width: 8),
-                                Text(
-                                  '手动入库',
-                                  style: TextStyle(
-                                    color: palette.primary,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
-                            ),
+                      child: FloatingActionButton.extended(
+                        elevation: 0,
+                        focusElevation: 0,
+                        hoverElevation: 0,
+                        highlightElevation: 0,
+                        backgroundColor: Colors.transparent,
+                        foregroundColor: palette.primary,
+                        splashColor: palette.primary.withValues(alpha: 0.12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+                        onPressed: () => showModalBottomSheet<void>(
+                          context: context,
+                          isScrollControlled: true,
+                          useSafeArea: true,
+                          builder: (_) => const IntakeSheet(),
+                        ),
+                        icon: Icon(Icons.add_box_rounded, color: palette.primary, size: 22),
+                        label: Text(
+                          '手动入库',
+                          style: TextStyle(
+                            color: palette.primary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
                           ),
                         ),
                       ),
