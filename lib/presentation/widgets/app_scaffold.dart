@@ -190,7 +190,7 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
                         ),
                         icon: Icon(Icons.add_box_rounded, color: palette.primary, size: 22),
                         label: Text(
-                          '手动入库',
+                          '入库',
                           style: TextStyle(
                             color: palette.primary,
                             fontWeight: FontWeight.bold,

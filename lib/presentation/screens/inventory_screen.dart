@@ -84,7 +84,17 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
         }).toList();
         final sorted = sortInventoryItems(filtered, _sortOption);
 
-        return Scaffold(
+        return GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () {
+            if (_searchExpanded) {
+              _searchFocusNode.unfocus();
+              if (_query.trim().isEmpty) {
+                setState(() => _searchExpanded = false);
+              }
+            }
+          },
+          child: Scaffold(
           body: RefreshIndicator(
             onRefresh: () async => ref.invalidate(inventoryProvider),
             child: CustomScrollView(
@@ -95,46 +105,40 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                   titleSpacing: 16,
                   elevation: 0,
                   title: _searchExpanded
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(24),
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                            child: Container(
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.85),
-                                borderRadius: BorderRadius.circular(24),
-                                border: Border.all(
-                                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
-                                ),
-                              ),
-                              child: TextField(
-                                controller: _searchController,
-                                focusNode: _searchFocusNode,
-                                style: const TextStyle(fontSize: 14),
-                                decoration: InputDecoration(
-                                  isDense: true,
-                                  hintText: '搜索名称、品牌、位置或条码',
-                                  hintStyle: TextStyle(fontSize: 13, color: Theme.of(context).hintColor),
-                                  prefixIcon: const Icon(Icons.search, size: 20),
-                                  suffixIcon: IconButton(
-                                    icon: const Icon(Icons.clear, size: 18),
-                                    onPressed: () {
-                                      _searchController.clear();
-                                      setState(() {
-                                        _query = '';
-                                        _searchExpanded = false;
-                                      });
-                                    },
-                                  ),
-                                  border: InputBorder.none,
-                                  enabledBorder: InputBorder.none,
-                                  focusedBorder: InputBorder.none,
-                                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                                ),
-                                onChanged: (value) => setState(() => _query = value),
-                              ),
+                      ? Container(
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.85),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
                             ),
+                          ),
+                          child: TextField(
+                            controller: _searchController,
+                            focusNode: _searchFocusNode,
+                            style: const TextStyle(fontSize: 14),
+                            decoration: InputDecoration(
+                              isDense: true,
+                              hintText: '搜索名称、品牌、位置或条码',
+                              hintStyle: TextStyle(fontSize: 13, color: Theme.of(context).hintColor),
+                              prefixIcon: const Icon(Icons.search, size: 20),
+                              suffixIcon: IconButton(
+                                icon: const Icon(Icons.clear, size: 18),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() {
+                                    _query = '';
+                                    _searchExpanded = false;
+                                  });
+                                },
+                              ),
+                              border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                            ),
+                            onChanged: (value) => setState(() => _query = value),
                           ),
                         )
                       : const Column(
@@ -253,6 +257,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                   ),
               ],
             ),
+          ),
           ),
         );
       },

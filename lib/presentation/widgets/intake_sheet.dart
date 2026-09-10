@@ -57,11 +57,18 @@ class _IntakeDraftMemory {
 final _intakeDraft = _IntakeDraftMemory();
 
 class IntakeSheet extends ConsumerStatefulWidget {
-  const IntakeSheet({this.initialName, this.initialCategory, this.initialQuantity = 1, super.key});
+  const IntakeSheet({
+    this.initialName,
+    this.initialCategory,
+    this.initialQuantity = 1,
+    this.onIntakeSuccess,
+    super.key,
+  });
 
   final String? initialName;
   final String? initialCategory;
   final int initialQuantity;
+  final void Function(String productId)? onIntakeSuccess;
 
   @override
   ConsumerState<IntakeSheet> createState() => _IntakeSheetState();
@@ -91,6 +98,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
   bool _saving = false;
   bool _recognizing = false;
   bool _parsingAi = false;
+  bool _intakeCompleted = false;
 
   @override
   void initState() {
@@ -124,6 +132,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
   }
 
   void _saveDraft() {
+    if (_intakeCompleted) return;
     if (_name.text.isNotEmpty || _barcode.text.isNotEmpty || _productionDate != null || _expiryDate != null) {
       _intakeDraft.name = _name.text;
       _intakeDraft.brand = _brand.text;
@@ -440,7 +449,9 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
         mediaWarning = '库存已入库，但图片关联失败：$error。可稍后在设置中清理媒体缓存。';
       }
       if (!mounted) return;
+      _intakeCompleted = true;
       _intakeDraft.clear();
+      widget.onIntakeSuccess?.call(productId);
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(mediaWarning ?? '已入库。')),

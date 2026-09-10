@@ -133,6 +133,9 @@ class _EntrySection extends ConsumerWidget {
                         initialName: entry.itemName,
                         initialCategory: entry.category,
                         initialQuantity: entry.targetQuantity,
+                        onIntakeSuccess: (_) async {
+                          await ref.read(shoppingServiceProvider).delete(entry.id);
+                        },
                       ),
                     );
                   },

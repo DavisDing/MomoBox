@@ -306,7 +306,9 @@ if info_plist.exists():
         ) if marker not in text
     )
     if missing_usage_descriptions:
-        text = text.replace('</dict>', f'{missing_usage_descriptions}</dict>', 1)
+        last_dict_idx = text.rfind('</dict>')
+        if last_dict_idx != -1:
+            text = text[:last_dict_idx] + missing_usage_descriptions + text[last_dict_idx:]
     info_plist.write_text(text)
 
 if app_delegate.exists():
