@@ -241,8 +241,8 @@ void main() {
     await _pumpApp(tester, database);
     await _pumpUntilFound(tester, find.byType(NavigationBar));
     expect(find.byType(NavigationBar), findsOneWidget);
-    await _pumpUntilFound(tester, find.text('手动入库'));
-    expect(find.text('手动入库'), findsOneWidget);
+    await _pumpUntilFound(tester, find.text('入库'));
+    expect(find.text('入库'), findsOneWidget);
 
     await tester.tap(find.text('提醒'));
     await _pumpUntilFound(tester, find.text('效期与库存提醒'));
@@ -253,7 +253,7 @@ void main() {
     await tester.tap(find.text('库存'));
     await _pumpUntilFound(tester, find.text('嬷嬷的小箱子'));
     expect(find.text('嬷嬷的小箱子'), findsOneWidget);
-    await _pumpUntilFound(tester, find.text('手动入库'));
+    await _pumpUntilFound(tester, find.text('入库'));
 
     tester.widget<FloatingActionButton>(find.byType(FloatingActionButton)).onPressed!();
     await tester.pump();
