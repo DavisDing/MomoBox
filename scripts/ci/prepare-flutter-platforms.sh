@@ -36,6 +36,8 @@ if manifest.exists():
         '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n'
         '    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />\n'
         '    <uses-permission android:name="android.permission.CAMERA" />\n'
+        '    <uses-feature android:name="android.hardware.camera" android:required="false" />\n'
+        '    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />\n'
     )
     missing_permissions = ''.join(
         line for line in permissions.splitlines(keepends=True)

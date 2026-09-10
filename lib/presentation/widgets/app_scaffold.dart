@@ -127,7 +127,7 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
                 )
               : widget.child,
 
-          // 仅在首页展示可拖拽移动的悬浮手动入库按钮
+          // 仅在首页展示可拖拽移动的悬浮入库按钮
           if (currentIndex == 0)
             Positioned(
               right: _fabOffset.dx,
@@ -174,6 +174,7 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
                         ],
                       ),
                       child: FloatingActionButton.extended(
+                        tooltip: '入库',
                         elevation: 0,
                         focusElevation: 0,
                         hoverElevation: 0,

@@ -209,6 +209,23 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
         borderRadius: BorderRadius.circular(28),
       ),
     ),
+    popupMenuTheme: PopupMenuThemeData(
+      color: surface,
+      elevation: 4,
+      shadowColor: Colors.black.withValues(alpha: 0.12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: isDark ? Colors.white.withValues(alpha: 0.1) : Colors.black.withValues(alpha: 0.06),
+          width: 0.8,
+        ),
+      ),
+      textStyle: TextStyle(
+        color: text,
+        fontSize: 13,
+        fontWeight: FontWeight.w500,
+      ),
+    ),
     bottomSheetTheme: BottomSheetThemeData(
       backgroundColor: surface,
       surfaceTintColor: Colors.transparent,

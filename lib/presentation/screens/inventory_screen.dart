@@ -320,47 +320,71 @@ class _SortSelector extends StatelessWidget {
   final ValueChanged<InventorySortOption> onSelected;
 
   @override
-  Widget build(BuildContext context) => PopupMenuButton<InventorySortOption>(
-        tooltip: '排序：${current.label}',
-        onSelected: onSelected,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        itemBuilder: (context) => InventorySortOption.values
-            .map(
-              (option) => PopupMenuItem(
-                value: option,
-                child: Row(
-                  children: [
-                    if (option == current)
-                      Icon(Icons.check_rounded, size: 18, color: Theme.of(context).colorScheme.primary)
-                    else
-                      const SizedBox(width: 18),
-                    const SizedBox(width: 8),
-                    Text(option.label, style: const TextStyle(fontSize: 13)),
-                  ],
-                ),
-              ),
-            )
-            .toList(growable: false),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.swap_vert_rounded, size: 18),
-              const SizedBox(width: 4),
-              Text(
-                current.label,
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-              ),
-            ],
-          ),
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    return PopupMenuButton<InventorySortOption>(
+      tooltip: '排序：${current.label}',
+      onSelected: onSelected,
+      position: PopupMenuPosition.under,
+      elevation: 4,
+      shadowColor: Colors.black.withValues(alpha: 0.12),
+      constraints: const BoxConstraints(minWidth: 128, maxWidth: 152),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: isDark ? Colors.white.withValues(alpha: 0.1) : theme.dividerColor.withValues(alpha: 0.15),
+          width: 0.8,
         ),
-      );
+      ),
+      itemBuilder: (context) => InventorySortOption.values
+          .map(
+            (option) => PopupMenuItem<InventorySortOption>(
+              value: option,
+              height: 38,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  Icon(
+                    option == current ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+                    size: 16,
+                    color: option == current ? theme.colorScheme.primary : theme.hintColor.withValues(alpha: 0.4),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    option.label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: option == current ? FontWeight.w600 : FontWeight.normal,
+                      color: option == current ? theme.colorScheme.primary : null,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+          .toList(growable: false),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: theme.dividerColor.withValues(alpha: 0.15)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.swap_vert_rounded, size: 18),
+            const SizedBox(width: 4),
+            Text(
+              current.label,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _InventoryCard extends ConsumerStatefulWidget {
@@ -439,7 +463,52 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      StatusBadge(status: item.overallExpiryStatus, days: batch?.daysUntilExpiry),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          StatusBadge(status: item.overallExpiryStatus, days: batch?.daysUntilExpiry),
+                          const SizedBox(height: 6),
+                          InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: canConsume ? () => _showConsumeDialog(context) : null,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: canConsume
+                                    ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.08)
+                                    : Theme.of(context).disabledColor.withValues(alpha: 0.05),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: canConsume
+                                      ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.28)
+                                      : Theme.of(context).disabledColor.withValues(alpha: 0.15),
+                                  width: 0.8,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.remove_circle_outline,
+                                    size: 13,
+                                    color: canConsume ? Theme.of(context).colorScheme.primary : Theme.of(context).disabledColor,
+                                  ),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    '消耗',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: canConsume ? Theme.of(context).colorScheme.primary : Theme.of(context).disabledColor,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -461,6 +530,172 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
         ],
       ),
     );
+  }
+
+  Future<void> _showConsumeDialog(BuildContext context) async {
+    if (_busy) return;
+    final maxAvailable = item.activeBatches
+        .where((b) => b.expiryStatus != ExpiryStatus.expired)
+        .fold<int>(0, (sum, b) => sum + b.remainingQuantity);
+    if (maxAvailable <= 0) return;
+
+    final controller = TextEditingController(text: '1');
+    int currentQuantity = 1;
+    String? errorText;
+
+    final result = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.inventory_2_outlined, color: Theme.of(context).colorScheme.primary, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('消耗物品', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                    Text(item.name, style: TextStyle(fontSize: 13, color: Theme.of(context).hintColor), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('当前可用库存：', style: TextStyle(fontSize: 13)),
+                    Text('$maxAvailable ${item.unit}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text('消耗数量', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  IconButton.filledTonal(
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.remove, size: 18),
+                    onPressed: currentQuantity > 1
+                        ? () {
+                            setDialogState(() {
+                              currentQuantity--;
+                              controller.text = currentQuantity.toString();
+                              errorText = null;
+                            });
+                          }
+                        : null,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: controller,
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                        suffixText: item.unit,
+                        errorText: errorText,
+                      ),
+                      onChanged: (val) {
+                        final parsed = int.tryParse(val.trim());
+                        setDialogState(() {
+                          if (parsed != null) {
+                            currentQuantity = parsed;
+                            errorText = (parsed > maxAvailable)
+                                ? '不能超过可用库存 $maxAvailable'
+                                : (parsed < 1 ? '数量需大于 0' : null);
+                          }
+                        });
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filledTonal(
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.add, size: 18),
+                    onPressed: currentQuantity < maxAvailable
+                        ? () {
+                            setDialogState(() {
+                              currentQuantity++;
+                              controller.text = currentQuantity.toString();
+                              errorText = null;
+                            });
+                          }
+                        : null,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '系统将优先扣减最早到期的批次。',
+                style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final qty = int.tryParse(controller.text.trim());
+                if (qty == null || qty < 1) {
+                  setDialogState(() => errorText = '请输入大于 0 的整数');
+                  return;
+                }
+                if (qty > maxAvailable) {
+                  setDialogState(() => errorText = '不能超过可用库存 $maxAvailable');
+                  return;
+                }
+                Navigator.pop(dialogContext, qty);
+              },
+              child: const Text('确认消耗'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result == null || result < 1) return;
+    setState(() => _busy = true);
+    try {
+      await ref.read(inventoryServiceProvider).consume(item.id, result);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已消耗 ${item.name} $result ${item.unit}（按最早到期优先扣减）。')),
+        );
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('消耗失败：$error')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _consumeOne(BuildContext context) async {

@@ -785,12 +785,21 @@ class _BarcodeScannerScreen extends StatefulWidget {
 }
 
 class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
-  final _controller = MobileScannerController(
-    detectionSpeed: DetectionSpeed.normal,
-    facing: CameraFacing.back,
-  );
+  final _picker = ImagePicker();
+  late final MobileScannerController _controller;
   bool _completed = false;
   bool _torchOn = false;
+  bool _isAnalyzing = false;
+  int _restartCounter = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = MobileScannerController(
+      detectionSpeed: DetectionSpeed.normal,
+      facing: CameraFacing.back,
+    );
+  }
 
   @override
   void dispose() {
@@ -810,6 +819,50 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
     }
   }
 
+  Future<void> _retryCamera() async {
+    try {
+      await _controller.stop();
+      await _controller.start();
+      if (mounted) setState(() => _restartCounter++);
+    } catch (_) {
+      if (mounted) setState(() => _restartCounter++);
+    }
+  }
+
+  Future<void> _scanFromImage(ImageSource source) async {
+    if (_isAnalyzing) return;
+    try {
+      final file = await _picker.pickImage(source: source, imageQuality: 100);
+      if (file == null || !mounted) return;
+      setState(() => _isAnalyzing = true);
+
+      final capture = await _controller.analyzeImage(file.path);
+      if (capture != null && capture.barcodes.isNotEmpty) {
+        for (final barcode in capture.barcodes) {
+          final value = barcode.rawValue?.trim();
+          if (value != null && RegExp(r'^\d{8,14}$').hasMatch(value)) {
+            _completed = true;
+            if (mounted) Navigator.of(context).pop(value);
+            return;
+          }
+        }
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('图片中未识别到有效商品条码，请调整拍摄角度或光线后重试。')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('识别图片条码失败：$e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isAnalyzing = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -826,6 +879,16 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.photo_library_outlined, color: Colors.white),
+            tooltip: '从相册选择识别',
+            onPressed: _isAnalyzing ? null : () => _scanFromImage(ImageSource.gallery),
+          ),
+          IconButton(
+            icon: const Icon(Icons.camera_alt_outlined, color: Colors.white),
+            tooltip: '拍照识别条码',
+            onPressed: _isAnalyzing ? null : () => _scanFromImage(ImageSource.camera),
+          ),
           IconButton(
             icon: Icon(_torchOn ? Icons.flash_on : Icons.flash_off, color: Colors.white),
             tooltip: '开关手电筒',
@@ -848,35 +911,69 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
                   fit: StackFit.expand,
                   children: [
                     MobileScanner(
+                      key: ValueKey(_restartCounter),
                       controller: _controller,
                       onDetect: _onDetect,
                       errorBuilder: (context, error, child) {
+                        final errorName = error.errorCode.name;
                         return Center(
                           child: SingleChildScrollView(
-                            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+                            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.no_photography_outlined, color: Colors.white70, size: 52),
-                                const SizedBox(height: 16),
+                                const Icon(Icons.videocam_off_outlined, color: Colors.white70, size: 48),
+                                const SizedBox(height: 14),
                                 const Text(
-                                  '无法访问摄像头',
+                                  '无法访问实时摄像头',
                                   style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
                                 ),
-                                const SizedBox(height: 10),
+                                const SizedBox(height: 8),
                                 Text(
-                                  '请检查应用是否有相机权限；若系统未授权或暂未就绪，可随时直接返回手动录入。',
+                                  '状态：$errorName\n如已授权但画面未唤起，可点击下方“重试启动”；或直接使用“系统相机拍照”与“相册选择”进行快速识别。',
                                   style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 13, height: 1.4),
                                   textAlign: TextAlign.center,
                                 ),
-                                const SizedBox(height: 24),
-                                FilledButton.icon(
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: theme.colorScheme.primary,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                  ),
+                                const SizedBox(height: 20),
+                                Wrap(
+                                  spacing: 10,
+                                  runSpacing: 10,
+                                  alignment: WrapAlignment.center,
+                                  children: [
+                                    FilledButton.icon(
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: theme.colorScheme.primary,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                      ),
+                                      onPressed: _retryCamera,
+                                      icon: const Icon(Icons.refresh, size: 18),
+                                      label: const Text('重试开启'),
+                                    ),
+                                    FilledButton.tonalIcon(
+                                      style: FilledButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                      ),
+                                      onPressed: () => _scanFromImage(ImageSource.camera),
+                                      icon: const Icon(Icons.camera_alt, size: 18),
+                                      label: const Text('拍照识别'),
+                                    ),
+                                    FilledButton.tonalIcon(
+                                      style: FilledButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                      ),
+                                      onPressed: () => _scanFromImage(ImageSource.gallery),
+                                      icon: const Icon(Icons.photo_library, size: 18),
+                                      label: const Text('相册识别'),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                TextButton.icon(
+                                  style: TextButton.styleFrom(foregroundColor: Colors.white70),
                                   onPressed: () => Navigator.of(context).pop(),
                                   icon: const Icon(Icons.edit_note, size: 18),
                                   label: const Text('返回手动填写'),
@@ -904,31 +1001,74 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
                         ),
                       ),
                     ),
+                    if (_isAnalyzing)
+                      Container(
+                        color: Colors.black54,
+                        child: const Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircularProgressIndicator(color: Colors.white),
+                              SizedBox(height: 14),
+                              Text('正在解析条码…', style: TextStyle(color: Colors.white, fontSize: 14)),
+                            ],
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 14, 24, 16),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.center_focus_strong, color: Colors.white70, size: 18),
-                    SizedBox(width: 8),
-                    Text(
-                      '对准包装条码即可自动识别',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white, fontSize: 13),
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.center_focus_strong, color: Colors.white70, size: 16),
+                          SizedBox(width: 6),
+                          Text(
+                            '对准条码自动识别',
+                            style: TextStyle(color: Colors.white, fontSize: 12),
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 8),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: _isAnalyzing ? null : () => _scanFromImage(ImageSource.camera),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.camera_alt, color: Colors.white70, size: 16),
+                          SizedBox(width: 6),
+                          Text(
+                            '拍照识别',
+                            style: TextStyle(color: Colors.white, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

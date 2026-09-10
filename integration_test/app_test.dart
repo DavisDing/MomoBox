@@ -23,7 +23,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('嬷嬷的小箱子'), findsOneWidget);
-    expect(find.text('手动入库'), findsOneWidget);
+    expect(find.text('入库'), findsOneWidget);
 
     await tester.tap(find.text('提醒'));
     await tester.pumpAndSettle();
