@@ -884,14 +884,18 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen>
     return next;
   }
 
+  void _logCameraError(String operation, MobileScannerException error) {
+    final details = error.errorDetails;
+    debugPrint('Barcode camera $operation failed: $error');
+    debugPrint('Barcode camera platform code: ${details?.code}');
+    debugPrint('Barcode camera platform details: ${details?.details}');
+  }
+
   Future<void> _startCamera() => _queueCameraOperation(() async {
         if (!mounted || _completed) return;
         await _controller.start();
         final error = _controller.value.error;
-        if (error != null) {
-          debugPrint('Barcode camera start failed: $error');
-          debugPrintStack();
-        }
+        if (error != null) _logCameraError('start', error);
       });
 
   Future<void> _stopCamera() => _queueCameraOperation(() async {
@@ -903,10 +907,7 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen>
         await _controller.stop();
         await _controller.start();
         final error = _controller.value.error;
-        if (error != null) {
-          debugPrint('Barcode camera restart failed: $error');
-          debugPrintStack();
-        }
+        if (error != null) _logCameraError('restart', error);
       });
 
   Future<void> _toggleTorch() async {
@@ -1010,7 +1011,7 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen>
                     MobileScanner(
                       controller: _controller,
                       onDetect: null,
-                      errorBuilder: (context, error, child) {
+                      errorBuilder: (context, error) {
                         final errorName = error.errorCode.name;
                         final errorDetails = error.errorDetails?.message?.trim();
                         final statusText = errorDetails == null || errorDetails.isEmpty
@@ -1084,20 +1085,24 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen>
                         );
                       },
                     ),
-                    Center(
-                      child: Container(
-                        width: 260,
-                        height: 170,
-                        decoration: BoxDecoration(
-                          border: Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.9), width: 2.5),
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: theme.colorScheme.primary.withValues(alpha: 0.25),
-                              blurRadius: 16,
-                              spreadRadius: 2,
-                            ),
-                          ],
+                    // The guide is decorative only. Without IgnorePointer it
+                    // intercepts taps on the error-state action buttons beneath it.
+                    IgnorePointer(
+                      child: Center(
+                        child: Container(
+                          width: 260,
+                          height: 170,
+                          decoration: BoxDecoration(
+                            border: Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.9), width: 2.5),
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: theme.colorScheme.primary.withValues(alpha: 0.25),
+                                blurRadius: 16,
+                                spreadRadius: 2,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
