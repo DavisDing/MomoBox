@@ -9,6 +9,7 @@ import '../../application/inventory_service.dart';
 import '../../application/media_service.dart';
 import '../../application/reminder_service.dart';
 import '../../application/settings_service.dart';
+import '../../application/storage_management_service.dart';
 import '../../application/shopping_service.dart';
 import '../../core/database/app_database.dart';
 import '../../data/repositories/backup_repository.dart';
@@ -180,6 +181,15 @@ final aiAssistantServiceProvider = Provider<AiAssistantService>(
     ref.watch(secureSettingsServiceProvider),
     ref.watch(inventoryRepositoryProvider),
     usageService: ref.watch(aiUsageServiceProvider),
+  ),
+);
+
+final storageManagementServiceProvider = Provider<StorageManagementService>(
+  (ref) => StorageManagementService(
+    ref.watch(barcodeCacheRepositoryProvider),
+    ref.watch(mediaStorageServiceProvider),
+    ref.watch(mediaServiceProvider),
+    ref.watch(settingsRepositoryProvider),
   ),
 );
 

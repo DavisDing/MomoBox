@@ -294,13 +294,20 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
     setState(() => _recognizing = true);
     try {
       var textCount = 0;
+      var failedCount = 0;
+      final mediaService = ref.read(mediaServiceProvider);
       for (final asset in images) {
-        final text = await ref.read(mediaServiceProvider).runOcr(asset);
-        if (text.isNotEmpty) textCount++;
+        try {
+          final text = await mediaService.runOcr(asset);
+          if (text.isNotEmpty) textCount++;
+        } catch (_) {
+          failedCount++;
+        }
       }
-      if (mounted) _message('本地 OCR 完成：$textCount/${images.length} 张图片识别到文字。');
-    } catch (error) {
-      if (mounted) _message('本地 OCR 失败：$error');
+      if (mounted) {
+        final summary = '本地 OCR 完成：$textCount/${images.length} 张图片识别到文字。';
+        _message(failedCount == 0 ? summary : '$summary 另有 $failedCount 张未能识别，可手动填写。');
+      }
     } finally {
       if (mounted) setState(() => _recognizing = false);
     }

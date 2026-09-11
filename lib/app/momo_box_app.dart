@@ -6,10 +6,12 @@ import 'package:go_router/go_router.dart';
 import '../domain/models/inventory_models.dart';
 import '../presentation/controllers/providers.dart';
 import '../presentation/screens/alerts_screen.dart';
+import '../presentation/screens/home_screen.dart';
 import '../presentation/screens/inventory_screen.dart';
 import '../presentation/screens/product_detail_screen.dart';
 import '../presentation/screens/settings_screen.dart';
 import '../presentation/screens/shopping_screen.dart';
+import '../presentation/screens/smart_home_screen.dart';
 import '../presentation/widgets/app_scaffold.dart';
 import 'momo_theme.dart';
 
@@ -20,12 +22,26 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ShellRoute(
         builder: (context, state, child) => AppScaffold(child: child),
         routes: [
-          GoRoute(path: '/', builder: (context, state) => const InventoryScreen()),
-          GoRoute(path: '/alerts', builder: (context, state) => const AlertsScreen()),
-          GoRoute(path: '/shopping', builder: (context, state) => const ShoppingScreen()),
+          // 1. 首页 (Home / Dashboard)
+          GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
+          // 2. 库存 (Inventory)
+          GoRoute(path: '/inventory', builder: (context, state) => const InventoryScreen()),
+          // 3. 家居 (Home Assistant 设备与场景)
+          GoRoute(path: '/smart-home', builder: (context, state) => const SmartHomeScreen()),
+          // 4. 我的 (Settings / Profile)
           GoRoute(path: '/settings', builder: (context, state) => const SettingsScreen()),
+          GoRoute(path: '/profile', builder: (context, state) => const SettingsScreen()),
         ],
       ),
+      // 二级独立路由
+      GoRoute(
+        path: '/alerts',
+        builder: (context, state) {
+          final filter = state.uri.queryParameters['filter'];
+          return AlertsScreen(initialFilter: filter);
+        },
+      ),
+      GoRoute(path: '/shopping', builder: (context, state) => const ShoppingScreen()),
       GoRoute(
         path: '/inventory/:productId',
         builder: (context, state) => ProductDetailScreen(

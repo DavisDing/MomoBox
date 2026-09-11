@@ -13,6 +13,8 @@
 - Routing：go_router
 - Local database：Drift + SQLite
 - Local notifications：flutter_local_notifications + timezone
+- Barcode / OCR：mobile_scanner + Google ML Kit（本地 OCR）
+- Optional AI：用户自配兼容 OpenAI 的 Chat Completions / Responses 服务；API Key 使用系统安全存储
 - Platform validation：GitHub Actions；仓库不提交 Flutter 自动生成的 Android/iOS 壳
 - Compatibility baseline：最低 Android 16.0（API 36）和 iOS 27.0；平台壳由 CI 脚本生成后注入 Android API 36 minSdk、Android API 37 compile/target SDK 与 iOS 27.0 deployment target。
 
@@ -35,18 +37,19 @@ scripts/ci/                   # CI 平台壳生成、补丁回归测试
 ## 4. 长期架构
 
 ```text
-Presentation
+Presentation (首页 / 库存 / AI中央助手 / 家居 / 我的)
   ↓
-Application / Use Cases
+Application / Use Cases (库存管理 / 采买流 / HA设备适配 / 联动规则引擎 / AI意图调度)
   ↓
-Domain rules
+Domain rules (FEFO / 效期计算 / 耗材配方 / 幂等去重 / 状态指纹)
   ↓
-Repositories
-  ↓
-Drift / SQLite
+Repositories & External Connectors
+  ├─ Drift / SQLite (本地数据源，离线优先)
+  ├─ NAS Sync Client (PostgreSQL 增量同步，可选增强)
+  └─ Home Assistant Connector (NAS 侧托管令牌，局域网控制，可选增强)
 ```
 
-单机模式不依赖 NAS、账号或网络。未来 NAS 同步必须作为独立 Data/Sync 实现，不能破坏本地数据源和离线操作。
+单机模式不依赖 NAS、账号、网络或 HA。未来 NAS 同步与 Home Assistant 控制必须作为独立模块实现，不能破坏本地数据源和离线基础操作。
 
 ## 5. 已确认业务规则
 
@@ -59,14 +62,16 @@ Drift / SQLite
 - 入库时同条码或无条码精确特征只生成相似商品候选；必须由用户确认合并，或选择新建独立商品，不能静默归并；
 - 本地提醒在 App 启动和库存变化后重算，使用稳定 ID 去重；提醒页支持单条/批量标记已处理，确认记录独立持久化在 `reminder_acknowledgments` 表，并通过 `reminder_key + fingerprint` 过滤，不能把库存或采购动作自动当作已处理；低库存恢复到阈值以上时清除旧确认，再次跌破阈值生成新的提醒周期；
 - JSON 导入默认不覆盖已有主键记录；导入前验证备份头、版本、必需数据段、必填字段、字段类型和数量约束，格式错误不应写入部分数据；
-- AI、OCR、扫码、NAS 不得成为单机核心的硬依赖。
+- 扫码、OCR 和 AI 已纳入当前单机版本的辅助能力，但均不得成为库存核心流程的硬依赖；相机、图片、网络、外部条码 API 或 AI 不可用时，用户仍可手动完成操作。
+- 条码查询结果只可经用户确认填入入库草稿；本地 OCR 图片和文本默认留在本机。发送 AI 前必须显示确认说明，只发送 OCR 文本而不发送原图；AI 草稿不可自动入库。
+- AI 库存问答仅在用户自行配置服务后可用；调用时会发送问题、近期对话和本地库存/批次快照至该服务，不包含原图。它不应被用于医疗诊断、用法或剂量建议。
 - 嬷嬷/哆啦A梦主题当前仅用于本人本地使用和私有设备安装验证；未来公开发布、上架、商用或第三方分发前，必须重新完成资源授权/合规审查。
 
 ## 6. 当前实现状态
 
-已实现：商品/批次、库存列表和筛选、默认 FEFO 与指定批次消耗、自定义数量补充、报废二次确认、采购清单、历史、日期计算、主题、JSON 备份、本地提醒调度计划、提醒单条/批量确认及其备份恢复。
+已实现并进入测试：商品/批次、库存列表和筛选、默认 FEFO 与指定批次消耗、自定义数量补充、报废二次确认、采购清单、历史、日期计算、主题、JSON 备份、本地提醒调度计划、提醒单条/批量确认及其备份恢复；实时相机/拍照/相册条码识别、可选外部条码查询与缓存、商品和说明书图片、本地 OCR、用户自配 AI 的 OCR 草稿解析、库存问答和本地用量记录。
 
-未实现：扫码/OCR、AI、说明书、NAS/家庭账号/同步、后端 PostgreSQL、Docker、统计图表。
+未实现：NAS/家庭账号/同步、后端 PostgreSQL、Docker、说明书外部链接或检索式问答、统计图表、社区共享数据。
 
 ## 7. 开发规则
 
@@ -91,8 +96,8 @@ CI 使用 Flutter stable channel，并执行：
 7. Android debug build；
 8. Release 工作流额外构建 APK/AAB 并上传 SHA256。
 
-本地安装验证以 GitHub Release 的 Android APK 为准，重点检查首次启动、入库、日期计算、消耗、提醒权限、采购勾选入库和备份恢复。
+本地安装验证以 GitHub Release 的 Android APK 为准，重点检查首次启动、入库、条码识别与失败回退、图片/本地 OCR、AI 发送确认与草稿确认、日期计算、消耗、提醒权限、采购勾选入库和备份恢复。
 
 ## 9. AI_CONTEXT Update Proposal
 
-本次已将历史模板更新为实际 Flutter 单机 MVP 架构。后续只有技术栈、长期架构、核心业务决策或验证基线发生变化时才更新本文件。
+2026-09-11：已确认将条码扫描、图片/本地 OCR 和用户自配 AI 辅助能力纳入当前单机版本范围，并同步实际实现与隐私边界。后续只有技术栈、长期架构、核心业务决策或验证基线发生变化时才更新本文件。

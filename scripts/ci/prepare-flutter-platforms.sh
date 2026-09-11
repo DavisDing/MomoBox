@@ -123,6 +123,18 @@ for gradle in (Path('android/app/build.gradle'), Path('android/app/build.gradle.
         else:
             text += '\n\ndependencies {\n' + dependency + '}\n'
 
+    # The Flutter ML Kit plugin declares non-Latin language models as
+    # compileOnly. Bundle Chinese recognition so OCR works offline on first use.
+    if 'com.google.mlkit:text-recognition-chinese:16.0.1' not in text:
+        if gradle.suffix == '.kts':
+            dependency = '    implementation("com.google.mlkit:text-recognition-chinese:16.0.1")\n'
+        else:
+            dependency = '    implementation "com.google.mlkit:text-recognition-chinese:16.0.1"\n'
+        if 'dependencies {' in text:
+            text = text.replace('dependencies {', 'dependencies {\n' + dependency, 1)
+        else:
+            text += '\n\ndependencies {\n' + dependency + '}\n'
+
     if 'proguardFiles' not in text:
         if gradle.suffix == '.kts':
             text = re.sub(

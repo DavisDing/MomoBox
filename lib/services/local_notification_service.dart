@@ -8,6 +8,9 @@ import 'package:timezone/timezone.dart' as tz;
 import '../domain/inventory/reminder_rules.dart';
 import '../domain/models/inventory_models.dart';
 
+
+enum NotificationPermissionStatus { allowed, denied, unavailable }
+
 class LocalNotificationService {
   LocalNotificationService({FlutterLocalNotificationsPlugin? plugin}) : _plugin = plugin ?? FlutterLocalNotificationsPlugin();
 
@@ -63,6 +66,52 @@ class LocalNotificationService {
     }
     // 其他平台不需要调用移动端权限 API；初始化成功即视为可用。
     return true;
+  }
+
+  Future<NotificationPermissionStatus> permissionStatus() async {
+    if (!_initialized) return NotificationPermissionStatus.unavailable;
+    try {
+      if (Platform.isAndroid) {
+        final dynamic android = _plugin.resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+        final enabled = await android?.areNotificationsEnabled();
+        return enabled == true
+            ? NotificationPermissionStatus.allowed
+            : NotificationPermissionStatus.denied;
+      }
+      if (Platform.isIOS) {
+        final dynamic ios = _plugin.resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin>();
+        final permissions = await ios?.checkPermissions();
+        return permissions?.isAlertEnabled == true
+            ? NotificationPermissionStatus.allowed
+            : NotificationPermissionStatus.denied;
+      }
+      return NotificationPermissionStatus.allowed;
+    } catch (_) {
+      return NotificationPermissionStatus.unavailable;
+    }
+  }
+
+  Future<void> showTestNotification() async {
+    if (!_initialized) throw StateError('通知服务尚未初始化。');
+    final granted = await requestPermission();
+    if (!granted) throw StateError('通知权限未开启，请在系统设置中允许通知。');
+    await _plugin.show(
+      0x4d4f4d4f,
+      '嬷嬷的小箱子提醒测试',
+      '通知已开启，临期、过期和低库存提醒会在这里出现。',
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          _channelId,
+          _channelName,
+          channelDescription: _channelDescription,
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+        iOS: DarwinNotificationDetails(threadIdentifier: _channelId),
+      ),
+    );
   }
 
   Future<void> sync(

@@ -154,6 +154,8 @@ cp "$script_dir/prepare-flutter-platforms.sh" "$temporary_root/project/prepare.s
   grep -q 'kotlin.jvm.target.validation.mode=warning' android/gradle.properties
   grep -q 'jvmTarget' android/build.gradle
   grep -q 'jvmTarget' android/build.gradle.kts
+  grep -q 'implementation("com.google.mlkit:text-recognition-chinese:16.0.1")' android/app/build.gradle.kts
+  grep -q 'implementation "com.google.mlkit:text-recognition-chinese:16.0.1"' android/app/build.gradle
   grep -q 'coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")' android/app/build.gradle.kts
   grep -q 'coreLibraryDesugaringEnabled true' android/app/build.gradle
   test "$(grep -c 'desugar_jdk_libs' android/app/build.gradle)" -eq 1

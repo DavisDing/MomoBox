@@ -353,9 +353,26 @@ class BackupRepository {
 
   Map<String, Object?> _settingToJson(AppSettingRecord row) => {
         'key': row.key,
-        'value': row.value,
+        'value': row.key == 'ai_api_profiles' ? _sanitizeAiProfiles(row.value) : row.value,
         'updated_at': row.updatedAt.toIso8601String(),
       };
+
+  String _sanitizeAiProfiles(String value) {
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is! List) return value;
+      return jsonEncode(decoded.map((entry) {
+        if (entry is! Map) return entry;
+        final profile = Map<String, dynamic>.from(entry);
+        profile.remove('apiKey');
+        profile.remove('_apiKeyDraft');
+        profile.remove('hasApiKey');
+        return profile;
+      }).toList());
+    } on FormatException {
+      return value;
+    }
+  }
 
   Map<String, Object?> _acknowledgementToJson(ReminderAcknowledgmentRecord row) => {
         'reminder_key': row.reminderKey,
@@ -418,12 +435,17 @@ class BackupRepository {
         updatedAt: DateTime.parse(row['updated_at'] as String),
       );
 
-  AppSettingsCompanion _settingFromJson(Map<String, dynamic> row) =>
-      AppSettingsCompanion.insert(
-        key: row['key'] as String,
-        value: row['value'] as String,
-        updatedAt: DateTime.parse(row['updated_at'] as String),
-      );
+  AppSettingsCompanion _settingFromJson(Map<String, dynamic> row) {
+    final key = row['key'] as String;
+    final value = row['value'] as String;
+    return AppSettingsCompanion.insert(
+      key: key,
+      // API keys are intentionally never imported into the ordinary SQLite
+      // settings table. Users can add them again from the secure key screen.
+      value: key == 'ai_api_profiles' ? _sanitizeAiProfiles(value) : value,
+      updatedAt: DateTime.parse(row['updated_at'] as String),
+    );
+  }
 
   ReminderAcknowledgmentsCompanion _acknowledgementFromJson(
     Map<String, dynamic> row,

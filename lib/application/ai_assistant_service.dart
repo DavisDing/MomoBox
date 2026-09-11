@@ -44,7 +44,12 @@ class AiAssistantService {
   Future<String> ask(String question, List<ChatMessage> history) async {
     final endpoint = await _settings.getValue(AiDraftService.endpointKey);
     final model = await _settings.getValue(AiDraftService.modelKey);
-    final apiKey = await _secureSettings.readAiApiKey();
+    final activeProfileId = await _settings.getValue(AiDraftService.activeProfileKey);
+    final profileKey = activeProfileId == null || activeProfileId.isEmpty
+        ? null
+        : await _secureSettings.readAiApiKeyForProfile(activeProfileId);
+    // Fall back once for installations created before profile-scoped keys.
+    final apiKey = profileKey ?? await _secureSettings.readAiApiKey();
     final endpointType = (await _settings.getValue(AiDraftService.endpointTypeKey)) ?? 'chat';
 
     if (endpoint == null || endpoint.trim().isEmpty || model == null || model.trim().isEmpty || apiKey == null || apiKey.trim().isEmpty) {

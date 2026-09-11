@@ -66,6 +66,15 @@ class MediaStorageService {
     return paths;
   }
 
+  Future<int> totalBytes() async {
+    var total = 0;
+    for (final path in await existingPaths()) {
+      final file = File(path);
+      if (await file.exists()) total += await file.length();
+    }
+    return total;
+  }
+
   Future<int> deleteUnreferenced(Set<String> referencedPaths) async {
     final paths = await existingPaths();
     var deleted = 0;

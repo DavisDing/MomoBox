@@ -104,6 +104,47 @@ void main() {
     expect(await importedDatabase.select(importedDatabase.stockMovements).get(), hasLength(2));
   });
 
+  test('AI 配置备份和导入不会保留 API Key', () async {
+    await database.into(database.appSettings).insert(
+          AppSettingsCompanion.insert(
+            key: 'ai_api_profiles',
+            value: jsonEncode([
+              {'id': 'profile-1', 'name': '测试', 'apiKey': 'secret-value'},
+            ]),
+            updatedAt: DateTime(2026, 9, 11),
+          ),
+        );
+
+    final exported = jsonDecode(await repository.exportJson()) as Map<String, dynamic>;
+    final settings = (exported['settings'] as List).cast<Map<String, dynamic>>();
+    final profileSetting = settings.singleWhere((row) => row['key'] == 'ai_api_profiles');
+    expect(profileSetting['value'], isNot(contains('secret-value')));
+
+    final target = AppDatabase.forTesting(NativeDatabase.memory());
+    extraDatabases.add(target);
+    await BackupRepository(target).importJson(jsonEncode({
+      'format': 'momobox-backup',
+      'version': 3,
+      'products': [],
+      'batches': [],
+      'stock_movements': [],
+      'shopping_entries': [],
+      'settings': [
+        {
+          'key': 'ai_api_profiles',
+          'value': jsonEncode([
+            {'id': 'profile-1', 'apiKey': 'must-not-import'},
+          ]),
+          'updated_at': '2026-09-11T00:00:00.000',
+        },
+      ],
+      'reminder_acknowledgements': [],
+      'barcode_lookup_cache': [],
+    }));
+    final stored = (await target.select(target.appSettings).getSingle()).value;
+    expect(stored, isNot(contains('must-not-import')));
+  });
+
   test('备份会导出并恢复提醒已处理记录', () async {
     final reminderRepository = ReminderRepository(database);
     await reminderRepository.acknowledge(

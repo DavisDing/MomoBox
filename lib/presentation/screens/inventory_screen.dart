@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/inventory/expiry_rules.dart';
 import '../../domain/inventory/inventory_sorting.dart';
 import '../../domain/models/inventory_models.dart';
+import '../../app/momo_theme.dart';
 import '../controllers/providers.dart';
 import '../widgets/intake_sheet.dart';
 import '../widgets/status_badge.dart';
@@ -35,16 +36,24 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
     final inventory = ref.watch(inventoryProvider);
     final summary = ref.watch(reminderSummaryProvider);
     return inventory.when(
       loading: () => Scaffold(
         appBar: AppBar(
-          title: const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          title: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text('嬷嬷的小箱子'),
-              Text('单机模式 · 本地 SQLite', style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal)),
+              Icon(palette.appLogoIcon, color: palette.primary, size: 24),
+              const SizedBox(width: 8),
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('嬷嬷的小箱子'),
+                  Text('单机模式 · 本地 SQLite', style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal)),
+                ],
+              ),
             ],
           ),
         ),
@@ -52,11 +61,18 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
       ),
       error: (error, _) => Scaffold(
         appBar: AppBar(
-          title: const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          title: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text('嬷嬷的小箱子'),
-              Text('单机模式 · 本地 SQLite', style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal)),
+              Icon(palette.appLogoIcon, color: palette.primary, size: 24),
+              const SizedBox(width: 8),
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('嬷嬷的小箱子'),
+                  Text('单机模式 · 本地 SQLite', style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal)),
+                ],
+              ),
             ],
           ),
         ),
@@ -141,11 +157,18 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                             onChanged: (value) => setState(() => _query = value),
                           ),
                         )
-                      : const Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text('嬷嬷的小箱子', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
-                            Text('单机模式 · 本地 SQLite', style: TextStyle(fontSize: 11, fontWeight: FontWeight.normal)),
+                            Icon(palette.appLogoIcon, color: palette.primary, size: 22),
+                            const SizedBox(width: 8),
+                            const Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('嬷嬷的小箱子', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+                                Text('单机模式 · 本地 SQLite', style: TextStyle(fontSize: 11, fontWeight: FontWeight.normal)),
+                              ],
+                            ),
                           ],
                         ),
                   actions: [

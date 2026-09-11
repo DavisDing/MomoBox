@@ -25,6 +25,7 @@ class AiDraftService {
   static const modelKey = 'ai_model';
   static const profilesKey = 'ai_api_profiles';
   static const endpointTypeKey = 'ai_endpoint_type'; // 'chat' or 'responses'
+  static const activeProfileKey = 'ai_active_profile_id';
 
   final SettingsRepository _settings;
   final SecureSettingsService _secureSettings;
@@ -38,7 +39,12 @@ class AiDraftService {
     if (content.length > 20000) throw ArgumentError('OCR 文本过长，请先保留与商品信息相关的页面。');
     final endpoint = await _settings.getValue(endpointKey);
     final model = await _settings.getValue(modelKey);
-    final apiKey = await _secureSettings.readAiApiKey();
+    final activeProfileId = await _settings.getValue(activeProfileKey);
+    final profileKey = activeProfileId == null || activeProfileId.isEmpty
+        ? null
+        : await _secureSettings.readAiApiKeyForProfile(activeProfileId);
+    // Fall back once for installations created before profile-scoped keys.
+    final apiKey = profileKey ?? await _secureSettings.readAiApiKey();
     final endpointType = (await _settings.getValue(endpointTypeKey)) ?? 'chat';
 
     if (endpoint == null || endpoint.trim().isEmpty || model == null || model.trim().isEmpty || apiKey == null || apiKey.trim().isEmpty) {

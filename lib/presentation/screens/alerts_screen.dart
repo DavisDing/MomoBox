@@ -6,13 +6,30 @@ import '../../domain/models/inventory_models.dart';
 import '../controllers/providers.dart';
 import '../widgets/status_badge.dart';
 
-class AlertsScreen extends ConsumerWidget {
-  const AlertsScreen({super.key});
+class AlertsScreen extends ConsumerStatefulWidget {
+  const AlertsScreen({this.initialFilter, super.key});
+
+  /// 支持从首页点击不同卡片携带初始过滤条件：'expired' | 'expiring' | 'low_stock'
+  final String? initialFilter;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AlertsScreen> createState() => _AlertsScreenState();
+}
+
+class _AlertsScreenState extends ConsumerState<AlertsScreen> {
+  late String _currentFilter;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentFilter = widget.initialFilter ?? 'all';
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final inventory = ref.watch(inventoryProvider);
     final summary = ref.watch(reminderSummaryProvider);
+
     return Scaffold(
       appBar: AppBar(title: const Text('效期与库存提醒')),
       body: inventory.when(
@@ -35,33 +52,82 @@ class AlertsScreen extends ConsumerWidget {
           final hasAlerts =
               summary.expired.isNotEmpty || summary.expiring.isNotEmpty || summary.lowStock.isNotEmpty;
           if (!hasAlerts) return const _EmptyAlerts();
+
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              _AlertDashboard(summary: summary),
+              _AlertDashboard(
+                summary: summary,
+                activeFilter: _currentFilter,
+                onFilterSelected: (filter) {
+                  setState(() {
+                    _currentFilter = filter;
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
+
+              // 过滤条件筛选胶囊
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    ChoiceChip(
+                      label: Text('全部提醒 (${summary.expired.length + summary.expiring.length + summary.lowStock.length})'),
+                      selected: _currentFilter == 'all',
+                      onSelected: (val) => setState(() => _currentFilter = 'all'),
+                    ),
+                    const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: Text('已过期 (${summary.expired.length})'),
+                      selected: _currentFilter == 'expired',
+                      onSelected: (val) => setState(() => _currentFilter = val ? 'expired' : 'all'),
+                    ),
+                    const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: Text('临期 (${summary.expiring.length})'),
+                      selected: _currentFilter == 'expiring',
+                      onSelected: (val) => setState(() => _currentFilter = val ? 'expiring' : 'all'),
+                    ),
+                    const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: Text('低库存 (${summary.lowStock.length})'),
+                      selected: _currentFilter == 'low_stock',
+                      onSelected: (val) => setState(() => _currentFilter = val ? 'low_stock' : 'all'),
+                    ),
+                  ],
+                ),
+              ),
+
               const SizedBox(height: 20),
-              _AlertSection(
-                title: '已过期',
-                color: Colors.red,
-                items: summary.expired,
-                type: ReminderType.expired,
-                suggestion: '建议：尽快核对并报废，避免继续使用。',
-              ),
-              _AlertSection(
-                title: '30 天内临期',
-                color: Colors.orange,
-                items: summary.expiring,
-                type: ReminderType.expiring,
-                suggestion: '建议：优先使用临近到期批次，必要时加入采购。',
-              ),
-              _AlertSection(
-                title: '低库存',
-                color: Colors.blue,
-                items: summary.lowStock,
-                type: ReminderType.lowStock,
-                showStock: true,
-                suggestion: '建议：确认用量后及时补货，避免断货。',
-              ),
+
+              if (_currentFilter == 'all' || _currentFilter == 'expired')
+                _AlertSection(
+                  title: '已过期',
+                  color: Colors.red,
+                  items: summary.expired,
+                  type: ReminderType.expired,
+                  suggestion: '建议：尽快核对并报废，避免继续使用。',
+                ),
+
+              if (_currentFilter == 'all' || _currentFilter == 'expiring')
+                _AlertSection(
+                  title: '30 天内临期',
+                  color: Colors.orange,
+                  items: summary.expiring,
+                  type: ReminderType.expiring,
+                  suggestion: '建议：优先使用临近到期批次，必要时加入采购。',
+                ),
+
+              if (_currentFilter == 'all' || _currentFilter == 'low_stock')
+                _AlertSection(
+                  title: '低库存',
+                  color: Colors.blue,
+                  items: summary.lowStock,
+                  type: ReminderType.lowStock,
+                  showStock: true,
+                  suggestion: '建议：确认用量后及时补货，避免断货。',
+                ),
             ],
           );
         },
@@ -89,9 +155,15 @@ class _EmptyAlerts extends StatelessWidget {
 }
 
 class _AlertDashboard extends StatelessWidget {
-  const _AlertDashboard({required this.summary});
+  const _AlertDashboard({
+    required this.summary,
+    required this.activeFilter,
+    required this.onFilterSelected,
+  });
 
   final ReminderSummary summary;
+  final String activeFilter;
+  final ValueChanged<String> onFilterSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -130,6 +202,8 @@ class _AlertDashboard extends StatelessWidget {
                     label: '已过期',
                     value: summary.expired.length,
                     color: theme.colorScheme.error,
+                    isSelected: activeFilter == 'expired',
+                    onTap: () => onFilterSelected('expired'),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -138,14 +212,18 @@ class _AlertDashboard extends StatelessWidget {
                     label: '3 天内到期',
                     value: expiringSoon,
                     color: Colors.orange,
+                    isSelected: activeFilter == 'expiring',
+                    onTap: () => onFilterSelected('expiring'),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: _StatTile(
-                    label: '库存偏低',
+                    label: '低库存',
                     value: summary.lowStock.length,
-                    color: theme.colorScheme.primary,
+                    color: Colors.blue,
+                    isSelected: activeFilter == 'low_stock',
+                    onTap: () => onFilterSelected('low_stock'),
                   ),
                 ),
               ],
@@ -158,27 +236,48 @@ class _AlertDashboard extends StatelessWidget {
 }
 
 class _StatTile extends StatelessWidget {
-  const _StatTile({required this.label, required this.value, required this.color});
+  const _StatTile({
+    required this.label,
+    required this.value,
+    required this.color,
+    this.isSelected = false,
+    this.onTap,
+  });
 
   final String label;
   final int value;
   final Color color;
+  final bool isSelected;
+  final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: .1),
+          color: isSelected ? color.withValues(alpha: 0.15) : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
+          border: isSelected ? Border.all(color: color.withValues(alpha: 0.4)) : null,
         ),
         child: Column(
           children: [
-            Text('$value', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color)),
-            const SizedBox(height: 2),
-            Text(label, style: Theme.of(context).textTheme.labelSmall, textAlign: TextAlign.center),
+            Text(
+              '$value',
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            Text(label, style: Theme.of(context).textTheme.bodySmall),
           ],
         ),
-      );
+      ),
+    );
+  }
 }
 
 class _AlertSection extends ConsumerWidget {

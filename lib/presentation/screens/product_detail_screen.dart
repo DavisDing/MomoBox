@@ -644,12 +644,21 @@ class _ProductMediaSectionState extends ConsumerState<_ProductMediaSection> {
     }
     setState(() => _ocrRunning = true);
     try {
+      var textCount = 0;
+      var failedCount = 0;
+      final mediaService = ref.read(mediaServiceProvider);
       for (final asset in targets) {
-        await ref.read(mediaServiceProvider).runOcr(asset);
+        try {
+          final text = await mediaService.runOcr(asset);
+          if (text.isNotEmpty) textCount++;
+        } catch (_) {
+          failedCount++;
+        }
       }
-      if (mounted) _showMessage('已完成本地 OCR，识别文本只保存在本机。');
-    } catch (error) {
-      if (mounted) _showMessage('OCR 失败：$error');
+      if (mounted) {
+        final summary = '本地 OCR 完成：$textCount/${targets.length} 张说明书图片识别到文字。';
+        _showMessage(failedCount == 0 ? summary : '$summary 另有 $failedCount 张未能识别，可手动填写。');
+      }
     } finally {
       if (mounted) setState(() => _ocrRunning = false);
     }

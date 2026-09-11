@@ -8,6 +8,7 @@ import 'package:momo_box/application/shopping_service.dart';
 import 'package:momo_box/core/database/app_database.dart';
 import 'package:momo_box/data/repositories/inventory_repository.dart';
 import 'package:momo_box/data/repositories/shopping_repository.dart';
+import 'package:momo_box/data/repositories/settings_repository.dart';
 import 'package:momo_box/domain/models/inventory_models.dart';
 import 'package:momo_box/presentation/controllers/providers.dart';
 import 'package:momo_box/presentation/screens/alerts_screen.dart';
@@ -92,7 +93,31 @@ void main() {
     await _disposeWidgetTree(tester);
   });
 
-  testWidgets('提醒支持单条和分组已处理，确认状态持久化', (tester) async {
+    testWidgets('主题变更时App Logo图标跟随切换', (tester) async {
+    await _pumpApp(tester, database);
+    // 默认主题下，库存页 App Logo 为 defaultPalette.appLogoIcon (Icons.all_inbox_rounded)
+    expect(find.byIcon(Icons.all_inbox_rounded), findsWidgets);
+
+    // 切换为 momo 主题
+    final settingsRepo = SettingsRepository(database);
+    await settingsRepo.setValue('theme', 'momo');
+    await _pumpForUi(tester);
+
+    // 验证 momo 主题下的 logo (Icons.inventory_rounded) 显示，默认 logo 不再显示
+    expect(find.byIcon(Icons.inventory_rounded), findsWidgets);
+    expect(find.byIcon(Icons.all_inbox_rounded), findsNothing);
+
+    // 切换为 doraemon 主题
+    await settingsRepo.setValue('theme', 'doraemon');
+    await _pumpForUi(tester);
+
+    // 验证 doraemon 主题下的 logo (Icons.card_giftcard_rounded) 显示
+    expect(find.byIcon(Icons.card_giftcard_rounded), findsWidgets);
+    expect(find.byIcon(Icons.inventory_rounded), findsNothing);
+    await _disposeWidgetTree(tester);
+  });
+
+testWidgets('提醒支持单条和分组已处理，确认状态持久化', (tester) async {
     final inventory = InventoryService(InventoryRepository(database));
     final today = _today();
     await inventory.intake(IntakeDraft(

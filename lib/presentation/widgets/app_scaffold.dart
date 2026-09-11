@@ -28,56 +28,75 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    // 0: 库存, 1: 提醒, 2: AI吉祥物, 3: 采买, 4: 设置
+    // 5个入口:
+    // 0: 首页 (/)
+    // 1: 库存 (/inventory)
+    // 2: AI 助手 (居中呼吸按钮，呼出面板)
+    // 3: 家居 (/smart-home)
+    // 4: 我的 (/profile 或 /settings)
     final currentIndex = switch (location) {
-      '/alerts' => 1,
-      '/shopping' => 3,
-      '/settings' => 4,
-      _ => 0,
+      '/inventory' => 1,
+      '/smart-home' => 3,
+      '/settings' || '/profile' => 4,
+      _ => 0, // 默认首页
     };
 
     final useNavigationRail = MediaQuery.sizeOf(context).width >= 840;
     final screenSize = MediaQuery.sizeOf(context);
 
     final destinations = [
+      const NavigationDestination(
+        icon: Icon(Icons.home_outlined),
+        selectedIcon: Icon(Icons.home_rounded),
+        label: '首页',
+      ),
       NavigationDestination(
         icon: Icon(palette.inventoryIcon),
         selectedIcon: Icon(palette.inventoryIcon),
         label: palette.inventoryLabel,
       ),
       NavigationDestination(
-        icon: Icon(palette.alertIcon),
-        selectedIcon: Icon(palette.alertIcon),
-        label: palette.alertLabel,
-      ),
-      NavigationDestination(
         icon: Container(
-          padding: const EdgeInsets.all(4),
+          padding: const EdgeInsets.all(5),
           decoration: BoxDecoration(
             color: palette.primary.withValues(alpha: 0.15),
             shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: palette.primary.withValues(alpha: 0.25),
+                blurRadius: 8,
+                spreadRadius: 1,
+              ),
+            ],
           ),
-          child: Text(palette.mascot, style: const TextStyle(fontSize: 20)),
+          child: Text(palette.mascot, style: const TextStyle(fontSize: 22)),
         ),
         selectedIcon: Container(
-          padding: const EdgeInsets.all(4),
+          padding: const EdgeInsets.all(5),
           decoration: BoxDecoration(
             color: palette.primary,
             shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: palette.primary.withValues(alpha: 0.4),
+                blurRadius: 12,
+                spreadRadius: 2,
+              ),
+            ],
           ),
-          child: Text(palette.mascot, style: const TextStyle(fontSize: 20)),
+          child: Text(palette.mascot, style: const TextStyle(fontSize: 22)),
         ),
         label: palette.mascotName,
       ),
-      NavigationDestination(
-        icon: Icon(palette.shoppingIcon),
-        selectedIcon: Icon(palette.shoppingIcon),
-        label: palette.shoppingLabel,
+      const NavigationDestination(
+        icon: Icon(Icons.hub_outlined),
+        selectedIcon: Icon(Icons.hub_rounded),
+        label: '家居',
       ),
       const NavigationDestination(
-        icon: Icon(Icons.settings_outlined),
-        selectedIcon: Icon(Icons.settings),
-        label: '设置',
+        icon: Icon(Icons.person_outline_rounded),
+        selectedIcon: Icon(Icons.person_rounded),
+        label: '我的',
       ),
     ];
 
@@ -91,32 +110,57 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
                       child: NavigationRail(
                         selectedIndex: currentIndex > 2 ? currentIndex - 1 : (currentIndex == 2 ? 0 : currentIndex),
                         labelType: NavigationRailLabelType.all,
+                        leading: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: InkWell(
+                            onTap: () => AiAssistantDialog.show(context),
+                            borderRadius: BorderRadius.circular(24),
+                            child: Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: palette.primary.withValues(alpha: 0.18),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Text(palette.mascot, style: const TextStyle(fontSize: 24)),
+                            ),
+                          ),
+                        ),
                         onDestinationSelected: (index) {
-                          if (index == 0) context.go('/');
-                          if (index == 1) context.go('/alerts');
-                          if (index == 2) context.go('/shopping');
-                          if (index == 3) context.go('/settings');
+                          switch (index) {
+                            case 0:
+                              context.go('/');
+                              break;
+                            case 1:
+                              context.go('/inventory');
+                              break;
+                            case 2:
+                              context.go('/smart-home');
+                              break;
+                            case 3:
+                              context.go('/settings');
+                              break;
+                          }
                         },
                         destinations: [
+                          const NavigationRailDestination(
+                            icon: Icon(Icons.home_outlined),
+                            selectedIcon: Icon(Icons.home_rounded),
+                            label: Text('首页'),
+                          ),
                           NavigationRailDestination(
                             icon: Icon(palette.inventoryIcon),
                             selectedIcon: Icon(palette.inventoryIcon),
                             label: Text(palette.inventoryLabel),
                           ),
-                          NavigationRailDestination(
-                            icon: Icon(palette.alertIcon),
-                            selectedIcon: Icon(palette.alertIcon),
-                            label: Text(palette.alertLabel),
-                          ),
-                          NavigationRailDestination(
-                            icon: Icon(palette.shoppingIcon),
-                            selectedIcon: Icon(palette.shoppingIcon),
-                            label: Text(palette.shoppingLabel),
+                          const NavigationRailDestination(
+                            icon: Icon(Icons.hub_outlined),
+                            selectedIcon: Icon(Icons.hub_rounded),
+                            label: Text('家居'),
                           ),
                           const NavigationRailDestination(
-                            icon: Icon(Icons.settings_outlined),
-                            selectedIcon: Icon(Icons.settings),
-                            label: Text('设置'),
+                            icon: Icon(Icons.person_outline_rounded),
+                            selectedIcon: Icon(Icons.person_rounded),
+                            label: Text('我的'),
                           ),
                         ],
                       ),
@@ -127,8 +171,8 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
                 )
               : widget.child,
 
-          // 仅在首页展示可拖拽移动的悬浮入库按钮
-          if (currentIndex == 0)
+          // 仅在库存页展示可拖拽悬浮入库按钮
+          if (currentIndex == 1)
             Positioned(
               right: _fabOffset.dx,
               bottom: _fabOffset.dy,
@@ -137,14 +181,12 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
                   setState(() {
                     final newDx = _fabOffset.dx - details.delta.dx;
                     final newDy = _fabOffset.dy - details.delta.dy;
-                    // 限制拖拽边界在屏幕之内
                     final clampedDx = newDx.clamp(12.0, (screenSize.width - 150).clamp(12.0, 500.0));
                     final clampedDy = newDy.clamp(70.0, (screenSize.height - 140).clamp(70.0, 900.0));
                     _fabOffset = Offset(clampedDx, clampedDy);
                   });
                 },
                 onPanEnd: (details) {
-                  // 智能吸附到左右两边，避免留在屏幕中间
                   final isCloserToLeft = _fabOffset.dx > (screenSize.width / 2);
                   setState(() {
                     _fabOffset = Offset(
@@ -233,13 +275,13 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
                           context.go('/');
                           break;
                         case 1:
-                          context.go('/alerts');
+                          context.go('/inventory');
                           break;
                         case 2:
                           AiAssistantDialog.show(context);
                           break;
                         case 3:
-                          context.go('/shopping');
+                          context.go('/smart-home');
                           break;
                         case 4:
                           context.go('/settings');

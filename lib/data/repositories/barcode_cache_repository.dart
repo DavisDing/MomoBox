@@ -5,6 +5,13 @@ import 'package:drift/drift.dart';
 import '../../core/database/app_database.dart';
 import '../../domain/models/recognition_models.dart';
 
+class BarcodeCacheUsage {
+  const BarcodeCacheUsage({required this.entries, required this.bytes});
+
+  final int entries;
+  final int bytes;
+}
+
 class BarcodeCacheRepository {
   BarcodeCacheRepository(this._database);
 
@@ -33,10 +40,20 @@ class BarcodeCacheRepository {
         );
   }
 
-  Future<void> purgeExpired({DateTime? now}) =>
+  Future<int> purgeExpired({DateTime? now}) =>
       (_database.delete(_database.barcodeLookupCache)
             ..where((row) => row.expiresAt.isSmallerOrEqualValue(now ?? DateTime.now())))
           .go();
+
+  Future<int> clearAll() => _database.delete(_database.barcodeLookupCache).go();
+
+  Future<BarcodeCacheUsage> usage() async {
+    final rows = await _database.select(_database.barcodeLookupCache).get();
+    return BarcodeCacheUsage(
+      entries: rows.length,
+      bytes: rows.fold<int>(0, (sum, row) => sum + utf8.encode(row.payloadJson ?? '').length),
+    );
+  }
 
   BarcodeLookupResult? _fromRecord(BarcodeCacheRecord record) {
     final payload = record.payloadJson;
