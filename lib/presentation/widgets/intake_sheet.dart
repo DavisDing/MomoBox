@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -784,26 +785,64 @@ class _BarcodeScannerScreen extends StatefulWidget {
   State<_BarcodeScannerScreen> createState() => _BarcodeScannerScreenState();
 }
 
-class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
+class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen>
+    with WidgetsBindingObserver {
   final _picker = ImagePicker();
   late final MobileScannerController _controller;
+  StreamSubscription<BarcodeCapture>? _barcodeSubscription;
+  Future<void>? _cameraOperation;
   bool _completed = false;
   bool _torchOn = false;
   bool _isAnalyzing = false;
-  int _restartCounter = 0;
+  bool _isPickingImage = false;
+
+  bool get _isBusy => _isAnalyzing || _isPickingImage;
 
   @override
   void initState() {
     super.initState();
     _controller = MobileScannerController(
+      autoStart: false,
       detectionSpeed: DetectionSpeed.normal,
       facing: CameraFacing.back,
     );
+    WidgetsBinding.instance.addObserver(this);
+    _barcodeSubscription = _controller.barcodes.listen(
+      _onDetect,
+      onError: _onBarcodeError,
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_startCamera());
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // The permission dialog itself may trigger lifecycle changes before the
+    // controller has finished initializing. Do not race that initial start.
+    if (_completed || _isPickingImage || !_controller.value.hasCameraPermission) {
+      return;
+    }
+
+    switch (state) {
+      case AppLifecycleState.resumed:
+        unawaited(_startCamera());
+        return;
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+        unawaited(_stopCamera());
+        return;
+      case AppLifecycleState.detached:
+        return;
+    }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    unawaited(_barcodeSubscription?.cancel());
+    unawaited(_controller.dispose());
     super.dispose();
   }
 
@@ -813,25 +852,80 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
       final value = barcode.rawValue?.trim();
       if (value != null && RegExp(r'^\d{8,14}$').hasMatch(value)) {
         _completed = true;
+        unawaited(_stopCamera());
         Navigator.of(context).pop(value);
         return;
       }
     }
   }
 
-  Future<void> _retryCamera() async {
+  void _onBarcodeError(Object error, StackTrace stackTrace) {
+    debugPrint('Barcode scan frame failed: $error');
+    debugPrintStack(stackTrace: stackTrace);
+  }
+
+  Future<void> _queueCameraOperation(Future<void> Function() operation) {
+    final previous = _cameraOperation;
+    final next = () async {
+      try {
+        if (previous != null) await previous;
+        await operation();
+      } catch (error, stackTrace) {
+        debugPrint('Barcode camera operation failed: $error');
+        debugPrintStack(stackTrace: stackTrace);
+      }
+    }();
+    _cameraOperation = next;
+    unawaited(
+      next.whenComplete(() {
+        if (identical(_cameraOperation, next)) _cameraOperation = null;
+      }),
+    );
+    return next;
+  }
+
+  Future<void> _startCamera() => _queueCameraOperation(() async {
+        if (!mounted || _completed) return;
+        await _controller.start();
+        final error = _controller.value.error;
+        if (error != null) {
+          debugPrint('Barcode camera start failed: $error');
+          debugPrintStack();
+        }
+      });
+
+  Future<void> _stopCamera() => _queueCameraOperation(() async {
+        if (_controller.value.isRunning) await _controller.stop();
+      });
+
+  Future<void> _retryCamera() => _queueCameraOperation(() async {
+        if (!mounted || _completed) return;
+        await _controller.stop();
+        await _controller.start();
+        final error = _controller.value.error;
+        if (error != null) {
+          debugPrint('Barcode camera restart failed: $error');
+          debugPrintStack();
+        }
+      });
+
+  Future<void> _toggleTorch() async {
     try {
-      await _controller.stop();
-      await _controller.start();
-      if (mounted) setState(() => _restartCounter++);
-    } catch (_) {
-      if (mounted) setState(() => _restartCounter++);
+      await _controller.toggleTorch();
+      if (mounted) setState(() => _torchOn = !_torchOn);
+    } catch (error, stackTrace) {
+      debugPrint('Barcode torch operation failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
     }
   }
 
   Future<void> _scanFromImage(ImageSource source) async {
-    if (_isAnalyzing) return;
+    if (_isBusy) return;
+    setState(() => _isPickingImage = true);
     try {
+      // image_picker may open another camera activity. Release the CameraX
+      // preview first so the two camera clients never contend for the lens.
+      await _stopCamera();
       final file = await _picker.pickImage(source: source, imageQuality: 100);
       if (file == null || !mounted) return;
       setState(() => _isAnalyzing = true);
@@ -852,14 +946,22 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
           const SnackBar(content: Text('图片中未识别到有效商品条码，请调整拍摄角度或光线后重试。')),
         );
       }
-    } catch (e) {
+    } catch (error, stackTrace) {
+      debugPrint('Barcode image analysis failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('识别图片条码失败：$e')),
+          const SnackBar(content: Text('识别图片条码失败，请稍后重试。')),
         );
       }
     } finally {
-      if (mounted) setState(() => _isAnalyzing = false);
+      if (mounted) {
+        setState(() {
+          _isPickingImage = false;
+          _isAnalyzing = false;
+        });
+        if (!_completed) unawaited(_startCamera());
+      }
     }
   }
 
@@ -882,22 +984,17 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
           IconButton(
             icon: const Icon(Icons.photo_library_outlined, color: Colors.white),
             tooltip: '从相册选择识别',
-            onPressed: _isAnalyzing ? null : () => _scanFromImage(ImageSource.gallery),
+            onPressed: _isBusy ? null : () => _scanFromImage(ImageSource.gallery),
           ),
           IconButton(
             icon: const Icon(Icons.camera_alt_outlined, color: Colors.white),
             tooltip: '拍照识别条码',
-            onPressed: _isAnalyzing ? null : () => _scanFromImage(ImageSource.camera),
+            onPressed: _isBusy ? null : () => _scanFromImage(ImageSource.camera),
           ),
           IconButton(
             icon: Icon(_torchOn ? Icons.flash_on : Icons.flash_off, color: Colors.white),
             tooltip: '开关手电筒',
-            onPressed: () async {
-              try {
-                await _controller.toggleTorch();
-                if (mounted) setState(() => _torchOn = !_torchOn);
-              } catch (_) {}
-            },
+            onPressed: _isBusy ? null : _toggleTorch,
           ),
         ],
       ),
@@ -911,11 +1008,14 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
                   fit: StackFit.expand,
                   children: [
                     MobileScanner(
-                      key: ValueKey(_restartCounter),
                       controller: _controller,
-                      onDetect: _onDetect,
+                      onDetect: null,
                       errorBuilder: (context, error, child) {
                         final errorName = error.errorCode.name;
+                        final errorDetails = error.errorDetails?.message?.trim();
+                        final statusText = errorDetails == null || errorDetails.isEmpty
+                            ? '状态：$errorName\n实时预览未能启动。请点击下方“重试启动”；如仍失败，可使用“拍照识别”继续完成入库。'
+                            : '状态：$errorName\n$errorDetails\n可点击下方“重试启动”；如仍失败，可使用“拍照识别”继续完成入库。';
                         return Center(
                           child: SingleChildScrollView(
                             padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
@@ -930,7 +1030,7 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
-                                  '状态：$errorName\n如已授权但画面未唤起，可点击下方“重试启动”；或直接使用“系统相机拍照”与“相册选择”进行快速识别。',
+                                  statusText,
                                   style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 13, height: 1.4),
                                   textAlign: TextAlign.center,
                                 ),
@@ -947,7 +1047,7 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
                                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                                       ),
-                                      onPressed: _retryCamera,
+                                      onPressed: _isBusy ? null : _retryCamera,
                                       icon: const Icon(Icons.refresh, size: 18),
                                       label: const Text('重试开启'),
                                     ),
@@ -956,7 +1056,7 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
                                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                                       ),
-                                      onPressed: () => _scanFromImage(ImageSource.camera),
+                                      onPressed: _isBusy ? null : () => _scanFromImage(ImageSource.camera),
                                       icon: const Icon(Icons.camera_alt, size: 18),
                                       label: const Text('拍照识别'),
                                     ),
@@ -965,7 +1065,7 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
                                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                                       ),
-                                      onPressed: () => _scanFromImage(ImageSource.gallery),
+                                      onPressed: _isBusy ? null : () => _scanFromImage(ImageSource.gallery),
                                       icon: const Icon(Icons.photo_library, size: 18),
                                       label: const Text('相册识别'),
                                     ),
@@ -1047,7 +1147,7 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
                   const SizedBox(width: 8),
                   InkWell(
                     borderRadius: BorderRadius.circular(16),
-                    onTap: _isAnalyzing ? null : () => _scanFromImage(ImageSource.camera),
+                    onTap: _isBusy ? null : () => _scanFromImage(ImageSource.camera),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
