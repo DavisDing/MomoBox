@@ -123,9 +123,9 @@ class MockSmartHomeRepository {
   ];
 
   HaConnectionStatus _connectionStatus = HaConnectionStatus.online;
-  String _haAddress = 'http://homeassistant.local:8123';
-  String _nasAddress = 'http://nas.local:8080';
-  bool _nasOnline = true;
+  final String _haAddress = 'http://homeassistant.local:8123';
+  final String _nasAddress = 'http://nas.local:8080';
+  final bool _nasOnline = true;
 
   // Getters
   List<SmartDevice> get devices => List.unmodifiable(_devices);

@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/momo_theme.dart';
 import '../controllers/providers.dart';
-import '../controllers/smart_home_controller.dart';
 
 class NasSettingsScreen extends ConsumerStatefulWidget {
   const NasSettingsScreen({super.key});
@@ -40,7 +39,6 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
-    final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(title: const Text('NAS 协同与家庭共享')),
@@ -119,7 +117,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
                     title: const Text('局域网自动双向同步', style: TextStyle(fontSize: 14)),
                     subtitle: const Text('本地变动实时上传至 NAS，避免多设备冲突', style: TextStyle(fontSize: 12)),
                     value: _autoSync,
-                    activeColor: palette.primary,
+                    activeTrackColor: palette.primary,
                     onChanged: (v) => setState(() => _autoSync = v),
                   ),
                   SwitchListTile.adaptive(
@@ -127,7 +125,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
                     title: const Text('同步物资照片与包装原图', style: TextStyle(fontSize: 14)),
                     subtitle: const Text('将说明书与入库图片同步存储到 NAS', style: TextStyle(fontSize: 12)),
                     value: _syncImages,
-                    activeColor: palette.primary,
+                    activeTrackColor: palette.primary,
                     onChanged: (v) => setState(() => _syncImages = v),
                   ),
                   const SizedBox(height: 12),

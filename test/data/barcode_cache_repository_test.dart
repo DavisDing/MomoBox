@@ -23,22 +23,22 @@ void main() {
     expect(await repository.loadFresh(result.barcode, now: DateTime(2026, 9, 11)), isNull);
     expect(jsonDecode((await database.select(database.barcodeLookupCache).get()).single.payloadJson!)['name'], '缓存商品');
   });
+
+  test('barcode cache reports usage and can be cleared', () async {
+    final database = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(database.close);
+    final repository = BarcodeCacheRepository(database);
+    const result = BarcodeLookupResult(
+      barcode: '6901234567890',
+      source: 'external_api',
+      name: '缓存商品',
+    );
+    await repository.save(result, expiresAt: DateTime(2026, 10, 1));
+
+    final usage = await repository.usage();
+    expect(usage.entries, 1);
+    expect(usage.bytes, greaterThan(0));
+    expect(await repository.clearAll(), 1);
+    expect((await repository.usage()).entries, 0);
+  });
 }
-
-test('barcode cache reports usage and can be cleared', () async {
-  final database = AppDatabase.forTesting(NativeDatabase.memory());
-  addTearDown(database.close);
-  final repository = BarcodeCacheRepository(database);
-  const result = BarcodeLookupResult(
-    barcode: '6901234567890',
-    source: 'external_api',
-    name: '缓存商品',
-  );
-  await repository.save(result, expiresAt: DateTime(2026, 10, 1));
-
-  final usage = await repository.usage();
-  expect(usage.entries, 1);
-  expect(usage.bytes, greaterThan(0));
-  expect(await repository.clearAll(), 1);
-  expect((await repository.usage()).entries, 0);
-});

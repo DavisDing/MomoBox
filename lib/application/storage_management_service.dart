@@ -8,6 +8,7 @@ import '../data/repositories/barcode_cache_repository.dart';
 import '../data/repositories/settings_repository.dart';
 import '../services/media_storage_service.dart';
 import 'ai_usage_service.dart';
+import '../domain/models/recognition_models.dart';
 import 'media_service.dart';
 
 class StorageUsage {

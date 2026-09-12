@@ -1,10 +1,8 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/momo_theme.dart';
-import '../../domain/inventory/reminder_rules.dart';
 import '../../domain/models/inventory_models.dart';
 import '../../domain/models/smart_home_models.dart';
 import '../controllers/providers.dart';
@@ -269,7 +267,7 @@ class HomeScreen extends ConsumerWidget {
                 context: context,
                 isScrollControlled: true,
                 useSafeArea: true,
-                builder: (_) => const IntakeSheet(initialAction: 'scan'),
+                builder: (_) => const IntakeSheet(),
               ),
             ),
             _buildQuickActionBtn(
@@ -281,7 +279,7 @@ class HomeScreen extends ConsumerWidget {
                 context: context,
                 isScrollControlled: true,
                 useSafeArea: true,
-                builder: (_) => const IntakeSheet(initialAction: 'camera'),
+                builder: (_) => const IntakeSheet(),
               ),
             ),
             _buildQuickActionBtn(
@@ -529,7 +527,7 @@ class HomeScreen extends ConsumerWidget {
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  entry.name,
+                                  entry.itemName,
                                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
                                 ),
                               ),
@@ -667,7 +665,7 @@ class HomeScreen extends ConsumerWidget {
                         ),
                         Switch.adaptive(
                           value: device.isOn,
-                          activeColor: palette.primary,
+                          activeTrackColor: palette.primary,
                           onChanged: (val) {
                             ref.read(smartHomeControllerProvider.notifier).toggleDevice(device.id);
                             ScaffoldMessenger.of(context).showSnackBar(

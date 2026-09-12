@@ -1,6 +1,8 @@
 /// Smart Home & Home Assistant 领域与展示模型 (Mock / Contract)
 /// 等待 Full-stack Agent 接入真实 NAS HA WebSocket / REST API。
 
+library;
+
 enum HaConnectionStatus {
   online,
   offline,

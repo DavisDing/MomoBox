@@ -13,9 +13,6 @@ class SmartHomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
     final homeState = ref.watch(smartHomeControllerProvider);
     final controller = ref.read(smartHomeControllerProvider.notifier);
 
@@ -413,7 +410,6 @@ class SmartHomeScreen extends ConsumerWidget {
     MomoPalette palette,
   ) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     final controller = ref.read(smartHomeControllerProvider.notifier);
 
     final icon = switch (device.type) {
@@ -466,7 +462,7 @@ class SmartHomeScreen extends ConsumerWidget {
                 ),
                 Switch.adaptive(
                   value: device.isOn,
-                  activeColor: palette.primary,
+                  activeTrackColor: palette.primary,
                   onChanged: (val) {
                     controller.toggleDevice(device.id);
                   },
@@ -512,7 +508,7 @@ class SmartHomeScreen extends ConsumerWidget {
                       value: device.brightness.toDouble(),
                       min: 1,
                       max: 100,
-                      activeColor: palette.primary,
+                      activeTrackColor: palette.primary,
                       onChanged: (val) {
                         controller.updateLightBrightness(device.id, val.toInt());
                       },

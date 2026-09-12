@@ -3,7 +3,6 @@ import 'home_assistant_settings_screen.dart';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:cross_file/cross_file.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1052,10 +1051,12 @@ class _NotificationSettingsScreenState extends ConsumerState<NotificationSetting
 
   Future<void> _refreshStatus() async {
     final status = await ref.read(localNotificationServiceProvider).permissionStatus();
-    if (mounted) setState(() {
-      _status = status;
-      _busy = false;
-    });
+    if (mounted) {
+      setState(() {
+        _status = status;
+        _busy = false;
+      });
+    }
   }
 
   Future<void> _requestPermission() async {
@@ -1323,10 +1324,12 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
     for (final id in profileIds) {
       if ((await secure.readAiApiKeyForProfile(id))?.trim().isNotEmpty == true) count++;
     }
-    if (mounted) setState(() {
-      _configuredKeys = count;
-      _loading = false;
-    });
+    if (mounted) {
+      setState(() {
+        _configuredKeys = count;
+        _loading = false;
+      });
+    }
   }
 
   Future<void> _clearKeys() async {
