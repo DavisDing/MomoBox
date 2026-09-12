@@ -276,7 +276,10 @@ testWidgets('提醒支持单条和分组已处理，确认状态持久化', (tes
     await _dismissModalRoute(tester);
 
     // 切换到底栏“库存”Tab
-    await tester.tap(find.byIcon(Icons.all_inbox_rounded));
+    await tester.tap(find.descendant(
+      of: find.byType(NavigationBar),
+      matching: find.text('库存'),
+    ));
     await _pumpUntilFound(tester, find.text('嬷嬷的小箱子'));
     expect(find.text('嬷嬷的小箱子'), findsOneWidget);
     await _pumpUntilFound(tester, find.text('入库'));
