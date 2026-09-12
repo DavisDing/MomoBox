@@ -191,7 +191,11 @@ class HomeScreen extends ConsumerWidget {
           color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.05),
         ),
       ),
-      child: Row(
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 6,
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           // NAS 状态
           _buildStatusDot(
@@ -199,9 +203,6 @@ class HomeScreen extends ConsumerWidget {
             isOnline: homeState.nasOnline,
             detail: homeState.nasOnline ? '已同步' : '未连接',
           ),
-          const Spacer(),
-          Container(width: 1, height: 16, color: Colors.grey.withValues(alpha: 0.3)),
-          const Spacer(),
           // HA 状态
           _buildStatusDot(
             label: 'Home Assistant',
@@ -348,11 +349,14 @@ class HomeScreen extends ConsumerWidget {
               children: [
                 Icon(palette.alertIcon, color: palette.primary, size: 20),
                 const SizedBox(width: 8),
-                Text(
-                  '效期与库存提醒摘要',
-                  style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                Expanded(
+                  child: Text(
+                    '效期与库存提醒摘要',
+                    style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-                const Spacer(),
                 TextButton(
                   onPressed: () => context.push('/alerts'),
                   child: const Text('待处理详情 >', style: TextStyle(fontSize: 12)),

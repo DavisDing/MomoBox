@@ -169,7 +169,8 @@ testWidgets('提醒支持单条和分组已处理，确认状态持久化', (tes
     final batchId = (await database.select(database.productBatches).get()).single.id;
 
     await _pumpApp(tester, database);
-    await tester.tap(find.text('提醒'));
+    await _pumpUntilFound(tester, find.text('待处理详情 >'));
+    await tester.tap(find.text('待处理详情 >'));
     final alertItem = find.descendant(
       of: find.byType(AlertsScreen),
       matching: find.text('周期性低库存'),
@@ -266,16 +267,16 @@ testWidgets('提醒支持单条和分组已处理，确认状态持久化', (tes
     await _pumpApp(tester, database);
     await _pumpUntilFound(tester, find.byType(NavigationBar));
     expect(find.byType(NavigationBar), findsOneWidget);
-    await _pumpUntilFound(tester, find.text('入库'));
-    expect(find.text('入库'), findsOneWidget);
 
-    await tester.tap(find.text('提醒'));
+    // 访问首页提醒详情
+    await _pumpUntilFound(tester, find.text('待处理详情 >'));
+    await tester.tap(find.text('待处理详情 >'));
     await _pumpUntilFound(tester, find.text('效期与库存提醒'));
     expect(find.text('效期与库存提醒'), findsOneWidget);
-    await tester.tap(find.text('采买'));
-    await _pumpUntilFound(tester, find.text('待采买清单'));
-    expect(find.text('待采买清单'), findsOneWidget);
-    await tester.tap(find.text('库存'));
+    await _dismissModalRoute(tester);
+
+    // 切换到底栏“库存”Tab
+    await tester.tap(find.byIcon(Icons.all_inbox_rounded));
     await _pumpUntilFound(tester, find.text('嬷嬷的小箱子'));
     expect(find.text('嬷嬷的小箱子'), findsOneWidget);
     await _pumpUntilFound(tester, find.text('入库'));
