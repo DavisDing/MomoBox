@@ -82,7 +82,7 @@ class SettingsScreen extends ConsumerWidget {
             context,
             icon: Icons.psychology_outlined,
             title: 'AI 解析与模型配置',
-            subtitle: '支持 chat/responses 协议、多模型切换与默认模型',
+            subtitle: '支持自动识别协议、chat/responses 双协议与多模型切换',
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const AiSettingsScreen()),
             ),
@@ -493,7 +493,7 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
     final defaultEndpoint = await settings.getValue(AiDraftService.endpointKey) ?? '';
     final defaultModel = await settings.getValue(AiDraftService.modelKey) ?? '';
     final defaultApiKey = await secureSettings.readAiApiKey() ?? '';
-    final defaultType = await settings.getValue(AiDraftService.endpointTypeKey) ?? 'chat';
+    final defaultType = await settings.getValue(AiDraftService.endpointTypeKey) ?? 'auto';
     final storedActiveId = await settings.getValue(AiDraftService.activeProfileKey);
 
     List<Map<String, dynamic>> parsedProfiles = [];
@@ -626,7 +626,7 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
     final urlCtrl = TextEditingController(text: item?['endpoint'] as String? ?? 'https://api.openai.com/v1');
     final modelCtrl = TextEditingController(text: item?['model'] as String? ?? 'gpt-4o-mini');
     final keyCtrl = TextEditingController();
-    String endpointType = item?['endpointType'] as String? ?? 'chat';
+    String endpointType = item?['endpointType'] as String? ?? 'auto';
 
     showDialog<void>(
       context: context,
@@ -646,6 +646,7 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                   borderRadius: BorderRadius.circular(16),
                   decoration: const InputDecoration(labelText: '接口协议类型'),
                   items: const [
+                    DropdownMenuItem(value: 'auto', child: Text('自动判断 (Auto 推荐)')),
                     DropdownMenuItem(value: 'chat', child: Text('Chat Completions (/v1/chat/completions)')),
                     DropdownMenuItem(value: 'responses', child: Text('Responses API (/v1/responses)')),
                   ],
@@ -734,7 +735,10 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
           const SizedBox(height: 8),
           ..._profiles.map((p) {
             final isDefault = p['id'] == _activeId;
-            final isResponses = p['endpointType'] == 'responses';
+            final type = p['endpointType'] as String? ?? 'auto';
+            final Color badgeColor = type == 'responses'
+                ? Colors.purple
+                : (type == 'chat' ? Colors.blue : Colors.teal);
             return Card(
               margin: const EdgeInsets.only(bottom: 8),
               child: ListTile(
@@ -748,12 +752,12 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: (isResponses ? Colors.purple : Colors.blue).withValues(alpha: 0.1),
+                        color: badgeColor.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
-                        isResponses ? 'responses' : 'chat',
-                        style: TextStyle(fontSize: 10, color: isResponses ? Colors.purple : Colors.blue),
+                        type == 'auto' ? '自动 (auto)' : type,
+                        style: TextStyle(fontSize: 10, color: badgeColor),
                       ),
                     ),
                   ],

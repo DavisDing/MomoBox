@@ -8,6 +8,7 @@ import '../data/repositories/settings_repository.dart';
 import '../domain/models/ai_usage_models.dart';
 import '../domain/models/inventory_models.dart';
 import '../services/secure_settings_service.dart';
+import 'ai_client_helper.dart';
 import 'ai_draft_service.dart';
 import 'ai_usage_service.dart';
 
@@ -50,7 +51,7 @@ class AiAssistantService {
         : await _secureSettings.readAiApiKeyForProfile(activeProfileId);
     // Fall back once for installations created before profile-scoped keys.
     final apiKey = profileKey ?? await _secureSettings.readAiApiKey();
-    final endpointType = (await _settings.getValue(AiDraftService.endpointTypeKey)) ?? 'chat';
+    final configuredType = (await _settings.getValue(AiDraftService.endpointTypeKey)) ?? 'auto';
 
     if (endpoint == null || endpoint.trim().isEmpty || model == null || model.trim().isEmpty || apiKey == null || apiKey.trim().isEmpty) {
       throw StateError('请先在「设置 -> AI 解析配置」中填写兼容 OpenAI 的 AI 地址、模型和 API Key。');
@@ -94,80 +95,81 @@ class AiAssistantService {
 ${buffer.toString()}
 ''';
 
-    final isResponses = endpointType == 'responses';
-    final uri = isResponses ? _responsesUri(endpoint) : _chatCompletionUri(endpoint);
+    final protocol = AiClientHelper.resolveProtocol(endpoint, configuredType);
+
+    final attempts = <String>[];
+    if (protocol == 'responses') {
+      attempts.add('responses');
+    } else if (protocol == 'chat') {
+      attempts.add('chat');
+    } else {
+      attempts.addAll(['chat', 'responses']);
+    }
 
     final recentHistory = history.take(6).map((m) => {'role': m.role, 'content': m.content}).toList();
 
-    final Map<String, dynamic> requestBody = isResponses
-        ? {
-            'model': model.trim(),
-            'instructions': systemPrompt,
-            'input': question,
-          }
-        : {
-            'model': model.trim(),
-            'temperature': 0.3,
-            'messages': [
-              {'role': 'system', 'content': systemPrompt},
-              ...recentHistory,
-              {'role': 'user', 'content': question},
-            ],
-          };
+    http.Response? response;
+    String actualUsedType = attempts.first;
 
-    late final http.Response response;
-    try {
-      response = await _client
-          .post(
-            uri,
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer ${apiKey.trim()}',
-            },
-            body: jsonEncode(requestBody),
-          )
-          .timeout(const Duration(seconds: 30));
-    } on TimeoutException {
-      throw StateError('请求超时，请检查网络或 AI 接口响应速度。');
-    } on http.ClientException {
-      throw StateError('无法连接 AI 服务，请检查接口地址。');
+    for (var i = 0; i < attempts.length; i++) {
+      final currentType = attempts[i];
+      final isResponses = currentType == 'responses';
+      final uri = isResponses ? AiClientHelper.responsesUri(endpoint) : AiClientHelper.chatCompletionUri(endpoint);
+
+      final Map<String, dynamic> requestBody = isResponses
+          ? {
+              'model': model.trim(),
+              'instructions': systemPrompt,
+              'input': question,
+            }
+          : {
+              'model': model.trim(),
+              'temperature': 0.3,
+              'messages': [
+                {'role': 'system', 'content': systemPrompt},
+                ...recentHistory,
+                {'role': 'user', 'content': question},
+              ],
+            };
+
+      try {
+        final res = await _client
+            .post(
+              uri,
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ${apiKey.trim()}',
+              },
+              body: jsonEncode(requestBody),
+            )
+            .timeout(const Duration(seconds: 30));
+
+        if ((res.statusCode == 404 || res.statusCode == 405) && i < attempts.length - 1) {
+          continue;
+        }
+
+        response = res;
+        actualUsedType = currentType;
+        break;
+      } on TimeoutException {
+        if (i < attempts.length - 1) continue;
+        throw StateError('请求超时，请检查网络或 AI 接口响应速度。');
+      } on http.ClientException {
+        if (i < attempts.length - 1) continue;
+        throw StateError('无法连接 AI 服务，请检查接口地址。');
+      }
     }
 
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw StateError('AI 服务异常 (${response.statusCode})：${response.body}');
+    if (response == null || response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError('AI 服务异常 (${response?.statusCode ?? "未知"})：${response?.body ?? ""}');
     }
 
     final decoded = jsonDecode(response.body);
     if (decoded is! Map<String, dynamic>) throw const FormatException('响应数据格式错误');
 
-    _recordUsage(decoded, model.trim(), endpointType);
+    _recordUsage(decoded, model.trim(), actualUsedType);
 
-    String? answer;
-    if (isResponses) {
-      final output = decoded['output'];
-      if (output is List && output.isNotEmpty) {
-        final first = output.first;
-        if (first is Map) {
-          final contentList = first['content'];
-          if (contentList is List && contentList.isNotEmpty) {
-            final textItem = contentList.first;
-            if (textItem is Map && textItem['text'] is String) {
-              answer = textItem['text'] as String;
-            }
-          }
-        }
-      }
-      answer ??= decoded['output_text'] as String?;
-    } else {
-      final choices = decoded['choices'];
-      if (choices is List && choices.isNotEmpty && choices.first is Map) {
-        final message = (choices.first as Map)['message'];
-        if (message is Map && message['content'] is String) {
-          answer = message['content'] as String;
-        }
-      }
-    }
-
+    final answer = AiClientHelper.extractResponseText(decoded);
     if (answer == null || answer.trim().isEmpty) {
       throw StateError('AI 未能生成有效回复。');
     }
@@ -209,25 +211,5 @@ ${buffer.toString()}
         ),
       );
     } catch (_) {}
-  }
-
-  Uri _chatCompletionUri(String endpoint) {
-    final clean = endpoint.trim().replaceAll(RegExp(r'/+$'), '');
-    final parsed = Uri.tryParse(clean);
-    if (parsed == null || !parsed.hasScheme || !parsed.hasAuthority) {
-      throw ArgumentError('AI 服务地址无效。');
-    }
-    if (parsed.path.endsWith('/chat/completions')) return parsed;
-    return parsed.replace(pathSegments: [...parsed.pathSegments, 'chat', 'completions']);
-  }
-
-  Uri _responsesUri(String endpoint) {
-    final clean = endpoint.trim().replaceAll(RegExp(r'/+$'), '');
-    final parsed = Uri.tryParse(clean);
-    if (parsed == null || !parsed.hasScheme || !parsed.hasAuthority) {
-      throw ArgumentError('AI 服务地址无效。');
-    }
-    if (parsed.path.endsWith('/responses')) return parsed;
-    return parsed.replace(pathSegments: [...parsed.pathSegments, 'responses']);
   }
 }
