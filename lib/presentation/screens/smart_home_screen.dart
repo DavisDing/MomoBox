@@ -508,7 +508,7 @@ class SmartHomeScreen extends ConsumerWidget {
                       value: device.brightness.toDouble(),
                       min: 1,
                       max: 100,
-                      activeTrackColor: palette.primary,
+                      activeColor: palette.primary,
                       onChanged: (val) {
                         controller.updateLightBrightness(device.id, val.toInt());
                       },
