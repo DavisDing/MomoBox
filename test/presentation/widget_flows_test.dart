@@ -273,8 +273,9 @@ testWidgets('提醒支持单条和分组已处理，确认状态持久化', (tes
     await tester.tap(find.text('待处理详情 >'));
     await _pumpUntilFound(tester, find.text('效期与库存提醒'));
     expect(find.text('效期与库存提醒'), findsOneWidget);
-    tester.binding.handlePopRoute();
+    await tester.pageBack();
     await _pumpUntilAbsent(tester, find.text('效期与库存提醒'));
+    await _pumpForUi(tester);
 
     // 切换到底栏“库存”Tab
     await tester.tap(find.descendant(

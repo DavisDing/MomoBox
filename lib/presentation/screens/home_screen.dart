@@ -1,3 +1,6 @@
+import '../widgets/calendar_sync_dialog.dart';
+import '../widgets/chores_sheet.dart';
+import '../../domain/models/chore_models.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -139,6 +142,16 @@ class HomeScreen extends ConsumerWidget {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: _buildShoppingSummaryCard(context, shoppingAsync, summary, palette),
+                ),
+              ),
+
+              const SliverToBoxAdapter(child: SizedBox(height: 16)),
+
+              // 周期循环提醒卡片 (换床单被罩、洗浴巾等)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: _buildChoresCard(context, ref, palette),
                 ),
               ),
 
@@ -357,6 +370,15 @@ class HomeScreen extends ConsumerWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                IconButton(
+                  tooltip: '同步到日历',
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  icon: Icon(Icons.calendar_month_outlined, size: 18, color: palette.primary),
+                  onPressed: () => CalendarSyncDialog.show(context),
+                ),
+                const SizedBox(width: 6),
                 TextButton(
                   onPressed: () => context.push('/alerts'),
                   child: const Text('待处理详情 >', style: TextStyle(fontSize: 12)),
@@ -692,3 +714,126 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 }
+
+  Widget _buildChoresCard(BuildContext context, WidgetRef ref, MomoPalette palette) {
+    final theme = Theme.of(context);
+    final choresAsync = ref.watch(choresProvider);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.repeat_rounded, color: palette.primary, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '周期循环提醒',
+                    style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => ChoresSheet.show(context),
+                  child: const Text('管理/新增 >', style: TextStyle(fontSize: 12)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            choresAsync.when(
+              loading: () => const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(8),
+                  child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                ),
+              ),
+              error: (err, _) => Text('周期数据加载异常：', style: const TextStyle(fontSize: 12)),
+              data: (chores) {
+                final dueItems = chores.where((c) => c.isDue()).toList();
+                if (chores.isEmpty) {
+                  return InkWell(
+                    onTap: () => ChoresSheet.show(context),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(
+                        children: [
+                          Icon(Icons.add_circle_outline_rounded, size: 16, color: palette.primary),
+                          const SizedBox(width: 6),
+                          Text('设置常规定期家务（如换床单、洗浴巾、换滤芯）', style: TextStyle(fontSize: 13, color: palette.primary)),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+
+                return Column(
+                  children: [
+                    ...chores.take(3).map((chore) {
+                      final isDue = chore.isDue();
+                      final days = chore.daysUntil();
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: isDue ? Colors.redAccent : Colors.green,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                chore.title,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: isDue ? FontWeight.bold : FontWeight.normal,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Text(
+                              isDue
+                                  ? (days < 0 ? '逾期 ${-days} 天' : '今日待办')
+                                  : '还有 $days 天',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isDue ? Colors.redAccent : theme.hintColor,
+                                fontWeight: isDue ? FontWeight.bold : FontWeight.normal,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            InkWell(
+                              onTap: () async {
+                                await ref.read(choreServiceProvider).completeChore(chore.id);
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('已打卡「${chore.title}」'), duration: const Duration(seconds: 1)),
+                                  );
+                                }
+                              },
+                              borderRadius: BorderRadius.circular(12),
+                              child: Padding(
+                                padding: const EdgeInsets.all(4),
+                                child: Icon(Icons.check_circle_outline, size: 18, color: palette.primary),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }

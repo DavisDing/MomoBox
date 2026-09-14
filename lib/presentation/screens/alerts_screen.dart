@@ -1,3 +1,4 @@
+import '../widgets/calendar_sync_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -31,7 +32,16 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
     final summary = ref.watch(reminderSummaryProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('效期与库存提醒')),
+      appBar: AppBar(
+        title: const Text('效期与库存提醒'),
+        actions: [
+          IconButton(
+            tooltip: '同步到日历',
+            icon: const Icon(Icons.calendar_month_outlined),
+            onPressed: () => CalendarSyncDialog.show(context),
+          ),
+        ],
+      ),
       body: inventory.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => Center(

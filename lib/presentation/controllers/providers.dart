@@ -196,3 +196,14 @@ final storageManagementServiceProvider = Provider<StorageManagementService>(
 final localNotificationServiceProvider = Provider<LocalNotificationService>((ref) {
   return LocalNotificationService();
 });
+
+import '../../application/chore_service.dart';
+import '../../domain/models/chore_models.dart';
+
+final choreServiceProvider = Provider<ChoreService>((ref) {
+  return ChoreService(ref.watch(settingsRepositoryProvider));
+});
+
+final choresProvider = StreamProvider<List<ChoreItem>>((ref) {
+  return ref.watch(choreServiceProvider).watchChores();
+});
