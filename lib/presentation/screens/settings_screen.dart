@@ -495,6 +495,14 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
     final defaultApiKey = await secureSettings.readAiApiKey() ?? '';
     final defaultType = await settings.getValue(AiDraftService.endpointTypeKey) ?? 'auto';
     final storedActiveId = await settings.getValue(AiDraftService.activeProfileKey);
+    final storedSecondaryId = await settings.getValue(AiDraftService.secondaryProfileIdKey);
+    final storedFallbackId = await settings.getValue(AiDraftService.fallbackProfileIdKey);
+    final secondaryEndpoint = await settings.getValue(AiDraftService.secondaryEndpointKey);
+    final secondaryModel = await settings.getValue(AiDraftService.secondaryModelKey);
+    final secondaryType = await settings.getValue(AiDraftService.secondaryTypeKey) ?? 'auto';
+    final fallbackEndpoint = await settings.getValue(AiDraftService.fallbackEndpointKey);
+    final fallbackModel = await settings.getValue(AiDraftService.fallbackModelKey);
+    final fallbackType = await settings.getValue(AiDraftService.fallbackTypeKey) ?? 'auto';
 
     List<Map<String, dynamic>> parsedProfiles = [];
     if (profilesRaw != null && profilesRaw.isNotEmpty) {
@@ -536,6 +544,45 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
     }
 
     var shouldSanitizeProfiles = false;
+
+    void restoreLegacyFallbackProfile({
+      required String role,
+      required String legacyId,
+      required String? endpoint,
+      required String? model,
+      required String endpointType,
+    }) {
+      if (endpoint == null || endpoint.trim().isEmpty || model == null || model.trim().isEmpty) return;
+      final profileId = role == AiDraftService.secondaryRole
+          ? (storedSecondaryId?.trim().isNotEmpty == true ? storedSecondaryId!.trim() : legacyId)
+          : (storedFallbackId?.trim().isNotEmpty == true ? storedFallbackId!.trim() : legacyId);
+      if (parsedProfiles.any((profile) => profile['id'] == profileId)) return;
+      parsedProfiles.add({
+        'id': profileId,
+        'name': role == AiDraftService.secondaryRole ? '副服务（已迁移）' : '兜底服务（已迁移）',
+        'endpoint': endpoint.trim(),
+        'model': model.trim(),
+        'endpointType': endpointType,
+        AiDraftService.profileRoleKey: role,
+      });
+      shouldSanitizeProfiles = true;
+    }
+
+    restoreLegacyFallbackProfile(
+      role: AiDraftService.secondaryRole,
+      legacyId: 'secondary_profile',
+      endpoint: secondaryEndpoint,
+      model: secondaryModel,
+      endpointType: secondaryType,
+    );
+    restoreLegacyFallbackProfile(
+      role: AiDraftService.fallbackRole,
+      legacyId: 'fallback_profile',
+      endpoint: fallbackEndpoint,
+      model: fallbackModel,
+      endpointType: fallbackType,
+    );
+
     for (final profile in parsedProfiles) {
       final id = profile['id'] as String;
       // Migrate a legacy plaintext profile key into platform secure storage,
@@ -561,6 +608,44 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
       selected['hasApiKey'] = true;
       shouldSanitizeProfiles = true;
     }
+
+    // Existing installations only had a selected/default service. Make it
+    // the primary service and retain any persisted fallback assignments.
+    final selectedId = selected['id'] as String;
+    for (final profile in parsedProfiles) {
+      if (profile[AiDraftService.profileRoleKey] == AiDraftService.primaryRole && profile['id'] != selectedId) {
+        profile.remove(AiDraftService.profileRoleKey);
+        shouldSanitizeProfiles = true;
+      }
+    }
+    if (selected[AiDraftService.profileRoleKey] != AiDraftService.primaryRole) {
+      selected[AiDraftService.profileRoleKey] = AiDraftService.primaryRole;
+      shouldSanitizeProfiles = true;
+    }
+    void restoreFallbackRole(String? profileId, String role) {
+      if (profileId == null || profileId.isEmpty || profileId == selectedId) return;
+      final profile = parsedProfiles.where((item) => item['id'] == profileId).firstOrNull;
+      if (profile == null) return;
+      for (final item in parsedProfiles) {
+        if (item != profile && item[AiDraftService.profileRoleKey] == role) {
+          item.remove(AiDraftService.profileRoleKey);
+          shouldSanitizeProfiles = true;
+        }
+      }
+      if (profile[AiDraftService.profileRoleKey] != role) {
+        profile[AiDraftService.profileRoleKey] = role;
+        shouldSanitizeProfiles = true;
+      }
+    }
+    restoreFallbackRole(
+      storedSecondaryId?.trim().isNotEmpty == true ? storedSecondaryId : 'secondary_profile',
+      AiDraftService.secondaryRole,
+    );
+    restoreFallbackRole(
+      storedFallbackId?.trim().isNotEmpty == true ? storedFallbackId : 'fallback_profile',
+      AiDraftService.fallbackRole,
+    );
+
     if (shouldSanitizeProfiles) {
       final sanitized = parsedProfiles.map((profile) {
         final value = Map<String, dynamic>.from(profile)..remove('hasApiKey');
@@ -588,6 +673,12 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
     final settings = ref.read(settingsServiceProvider);
     final secureSettings = ref.read(secureSettingsServiceProvider);
 
+    final current = _profiles.firstWhere(
+      (profile) => profile['id'] == _activeId,
+      orElse: () => _profiles.first,
+    );
+    _assignProfileRole(current, AiDraftService.primaryRole);
+
     final persisted = <Map<String, dynamic>>[];
     for (final profile in _profiles) {
       final id = profile['id'] as String;
@@ -603,14 +694,22 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
     }
     await settings.setValue(AiDraftService.profilesKey, jsonEncode(persisted));
 
-    final current = _profiles.firstWhere(
-      (profile) => profile['id'] == _activeId,
-      orElse: () => _profiles.first,
-    );
     await settings.setValue(AiDraftService.endpointKey, current['endpoint'] as String? ?? '');
     await settings.setValue(AiDraftService.modelKey, current['model'] as String? ?? '');
     await settings.setValue(AiDraftService.endpointTypeKey, current['endpointType'] as String? ?? 'chat');
     await settings.setValue(AiDraftService.activeProfileKey, current['id'] as String);
+
+    final secondary = _profileWithRole(AiDraftService.secondaryRole);
+    await settings.setValue(AiDraftService.secondaryEndpointKey, secondary?['endpoint'] as String? ?? '');
+    await settings.setValue(AiDraftService.secondaryModelKey, secondary?['model'] as String? ?? '');
+    await settings.setValue(AiDraftService.secondaryTypeKey, secondary?['endpointType'] as String? ?? 'auto');
+    await settings.setValue(AiDraftService.secondaryProfileIdKey, secondary?['id'] as String? ?? '');
+
+    final fallback = _profileWithRole(AiDraftService.fallbackRole);
+    await settings.setValue(AiDraftService.fallbackEndpointKey, fallback?['endpoint'] as String? ?? '');
+    await settings.setValue(AiDraftService.fallbackModelKey, fallback?['model'] as String? ?? '');
+    await settings.setValue(AiDraftService.fallbackTypeKey, fallback?['endpointType'] as String? ?? 'auto');
+    await settings.setValue(AiDraftService.fallbackProfileIdKey, fallback?['id'] as String? ?? '');
 
     // All current keys are profile-scoped. Remove the old shared key after
     // a successful save so there is only one protected copy per profile.
@@ -621,12 +720,65 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
     }
   }
 
+  Map<String, dynamic>? _profileWithRole(String role) {
+    for (final profile in _profiles) {
+      if (profile[AiDraftService.profileRoleKey] == role) return profile;
+    }
+    return null;
+  }
+
+  void _assignProfileRole(Map<String, dynamic> profile, String requestedRole) {
+    final id = profile['id'] as String;
+    var role = requestedRole;
+
+    if (role != AiDraftService.primaryRole && _activeId == id) {
+      final replacement = _profiles.where((item) => item['id'] != id).firstOrNull;
+      if (replacement == null) {
+        role = AiDraftService.primaryRole;
+      } else {
+        replacement[AiDraftService.profileRoleKey] = AiDraftService.primaryRole;
+        _activeId = replacement['id'] as String;
+      }
+    }
+
+    if (role != AiDraftService.standbyRole) {
+      for (final item in _profiles) {
+        if (item['id'] != id && item[AiDraftService.profileRoleKey] == role) {
+          item.remove(AiDraftService.profileRoleKey);
+        }
+      }
+    }
+    if (role == AiDraftService.standbyRole) {
+      profile.remove(AiDraftService.profileRoleKey);
+    } else {
+      profile[AiDraftService.profileRoleKey] = role;
+    }
+    if (role == AiDraftService.primaryRole) {
+      _activeId = id;
+    }
+  }
+
+  String _roleLabel(Map<String, dynamic> profile) {
+    switch (profile[AiDraftService.profileRoleKey]) {
+      case AiDraftService.primaryRole:
+        return '主服务';
+      case AiDraftService.secondaryRole:
+        return '副服务';
+      case AiDraftService.fallbackRole:
+        return '兜底服务';
+      default:
+        return '未加入容灾';
+    }
+  }
+
   void _addOrEditProfile([Map<String, dynamic>? item]) {
     final nameCtrl = TextEditingController(text: item?['name'] as String? ?? '');
     final urlCtrl = TextEditingController(text: item?['endpoint'] as String? ?? 'https://api.openai.com/v1');
     final modelCtrl = TextEditingController(text: item?['model'] as String? ?? 'gpt-4o-mini');
     final keyCtrl = TextEditingController();
     String endpointType = item?['endpointType'] as String? ?? 'auto';
+    String fallbackRole = item?[AiDraftService.profileRoleKey] as String? ??
+        (item?['id'] == _activeId ? AiDraftService.primaryRole : AiDraftService.standbyRole);
 
     showDialog<void>(
       context: context,
@@ -638,6 +790,21 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: '配置名称（如：主力模型）')),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  initialValue: fallbackRole,
+                  isDense: true,
+                  decoration: const InputDecoration(labelText: '容灾角色'),
+                  items: const [
+                    DropdownMenuItem(value: AiDraftService.primaryRole, child: Text('主服务（优先调用）')),
+                    DropdownMenuItem(value: AiDraftService.secondaryRole, child: Text('副服务（主服务失败时调用）')),
+                    DropdownMenuItem(value: AiDraftService.fallbackRole, child: Text('兜底服务（前两者失败时调用）')),
+                    DropdownMenuItem(value: AiDraftService.standbyRole, child: Text('仅保存，不参与调用')),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) setDialogState(() => fallbackRole = value);
+                  },
+                ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
                   initialValue: endpointType,
@@ -682,7 +849,7 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                 setState(() {
                   if (item == null) {
                     final newId = DateTime.now().millisecondsSinceEpoch.toString();
-                    _profiles.add({
+                    final profile = <String, dynamic>{
                       'id': newId,
                       'name': name,
                       'endpoint': url,
@@ -690,8 +857,9 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                       '_apiKeyDraft': key,
                       'hasApiKey': key.isNotEmpty,
                       'endpointType': endpointType,
-                    });
-                    _activeId = newId;
+                    };
+                    _profiles.add(profile);
+                    _assignProfileRole(profile, fallbackRole);
                   } else {
                     item['name'] = name;
                     item['endpoint'] = url;
@@ -701,6 +869,7 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                       item['hasApiKey'] = true;
                     }
                     item['endpointType'] = endpointType;
+                    _assignProfileRole(item, fallbackRole);
                   }
                 });
                 Navigator.pop(ctx);
@@ -724,7 +893,7 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('模型服务列表（点击勾选设为默认）', style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text('模型服务列表（点按设为主服务；编辑可设置副服务或兜底服务）', style: TextStyle(fontWeight: FontWeight.bold)),
               TextButton.icon(
                 icon: const Icon(Icons.add, size: 18),
                 label: const Text('添加配置'),
@@ -760,6 +929,8 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                         style: TextStyle(fontSize: 10, color: badgeColor),
                       ),
                     ),
+                    const SizedBox(width: 6),
+                    Text(_roleLabel(p), style: const TextStyle(fontSize: 11)),
                   ],
                 ),
                 subtitle: Text(
@@ -768,7 +939,7 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 onTap: () {
-                  setState(() => _activeId = p['id'] as String);
+                  setState(() => _assignProfileRole(p, AiDraftService.primaryRole));
                   _save();
                 },
                 trailing: Row(
@@ -787,7 +958,9 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                           setState(() {
                             _profiles.removeWhere((el) => el['id'] == p['id']);
                             if (_activeId == p['id']) {
-                              _activeId = _profiles.first['id'] as String;
+                              final nextPrimary = _profiles.first;
+                              _activeId = nextPrimary['id'] as String;
+                              _assignProfileRole(nextPrimary, AiDraftService.primaryRole);
                             }
                           });
                           await _save();
@@ -1306,24 +1479,42 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
     _load();
   }
 
-  Future<void> _load() async {
+  Future<Set<String>> _profileKeyIds() async {
     final settings = ref.read(settingsServiceProvider);
-    final secure = ref.read(secureSettingsServiceProvider);
     final raw = await settings.getValue(AiDraftService.profilesKey);
-    var profileIds = <String>[];
+    final ids = <String>{
+      // These IDs were used by the initial fallback implementation. Keep
+      // them in privacy controls until every old installation has migrated.
+      'secondary_profile',
+      'fallback_profile',
+    };
     try {
       final decoded = raw == null ? null : jsonDecode(raw);
       if (decoded is List) {
-        profileIds = decoded
-            .whereType<Map>()
-            .map((item) => item['id']?.toString() ?? '')
-            .where((id) => id.isNotEmpty)
-            .toList();
+        ids.addAll(
+          decoded
+              .whereType<Map>()
+              .map((item) => item['id']?.toString() ?? '')
+              .where((id) => id.isNotEmpty),
+        );
       }
     } on FormatException {
-      // Bad old profile data is handled by the AI settings page; privacy
-      // controls still show the legacy key safely.
+      // Bad old profile data is handled by the AI settings page; the legacy
+      // IDs above still let privacy controls clear any usable secret.
     }
+    for (final settingKey in [
+      AiDraftService.secondaryProfileIdKey,
+      AiDraftService.fallbackProfileIdKey,
+    ]) {
+      final id = (await settings.getValue(settingKey))?.trim();
+      if (id != null && id.isNotEmpty) ids.add(id);
+    }
+    return ids;
+  }
+
+  Future<void> _load() async {
+    final secure = ref.read(secureSettingsServiceProvider);
+    final profileIds = await _profileKeyIds();
     var count = (await secure.readAiApiKey())?.trim().isNotEmpty == true ? 1 : 0;
     for (final id in profileIds) {
       if ((await secure.readAiApiKeyForProfile(id))?.trim().isNotEmpty == true) count++;
@@ -1349,19 +1540,10 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
       ),
     );
     if (approved != true) return;
-    final settings = ref.read(settingsServiceProvider);
     final secure = ref.read(secureSettingsServiceProvider);
-    final raw = await settings.getValue(AiDraftService.profilesKey);
-    try {
-      final decoded = raw == null ? null : jsonDecode(raw);
-      if (decoded is List) {
-        for (final item in decoded.whereType<Map>()) {
-          final id = item['id']?.toString();
-          if (id != null && id.isNotEmpty) await secure.deleteAiApiKeyForProfile(id);
-        }
-      }
-    } on FormatException {
-      // Deleting the legacy key below still removes the currently active secret.
+    final profileIds = await _profileKeyIds();
+    for (final id in profileIds) {
+      await secure.deleteAiApiKeyForProfile(id);
     }
     await secure.deleteAiApiKey();
     await _load();
@@ -1390,7 +1572,7 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
                   children: [
                     Text('本地数据与联网说明', style: TextStyle(fontWeight: FontWeight.bold)),
                     SizedBox(height: 8),
-                    Text('库存、批次、采购清单、提醒状态和图片默认保存在本机。启用外部条码查询或 AI 服务后，条码、OCR 文本或提问内容会发送给你所配置的第三方服务。'),
+                    Text('库存、批次、采购清单、提醒状态和图片默认保存在本机。启用外部条码查询或 AI 服务后，条码、OCR 文本或提问内容会发送给你配置的主服务；主服务失败时，也可能发送给副服务或兜底服务。'),
                     SizedBox(height: 8),
                     Text('请只配置你信任的服务，并避免向外部 AI 服务发送不必要的个人或敏感信息。'),
                   ],

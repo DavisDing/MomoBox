@@ -32,10 +32,18 @@ class AiDraftService {
   static const secondaryEndpointKey = 'ai_secondary_endpoint';
   static const secondaryModelKey = 'ai_secondary_model';
   static const secondaryTypeKey = 'ai_secondary_type';
+  static const secondaryProfileIdKey = 'ai_secondary_profile_id';
 
   static const fallbackEndpointKey = 'ai_fallback_endpoint';
   static const fallbackModelKey = 'ai_fallback_model';
   static const fallbackTypeKey = 'ai_fallback_type';
+  static const fallbackProfileIdKey = 'ai_fallback_profile_id';
+
+  static const profileRoleKey = 'fallbackRole';
+  static const primaryRole = 'primary';
+  static const secondaryRole = 'secondary';
+  static const fallbackRole = 'fallback';
+  static const standbyRole = 'standby';
 
   final SettingsRepository _settings;
   final SecureSettingsService _secureSettings;
@@ -112,7 +120,12 @@ class AiDraftService {
     // 副 API
     final secEndpoint = await _settings.getValue(secondaryEndpointKey);
     final secModel = await _settings.getValue(secondaryModelKey);
-    final secApiKey = await _secureSettings.readAiApiKeyForProfile('secondary_profile');
+    final secondaryProfileId = (await _settings.getValue(secondaryProfileIdKey))?.trim();
+    // Keep the legacy fixed ID as a read-only compatibility fallback for
+    // installations that manually saved the first fallback implementation.
+    final secApiKey = await _secureSettings.readAiApiKeyForProfile(
+      secondaryProfileId?.isNotEmpty == true ? secondaryProfileId! : 'secondary_profile',
+    );
     final secType = (await _settings.getValue(secondaryTypeKey)) ?? 'auto';
     if (secEndpoint != null && secModel != null && secApiKey != null) {
       configs.add(
@@ -130,7 +143,12 @@ class AiDraftService {
     // 兜底模型
     final fallbackEndpoint = await _settings.getValue(fallbackEndpointKey);
     final fallbackModel = await _settings.getValue(fallbackModelKey);
-    final fallbackApiKey = await _secureSettings.readAiApiKeyForProfile('fallback_profile');
+    final fallbackProfileId = (await _settings.getValue(fallbackProfileIdKey))?.trim();
+    // Keep the legacy fixed ID as a read-only compatibility fallback for
+    // installations that manually saved the first fallback implementation.
+    final fallbackApiKey = await _secureSettings.readAiApiKeyForProfile(
+      fallbackProfileId?.isNotEmpty == true ? fallbackProfileId! : 'fallback_profile',
+    );
     final fallbackType = (await _settings.getValue(fallbackTypeKey)) ?? 'auto';
     if (fallbackEndpoint != null && fallbackModel != null && fallbackApiKey != null) {
       configs.add(

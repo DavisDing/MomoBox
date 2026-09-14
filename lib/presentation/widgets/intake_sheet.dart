@@ -342,7 +342,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
         builder: (context) => AlertDialog(
           title: const Text('确认发送 OCR 文本？'),
           content: Text(
-            '将仅发送本地 OCR 文本（约 $textLength 字），不上传原图。发送到你在设置中配置的 AI 服务后，只生成可编辑草稿，不会自动入库。',
+            '将仅发送本地 OCR 文本（约 $textLength 字），不上传原图。会发送到你配置的主 AI 服务；主服务失败时，也可能发送到你配置的副服务或兜底服务。只生成可编辑草稿，不会自动入库。',
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),

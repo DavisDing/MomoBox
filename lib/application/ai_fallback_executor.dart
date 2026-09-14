@@ -221,7 +221,17 @@ class AiFallbackExecutor {
           ? {
               'model': config.model.trim(),
               'instructions': systemPrompt,
-              'input': userPrompt,
+              // Responses accepts message input items. Keep the same recent
+              // context for every protocol and every fallback endpoint.
+              'input': [
+                ...chatHistory.map(
+                  (message) => {
+                    'role': message['role'] ?? 'user',
+                    'content': message['content'] ?? '',
+                  },
+                ),
+                {'role': 'user', 'content': userPrompt},
+              ],
             }
           : {
               'model': config.model.trim(),

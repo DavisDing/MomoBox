@@ -138,7 +138,9 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
     // 回退调用底层已有的 AI 助手服务 (兼容用户自配 API Key)
     try {
       final assistantService = ref.read(aiAssistantServiceProvider);
-      final history = _messages.where((m) => m.role == 'user' || m.role == 'assistant').toList();
+      final history = _messages
+          .where((m) => (m.role == 'user' || m.role == 'assistant') && m.id != userMsg.id)
+          .toList();
       final reply = await assistantService.ask(text, history);
 
       if (mounted) {

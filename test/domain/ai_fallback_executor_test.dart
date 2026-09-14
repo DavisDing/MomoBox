@@ -176,6 +176,103 @@ void main() {
       expect(response.traceLogs[0].failureReason, contains('为空'));
     });
 
+    test('Responses API 请求会携带此前对话，并在末尾附加当前问题', () async {
+      Map<String, dynamic>? requestBody;
+      final responsesConfig = AiEndpointConfig(
+        level: AiApiLevel.primary,
+        endpoint: 'https://responses.example.com/v1',
+        apiKey: 'key_responses',
+        model: 'responses-model',
+        endpointType: 'responses',
+      );
+      final mockClient = MockClient((request) async {
+        requestBody = jsonDecode(request.body) as Map<String, dynamic>;
+        return http.Response(jsonEncode({'output_text': 'Responses success'}), 200);
+      });
+
+      final response = await AiFallbackExecutor(client: mockClient).execute(
+        configs: [responsesConfig],
+        systemPrompt: '系统说明',
+        userPrompt: '现在还剩多少？',
+        chatHistory: const [
+          {'role': 'user', 'content': '上一次问题'},
+          {'role': 'assistant', 'content': '上一次回复'},
+        ],
+      );
+
+      expect(response.content, 'Responses success');
+      expect(requestBody?['instructions'], '系统说明');
+      expect(requestBody?['input'], [
+        {'role': 'user', 'content': '上一次问题'},
+        {'role': 'assistant', 'content': '上一次回复'},
+        {'role': 'user', 'content': '现在还剩多少？'},
+      ]);
+    });
+
+    test('协议或服务降级时，每个候选服务都收到相同的对话上下文', () async {
+      Map<String, dynamic>? primaryBody;
+      Map<String, dynamic>? secondaryBody;
+      const responsesPrimary = AiEndpointConfig(
+        level: AiApiLevel.primary,
+        endpoint: 'https://primary-responses.example.com/v1',
+        apiKey: 'key_primary',
+        model: 'primary-responses-model',
+        endpointType: 'responses',
+      );
+      const chatSecondary = AiEndpointConfig(
+        level: AiApiLevel.secondary,
+        endpoint: 'https://secondary-chat.example.com/v1',
+        apiKey: 'key_secondary',
+        model: 'secondary-chat-model',
+        endpointType: 'chat',
+      );
+      const history = [
+        {'role': 'user', 'content': '第一轮问题'},
+        {'role': 'assistant', 'content': '第一轮回复'},
+      ];
+      final mockClient = MockClient((request) async {
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        if (request.url.host == 'primary-responses.example.com') {
+          primaryBody = body;
+          return http.Response('temporary failure', 503);
+        }
+        if (request.url.host == 'secondary-chat.example.com') {
+          secondaryBody = body;
+          return http.Response(
+            jsonEncode({
+              'choices': [
+                {
+                  'message': {'content': 'Secondary success'}
+                }
+              ]
+            }),
+            200,
+          );
+        }
+        return http.Response('unexpected endpoint', 500);
+      });
+
+      final response = await AiFallbackExecutor(client: mockClient).execute(
+        configs: [responsesPrimary, chatSecondary],
+        systemPrompt: '系统说明',
+        userPrompt: '第二轮问题',
+        chatHistory: history,
+      );
+
+      expect(response.usedLevel, AiApiLevel.secondary);
+      expect(primaryBody?['input'], [
+        {'role': 'user', 'content': '第一轮问题'},
+        {'role': 'assistant', 'content': '第一轮回复'},
+        {'role': 'user', 'content': '第二轮问题'},
+      ]);
+      expect(secondaryBody?['messages'], [
+        {'role': 'system', 'content': '系统说明'},
+        {'role': 'user', 'content': '第一轮问题'},
+        {'role': 'assistant', 'content': '第一轮回复'},
+        {'role': 'user', 'content': '第二轮问题'},
+      ]);
+    });
+
     test('全链路三级 API 均失败时，抛出标准异常并记录完整追踪', () async {
       final mockClient = MockClient((request) async {
         return http.Response('Gateway Timeout', 504);

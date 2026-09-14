@@ -86,7 +86,8 @@ class AiAssistantService {
 ${buffer.toString()}
 ''';
 
-    final recentHistory = history.take(6).map((m) => {'role': m.role, 'content': m.content}).toList();
+    final recentMessages = history.length <= 6 ? history : history.sublist(history.length - 6);
+    final recentHistory = recentMessages.map((m) => {'role': m.role, 'content': m.content}).toList();
 
     try {
       final response = await _fallbackExecutor.execute(
@@ -134,7 +135,10 @@ ${buffer.toString()}
     // 副 API
     final secEndpoint = await _settings.getValue(AiDraftService.secondaryEndpointKey);
     final secModel = await _settings.getValue(AiDraftService.secondaryModelKey);
-    final secApiKey = await _secureSettings.readAiApiKeyForProfile('secondary_profile');
+    final secondaryProfileId = (await _settings.getValue(AiDraftService.secondaryProfileIdKey))?.trim();
+    final secApiKey = await _secureSettings.readAiApiKeyForProfile(
+      secondaryProfileId?.isNotEmpty == true ? secondaryProfileId! : 'secondary_profile',
+    );
     final secType = (await _settings.getValue(AiDraftService.secondaryTypeKey)) ?? 'auto';
     if (secEndpoint != null && secModel != null && secApiKey != null) {
       configs.add(
@@ -152,7 +156,10 @@ ${buffer.toString()}
     // 兜底模型
     final fallbackEndpoint = await _settings.getValue(AiDraftService.fallbackEndpointKey);
     final fallbackModel = await _settings.getValue(AiDraftService.fallbackModelKey);
-    final fallbackApiKey = await _secureSettings.readAiApiKeyForProfile('fallback_profile');
+    final fallbackProfileId = (await _settings.getValue(AiDraftService.fallbackProfileIdKey))?.trim();
+    final fallbackApiKey = await _secureSettings.readAiApiKeyForProfile(
+      fallbackProfileId?.isNotEmpty == true ? fallbackProfileId! : 'fallback_profile',
+    );
     final fallbackType = (await _settings.getValue(AiDraftService.fallbackTypeKey)) ?? 'auto';
     if (fallbackEndpoint != null && fallbackModel != null && fallbackApiKey != null) {
       configs.add(
