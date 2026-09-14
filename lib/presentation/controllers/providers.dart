@@ -27,6 +27,8 @@ import '../../services/local_notification_service.dart';
 import '../../services/local_ocr_service.dart';
 import '../../services/media_storage_service.dart';
 import '../../services/secure_settings_service.dart';
+import '../../application/chore_service.dart';
+import '../../domain/models/chore_models.dart';
 
 final databaseProvider = Provider<AppDatabase>((ref) {
   final database = AppDatabase();
@@ -197,8 +199,6 @@ final localNotificationServiceProvider = Provider<LocalNotificationService>((ref
   return LocalNotificationService();
 });
 
-import '../../application/chore_service.dart';
-import '../../domain/models/chore_models.dart';
 
 final choreServiceProvider = Provider<ChoreService>((ref) {
   return ChoreService(ref.watch(settingsRepositoryProvider));

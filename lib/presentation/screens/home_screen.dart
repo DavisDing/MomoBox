@@ -1,6 +1,5 @@
 import '../widgets/calendar_sync_dialog.dart';
 import '../widgets/chores_sheet.dart';
-import '../../domain/models/chore_models.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -713,7 +712,6 @@ class HomeScreen extends ConsumerWidget {
       ),
     );
   }
-}
 
   Widget _buildChoresCard(BuildContext context, WidgetRef ref, MomoPalette palette) {
     final theme = Theme.of(context);
@@ -751,7 +749,6 @@ class HomeScreen extends ConsumerWidget {
               ),
               error: (err, _) => Text('周期数据加载异常：', style: const TextStyle(fontSize: 12)),
               data: (chores) {
-                final dueItems = chores.where((c) => c.isDue()).toList();
                 if (chores.isEmpty) {
                   return InkWell(
                     onTap: () => ChoresSheet.show(context),
@@ -837,3 +834,4 @@ class HomeScreen extends ConsumerWidget {
       ),
     );
   }
+}

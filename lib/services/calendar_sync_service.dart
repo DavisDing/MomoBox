@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
-import '../domain/inventory/expiry_rules.dart';
 import '../domain/models/chore_models.dart';
 import '../domain/models/inventory_models.dart';
 

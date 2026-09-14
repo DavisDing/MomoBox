@@ -1,6 +1,5 @@
 import 'package:uuid/uuid.dart';
 
-import '../core/database/app_database.dart';
 import '../data/repositories/settings_repository.dart';
 import '../domain/models/chore_models.dart';
 
