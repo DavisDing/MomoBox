@@ -775,6 +775,25 @@ App Shell (底部导航 / 大屏 NavigationRail)
 - 冲突报告、设备管理、Docker Compose；
 - NAS 不可用时离线继续工作。
 
+
+### 4.1 AI 三级降级机制与容灾调度 (Fallback Pipeline)
+
+为保障 AI 能力（入库草稿提取与智能库存问答）在各种复杂网络与上游波动下的可用性，系统支持「主 API → 副 API → 兜底模型」三级自动降级机制：
+
+1. **调用链链路**：
+   - 优先尝试主 API（Primary）；
+   - 主 API 失败时，无缝切换到副 API（Secondary）；
+   - 主、副均不可用时，自动降级到轻量/备用兜底模型（Fallback）；
+   - 降级流程对业务上层调用方（如 `AiDraftService`、`AiAssistantService`）透明，统一交付标准响应。
+2. **失败判定标准**：
+   - 网络异常 / 连接超时（默认超时 > 5s 即判定为失败）；
+   - HTTP 状态码非 2xx（如 429 限流、500/502/503 服务异常）；
+   - 返回内容为空、格式解析失败或缺少必需字段；
+   - 触发敏感/异常关键词校验。
+3. **审计与容灾日志**：
+   - 每次调用均在 `AiExecutionAttemptLog` 中记录：所用级别、生效模型、耗时（ms）与失败原因；
+   - 若三级 API 均告失败，输出 error 级别日志并统一抛出 `AiFallbackException` 标准错误结构。
+
 ## Phase 4：说明书与 AI 增强
 
 - 说明书 OCR 库；

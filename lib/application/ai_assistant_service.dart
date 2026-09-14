@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
@@ -8,8 +7,8 @@ import '../data/repositories/settings_repository.dart';
 import '../domain/models/ai_usage_models.dart';
 import '../domain/models/inventory_models.dart';
 import '../services/secure_settings_service.dart';
-import 'ai_client_helper.dart';
 import 'ai_draft_service.dart';
+import 'ai_fallback_executor.dart';
 import 'ai_usage_service.dart';
 
 class ChatMessage {
@@ -33,27 +32,19 @@ class AiAssistantService {
     this._inventoryRepository, {
     http.Client? client,
     AiUsageService? usageService,
-  })  : _client = client ?? http.Client(),
-        _usageService = usageService ?? AiUsageService(_settings);
+    AiFallbackExecutor? fallbackExecutor,
+  })  : _usageService = usageService ?? AiUsageService(_settings),
+        _fallbackExecutor = fallbackExecutor ?? AiFallbackExecutor(client: client);
 
   final SettingsRepository _settings;
   final SecureSettingsService _secureSettings;
   final InventoryRepository _inventoryRepository;
-  final http.Client _client;
   final AiUsageService _usageService;
+  final AiFallbackExecutor _fallbackExecutor;
 
   Future<String> ask(String question, List<ChatMessage> history) async {
-    final endpoint = await _settings.getValue(AiDraftService.endpointKey);
-    final model = await _settings.getValue(AiDraftService.modelKey);
-    final activeProfileId = await _settings.getValue(AiDraftService.activeProfileKey);
-    final profileKey = activeProfileId == null || activeProfileId.isEmpty
-        ? null
-        : await _secureSettings.readAiApiKeyForProfile(activeProfileId);
-    // Fall back once for installations created before profile-scoped keys.
-    final apiKey = profileKey ?? await _secureSettings.readAiApiKey();
-    final configuredType = (await _settings.getValue(AiDraftService.endpointTypeKey)) ?? 'auto';
-
-    if (endpoint == null || endpoint.trim().isEmpty || model == null || model.trim().isEmpty || apiKey == null || apiKey.trim().isEmpty) {
+    final configs = await _resolveFallbackConfigs();
+    if (configs.isEmpty) {
       throw StateError('请先在「设置 -> AI 解析配置」中填写兼容 OpenAI 的 AI 地址、模型和 API Key。');
     }
 
@@ -95,85 +86,88 @@ class AiAssistantService {
 ${buffer.toString()}
 ''';
 
-    final protocol = AiClientHelper.resolveProtocol(endpoint, configuredType);
-
-    final attempts = <String>[];
-    if (protocol == 'responses') {
-      attempts.add('responses');
-    } else if (protocol == 'chat') {
-      attempts.add('chat');
-    } else {
-      attempts.addAll(['chat', 'responses']);
-    }
-
     final recentHistory = history.take(6).map((m) => {'role': m.role, 'content': m.content}).toList();
 
-    http.Response? response;
-    String actualUsedType = attempts.first;
+    try {
+      final response = await _fallbackExecutor.execute(
+        configs: configs,
+        systemPrompt: systemPrompt,
+        userPrompt: question,
+        chatHistory: recentHistory,
+        temperature: 0.3,
+      );
 
-    for (var i = 0; i < attempts.length; i++) {
-      final currentType = attempts[i];
-      final isResponses = currentType == 'responses';
-      final uri = isResponses ? AiClientHelper.responsesUri(endpoint) : AiClientHelper.chatCompletionUri(endpoint);
+      _recordUsage(response.rawDecoded, response.usedConfig.model, response.actualProtocol);
 
-      final Map<String, dynamic> requestBody = isResponses
-          ? {
-              'model': model.trim(),
-              'instructions': systemPrompt,
-              'input': question,
-            }
-          : {
-              'model': model.trim(),
-              'temperature': 0.3,
-              'messages': [
-                {'role': 'system', 'content': systemPrompt},
-                ...recentHistory,
-                {'role': 'user', 'content': question},
-              ],
-            };
+      return response.content.trim();
+    } on AiFallbackException catch (error) {
+      throw StateError('AI 服务异常：$error');
+    }
+  }
 
-      try {
-        final res = await _client
-            .post(
-              uri,
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer ${apiKey.trim()}',
-              },
-              body: jsonEncode(requestBody),
-            )
-            .timeout(const Duration(seconds: 30));
+  Future<List<AiEndpointConfig>> _resolveFallbackConfigs() async {
+    final configs = <AiEndpointConfig>[];
 
-        if ((res.statusCode == 404 || res.statusCode == 405) && i < attempts.length - 1) {
-          continue;
-        }
+    // 主 API
+    final primaryEndpoint = await _settings.getValue(AiDraftService.endpointKey);
+    final primaryModel = await _settings.getValue(AiDraftService.modelKey);
+    final activeProfileId = await _settings.getValue(AiDraftService.activeProfileKey);
+    final profileKey = activeProfileId == null || activeProfileId.isEmpty
+        ? null
+        : await _secureSettings.readAiApiKeyForProfile(activeProfileId);
+    final primaryApiKey = profileKey ?? await _secureSettings.readAiApiKey();
+    final primaryType = (await _settings.getValue(AiDraftService.endpointTypeKey)) ?? 'auto';
 
-        response = res;
-        actualUsedType = currentType;
-        break;
-      } on TimeoutException {
-        if (i < attempts.length - 1) continue;
-        throw StateError('请求超时，请检查网络或 AI 接口响应速度。');
-      } on http.ClientException {
-        if (i < attempts.length - 1) continue;
-        throw StateError('无法连接 AI 服务，请检查接口地址。');
-      }
+    if (primaryEndpoint != null && primaryModel != null && primaryApiKey != null) {
+      configs.add(
+        AiEndpointConfig(
+          level: AiApiLevel.primary,
+          endpoint: primaryEndpoint,
+          apiKey: primaryApiKey,
+          model: primaryModel,
+          endpointType: primaryType,
+          timeout: const Duration(seconds: 5),
+        ),
+      );
     }
 
-    if (response == null || response.statusCode < 200 || response.statusCode >= 300) {
-      throw StateError('AI 服务异常 (${response?.statusCode ?? "未知"})：${response?.body ?? ""}');
+    // 副 API
+    final secEndpoint = await _settings.getValue(AiDraftService.secondaryEndpointKey);
+    final secModel = await _settings.getValue(AiDraftService.secondaryModelKey);
+    final secApiKey = await _secureSettings.readAiApiKeyForProfile('secondary_profile');
+    final secType = (await _settings.getValue(AiDraftService.secondaryTypeKey)) ?? 'auto';
+    if (secEndpoint != null && secModel != null && secApiKey != null) {
+      configs.add(
+        AiEndpointConfig(
+          level: AiApiLevel.secondary,
+          endpoint: secEndpoint,
+          apiKey: secApiKey,
+          model: secModel,
+          endpointType: secType,
+          timeout: const Duration(seconds: 5),
+        ),
+      );
     }
 
-    final decoded = jsonDecode(response.body);
-    if (decoded is! Map<String, dynamic>) throw const FormatException('响应数据格式错误');
-
-    _recordUsage(decoded, model.trim(), actualUsedType);
-
-    final answer = AiClientHelper.extractResponseText(decoded);
-    if (answer == null || answer.trim().isEmpty) {
-      throw StateError('AI 未能生成有效回复。');
+    // 兜底模型
+    final fallbackEndpoint = await _settings.getValue(AiDraftService.fallbackEndpointKey);
+    final fallbackModel = await _settings.getValue(AiDraftService.fallbackModelKey);
+    final fallbackApiKey = await _secureSettings.readAiApiKeyForProfile('fallback_profile');
+    final fallbackType = (await _settings.getValue(AiDraftService.fallbackTypeKey)) ?? 'auto';
+    if (fallbackEndpoint != null && fallbackModel != null && fallbackApiKey != null) {
+      configs.add(
+        AiEndpointConfig(
+          level: AiApiLevel.fallback,
+          endpoint: fallbackEndpoint,
+          apiKey: fallbackApiKey,
+          model: fallbackModel,
+          endpointType: fallbackType,
+          timeout: const Duration(seconds: 8),
+        ),
+      );
     }
-    return answer.trim();
+
+    return configs;
   }
 
   void _recordUsage(Map<String, dynamic> decoded, String model, String endpointType) {
