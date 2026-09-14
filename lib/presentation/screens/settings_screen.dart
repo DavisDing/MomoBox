@@ -315,7 +315,10 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
               .map((item) => Map<String, dynamic>.from(item))
               .toList();
         }
-      } on FormatException {}
+      } on FormatException {
+        // Recover through legacy endpoint normalization below without overwriting storage.
+        debugPrint('条码接口配置格式无效，尝试从旧版接口配置恢复。');
+      }
     }
     profiles = BarcodeLookupService.normalizeProfilesForRoles(
       profiles,
@@ -399,7 +402,7 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
                 TextField(controller: urlCtrl, decoration: const InputDecoration(labelText: 'API 地址模板（含 {barcode}）')),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
-                  value: role,
+                  initialValue: role,
                   decoration: const InputDecoration(labelText: '调用角色'),
                   items: const [
                     DropdownMenuItem(value: BarcodeLookupService.primaryRole, child: Text('主服务')),
