@@ -141,7 +141,7 @@ class AiFallbackExecutor {
           throw const FormatException('模型返回文本内容为空');
         }
         // 判定 4: 命中敏感/异常关键词
-        if (_contentFilter != null && !_contentFilter!(validContent)) {
+        if (_contentFilter != null && !_contentFilter(validContent)) {
           throw const FormatException('返回内容命中敏感或异常关键词校验');
         }
       } catch (e) {
@@ -169,7 +169,7 @@ class AiFallbackExecutor {
           name: 'AiFallbackExecutor',
         );
         return AiFallbackResponse(
-          content: validContent!,
+          content: validContent,
           rawDecoded: validDecoded,
           usedLevel: config.level,
           usedConfig: config,
