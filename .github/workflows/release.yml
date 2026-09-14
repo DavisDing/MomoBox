@@ -68,7 +68,7 @@ jobs:
         if: steps.version.outputs.release_required == 'true'
         run: |
           flutter analyze
-          flutter test
+          flutter test --reporter expanded
 
       - name: Build versioned Android packages
         if: steps.version.outputs.release_required == 'true'
