@@ -47,12 +47,14 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
             children: [
               Icon(palette.appLogoIcon, color: palette.primary, size: 24),
               const SizedBox(width: 8),
-              const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('嬷嬷的小箱子'),
-                  Text('单机模式 · 本地 SQLite', style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal)),
-                ],
+              const Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('嬷嬷的小箱子', maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text('单机模式 · 本地 SQLite', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal)),
+                  ],
+                ),
               ),
             ],
           ),
@@ -66,12 +68,14 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
             children: [
               Icon(palette.appLogoIcon, color: palette.primary, size: 24),
               const SizedBox(width: 8),
-              const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('嬷嬷的小箱子'),
-                  Text('单机模式 · 本地 SQLite', style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal)),
-                ],
+              const Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('嬷嬷的小箱子', maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text('单机模式 · 本地 SQLite', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal)),
+                  ],
+                ),
               ),
             ],
           ),
@@ -162,12 +166,14 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                           children: [
                             Icon(palette.appLogoIcon, color: palette.primary, size: 22),
                             const SizedBox(width: 8),
-                            const Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('嬷嬷的小箱子', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
-                                Text('单机模式 · 本地 SQLite', style: TextStyle(fontSize: 11, fontWeight: FontWeight.normal)),
-                              ],
+                            const Flexible(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('嬷嬷的小箱子', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+                                  Text('单机模式 · 本地 SQLite', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, fontWeight: FontWeight.normal)),
+                                ],
+                              ),
                             ),
                           ],
                         ),

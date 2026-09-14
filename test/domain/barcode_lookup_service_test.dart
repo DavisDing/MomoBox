@@ -27,14 +27,21 @@ void main() {
     );
   }
 
-  test('仅有旧版主接口配置时继续使用原接口', () async {
+  test('当前配置中的自定义主接口返回中文商品并写入缓存', () async {
     final database = AppDatabase.forTesting(NativeDatabase.memory());
     addTearDown(database.close);
     final settings = SettingsService(SettingsRepository(database));
     await settings.setValue(BarcodeLookupService.enabledKey, 'true');
     await settings.setValue(
-      BarcodeLookupService.endpointKey,
-      'https://legacy.example/{barcode}',
+      BarcodeLookupService.profilesKey,
+      jsonEncode([
+        {
+          'id': 'custom',
+          'name': '自定义接口',
+          'endpoint': 'https://custom.example/{barcode}',
+          BarcodeLookupService.profileRoleKey: BarcodeLookupService.primaryRole,
+        },
+      ]),
     );
     final requestedHosts = <String>[];
     final service = BarcodeLookupService(
@@ -46,11 +53,12 @@ void main() {
           jsonEncode({
             'status': 1,
             'product': {
-              'product_name': '旧接口商品',
-              'brands': '旧接口品牌',
+              'product_name': '自定义接口商品',
+              'brands': '自定义接口品牌',
             },
           }),
           200,
+          headers: const {'content-type': 'application/json; charset=utf-8'},
         );
       }),
       clock: () => DateTime(2026, 9, 14),
@@ -58,9 +66,13 @@ void main() {
 
     final result = await service.lookup('6901234567890');
 
-    expect(result?.name, '旧接口商品');
-    expect(result?.brand, '旧接口品牌');
-    expect(requestedHosts, ['legacy.example']);
+    expect(result?.name, '自定义接口商品');
+    expect(result?.brand, '自定义接口品牌');
+    expect(requestedHosts, ['custom.example']);
+    final cached = await service.lookup('6901234567890');
+    expect(cached?.name, '自定义接口商品');
+    expect(cached?.brand, '自定义接口品牌');
+    expect(requestedHosts, ['custom.example']);
   });
 
   test('主服务返回无法识别的成功响应时继续使用副服务', () async {
@@ -94,6 +106,7 @@ void main() {
             'product': {'product_name': '副服务商品'},
           }),
           200,
+          headers: const {'content-type': 'application/json; charset=utf-8'},
         );
       }),
     );
@@ -136,21 +149,22 @@ void main() {
     expect(requestedHosts, ['primary.example']);
   });
 
-  test('无角色配置迁移时旧版活动接口成为唯一主服务', () {
+  test('规范配置时保留已选主服务且不启用仅保存的接口', () {
     final profiles = BarcodeLookupService.normalizeProfilesForRoles(
       [
         {
           'id': BarcodeLookupService.defaultFreeProfileId,
           'name': '免费公共条码库',
           'endpoint': BarcodeLookupService.defaultFreeEndpoint,
+          BarcodeLookupService.profileRoleKey: BarcodeLookupService.standbyRole,
         },
         {
           'id': 'custom',
           'name': '自定义接口',
           'endpoint': 'https://custom.example/{barcode}',
+          BarcodeLookupService.profileRoleKey: BarcodeLookupService.primaryRole,
         },
       ],
-      legacyPrimaryEndpoint: 'https://custom.example/{barcode}',
     );
 
     final primaryProfiles = profiles
@@ -198,6 +212,7 @@ void main() {
             'product': {'product_name': '副服务商品', 'brands': '测试品牌'},
           }),
           200,
+          headers: const {'content-type': 'application/json; charset=utf-8'},
         );
       }),
     );
@@ -230,6 +245,7 @@ void main() {
             'product': {'product_name': '主服务商品'},
           }),
           200,
+          headers: const {'content-type': 'application/json; charset=utf-8'},
         );
       }),
     );
@@ -238,6 +254,29 @@ void main() {
 
     expect(result?.name, '主服务商品');
     expect(requestCount, 1);
+  });
+
+  test('条码配置损坏时报告错误且不向默认接口发送请求', () async {
+    final database = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(database.close);
+    final settings = SettingsService(SettingsRepository(database));
+    await settings.setValue(BarcodeLookupService.enabledKey, 'true');
+    var requestCount = 0;
+    final service = BarcodeLookupService(
+      BarcodeCacheRepository(database),
+      settings,
+      client: MockClient((request) async {
+        requestCount++;
+        return http.Response('unexpected request', 500);
+      }),
+    );
+
+    for (final raw in ['{broken', '{}', '[42]', '[{"name":"缺少地址"}]']) {
+      await settings.setValue(BarcodeLookupService.profilesKey, raw);
+      await expectLater(service.lookup('6901234567890'), throwsFormatException);
+      expect(await settings.getValue(BarcodeLookupService.profilesKey), raw);
+    }
+    expect(requestCount, 0);
   });
 
   test('内置免费条码服务预配为主服务，未开启时不联网', () async {

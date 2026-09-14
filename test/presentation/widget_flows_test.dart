@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:momo_box/app/momo_box_app.dart';
+import 'package:momo_box/application/barcode_lookup_service.dart';
 import 'package:momo_box/application/inventory_service.dart';
 import 'package:momo_box/application/shopping_service.dart';
 import 'package:momo_box/core/database/app_database.dart';
@@ -10,10 +11,12 @@ import 'package:momo_box/data/repositories/inventory_repository.dart';
 import 'package:momo_box/data/repositories/shopping_repository.dart';
 import 'package:momo_box/data/repositories/settings_repository.dart';
 import 'package:momo_box/domain/models/inventory_models.dart';
+import 'package:momo_box/domain/inventory/inventory_sorting.dart';
 import 'package:momo_box/presentation/controllers/providers.dart';
 import 'package:momo_box/presentation/screens/alerts_screen.dart';
 import 'package:momo_box/presentation/screens/product_detail_screen.dart';
 import 'package:momo_box/presentation/screens/shopping_screen.dart';
+import 'package:momo_box/presentation/screens/settings_screen.dart';
 import 'package:momo_box/presentation/widgets/intake_sheet.dart';
 
 void main() {
@@ -260,6 +263,18 @@ testWidgets('提醒支持单条和分组已处理，确认状态持久化', (tes
     await _disposeWidgetTree(tester);
   });
 
+  testWidgets('条码配置损坏时提示重新配置且不静默覆盖存储', (tester) async {
+    final settings = SettingsRepository(database);
+    const raw = '{broken';
+    await settings.setValue(BarcodeLookupService.profilesKey, raw);
+    await _pumpScreen(tester, database, const BarcodeSettingsScreen());
+    await _pumpUntilFound(tester, find.text('条码接口配置格式无效，请重新配置。'));
+    expect(await settings.getValue(BarcodeLookupService.profilesKey), raw);
+    expect(find.text('添加配置'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await _disposeWidgetTree(tester);
+  });
+
   testWidgets('窄屏、横屏和键盘打开时关键页面仍可操作', (tester) async {
     addTearDown(tester.view.reset);
     tester.view.devicePixelRatio = 1;
@@ -288,6 +303,9 @@ testWidgets('提醒支持单条和分组已处理，确认状态持久化', (tes
     await _pumpUntilFound(tester, find.text('嬷嬷的小箱子'));
     expect(find.text('嬷嬷的小箱子'), findsOneWidget);
     await _pumpUntilFound(tester, find.text('入库'));
+    expect(tester.takeException(), isNull);
+    expect(find.byTooltip('搜索物品').hitTestable(), findsOneWidget);
+    expect(find.byType(PopupMenuButton<InventorySortOption>).hitTestable(), findsOneWidget);
 
     tester.widget<FloatingActionButton>(find.byType(FloatingActionButton)).onPressed!();
     await tester.pump();

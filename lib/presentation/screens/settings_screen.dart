@@ -303,61 +303,36 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
     final settings = ref.read(settingsServiceProvider);
     final use = (await settings.getValue(BarcodeLookupService.enabledKey)) == 'true';
     final profilesRaw = await settings.getValue(BarcodeLookupService.profilesKey);
-    final primaryEndpoint = await settings.getValue(BarcodeLookupService.endpointKey);
 
     var profiles = <Map<String, dynamic>>[];
-    if (profilesRaw != null && profilesRaw.isNotEmpty) {
-      try {
-        final decoded = jsonDecode(profilesRaw);
-        if (decoded is List) {
-          profiles = decoded
-              .whereType<Map>()
-              .map((item) => Map<String, dynamic>.from(item))
-              .toList();
-        }
-      } on FormatException {
-        // Recover through legacy endpoint normalization below without overwriting storage.
-        debugPrint('条码接口配置格式无效，尝试从旧版接口配置恢复。');
-      }
+    String? configurationError;
+    try {
+      profiles = BarcodeLookupService.parseProfiles(profilesRaw);
+    } on FormatException {
+      configurationError = '条码接口配置格式无效，请重新配置。';
     }
-    profiles = BarcodeLookupService.normalizeProfilesForRoles(
-      profiles,
-      legacyPrimaryEndpoint: primaryEndpoint,
-    );
 
     if (!mounted) return;
     setState(() {
       _useExternal = use;
       _profiles = profiles;
     });
+    if (configurationError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(configurationError)),
+      );
+    }
   }
 
   Future<void> _save() async {
     final settings = ref.read(settingsServiceProvider);
-    final primary = _profileForRole(BarcodeLookupService.primaryRole);
-    final secondary = _profileForRole(BarcodeLookupService.secondaryRole);
-    final fallback = _profileForRole(BarcodeLookupService.fallbackRole);
     await settings.setValue(BarcodeLookupService.enabledKey, _useExternal ? 'true' : 'false');
     await settings.setValue(BarcodeLookupService.profilesKey, jsonEncode(_profiles));
-    // Keep the former single-endpoint setting and the two role settings for
-    // backwards-compatible imports and older installations.
-    await settings.setValue(BarcodeLookupService.endpointKey, _endpointOf(primary));
-    await settings.setValue(BarcodeLookupService.secondaryEndpointKey, _endpointOf(secondary));
-    await settings.setValue(BarcodeLookupService.fallbackEndpointKey, _endpointOf(fallback));
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('条码配置已保存')));
     }
   }
-
-  Map<String, dynamic>? _profileForRole(String role) {
-    for (final profile in _profiles) {
-      if (profile[BarcodeLookupService.profileRoleKey] == role) return profile;
-    }
-    return null;
-  }
-
-  String _endpointOf(Map<String, dynamic>? profile) => profile?['endpoint']?.toString().trim() ?? '';
 
   String _roleLabel(Map<String, dynamic> profile) {
     switch (profile[BarcodeLookupService.profileRoleKey]) {

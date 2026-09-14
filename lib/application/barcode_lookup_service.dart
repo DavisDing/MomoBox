@@ -44,9 +44,6 @@ class BarcodeLookupService {
         _clock = clock ?? DateTime.now;
 
   static const enabledKey = 'barcode_api_enabled';
-  static const endpointKey = 'barcode_api_endpoint';
-  static const secondaryEndpointKey = 'barcode_api_secondary_endpoint';
-  static const fallbackEndpointKey = 'barcode_api_fallback_endpoint';
   static const profilesKey = 'barcode_api_profiles';
   static const profileRoleKey = 'fallbackRole';
   static const primaryRole = 'primary';
@@ -60,42 +57,19 @@ class BarcodeLookupService {
   static const _executor = FailoverExecutor<BarcodeEndpointConfig, BarcodeLookupResult?>();
 
   static List<Map<String, dynamic>> normalizeProfilesForRoles(
-    Iterable<Map<String, dynamic>> source, {
-    String? legacyPrimaryEndpoint,
-  }) {
+    Iterable<Map<String, dynamic>> source,
+  ) {
     final profiles = source
         .map((profile) => Map<String, dynamic>.from(profile))
         .where((profile) => profile['endpoint']?.toString().trim().isNotEmpty == true)
         .toList();
-    final legacyEndpoint = legacyPrimaryEndpoint?.trim() ?? '';
-
-    if (profiles.isEmpty) {
-      if (legacyEndpoint.isEmpty || legacyEndpoint == defaultFreeEndpoint) {
-        return [defaultFreeProfile()];
-      }
-      return [
-        <String, dynamic>{
-          'id': 'legacy_primary',
-          'name': '已有条码服务',
-          'endpoint': legacyEndpoint,
-          profileRoleKey: primaryRole,
-        },
-      ];
-    }
+    if (profiles.isEmpty) return [defaultFreeProfile()];
 
     Map<String, dynamic>? selectedPrimary;
     for (final profile in profiles) {
       if (profile[profileRoleKey] == primaryRole) {
         selectedPrimary = profile;
         break;
-      }
-    }
-    if (selectedPrimary == null && legacyEndpoint.isNotEmpty) {
-      for (final profile in profiles) {
-        if (profile['endpoint']?.toString().trim() == legacyEndpoint) {
-          selectedPrimary = profile;
-          break;
-        }
       }
     }
     selectedPrimary ??= profiles.first;
@@ -158,72 +132,42 @@ class BarcodeLookupService {
   }
 
   Future<List<BarcodeEndpointConfig>> _resolveFallbackConfigs() async {
-    final primaryEndpoint = (await _settings.getValue(endpointKey))?.trim();
-    final profiles = await _readProfiles(primaryEndpoint);
-    final secondaryEndpoint = (await _settings.getValue(secondaryEndpointKey))?.trim();
-    final fallbackEndpoint = (await _settings.getValue(fallbackEndpointKey))?.trim();
+    final profiles = parseProfiles(await _settings.getValue(profilesKey));
     final configs = <BarcodeEndpointConfig>[];
 
-    Map<String, dynamic>? profileFor(String role, String? legacyEndpoint) {
+    for (final level in BarcodeApiLevel.values) {
       for (final profile in profiles) {
-        if (profile[profileRoleKey] == role) return profile;
-      }
-      if (legacyEndpoint == null || legacyEndpoint.isEmpty) return null;
-      for (final profile in profiles) {
-        if (profile['endpoint']?.toString().trim() == legacyEndpoint) return profile;
-      }
-      return null;
-    }
-
-    BarcodeEndpointConfig? forRole(BarcodeApiLevel level, String role, String? legacyEndpoint) {
-      final profile = profileFor(role, legacyEndpoint);
-      final endpoint = profile?['endpoint']?.toString().trim() ?? legacyEndpoint ?? '';
-      if (endpoint.isEmpty) return null;
-      final profileName = profile?['name']?.toString().trim();
-      return BarcodeEndpointConfig(
-        level: level,
-        name: profileName == null || profileName.isEmpty ? role : profileName,
-        endpoint: endpoint,
-      );
-    }
-
-    final primary = forRole(BarcodeApiLevel.primary, primaryRole, primaryEndpoint);
-    final secondary = forRole(BarcodeApiLevel.secondary, secondaryRole, secondaryEndpoint);
-    final fallback = forRole(BarcodeApiLevel.fallback, fallbackRole, fallbackEndpoint);
-    for (final config in [primary, secondary, fallback]) {
-      if (config != null && !configs.any((item) => item.endpoint == config.endpoint)) {
-        configs.add(config);
+        if (profile[profileRoleKey] != level.name) continue;
+        final endpoint = profile['endpoint'].toString().trim();
+        if (configs.any((config) => config.endpoint == endpoint)) break;
+        final name = profile['name']?.toString().trim() ?? '';
+        configs.add(BarcodeEndpointConfig(
+          level: level,
+          name: name.isEmpty ? level.name : name,
+          endpoint: endpoint,
+        ));
+        break;
       }
     }
     return configs;
   }
 
-  Future<List<Map<String, dynamic>>> _readProfiles(String? legacyPrimaryEndpoint) async {
-    final raw = await _settings.getValue(profilesKey);
-    if (raw == null || raw.trim().isEmpty) {
-      return normalizeProfilesForRoles(
-        const [],
-        legacyPrimaryEndpoint: legacyPrimaryEndpoint,
-      );
+  static List<Map<String, dynamic>> parseProfiles(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return [defaultFreeProfile()];
+    final decoded = jsonDecode(raw);
+    if (decoded is! List) {
+      throw const FormatException('条码接口配置必须是列表');
     }
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is! List) {
-        return normalizeProfilesForRoles(
-          const [],
-          legacyPrimaryEndpoint: legacyPrimaryEndpoint,
-        );
+    final profiles = <Map<String, dynamic>>[];
+    for (final item in decoded) {
+      if (item is! Map<String, dynamic> ||
+          item['endpoint'] is! String ||
+          (item['endpoint'] as String).trim().isEmpty) {
+        throw const FormatException('条码接口配置缺少有效的接口地址');
       }
-      return normalizeProfilesForRoles(
-        decoded.whereType<Map>().map((item) => Map<String, dynamic>.from(item)),
-        legacyPrimaryEndpoint: legacyPrimaryEndpoint,
-      );
-    } on FormatException {
-      return normalizeProfilesForRoles(
-        const [],
-        legacyPrimaryEndpoint: legacyPrimaryEndpoint,
-      );
+      profiles.add(item);
     }
+    return normalizeProfilesForRoles(profiles);
   }
 
   Future<BarcodeLookupResult?> _lookupFromEndpoint(
