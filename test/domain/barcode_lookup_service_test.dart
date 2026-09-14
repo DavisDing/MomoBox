@@ -1,0 +1,265 @@
+import 'dart:convert';
+
+import 'package:drift/native.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:momo_box/application/barcode_lookup_service.dart';
+import 'package:momo_box/application/settings_service.dart';
+import 'package:momo_box/core/database/app_database.dart';
+import 'package:momo_box/data/repositories/barcode_cache_repository.dart';
+import 'package:momo_box/data/repositories/settings_repository.dart';
+
+void main() {
+  Future<BarcodeLookupService> serviceWithProfiles({
+    required AppDatabase database,
+    required http.Client client,
+    required List<Map<String, dynamic>> profiles,
+  }) async {
+    final settings = SettingsService(SettingsRepository(database));
+    await settings.setValue(BarcodeLookupService.enabledKey, 'true');
+    await settings.setValue(BarcodeLookupService.profilesKey, jsonEncode(profiles));
+    return BarcodeLookupService(
+      BarcodeCacheRepository(database),
+      settings,
+      client: client,
+      clock: () => DateTime(2026, 9, 14),
+    );
+  }
+
+  test('仅有旧版主接口配置时继续使用原接口', () async {
+    final database = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(database.close);
+    final settings = SettingsService(SettingsRepository(database));
+    await settings.setValue(BarcodeLookupService.enabledKey, 'true');
+    await settings.setValue(
+      BarcodeLookupService.endpointKey,
+      'https://legacy.example/{barcode}',
+    );
+    final requestedHosts = <String>[];
+    final service = BarcodeLookupService(
+      BarcodeCacheRepository(database),
+      settings,
+      client: MockClient((request) async {
+        requestedHosts.add(request.url.host);
+        return http.Response(
+          jsonEncode({
+            'status': 1,
+            'product': {
+              'product_name': '旧接口商品',
+              'brands': '旧接口品牌',
+            },
+          }),
+          200,
+        );
+      }),
+      clock: () => DateTime(2026, 9, 14),
+    );
+
+    final result = await service.lookup('6901234567890');
+
+    expect(result?.name, '旧接口商品');
+    expect(result?.brand, '旧接口品牌');
+    expect(requestedHosts, ['legacy.example']);
+  });
+
+  test('主服务返回无法识别的成功响应时继续使用副服务', () async {
+    final database = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(database.close);
+    final requestedHosts = <String>[];
+    final service = await serviceWithProfiles(
+      database: database,
+      profiles: [
+        {
+          'id': 'primary',
+          'name': '主服务',
+          'endpoint': 'https://primary.example/{barcode}',
+          BarcodeLookupService.profileRoleKey: BarcodeLookupService.primaryRole,
+        },
+        {
+          'id': 'secondary',
+          'name': '副服务',
+          'endpoint': 'https://secondary.example/{barcode}',
+          BarcodeLookupService.profileRoleKey: BarcodeLookupService.secondaryRole,
+        },
+      ],
+      client: MockClient((request) async {
+        requestedHosts.add(request.url.host);
+        if (request.url.host == 'primary.example') {
+          return http.Response(jsonEncode({'unexpected': true}), 200);
+        }
+        return http.Response(
+          jsonEncode({
+            'status': 1,
+            'product': {'product_name': '副服务商品'},
+          }),
+          200,
+        );
+      }),
+    );
+
+    final result = await service.lookup('6901234567890');
+
+    expect(result?.name, '副服务商品');
+    expect(requestedHosts, ['primary.example', 'secondary.example']);
+  });
+
+  test('主服务明确返回未找到时不继续调用副服务', () async {
+    final database = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(database.close);
+    final requestedHosts = <String>[];
+    final service = await serviceWithProfiles(
+      database: database,
+      profiles: [
+        {
+          'id': 'primary',
+          'name': '主服务',
+          'endpoint': 'https://primary.example/{barcode}',
+          BarcodeLookupService.profileRoleKey: BarcodeLookupService.primaryRole,
+        },
+        {
+          'id': 'secondary',
+          'name': '副服务',
+          'endpoint': 'https://secondary.example/{barcode}',
+          BarcodeLookupService.profileRoleKey: BarcodeLookupService.secondaryRole,
+        },
+      ],
+      client: MockClient((request) async {
+        requestedHosts.add(request.url.host);
+        return http.Response(jsonEncode({'found': false}), 200);
+      }),
+    );
+
+    final result = await service.lookup('6901234567890');
+
+    expect(result, isNull);
+    expect(requestedHosts, ['primary.example']);
+  });
+
+  test('无角色配置迁移时旧版活动接口成为唯一主服务', () {
+    final profiles = BarcodeLookupService.normalizeProfilesForRoles(
+      [
+        {
+          'id': BarcodeLookupService.defaultFreeProfileId,
+          'name': '免费公共条码库',
+          'endpoint': BarcodeLookupService.defaultFreeEndpoint,
+        },
+        {
+          'id': 'custom',
+          'name': '自定义接口',
+          'endpoint': 'https://custom.example/{barcode}',
+        },
+      ],
+      legacyPrimaryEndpoint: 'https://custom.example/{barcode}',
+    );
+
+    final primaryProfiles = profiles
+        .where(
+          (profile) =>
+              profile[BarcodeLookupService.profileRoleKey] ==
+              BarcodeLookupService.primaryRole,
+        )
+        .toList();
+
+    expect(primaryProfiles, hasLength(1));
+    expect(primaryProfiles.single['id'], 'custom');
+    expect(
+      profiles.first[BarcodeLookupService.profileRoleKey],
+      BarcodeLookupService.standbyRole,
+    );
+  });
+
+  test('条码服务在主服务失败后使用可选副服务', () async {
+    final database = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(database.close);
+    final requestedHosts = <String>[];
+    final service = await serviceWithProfiles(
+      database: database,
+      profiles: [
+        {
+          'id': 'primary',
+          'name': '主服务',
+          'endpoint': 'https://primary.example/{barcode}',
+          BarcodeLookupService.profileRoleKey: BarcodeLookupService.primaryRole,
+        },
+        {
+          'id': 'secondary',
+          'name': '副服务',
+          'endpoint': 'https://secondary.example/{barcode}',
+          BarcodeLookupService.profileRoleKey: BarcodeLookupService.secondaryRole,
+        },
+      ],
+      client: MockClient((request) async {
+        requestedHosts.add(request.url.host);
+        if (request.url.host == 'primary.example') return http.Response('unavailable', 503);
+        return http.Response(
+          jsonEncode({
+            'status': 1,
+            'product': {'product_name': '副服务商品', 'brands': '测试品牌'},
+          }),
+          200,
+        );
+      }),
+    );
+
+    final result = await service.lookup('6901234567890');
+
+    expect(result?.name, '副服务商品');
+    expect(requestedHosts, ['primary.example', 'secondary.example']);
+  });
+
+  test('副服务和兜底服务留空时，只调用主服务', () async {
+    final database = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(database.close);
+    var requestCount = 0;
+    final service = await serviceWithProfiles(
+      database: database,
+      profiles: [
+        {
+          'id': 'primary',
+          'name': '主服务',
+          'endpoint': 'https://primary.example/{barcode}',
+          BarcodeLookupService.profileRoleKey: BarcodeLookupService.primaryRole,
+        },
+      ],
+      client: MockClient((request) async {
+        requestCount++;
+        return http.Response(
+          jsonEncode({
+            'status': 1,
+            'product': {'product_name': '主服务商品'},
+          }),
+          200,
+        );
+      }),
+    );
+
+    final result = await service.lookup('6901234567890');
+
+    expect(result?.name, '主服务商品');
+    expect(requestCount, 1);
+  });
+
+  test('内置免费条码服务预配为主服务，未开启时不联网', () async {
+    final database = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(database.close);
+    final settings = SettingsService(SettingsRepository(database));
+    var requested = false;
+    final service = BarcodeLookupService(
+      BarcodeCacheRepository(database),
+      settings,
+      client: MockClient((request) async {
+        requested = true;
+        return http.Response('unexpected request', 500);
+      }),
+    );
+
+    final result = await service.lookup('6901234567890');
+    final profile = BarcodeLookupService.defaultFreeProfile();
+
+    expect(result, isNull);
+    expect(requested, isFalse);
+    expect(profile['endpoint'], BarcodeLookupService.defaultFreeEndpoint);
+    expect(profile[BarcodeLookupService.profileRoleKey], BarcodeLookupService.primaryRole);
+  });
+}

@@ -106,76 +106,8 @@ ${buffer.toString()}
     }
   }
 
-  Future<List<AiEndpointConfig>> _resolveFallbackConfigs() async {
-    final configs = <AiEndpointConfig>[];
-
-    // 主 API
-    final primaryEndpoint = await _settings.getValue(AiDraftService.endpointKey);
-    final primaryModel = await _settings.getValue(AiDraftService.modelKey);
-    final activeProfileId = await _settings.getValue(AiDraftService.activeProfileKey);
-    final profileKey = activeProfileId == null || activeProfileId.isEmpty
-        ? null
-        : await _secureSettings.readAiApiKeyForProfile(activeProfileId);
-    final primaryApiKey = profileKey ?? await _secureSettings.readAiApiKey();
-    final primaryType = (await _settings.getValue(AiDraftService.endpointTypeKey)) ?? 'auto';
-
-    if (primaryEndpoint != null && primaryModel != null && primaryApiKey != null) {
-      configs.add(
-        AiEndpointConfig(
-          level: AiApiLevel.primary,
-          endpoint: primaryEndpoint,
-          apiKey: primaryApiKey,
-          model: primaryModel,
-          endpointType: primaryType,
-          timeout: const Duration(seconds: 5),
-        ),
-      );
-    }
-
-    // 副 API
-    final secEndpoint = await _settings.getValue(AiDraftService.secondaryEndpointKey);
-    final secModel = await _settings.getValue(AiDraftService.secondaryModelKey);
-    final secondaryProfileId = (await _settings.getValue(AiDraftService.secondaryProfileIdKey))?.trim();
-    final secApiKey = await _secureSettings.readAiApiKeyForProfile(
-      secondaryProfileId?.isNotEmpty == true ? secondaryProfileId! : 'secondary_profile',
-    );
-    final secType = (await _settings.getValue(AiDraftService.secondaryTypeKey)) ?? 'auto';
-    if (secEndpoint != null && secModel != null && secApiKey != null) {
-      configs.add(
-        AiEndpointConfig(
-          level: AiApiLevel.secondary,
-          endpoint: secEndpoint,
-          apiKey: secApiKey,
-          model: secModel,
-          endpointType: secType,
-          timeout: const Duration(seconds: 5),
-        ),
-      );
-    }
-
-    // 兜底模型
-    final fallbackEndpoint = await _settings.getValue(AiDraftService.fallbackEndpointKey);
-    final fallbackModel = await _settings.getValue(AiDraftService.fallbackModelKey);
-    final fallbackProfileId = (await _settings.getValue(AiDraftService.fallbackProfileIdKey))?.trim();
-    final fallbackApiKey = await _secureSettings.readAiApiKeyForProfile(
-      fallbackProfileId?.isNotEmpty == true ? fallbackProfileId! : 'fallback_profile',
-    );
-    final fallbackType = (await _settings.getValue(AiDraftService.fallbackTypeKey)) ?? 'auto';
-    if (fallbackEndpoint != null && fallbackModel != null && fallbackApiKey != null) {
-      configs.add(
-        AiEndpointConfig(
-          level: AiApiLevel.fallback,
-          endpoint: fallbackEndpoint,
-          apiKey: fallbackApiKey,
-          model: fallbackModel,
-          endpointType: fallbackType,
-          timeout: const Duration(seconds: 8),
-        ),
-      );
-    }
-
-    return configs;
-  }
+  Future<List<AiEndpointConfig>> _resolveFallbackConfigs() =>
+      AiDraftService.resolveFallbackConfigs(_settings, _secureSettings);
 
   void _recordUsage(Map<String, dynamic> decoded, String model, String endpointType) {
     try {

@@ -5,8 +5,17 @@ import 'dart:developer' as developer;
 import 'package:http/http.dart' as http;
 
 import 'ai_client_helper.dart';
+import 'failover_executor.dart';
 
 enum AiApiLevel { primary, secondary, fallback }
+
+extension on AiApiLevel {
+  ServiceFallbackLevel get serviceLevel => switch (this) {
+        AiApiLevel.primary => ServiceFallbackLevel.primary,
+        AiApiLevel.secondary => ServiceFallbackLevel.secondary,
+        AiApiLevel.fallback => ServiceFallbackLevel.fallback,
+      };
+}
 
 /// 各级 API 的独立配置
 class AiEndpointConfig {
@@ -91,6 +100,18 @@ class AiFallbackException implements Exception {
   }
 }
 
+class _AiApiCallResult {
+  const _AiApiCallResult({
+    required this.content,
+    required this.decoded,
+    required this.protocol,
+  });
+
+  final String content;
+  final Map<String, dynamic> decoded;
+  final String protocol;
+}
+
 /// 核心调度引擎：实现「主 API → 副 API → 兜底模型」透明降级
 class AiFallbackExecutor {
   AiFallbackExecutor({
@@ -101,6 +122,7 @@ class AiFallbackExecutor {
 
   final http.Client _client;
   final bool Function(String content)? _contentFilter;
+  static const _executor = FailoverExecutor<AiEndpointConfig, _AiApiCallResult>();
 
   /// 执行三级降级请求
   Future<AiFallbackResponse> execute({
@@ -110,87 +132,74 @@ class AiFallbackExecutor {
     List<Map<String, String>> chatHistory = const [],
     double temperature = 0.2,
   }) async {
-    final activeConfigs = configs.where((c) => c.isValid).toList();
-    if (activeConfigs.isEmpty) {
-      throw StateError('没有可用的 AI 配置，请检查主/副/兜底 API 配置。');
-    }
-
-    final traceLogs = <AiExecutionAttemptLog>[];
-
-    for (final config in activeConfigs) {
-      final stopwatch = Stopwatch()..start();
-      String? failureReason;
-      Map<String, dynamic>? validDecoded;
-      String? validContent;
-      String actualUsedType = 'chat';
-
-      try {
-        final result = await _callSingleApi(
-          config: config,
-          systemPrompt: systemPrompt,
-          userPrompt: userPrompt,
-          chatHistory: chatHistory,
-          temperature: temperature,
-        );
-        validDecoded = result['decoded'] as Map<String, dynamic>;
-        validContent = result['content'] as String;
-        actualUsedType = result['protocol'] as String;
-
-        // 判定 3: 提取内容为空
-        if (validContent.trim().isEmpty) {
-          throw const FormatException('模型返回文本内容为空');
-        }
-        // 判定 4: 命中敏感/异常关键词
-        if (_contentFilter != null && !_contentFilter(validContent)) {
-          throw const FormatException('返回内容命中敏感或异常关键词校验');
-        }
-      } catch (e) {
-        failureReason = e.toString();
-      } finally {
-        stopwatch.stop();
-      }
-
-      final isSuccess = failureReason == null && validContent != null;
-      traceLogs.add(
-        AiExecutionAttemptLog(
-          level: config.level,
-          model: config.model,
-          endpoint: config.endpoint,
-          durationMs: stopwatch.elapsedMilliseconds,
-          isSuccess: isSuccess,
-          failureReason: failureReason,
-        ),
+    try {
+      final response = await _executor.execute(
+        configs: configs,
+        isConfigured: (config) => config.isValid,
+        levelOf: (config) => config.level.serviceLevel,
+        endpointOf: (config) => config.endpoint,
+        noConfigMessage: '没有可用的 AI 配置，请检查主/副/兜底 API 配置。',
+        allFailedMessage: '所有已配置的 AI 服务均不可用。',
+        call: (config) async {
+          final result = await _callSingleApi(
+            config: config,
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            chatHistory: chatHistory,
+            temperature: temperature,
+          );
+          return _AiApiCallResult(
+            content: result['content'] as String,
+            decoded: result['decoded'] as Map<String, dynamic>,
+            protocol: result['protocol'] as String,
+          );
+        },
+        isValidResult: (result) {
+          if (result.content.trim().isEmpty) return false;
+          return _contentFilter?.call(result.content) ?? true;
+        },
       );
-
-      // 只要有一级成功，直接返回对上层透明的结果
-      if (isSuccess && validDecoded != null) {
-        developer.log(
-          'AI 在 [${config.level}] 调用成功，耗时 ${stopwatch.elapsedMilliseconds}ms',
-          name: 'AiFallbackExecutor',
-        );
-        return AiFallbackResponse(
-          content: validContent,
-          rawDecoded: validDecoded,
-          usedLevel: config.level,
-          usedConfig: config,
-          actualProtocol: actualUsedType,
-          traceLogs: traceLogs,
-        );
-      }
-
+      final result = response.value;
+      final traceLogs = response.traceLogs
+          .map(
+            (log) => AiExecutionAttemptLog(
+              level: log.config.level,
+              model: log.config.model,
+              endpoint: log.endpoint,
+              durationMs: log.durationMs,
+              isSuccess: log.isSuccess,
+              failureReason: log.failureReason,
+            ),
+          )
+          .toList(growable: false);
       developer.log(
-        'AI [${config.level}] 失败，耗时 ${stopwatch.elapsedMilliseconds}ms, 触发降级. 原因: $failureReason',
+        'AI 在 [${response.usedConfig.level.name}] 服务执行成功，模型: ${response.usedConfig.model}',
         name: 'AiFallbackExecutor',
-        error: failureReason,
       );
+      return AiFallbackResponse(
+        content: result.content,
+        rawDecoded: result.decoded,
+        usedLevel: response.usedConfig.level,
+        usedConfig: response.usedConfig,
+        actualProtocol: result.protocol,
+        traceLogs: traceLogs,
+      );
+    } on FailoverException<AiEndpointConfig> catch (error) {
+      final traceLogs = error.traceLogs
+          .map(
+            (log) => AiExecutionAttemptLog(
+              level: log.config.level,
+              model: log.config.model,
+              endpoint: log.endpoint,
+              durationMs: log.durationMs,
+              isSuccess: log.isSuccess,
+              failureReason: log.failureReason,
+            ),
+          )
+          .toList(growable: false);
+      developer.log(error.message, name: 'AiFallbackExecutor', error: error);
+      throw AiFallbackException(error.message, traceLogs);
     }
-
-    developer.log(
-      'AI 三级调用链均告失败！',
-      name: 'AiFallbackExecutor',
-      error: traceLogs.map((e) => e.toString()).join('\n'),
-    );
-    throw AiFallbackException('三级 API 均不可用，已尝试所有降级模型', traceLogs);
   }
 
   Future<Map<String, dynamic>> _callSingleApi({
@@ -280,8 +289,11 @@ class AiFallbackExecutor {
     }
 
     final content = AiClientHelper.extractResponseText(decoded);
-    if (content == null || content.trim().isEmpty) {
+    if (content == null) {
       throw const FormatException('未从响应中解析到有效文本字段');
+    }
+    if (content.trim().isEmpty) {
+      throw const FormatException('服务返回内容为空');
     }
 
     return {

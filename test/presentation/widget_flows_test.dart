@@ -267,6 +267,9 @@ testWidgets('提醒支持单条和分组已处理，确认状态持久化', (tes
     await _pumpApp(tester, database);
     await _pumpUntilFound(tester, find.byType(NavigationBar));
     expect(find.byType(NavigationBar), findsOneWidget);
+    // Check immediately so a narrow-screen overflow is attributed to the
+    // screen that caused it instead of a later keyboard interaction.
+    expect(tester.takeException(), isNull);
 
     // 访问首页提醒详情
     await _pumpUntilFound(tester, find.text('待处理详情 >'));

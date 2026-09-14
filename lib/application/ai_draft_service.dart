@@ -91,18 +91,24 @@ class AiDraftService {
     }
   }
 
-  Future<List<AiEndpointConfig>> _resolveFallbackConfigs() async {
+  Future<List<AiEndpointConfig>> _resolveFallbackConfigs() =>
+      resolveFallbackConfigs(_settings, _secureSettings);
+
+  static Future<List<AiEndpointConfig>> resolveFallbackConfigs(
+    SettingsRepository settings,
+    SecureSettingsService secureSettings,
+  ) async {
     final configs = <AiEndpointConfig>[];
 
     // 主 API
-    final primaryEndpoint = await _settings.getValue(endpointKey);
-    final primaryModel = await _settings.getValue(modelKey);
-    final activeProfileId = await _settings.getValue(activeProfileKey);
+    final primaryEndpoint = await settings.getValue(endpointKey);
+    final primaryModel = await settings.getValue(modelKey);
+    final activeProfileId = await settings.getValue(activeProfileKey);
     final profileKey = activeProfileId == null || activeProfileId.isEmpty
         ? null
-        : await _secureSettings.readAiApiKeyForProfile(activeProfileId);
-    final primaryApiKey = profileKey ?? await _secureSettings.readAiApiKey();
-    final primaryType = (await _settings.getValue(endpointTypeKey)) ?? 'auto';
+        : await secureSettings.readAiApiKeyForProfile(activeProfileId);
+    final primaryApiKey = profileKey ?? await secureSettings.readAiApiKey();
+    final primaryType = (await settings.getValue(endpointTypeKey)) ?? 'auto';
 
     if (primaryEndpoint != null && primaryModel != null && primaryApiKey != null) {
       configs.add(
@@ -118,15 +124,15 @@ class AiDraftService {
     }
 
     // 副 API
-    final secEndpoint = await _settings.getValue(secondaryEndpointKey);
-    final secModel = await _settings.getValue(secondaryModelKey);
-    final secondaryProfileId = (await _settings.getValue(secondaryProfileIdKey))?.trim();
+    final secEndpoint = await settings.getValue(secondaryEndpointKey);
+    final secModel = await settings.getValue(secondaryModelKey);
+    final secondaryProfileId = (await settings.getValue(secondaryProfileIdKey))?.trim();
     // Keep the legacy fixed ID as a read-only compatibility fallback for
     // installations that manually saved the first fallback implementation.
-    final secApiKey = await _secureSettings.readAiApiKeyForProfile(
+    final secApiKey = await secureSettings.readAiApiKeyForProfile(
       secondaryProfileId?.isNotEmpty == true ? secondaryProfileId! : 'secondary_profile',
     );
-    final secType = (await _settings.getValue(secondaryTypeKey)) ?? 'auto';
+    final secType = (await settings.getValue(secondaryTypeKey)) ?? 'auto';
     if (secEndpoint != null && secModel != null && secApiKey != null) {
       configs.add(
         AiEndpointConfig(
@@ -141,15 +147,15 @@ class AiDraftService {
     }
 
     // 兜底模型
-    final fallbackEndpoint = await _settings.getValue(fallbackEndpointKey);
-    final fallbackModel = await _settings.getValue(fallbackModelKey);
-    final fallbackProfileId = (await _settings.getValue(fallbackProfileIdKey))?.trim();
+    final fallbackEndpoint = await settings.getValue(fallbackEndpointKey);
+    final fallbackModel = await settings.getValue(fallbackModelKey);
+    final fallbackProfileId = (await settings.getValue(fallbackProfileIdKey))?.trim();
     // Keep the legacy fixed ID as a read-only compatibility fallback for
     // installations that manually saved the first fallback implementation.
-    final fallbackApiKey = await _secureSettings.readAiApiKeyForProfile(
+    final fallbackApiKey = await secureSettings.readAiApiKeyForProfile(
       fallbackProfileId?.isNotEmpty == true ? fallbackProfileId! : 'fallback_profile',
     );
-    final fallbackType = (await _settings.getValue(fallbackTypeKey)) ?? 'auto';
+    final fallbackType = (await settings.getValue(fallbackTypeKey)) ?? 'auto';
     if (fallbackEndpoint != null && fallbackModel != null && fallbackApiKey != null) {
       configs.add(
         AiEndpointConfig(

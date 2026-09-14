@@ -292,7 +292,6 @@ class BarcodeSettingsScreen extends ConsumerStatefulWidget {
 class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
   bool _useExternal = false;
   List<Map<String, dynamic>> _profiles = [];
-  String _activeId = '';
 
   @override
   void initState() {
@@ -304,93 +303,138 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
     final settings = ref.read(settingsServiceProvider);
     final use = (await settings.getValue(BarcodeLookupService.enabledKey)) == 'true';
     final profilesRaw = await settings.getValue(BarcodeLookupService.profilesKey);
-    final defaultEndpoint = await settings.getValue(BarcodeLookupService.endpointKey) ?? '';
+    final primaryEndpoint = await settings.getValue(BarcodeLookupService.endpointKey);
 
-    List<Map<String, dynamic>> parsedProfiles = [];
+    var profiles = <Map<String, dynamic>>[];
     if (profilesRaw != null && profilesRaw.isNotEmpty) {
       try {
         final decoded = jsonDecode(profilesRaw);
         if (decoded is List) {
-          parsedProfiles = decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          profiles = decoded
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList();
         }
-      } catch (_) {}
+      } on FormatException {}
     }
+    profiles = BarcodeLookupService.normalizeProfilesForRoles(
+      profiles,
+      legacyPrimaryEndpoint: primaryEndpoint,
+    );
 
-    if (parsedProfiles.isEmpty) {
-      parsedProfiles = [
-        {
-          'id': 'free_default',
-          'name': '免费公共条码库 (Open Food Facts)',
-          'endpoint': BarcodeLookupService.defaultFreeEndpoint,
-        },
-      ];
-    }
-
+    if (!mounted) return;
     setState(() {
       _useExternal = use;
-      _profiles = parsedProfiles;
-      _activeId = parsedProfiles.firstWhere(
-        (p) => p['endpoint'] == defaultEndpoint,
-        orElse: () => parsedProfiles.first,
-      )['id'] as String;
+      _profiles = profiles;
     });
   }
 
   Future<void> _save() async {
     final settings = ref.read(settingsServiceProvider);
+    final primary = _profileForRole(BarcodeLookupService.primaryRole);
+    final secondary = _profileForRole(BarcodeLookupService.secondaryRole);
+    final fallback = _profileForRole(BarcodeLookupService.fallbackRole);
     await settings.setValue(BarcodeLookupService.enabledKey, _useExternal ? 'true' : 'false');
     await settings.setValue(BarcodeLookupService.profilesKey, jsonEncode(_profiles));
-
-    final current = _profiles.firstWhere(
-      (p) => p['id'] == _activeId,
-      orElse: () => _profiles.first,
-    );
-    await settings.setValue(BarcodeLookupService.endpointKey, current['endpoint'] as String? ?? '');
+    // Keep the former single-endpoint setting and the two role settings for
+    // backwards-compatible imports and older installations.
+    await settings.setValue(BarcodeLookupService.endpointKey, _endpointOf(primary));
+    await settings.setValue(BarcodeLookupService.secondaryEndpointKey, _endpointOf(secondary));
+    await settings.setValue(BarcodeLookupService.fallbackEndpointKey, _endpointOf(fallback));
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('条码配置已保存')));
     }
   }
 
+  Map<String, dynamic>? _profileForRole(String role) {
+    for (final profile in _profiles) {
+      if (profile[BarcodeLookupService.profileRoleKey] == role) return profile;
+    }
+    return null;
+  }
+
+  String _endpointOf(Map<String, dynamic>? profile) => profile?['endpoint']?.toString().trim() ?? '';
+
+  String _roleLabel(Map<String, dynamic> profile) {
+    switch (profile[BarcodeLookupService.profileRoleKey]) {
+      case BarcodeLookupService.primaryRole:
+        return '主服务';
+      case BarcodeLookupService.secondaryRole:
+        return '副服务';
+      case BarcodeLookupService.fallbackRole:
+        return '兜底服务';
+      default:
+        return '仅保存';
+    }
+  }
+
+  void _assignProfileRole(Map<String, dynamic> profile, String role) {
+    if (role != BarcodeLookupService.standbyRole) {
+      for (final existing in _profiles) {
+        if (existing != profile && existing[BarcodeLookupService.profileRoleKey] == role) {
+          existing[BarcodeLookupService.profileRoleKey] = BarcodeLookupService.standbyRole;
+        }
+      }
+    }
+    profile[BarcodeLookupService.profileRoleKey] = role;
+  }
+
   void _addOrEditProfile([Map<String, dynamic>? item]) {
     final nameCtrl = TextEditingController(text: item?['name'] as String? ?? '');
     final urlCtrl = TextEditingController(text: item?['endpoint'] as String? ?? '');
+    var role = item?[BarcodeLookupService.profileRoleKey] as String? ?? BarcodeLookupService.standbyRole;
 
     showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(item == null ? '添加条码接口' : '编辑条码接口'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: '接口名称')),
-            const SizedBox(height: 12),
-            TextField(controller: urlCtrl, decoration: const InputDecoration(labelText: 'API 地址模板（含 {barcode}）')),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(item == null ? '添加条码接口' : '编辑条码接口'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: '接口名称')),
+                const SizedBox(height: 12),
+                TextField(controller: urlCtrl, decoration: const InputDecoration(labelText: 'API 地址模板（含 {barcode}）')),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: role,
+                  decoration: const InputDecoration(labelText: '调用角色'),
+                  items: const [
+                    DropdownMenuItem(value: BarcodeLookupService.primaryRole, child: Text('主服务')),
+                    DropdownMenuItem(value: BarcodeLookupService.secondaryRole, child: Text('副服务（主服务失败时调用）')),
+                    DropdownMenuItem(value: BarcodeLookupService.fallbackRole, child: Text('兜底服务（前两者失败时调用）')),
+                    DropdownMenuItem(value: BarcodeLookupService.standbyRole, child: Text('仅保存，不参与调用')),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) setDialogState(() => role = value);
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+            FilledButton(
+              onPressed: () {
+                final name = nameCtrl.text.trim();
+                final url = urlCtrl.text.trim();
+                if (name.isEmpty || url.isEmpty) return;
+                setState(() {
+                  final profile = item ?? <String, dynamic>{'id': DateTime.now().millisecondsSinceEpoch.toString()};
+                  profile['name'] = name;
+                  profile['endpoint'] = url;
+                  if (item == null) _profiles.add(profile);
+                  _assignProfileRole(profile, role);
+                });
+                Navigator.pop(ctx);
+                _save();
+              },
+              child: const Text('确定'),
+            ),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-          FilledButton(
-            onPressed: () {
-              final name = nameCtrl.text.trim();
-              final url = urlCtrl.text.trim();
-              if (name.isEmpty || url.isEmpty) return;
-              setState(() {
-                if (item == null) {
-                  final newId = DateTime.now().millisecondsSinceEpoch.toString();
-                  _profiles.add({'id': newId, 'name': name, 'endpoint': url});
-                  _activeId = newId;
-                } else {
-                  item['name'] = name;
-                  item['endpoint'] = url;
-                }
-              });
-              Navigator.pop(ctx);
-              _save();
-            },
-            child: const Text('确定'),
-          ),
-        ],
       ),
     );
   }
@@ -404,10 +448,10 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
         children: [
           SwitchListTile(
             title: const Text('启用外部条码查询'),
-            subtitle: const Text('扫码若本地库无记录，尝试调用配置的云端或免费 API 查询商品名'),
+            subtitle: const Text('已预配免费的 Open Food Facts；开启后，条码会发送给主服务，失败时依次尝试副服务和兜底服务。'),
             value: _useExternal,
-            onChanged: (val) {
-              setState(() => _useExternal = val);
+            onChanged: (value) {
+              setState(() => _useExternal = value);
               _save();
             },
           ),
@@ -415,7 +459,7 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('接口配置列表（点击单选设为默认）', style: TextStyle(fontWeight: FontWeight.bold)),
+              const Expanded(child: Text('接口配置列表（点击设为主服务；副服务和兜底服务均可留空）', style: TextStyle(fontWeight: FontWeight.bold))),
               TextButton.icon(
                 icon: const Icon(Icons.add, size: 18),
                 label: const Text('添加配置'),
@@ -423,18 +467,23 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
               ),
             ],
           ),
-          ..._profiles.map((p) {
-            final isDefault = p['id'] == _activeId;
+          ..._profiles.map((profile) {
+            final isPrimary = profile[BarcodeLookupService.profileRoleKey] == BarcodeLookupService.primaryRole;
             return Card(
               child: ListTile(
                 leading: Icon(
-                  isDefault ? Icons.check_circle : Icons.radio_button_unchecked,
-                  color: isDefault ? Theme.of(context).primaryColor : Colors.grey,
+                  isPrimary ? Icons.check_circle : Icons.radio_button_unchecked,
+                  color: isPrimary ? Theme.of(context).primaryColor : Colors.grey,
                 ),
-                title: Text(p['name'] as String? ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: Text(p['endpoint'] as String? ?? '', maxLines: 2, overflow: TextOverflow.ellipsis),
+                title: Row(
+                  children: [
+                    Expanded(child: Text(profile['name'] as String? ?? '', style: const TextStyle(fontWeight: FontWeight.bold))),
+                    Text(_roleLabel(profile), style: const TextStyle(fontSize: 11)),
+                  ],
+                ),
+                subtitle: Text(profile['endpoint'] as String? ?? '', maxLines: 2, overflow: TextOverflow.ellipsis),
                 onTap: () {
-                  setState(() => _activeId = p['id'] as String);
+                  setState(() => _assignProfileRole(profile, BarcodeLookupService.primaryRole));
                   _save();
                 },
                 trailing: Row(
@@ -442,17 +491,16 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.edit, size: 18),
-                      onPressed: () => _addOrEditProfile(p),
+                      onPressed: () => _addOrEditProfile(profile),
                     ),
                     if (_profiles.length > 1)
                       IconButton(
                         icon: const Icon(Icons.delete_outline, size: 18),
                         onPressed: () {
                           setState(() {
-                            _profiles.removeWhere((el) => el['id'] == p['id']);
-                            if (_activeId == p['id']) {
-                              _activeId = _profiles.first['id'] as String;
-                            }
+                            final wasPrimary = profile[BarcodeLookupService.profileRoleKey] == BarcodeLookupService.primaryRole;
+                            _profiles.remove(profile);
+                            if (wasPrimary) _assignProfileRole(_profiles.first, BarcodeLookupService.primaryRole);
                           });
                           _save();
                         },

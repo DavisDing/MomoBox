@@ -759,7 +759,12 @@ class HomeScreen extends ConsumerWidget {
                         children: [
                           Icon(Icons.add_circle_outline_rounded, size: 16, color: palette.primary),
                           const SizedBox(width: 6),
-                          Text('设置常规定期家务（如换床单、洗浴巾、换滤芯）', style: TextStyle(fontSize: 13, color: palette.primary)),
+                          Expanded(
+                            child: Text(
+                              '设置常规定期家务（如换床单、洗浴巾、换滤芯）',
+                              style: TextStyle(fontSize: 13, color: palette.primary),
+                            ),
+                          ),
                         ],
                       ),
                     ),
