@@ -2,9 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/momo_theme.dart';
-import '../../domain/models/smart_home_models.dart';
 import '../controllers/providers.dart';
-import '../controllers/smart_home_controller.dart';
 
 class HomeAssistantSettingsScreen extends ConsumerStatefulWidget {
   const HomeAssistantSettingsScreen({super.key});
@@ -15,8 +13,8 @@ class HomeAssistantSettingsScreen extends ConsumerStatefulWidget {
 
 class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSettingsScreen> {
   final _haUrlController = TextEditingController(text: 'http://homeassistant.local:8123');
-  final _tokenController = TextEditingController(text: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.mock_token_secret');
-  bool _isTesting = false;
+  final _tokenController = TextEditingController();
+  final bool _isTesting = false;
 
   // 设备白名单勾选 Mock
   final Map<String, bool> _whitelist = {
@@ -36,25 +34,18 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
     super.dispose();
   }
 
-  void _testConnection() async {
-    setState(() => _isTesting = true);
-    await Future<void>.delayed(const Duration(milliseconds: 700));
-    if (mounted) {
-      setState(() => _isTesting = false);
-      ref.read(smartHomeControllerProvider.notifier).setHaConnectionStatus(HaConnectionStatus.online);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('🎉 Home Assistant 授权与连接校验成功！已同步实体白名单。')),
-      );
-    }
+  void _testConnection() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('当前版本尚未支持 Home Assistant，未校验令牌、保存配置或连接设备。')),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
-    final homeState = ref.watch(smartHomeControllerProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Home Assistant 连接配置')),
+      appBar: AppBar(title: const Text('Home Assistant 连接配置（规划中）')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -79,7 +70,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
                       children: [
                         const Text('Home Assistant 集成', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                         Text(
-                          homeState.haStatus == HaConnectionStatus.online ? '已授权连接 · 局域网 WebSocket 正常' : '未授权或离线',
+                          '当前版本尚未接入，配置仅供预览',
                           style: const TextStyle(fontSize: 12, color: Colors.grey),
                         ),
                       ],
@@ -91,7 +82,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
                       color: Colors.green.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Text('在线', style: TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.bold)),
+                    child: const Text('未支持', style: TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),
@@ -160,7 +151,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    '只有勾选允许的设备才会展示在家居页并允许 AI 执行控制。高风险设备默认禁止 AI 触碰。',
+                    '以下为规划中的设备白名单示例，不代表真实设备或授权。勾选不会保存或启用控制。',
                     style: TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                   const Divider(height: 18),
@@ -200,9 +191,9 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
                   Text('安全与权限说明', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                   SizedBox(height: 6),
                   Text(
-                    '• MomoBox 仅在局域网内通过 NAS 后端与 HA 通信，令牌安全加密存储于 NAS。\n'
+                    '• 当前版本未实现 NAS 与 HA 通信，请勿在预览页输入真实令牌。\n'
                     '• 不会向任何第三方云端上报家庭设备状态。\n'
-                    '• 设备联动事件产生时，默认创建待确认扣减建议，避免误扣库存。',
+                    '• 当前不会接收设备联动事件或自动扣减库存。',
                     style: TextStyle(fontSize: 12, height: 1.5, color: Colors.grey),
                   ),
                 ],

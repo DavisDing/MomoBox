@@ -4,17 +4,27 @@ import '../data/repositories/settings_repository.dart';
 import '../domain/models/chore_models.dart';
 
 class ChoreService {
-  ChoreService(this._settingsRepository);
+  ChoreService(this._settingsRepository, {DateTime Function()? clock})
+      : _clock = clock ?? DateTime.now;
+
+  final DateTime Function() _clock;
+  Future<List<ChoreItem>>? _loading;
 
   final SettingsRepository _settingsRepository;
   static const _storageKey = 'recurring_chores_list';
 
   /// 获取所有周期家务
-  Future<List<ChoreItem>> getChores() async {
+  Future<List<ChoreItem>> getChores() {
+    return _loading ??= _loadChores().whenComplete(() {
+      _loading = null;
+    });
+  }
+
+  Future<List<ChoreItem>> _loadChores() async {
     final raw = await _settingsRepository.getValue(_storageKey);
     if (raw == null || raw.trim().isEmpty) {
       // 首次初始化默认预设
-      final defaults = ChoreItem.defaultPresets(DateTime.now());
+      final defaults = ChoreItem.defaultPresets(_clock());
       await _saveChores(defaults);
       return defaults;
     }
@@ -23,9 +33,9 @@ class ChoreService {
 
   /// 监听周期家务列表
   Stream<List<ChoreItem>> watchChores() {
-    return _settingsRepository.watchValue(_storageKey).map((raw) {
+    return _settingsRepository.watchValue(_storageKey).asyncMap((raw) {
       if (raw == null || raw.trim().isEmpty) {
-        return ChoreItem.defaultPresets(DateTime.now());
+        return getChores();
       }
       return ChoreItem.decodeList(raw);
     });

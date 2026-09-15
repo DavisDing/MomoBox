@@ -99,11 +99,12 @@ class _MomoBoxAppState extends ConsumerState<MomoBoxApp> {
     } catch (_) {
       // 提醒状态清理失败不应阻塞库存页面或通知同步。
     }
-    _syncNotifications(items: items);
+    // Reconciliation can finish out of order. Always submit the latest view.
+    if (mounted) _syncNotifications();
   }
 
-  void _syncNotifications({List<InventoryItem>? items}) {
-    final currentItems = items ?? ref.read(inventoryProvider).valueOrNull;
+  void _syncNotifications() {
+    final currentItems = ref.read(inventoryProvider).valueOrNull;
     final acknowledgements = ref.read(reminderAcknowledgementsProvider).valueOrNull ??
         const <ReminderAcknowledgement>[];
     if (currentItems == null) return;

@@ -5,7 +5,6 @@ import 'package:http/http.dart' as http;
 import '../data/repositories/inventory_repository.dart';
 import '../data/repositories/settings_repository.dart';
 import '../domain/models/ai_usage_models.dart';
-import '../domain/models/inventory_models.dart';
 import '../services/secure_settings_service.dart';
 import 'ai_draft_service.dart';
 import 'ai_fallback_executor.dart';
@@ -52,7 +51,7 @@ class AiAssistantService {
     final inventory = await _inventoryRepository
         .watchInventory()
         .first
-        .timeout(const Duration(seconds: 3), onTimeout: () => const <InventoryItem>[]);
+        .timeout(const Duration(seconds: 3));
 
     final buffer = StringBuffer();
     buffer.writeln('【当前时间】：${DateTime.now().toIso8601String().substring(0, 10)}');
@@ -81,6 +80,7 @@ class AiAssistantService {
     final systemPrompt = '''
 你是「MomoBox 嬷嬷的小箱子」内置的智能管家吉祥物。
 你的职责是帮助用户查询家庭物品库存、到期情况、质保期、存放位置、采买建议等。
+你只有库存只读查询能力，无法修改库存、记录消耗、控制设备或执行混合计划。不得声称任何操作已执行、扣减或写入；如用户请求这些操作，请引导至库存页手动确认，设备控制尚未支持。
 回答风格亲切、简洁、准确。严格依据提供的库存数据进行解答，如果库存中没有某件物品或数据未记录，请诚实说明。
 
 ${buffer.toString()}

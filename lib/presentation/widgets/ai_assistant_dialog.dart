@@ -1,9 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/momo_theme.dart';
 import '../controllers/providers.dart';
-import '../controllers/smart_home_controller.dart';
+import 'package:uuid/uuid.dart';
 import '../../application/ai_assistant_service.dart';
 
 enum AiPlanStatus {
@@ -112,10 +114,9 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
       role: 'assistant',
       content: '你好呀！我是 MomoBox 的随身智能管家。\n'
           '我可以帮你：\n'
-          '① 智能家居控制（如“打开电视”、“客厅空调调到25度”）\n'
-          '② 物资查询与记录（如“还有多少洗衣液”、“吃了两片感冒药”）\n'
-          '③ 复杂混合计划（如“我要洗衣服” -> 自动规划洗衣机启动与耗材配方确认）\n'
-          '请随时吩咐我吧！',
+          '① 基于真实库存查询数量、效期和存放位置\n'
+          '② 提供采买建议（需先配置 AI 服务）\n'
+          '当前助手只读，不会扣减库存或控制设备。请在库存页确认消耗；NAS、家居控制与混合计划尚未支持。',
       timestamp: DateTime.now(),
     );
   }
@@ -124,7 +125,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
   void initState() {
     super.initState();
     final initialSession = AiSession(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: const Uuid().v4(),
       title: '新对话',
       createdAt: DateTime.now(),
       messages: [_createDefaultWelcomeMessage()],
@@ -136,7 +137,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
   void _createNewSession() {
     setState(() {
       final newSession = AiSession(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        id: const Uuid().v4(),
         title: '新会话 ${_sessions.length + 1}',
         createdAt: DateTime.now(),
         messages: [_createDefaultWelcomeMessage()],
@@ -160,9 +161,15 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
     if (_sessions.length <= 1) {
       // 只有一个会话时清空重置为默认
       setState(() {
-        _currentSession.messages.clear();
-        _currentSession.messages.add(_createDefaultWelcomeMessage());
-        _currentSession.title = '新对话';
+        // Replace the session, invalidating replies from any cleared request.
+        final replacement = AiSession(
+          id: const Uuid().v4(),
+          title: '新对话',
+          createdAt: DateTime.now(),
+          messages: [_createDefaultWelcomeMessage()],
+        );
+        _sessions[0] = replacement;
+        _currentSessionId = replacement.id;
         _currentPlan = null;
       });
       return;
@@ -204,6 +211,8 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
       _textController.clear();
     }
 
+    final origin = _currentSession;
+    final history = List<ChatMessage>.of(origin.messages);
     final userMsg = ChatMessage(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       role: 'user',
@@ -212,56 +221,41 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
     );
 
     setState(() {
-      if (_currentSession.title == '新对话' || _currentSession.title.startsWith('新会话')) {
-        _currentSession.title = text.length > 12 ? '${text.substring(0, 12)}...' : text;
+      if (origin.title == '新对话' || origin.title.startsWith('新会话')) {
+        origin.title = text.length > 12 ? '${text.substring(0, 12)}...' : text;
       }
-      _messages.add(userMsg);
+      origin.messages.add(userMsg);
       _isLoading = true;
     });
     _scrollToBottom();
 
-    // 优先匹配 3 种 Mock 意图交互与真实问答回退
-    final handledLocally = await _tryHandleMockIntents(text);
-    if (handledLocally) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        _scrollToBottom();
-      }
-      return;
-    }
-
-    // 回退调用底层已有的 AI 助手服务 (兼容用户自配 API Key)
     try {
-      final assistantService = ref.read(aiAssistantServiceProvider);
-      final history = _messages
-          .where((m) => (m.role == 'user' || m.role == 'assistant') && m.id != userMsg.id)
-          .toList();
-      final reply = await assistantService.ask(text, history);
-
-      if (mounted) {
+      // Only capability limitations are handled locally; inventory answers must
+      // go through the real service and its database snapshot.
+      final reply = _unsupportedActionReply(text) ??
+          await ref.read(aiAssistantServiceProvider).ask(text, history);
+      if (mounted && _sessions.contains(origin)) {
         setState(() {
-          _messages.add(
-            ChatMessage(
-              id: (DateTime.now().millisecondsSinceEpoch + 1).toString(),
-              role: 'assistant',
-              content: reply,
-              timestamp: DateTime.now(),
-            ),
-          );
+          origin.messages.add(ChatMessage(
+            id: const Uuid().v4(),
+            role: 'assistant',
+            content: reply,
+            timestamp: DateTime.now(),
+          ));
         });
       }
-    } catch (e) {
-      if (mounted) {
+    } catch (error) {
+      if (mounted && _sessions.contains(origin)) {
+        final message = error is TimeoutException
+            ? '请求超时，请检查网络后重试。'
+            : '请检查「我的」中的 AI 地址、模型、API Key 和网络后重试。';
         setState(() {
-          _messages.add(
-            ChatMessage(
-              id: (DateTime.now().millisecondsSinceEpoch + 1).toString(),
-              role: 'assistant',
-              content: '小管家收到：“$text”。\n'
-                  '（若要查询真实库存或调用远端大模型，请在「我的」中配置 AI 密钥；当前已作为本地智能指令处理。）',
-              timestamp: DateTime.now(),
-            ),
-          );
+          origin.messages.add(ChatMessage(
+            id: const Uuid().v4(),
+            role: 'assistant',
+            content: '本次请求失败，未执行任何库存或设备操作。$message',
+            timestamp: DateTime.now(),
+          ));
         });
       }
     } finally {
@@ -274,100 +268,30 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
     }
   }
 
-  /// 匹配 3 类智能意图并给出高可用 UI 反馈
-  Future<bool> _tryHandleMockIntents(String text) async {
-    final lower = text.toLowerCase();
-    await Future<void>.delayed(const Duration(milliseconds: 400));
-
-    // 意图 3: 混合计划（洗衣服 / 启动洗烘并扣耗材）
-    if (lower.contains('洗衣服') || lower.contains('洗涤') || lower.contains('开洗衣机')) {
-      setState(() {
-        _currentPlan = const MixedPlanData(
-          taskTitle: '洗衣家庭自动化计划',
-          deviceAction: '启动阳台洗烘一体机（标准洗涤程序）',
-          consumables: ['蓝月亮机洗专用洗衣液（1份）', '碧浪倍净洗衣凝珠（1颗）', '威露士衣物除菌液（1盖）'],
-          selectedConsumable: '蓝月亮机洗专用洗衣液（1份）',
-        );
-        _messages.add(
-          ChatMessage(
-            id: DateTime.now().millisecondsSinceEpoch.toString(),
-            role: 'assistant',
-            content: '检测到混合计划意图：【洗衣服】。\n'
-                '我已为你规划了设备控制与耗材方案，请在下方确认执行：',
-            timestamp: DateTime.now(),
-          ),
-        );
-      });
-      return true;
+  String? _unsupportedActionReply(String text) {
+    if (text.contains('吃了') || text.contains('消耗') || text.contains('扣减')) {
+      return '当前 AI 助手只支持查询，未扣减库存或写入记录。请在库存页选择商品并确认消耗数量。';
     }
-
-    // 意图 1: 设备控制 (打开电视 / 调空调 / 开关灯)
-    if (lower.contains('打开电视') || lower.contains('开电视')) {
-      ref.read(smartHomeControllerProvider.notifier).toggleDevice('media_player.living_room_tv');
-      _addAssistantReply('✅ 已通过 Home Assistant 为你打开【客厅电视】，设备状态已同步');
-      return true;
+    if (text.contains('洗衣服') || text.contains('洗涤') ||
+        text.contains('开洗衣机') || text.contains('打开电视') ||
+        text.contains('开电视') || text.contains('关闭电视') ||
+        text.contains('关电视') || text.contains('观影模式') ||
+        (text.contains('空调') && (text.contains('25') || text.contains('调到')))) {
+      return '当前版本尚未接入 Home Assistant，无法执行设备控制或混合计划。未发送设备指令，也未扣减耗材。';
     }
-    if (lower.contains('关闭电视') || lower.contains('关电视')) {
-      ref.read(smartHomeControllerProvider.notifier).toggleDevice('media_player.living_room_tv');
-      _addAssistantReply('✅ 已为你关闭【客厅电视】。');
-      return true;
-    }
-    if (lower.contains('空调') && (lower.contains('25') || lower.contains('调到'))) {
-      _addAssistantReply('❄️ 已将【客厅空调】调至制冷模式 25°C，舒适微风已开启。');
-      return true;
-    }
-    if (lower.contains('观影模式') || lower.contains('电影')) {
-      _addAssistantReply('🎬 已触发【观影模式】场景：客厅主灯已调暗至 20%，客厅电视已开启！');
-      return true;
-    }
-
-    // 意图 2: 物资查询与记录 (还有多少洗衣液 / 吃了感冒药)
-    if (lower.contains('洗衣液') && (lower.contains('多少') || lower.contains('还有') || lower.contains('库存'))) {
-      _addAssistantReply('📦 查询到当前库存：\n'
-          '• 【蓝月亮浓缩洗衣液】剩余 2 瓶（批次 20260810，到期日 2027-08）\n'
-          '• 库存状态：充足（阈值为 1 瓶）。');
-      return true;
-    }
-    if (lower.contains('感冒药') && (lower.contains('吃了') || lower.contains('消耗') || lower.contains('记录'))) {
-      _addAssistantReply('💊 已为你记录消耗：\n'
-          '• 商品：999感冒灵颗粒\n'
-          '• 操作：按照 FEFO 规则优先消耗最早批次 2 袋\n'
-          '• 剩余库存：6 袋。变动记录已写入本地日志。');
-      return true;
-    }
-
-    return false;
-  }
-
-  void _addAssistantReply(String content) {
-    setState(() {
-      _messages.add(
-        ChatMessage(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          role: 'assistant',
-          content: content,
-          timestamp: DateTime.now(),
-        ),
-      );
-    });
+    return null;
   }
 
   void _confirmPlan() {
     if (_currentPlan == null) return;
-    final plan = _currentPlan!;
     setState(() {
-      _currentPlan = plan.copyWith(status: AiPlanStatus.confirmed);
-      _messages.add(
-        ChatMessage(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          role: 'assistant',
-          content: '🎉 计划执行完成！\n'
-              '1. ${plan.deviceAction} -> 已向 HA 下发指令；\n'
-              '2. 耗材预分配：已扣减 ${plan.selectedConsumable}；\n'
-              '3. 变动日志与待确认建议已同步至家居联动列表。',
-          timestamp: DateTime.now(),
-        ),
-      );
+      _currentPlan = _currentPlan!.copyWith(status: AiPlanStatus.cancelled);
+      _messages.add(ChatMessage(
+        id: const Uuid().v4(),
+        role: 'assistant',
+        content: '混合计划执行尚未支持。未发送设备指令，也未扣减耗材。',
+        timestamp: DateTime.now(),
+      ));
     });
     _scrollToBottom();
   }
@@ -457,7 +381,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                       ),
                       const SizedBox(height: 2),
                       const Text(
-                        '支持设备控制 / 耗材记录 / 混合执行计划',
+                        '真实库存问答 · 只读，不执行库存或设备操作',
                         style: TextStyle(fontSize: 11, color: Colors.grey),
                       ),
                     ],
@@ -584,7 +508,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                   child: TextField(
                     controller: _textController,
                     decoration: InputDecoration(
-                      hintText: '吩咐${palette.mascotName}，如：“我要洗衣服”、“打开电视”',
+                      hintText: '问问${palette.mascotName}，如：“还有多少洗衣液？”',
                       hintStyle: const TextStyle(fontSize: 13),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       isDense: true,

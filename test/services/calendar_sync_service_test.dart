@@ -153,6 +153,22 @@ void main() {
       expect(ics30, contains('SUMMARY:[周期家务] 换床单被罩'));
       expect(ics30, contains('RRULE:FREQ=WEEKLY;INTERVAL=2'));
 
+      // All four kinds retain an all-day event with a 9-hour AFTER-start alarm.
+      final events = ics30.split('BEGIN:VEVENT').skip(1).toList();
+      expect(events, hasLength(4));
+      for (final event in events) {
+        final date = RegExp(r'DTSTART;VALUE=DATE:(\d{4})(\d{2})(\d{2})')
+            .firstMatch(event)!;
+        final start = DateTime(
+          int.parse(date.group(1)!), int.parse(date.group(2)!), int.parse(date.group(3)!),
+        );
+        expect(event, contains('TRIGGER:PT9H'));
+        expect(event, isNot(contains('TRIGGER:-PT9H')));
+        final alarm = start.add(const Duration(hours: 9));
+        expect(alarm.day, start.day);
+        expect(alarm.hour, 9);
+      }
+      expect(ics30, contains('TRIGGER:-P3D')); // Existing advance alarm remains.
       expect(ics30, contains('END:VCALENDAR'));
     });
 

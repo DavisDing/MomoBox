@@ -16,7 +16,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
   final _familyCodeController = TextEditingController(text: 'MOMO-FAMILY-888');
   bool _autoSync = true;
   bool _syncImages = true;
-  bool _isConnecting = false;
+  final bool _isConnecting = false;
 
   @override
   void dispose() {
@@ -25,15 +25,10 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
     super.dispose();
   }
 
-  void _testConnection() async {
-    setState(() => _isConnecting = true);
-    await Future<void>.delayed(const Duration(milliseconds: 600));
-    if (mounted) {
-      setState(() => _isConnecting = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('🎉 NAS 协同服务连接测试成功！')),
-      );
-    }
+  void _testConnection() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('当前版本尚未支持 NAS 连接与同步，未测试连接或保存配置。')),
+    );
   }
 
   @override
@@ -41,7 +36,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
     final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('NAS 协同与家庭共享')),
+      appBar: AppBar(title: const Text('NAS 协同与家庭共享（规划中）')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -67,7 +62,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text('局域网 NAS 协同状态', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                            Text('绿联 DX4600 Docker · 在线', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                            Text('当前版本尚未接入 NAS', style: TextStyle(fontSize: 12, color: Colors.grey)),
                           ],
                         ),
                       ),
@@ -77,7 +72,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
                           color: Colors.green.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Text('已连接', style: TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.bold)),
+                        child: const Text('未支持', style: TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.bold)),
                       ),
                     ],
                   ),
@@ -154,9 +149,9 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
                   Text('家庭成员与协同说明', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                   SizedBox(height: 6),
                   Text(
-                    '• 当前账号：家政主管（管理员）\n'
-                    '• 共享模式：单机本地优先，断网无缝离线读写；联网后由 NAS 后端自动处理协同与变更日志。\n'
-                    '• 本地变更已同步至局域网协同节点。',
+                    '• 当前为单机版本，无家庭账号。\n'
+                    '• NAS 配置与共享开关仅为界面预览，不会保存或发起同步。\n'
+                    '• 数据仅保存在本机，尚未同步至 NAS。',
                     style: TextStyle(fontSize: 12, height: 1.5, color: Colors.grey),
                   ),
                 ],

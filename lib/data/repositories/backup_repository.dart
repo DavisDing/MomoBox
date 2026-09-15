@@ -81,23 +81,23 @@ class BackupRepository {
     final settings = _records(document, 'settings');
     final acknowledgements = _records(document, 'reminder_acknowledgements');
     final barcodeCache = _records(document, 'barcode_lookup_cache');
-    final failures = await _validateReferences(
-      products: products,
-      batches: batches,
-      movements: movements,
-      shopping: shopping,
-      settings: settings,
-      acknowledgements: acknowledgements,
-      barcodeCache: barcodeCache,
-    );
-    if (failures.isNotEmpty) {
-      throw BackupImportException(List.unmodifiable(failures));
-    }
-
     var imported = 0;
     var skipped = 0;
 
     await _database.transaction(() async {
+      final failures = await _validateReferences(
+        products: products,
+        batches: batches,
+        movements: movements,
+        shopping: shopping,
+        settings: settings,
+        acknowledgements: acknowledgements,
+        barcodeCache: barcodeCache,
+      );
+      if (failures.isNotEmpty) {
+        throw BackupImportException(List.unmodifiable(failures));
+      }
+
       for (final raw in products) {
         final row = raw;
         if (await _exists(_database.products, row['id'] as String)) {
@@ -197,6 +197,10 @@ class BackupRepository {
     final existingBatchProductById = {
       for (final row in existingBatches) row.id: row.productId,
     };
+    final existingMovementIds =
+        (await _database.select(_database.stockMovements).get()).map((row) => row.id).toSet();
+    final existingShoppingIds =
+        (await _database.select(_database.shoppingEntries).get()).map((row) => row.id).toSet();
     final failures = <ImportFailure>[];
 
     void checkUnique(String section, List<Map<String, dynamic>> rows, String field) {
@@ -230,6 +234,7 @@ class BackupRepository {
 
     for (var i = 0; i < batches.length; i++) {
       final row = batches[i];
+      if (existingBatchProductById.containsKey(row['id'])) continue;
       final productId = row['product_id'] as String;
       if (!allProductIds.contains(productId)) {
         failures.add(ImportFailure(
@@ -242,6 +247,7 @@ class BackupRepository {
 
     for (var i = 0; i < movements.length; i++) {
       final row = movements[i];
+      if (existingMovementIds.contains(row['id'])) continue;
       final productId = row['product_id'] as String;
       if (!allProductIds.contains(productId)) {
         failures.add(ImportFailure(
@@ -260,8 +266,8 @@ class BackupRepository {
           ));
         } else {
           final batchProductId =
-              incomingBatchById[batchId]?['product_id'] as String? ??
-              existingBatchProductById[batchId];
+              existingBatchProductById[batchId] ??
+              (incomingBatchById[batchId]?['product_id'] as String?);
           if (batchProductId != null && batchProductId != productId) {
             failures.add(ImportFailure(
               section: 'stock_movements',
@@ -274,6 +280,7 @@ class BackupRepository {
     }
 
     for (var i = 0; i < shopping.length; i++) {
+      if (existingShoppingIds.contains(shopping[i]['id'])) continue;
       final productId = shopping[i]['product_id'] as String?;
       if (productId != null && !allProductIds.contains(productId)) {
         failures.add(ImportFailure(

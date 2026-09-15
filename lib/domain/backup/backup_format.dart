@@ -140,7 +140,12 @@ class BackupFormat {
   ) {
     for (final field in _requiredStringFields[section]!) {
       final value = record[field];
-      if (value is! String || value.trim().isEmpty) {
+      // Optional AI endpoints/settings legitimately use an empty string. The
+      // value must still be present and typed; IDs and other fields stay nonempty.
+      final allowsEmpty = section == 'settings' && field == 'value';
+      if (value is! String) {
+        _recordError(section, index, '“$field”必须是文本。');
+      } else if (!allowsEmpty && value.trim().isEmpty) {
         _recordError(section, index, '“$field”必须是非空文本。');
       }
     }

@@ -134,10 +134,10 @@ class SmartHomeScreen extends ConsumerWidget {
           children: [
             const Icon(Icons.hub_outlined, size: 64, color: Colors.grey),
             const SizedBox(height: 16),
-            const Text('尚未连接 Home Assistant', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text('Home Assistant 尚未支持', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             const Text(
-              '在「我的」->「Home Assistant 连接配置」中填写 HA 地址与授权令牌，即可在 MomoBox 中掌控全屋智能与设备耗材联动。',
+              '当前为单机版本，尚未实现 NAS 和 Home Assistant 接入。配置页面仅为规划预览，不会连接设备或扣减耗材。',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, color: Colors.grey),
             ),
@@ -145,7 +145,7 @@ class SmartHomeScreen extends ConsumerWidget {
             FilledButton.icon(
               onPressed: () => context.push('/settings'),
               icon: const Icon(Icons.settings),
-              label: const Text('前往配置连接'),
+              label: const Text('查看规划配置'),
             ),
           ],
         ),

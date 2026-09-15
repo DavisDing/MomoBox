@@ -30,6 +30,31 @@ Map<String, Object?> validProduct() => {
     };
 
 void main() {
+  test('设置值允许空文本，但字段仍必需且必须为文本', () {
+    final setting = <String, Object?>{
+      'key': 'ai_secondary_endpoint',
+      'value': '',
+      'updated_at': '2026-09-15T00:00:00.000',
+    };
+    final document = validDocument()..['settings'] = [setting];
+    final parsed = BackupFormat.parse(jsonEncode(document));
+    expect(BackupFormat.records(parsed, 'settings').single['value'], '');
+
+    final invalid = [
+      {...setting}..remove('value'),
+      {...setting, 'value': null},
+      {...setting, 'value': 123},
+      {...setting, 'key': ''},
+    ];
+    for (final row in invalid) {
+      final input = validDocument()..['settings'] = [row];
+      expect(
+        () => BackupFormat.records(BackupFormat.parse(jsonEncode(input)), 'settings'),
+        throwsFormatException,
+      );
+    }
+  });
+
   test('接受完整的当前版本备份结构', () {
     final document = BackupFormat.parse(jsonEncode(validDocument()));
     expect(BackupFormat.records(document, 'products'), isEmpty);

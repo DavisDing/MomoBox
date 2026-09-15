@@ -77,7 +77,7 @@ class CalendarSyncService {
         buffer.writeln('BEGIN:VALARM');
         buffer.writeln('ACTION:DISPLAY');
         buffer.writeln('DESCRIPTION:[补货提醒] ${item.name} 库存偏低');
-        buffer.writeln('TRIGGER:-PT9H'); // 当天早晨9点
+        buffer.writeln('TRIGGER:PT9H'); // 当天早晨9点
         buffer.writeln('END:VALARM');
         buffer.writeln('END:VEVENT');
       }
@@ -118,7 +118,7 @@ class CalendarSyncService {
           buffer.writeln('BEGIN:VALARM');
           buffer.writeln('ACTION:DISPLAY');
           buffer.writeln('DESCRIPTION:[已过期] ${item.name}');
-          buffer.writeln('TRIGGER:-PT9H');
+          buffer.writeln('TRIGGER:PT9H');
           buffer.writeln('END:VALARM');
           buffer.writeln('END:VEVENT');
         } else {
@@ -146,7 +146,7 @@ class CalendarSyncService {
           buffer.writeln('BEGIN:VALARM');
           buffer.writeln('ACTION:DISPLAY');
           buffer.writeln('DESCRIPTION:[今日到期] ${item.name}');
-          buffer.writeln('TRIGGER:-PT9H'); // 当天上午9点
+          buffer.writeln('TRIGGER:PT9H'); // 当天上午9点
           buffer.writeln('END:VALARM');
           buffer.writeln('END:VEVENT');
         }
@@ -190,7 +190,7 @@ class CalendarSyncService {
         buffer.writeln('BEGIN:VALARM');
         buffer.writeln('ACTION:DISPLAY');
         buffer.writeln('DESCRIPTION:[家务提醒] ${chore.title}');
-        buffer.writeln('TRIGGER:-PT9H');
+        buffer.writeln('TRIGGER:PT9H');
         buffer.writeln('END:VALARM');
         buffer.writeln('END:VEVENT');
       }

@@ -621,7 +621,7 @@ class HomeScreen extends ConsumerWidget {
                 const Icon(Icons.home_outlined, size: 20),
                 const SizedBox(width: 8),
                 Text(
-                  '常用智能家居快捷操作',
+                  '智能家居预览（未接入）',
                   style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
                 ),
                 const Spacer(),
@@ -648,7 +648,7 @@ class HomeScreen extends ConsumerWidget {
                       onPressed: () {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text('已向 Home Assistant 发送执行指令：【${scene.name}】'),
+                            content: Text('当前版本尚未支持 Home Assistant，未执行【${scene.name}】。'),
                             duration: const Duration(seconds: 2),
                           ),
                         );
@@ -693,7 +693,7 @@ class HomeScreen extends ConsumerWidget {
                                 overflow: TextOverflow.ellipsis,
                               ),
                               Text(
-                                device.statusText,
+                                '示例设备，未连接',
                                 style: TextStyle(fontSize: 10, color: theme.textTheme.bodySmall?.color),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -705,10 +705,9 @@ class HomeScreen extends ConsumerWidget {
                           value: device.isOn,
                           activeTrackColor: palette.primary,
                           onChanged: (val) {
-                            ref.read(smartHomeControllerProvider.notifier).toggleDevice(device.id);
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text('设备【${device.name}】已${val ? '开启' : '关闭'}'),
+                                content: Text('当前版本尚未支持设备控制，未操作【${device.name}】。'),
                                 duration: const Duration(seconds: 1),
                               ),
                             );
@@ -898,8 +897,9 @@ class HomeScreen extends ConsumerWidget {
                 ReorderableListView(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
-                  onReorderItem: (oldIndex, newIndex) {
+                  onReorder: (oldIndex, newIndex) {
                     setModalState(() {
+                      if (newIndex > oldIndex) newIndex -= 1;
                       final item = order.removeAt(oldIndex);
                       order.insert(newIndex, item);
                     });

@@ -20,6 +20,7 @@ class LocalNotificationService {
 
   final FlutterLocalNotificationsPlugin _plugin;
   bool _initialized = false;
+  Future<void> _syncTail = Future<void>.value();
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -118,15 +119,28 @@ class LocalNotificationService {
     List<InventoryItem> items, {
     DateTime? now,
     Iterable<ReminderAcknowledgement> acknowledgements = const [],
-  }) async {
-    if (!_initialized) return;
-    await _plugin.cancelAll();
+  }) {
+    if (!_initialized) return Future<void>.value();
     final reference = now ?? DateTime.now();
     final candidates = ReminderRules.unacknowledgedCandidates(
       items,
       acknowledgements,
       today: reference,
-    );
+    ).toList();
+    // A cancel + scheduling pass is indivisible relative to other sync calls.
+    // Capture candidates now rather than reading a mutable caller list later.
+    final result = _syncTail.then((_) => _schedule(candidates, reference));
+    // Keep the queue usable after a failure; the caller still receives result's
+    // original error and must not report that pass as successful.
+    _syncTail = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return result;
+  }
+
+  Future<void> _schedule(
+    List<ReminderCandidate> candidates,
+    DateTime reference,
+  ) async {
+    await _plugin.cancelAll();
     for (final candidate in candidates) {
       final scheduled = _nextNineAm(candidate.date, reference);
       await _plugin.zonedSchedule(

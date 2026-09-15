@@ -13,6 +13,7 @@ import '../../domain/models/recognition_models.dart';
 import '../controllers/providers.dart';
 
 class _IntakeDraftMemory {
+  String? mediaDraftId;
   String? name;
   String? brand;
   String? specification;
@@ -30,6 +31,7 @@ class _IntakeDraftMemory {
   String datePrecision = 'day';
 
   bool get hasContent =>
+      mediaDraftId != null ||
       (name != null && name!.trim().isNotEmpty) ||
       (brand != null && brand!.trim().isNotEmpty) ||
       (barcode != null && barcode!.trim().isNotEmpty) ||
@@ -37,6 +39,7 @@ class _IntakeDraftMemory {
       expiryDate != null;
 
   void clear() {
+    mediaDraftId = null;
     name = null;
     brand = null;
     specification = null;
@@ -89,7 +92,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
   final _threshold = TextEditingController(text: '1');
   final _shelfLife = TextEditingController();
   final _picker = ImagePicker();
-  final _mediaDraftId = const Uuid().v4();
+  late final String _mediaDraftId;
   String _category = '药品保健';
   ShelfLifeUnit _shelfLifeUnit = ShelfLifeUnit.days;
   String _dateSource = 'manual';
@@ -104,6 +107,11 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
   @override
   void initState() {
     super.initState();
+    final restoreDraft = widget.initialName == null &&
+        widget.initialCategory == null && _intakeDraft.hasContent;
+    _mediaDraftId = restoreDraft
+        ? (_intakeDraft.mediaDraftId ?? const Uuid().v4())
+        : const Uuid().v4();
     if (widget.initialName != null || widget.initialCategory != null) {
       _name.text = widget.initialName ?? '';
       _quantity.text = widget.initialQuantity.toString();
@@ -134,23 +142,23 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
 
   void _saveDraft() {
     if (_intakeCompleted) return;
-    if (_name.text.isNotEmpty || _barcode.text.isNotEmpty || _productionDate != null || _expiryDate != null) {
-      _intakeDraft.name = _name.text;
-      _intakeDraft.brand = _brand.text;
-      _intakeDraft.specification = _specification.text;
-      _intakeDraft.quantity = _quantity.text;
-      _intakeDraft.location = _location.text;
-      _intakeDraft.barcode = _barcode.text;
-      _intakeDraft.batchNo = _batchNo.text;
-      _intakeDraft.threshold = _threshold.text;
-      _intakeDraft.shelfLife = _shelfLife.text;
-      _intakeDraft.category = _category;
-      _intakeDraft.shelfLifeUnit = _shelfLifeUnit;
-      _intakeDraft.productionDate = _productionDate;
-      _intakeDraft.expiryDate = _expiryDate;
-      _intakeDraft.dateSource = _dateSource;
-      _intakeDraft.datePrecision = _datePrecision;
-    }
+    // Keep the media identity even when the draft contains only photos/OCR.
+    _intakeDraft.mediaDraftId = _mediaDraftId;
+    _intakeDraft.name = _name.text;
+    _intakeDraft.brand = _brand.text;
+    _intakeDraft.specification = _specification.text;
+    _intakeDraft.quantity = _quantity.text;
+    _intakeDraft.location = _location.text;
+    _intakeDraft.barcode = _barcode.text;
+    _intakeDraft.batchNo = _batchNo.text;
+    _intakeDraft.threshold = _threshold.text;
+    _intakeDraft.shelfLife = _shelfLife.text;
+    _intakeDraft.category = _category;
+    _intakeDraft.shelfLifeUnit = _shelfLifeUnit;
+    _intakeDraft.productionDate = _productionDate;
+    _intakeDraft.expiryDate = _expiryDate;
+    _intakeDraft.dateSource = _dateSource;
+    _intakeDraft.datePrecision = _datePrecision;
   }
 
   @override

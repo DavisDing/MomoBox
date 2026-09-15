@@ -13,6 +13,7 @@ import 'package:momo_box/data/repositories/settings_repository.dart';
 import 'package:momo_box/domain/models/inventory_models.dart';
 import 'package:momo_box/domain/inventory/inventory_sorting.dart';
 import 'package:momo_box/presentation/controllers/providers.dart';
+import 'package:momo_box/presentation/controllers/smart_home_controller.dart';
 import 'package:momo_box/presentation/screens/alerts_screen.dart';
 import 'package:momo_box/presentation/screens/product_detail_screen.dart';
 import 'package:momo_box/presentation/screens/shopping_screen.dart';
@@ -27,6 +28,29 @@ void main() {
   });
 
   tearDown(() => database.close());
+
+  testWidgets('首页家居预览不伪报场景或设备执行成功', (tester) async {
+    await SettingsRepository(database).setValue(homeSectionOrderKey, 'smart_home_quick');
+    await _pumpApp(tester, database);
+    await _pumpUntilFound(tester, find.text('智能家居预览（未接入）'));
+    final container = ProviderScope.containerOf(tester.element(find.byType(MomoBoxApp)));
+    final state = container.read(smartHomeControllerProvider);
+    final scene = find.text(state.scenes.first.name);
+    await tester.ensureVisible(scene);
+    await tester.tap(scene);
+    await tester.pump();
+    expect(find.textContaining('当前版本尚未支持 Home Assistant，未执行'), findsOneWidget);
+    expect(find.textContaining('已向 Home Assistant 发送执行指令'), findsNothing);
+    await tester.pump(const Duration(seconds: 3));
+
+    final toggle = find.byType(Switch).first;
+    await tester.ensureVisible(toggle);
+    await tester.tap(toggle);
+    await tester.pump();
+    expect(find.textContaining('当前版本尚未支持设备控制'), findsOneWidget);
+    expect(container.read(smartHomeControllerProvider).devices.first.isOn, state.devices.first.isOn);
+    await _disposeWidgetTree(tester);
+  });
 
   testWidgets('相似商品可以合并、新建或取消并保留表单', (tester) async {
     final inventory = InventoryService(InventoryRepository(database));

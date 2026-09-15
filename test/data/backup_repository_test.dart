@@ -6,6 +6,7 @@ import 'package:momo_box/core/database/app_database.dart';
 import 'package:momo_box/data/repositories/backup_repository.dart';
 import 'package:momo_box/data/repositories/inventory_repository.dart';
 import 'package:momo_box/data/repositories/reminder_repository.dart';
+import 'package:momo_box/data/repositories/settings_repository.dart';
 import 'package:momo_box/domain/models/inventory_models.dart';
 
 Map<String, Object?> validProduct() => {
@@ -63,6 +64,98 @@ void main() {
     for (final extraDatabase in extraDatabases) {
       await extraDatabase.close();
     }
+    extraDatabases.clear();
+  });
+
+  test('仅配置主 AI 时，空副服务和兜底设置可导出恢复', () async {
+    final settings = SettingsRepository(database);
+    final values = {
+      'ai_api_endpoint': 'https://example.invalid/v1',
+      'ai_model': 'primary-model',
+      'ai_secondary_endpoint': '',
+      'ai_secondary_model': '',
+      'ai_fallback_endpoint': '',
+      'ai_fallback_model': '',
+      'ai_secondary_profile_id': '',
+      'ai_fallback_profile_id': '',
+    };
+    for (final entry in values.entries) {
+      await settings.setValue(entry.key, entry.value);
+    }
+    final target = AppDatabase.forTesting(NativeDatabase.memory());
+    extraDatabases.add(target);
+    final restore = BackupRepository(target);
+    final backup = await repository.exportJson();
+    final report = await restore.importJson(backup);
+    expect(report.imported, values.length);
+    final rows = await target.select(target.appSettings).get();
+    expect({for (final row in rows) row.key: row.value}, values);
+    final repeated = await restore.importJson(backup);
+    expect(repeated.imported, 0);
+    expect(repeated.skipped, values.length);
+  });
+
+  for (final matchesLocalBatch in [false, true]) {
+    test('重复批次保留本地商品关系：新流水匹配本地=$matchesLocalBatch', () async {
+      final local = backupWithInvalidReference()
+        ..['batches'] = [{...batchForUnknownProduct(), 'product_id': 'product-1'}];
+      await repository.importJson(jsonEncode(local));
+      final incoming = backupWithInvalidReference()
+        ..['products'] = [{...validProduct(), 'id': 'product-2'}]
+        ..['batches'] = [{...batchForUnknownProduct(), 'product_id': 'product-2'}]
+        ..['stock_movements'] = [
+          {
+            'id': 'movement-new',
+            'product_id': matchesLocalBatch ? 'product-1' : 'product-2',
+            'batch_id': 'batch-1',
+            'type': 'intake',
+            'quantity': 1,
+            'note': null,
+            'created_at': '2026-09-15T00:00:00.000',
+          },
+        ];
+      if (matchesLocalBatch) {
+        final report = await repository.importJson(jsonEncode(incoming));
+        expect(report.imported, 2);
+        expect(report.skipped, 1);
+        final movement = await database.select(database.stockMovements).getSingle();
+        expect(movement.productId, 'product-1');
+      } else {
+        await expectLater(
+          repository.importJson(jsonEncode(incoming)),
+          throwsA(isA<BackupImportException>()),
+        );
+        expect(await database.select(database.stockMovements).get(), isEmpty);
+        expect(await database.select(database.products).get(), hasLength(1));
+      }
+      final batch = await database.select(database.productBatches).getSingle();
+      expect(batch.productId, 'product-1');
+    });
+  }
+
+  test('跳过的批次、流水和采购记录不参与新引用校验', () async {
+    final inventory = InventoryRepository(database);
+    await inventory.createProductWithBatch(const IntakeDraft(
+      name: '本地物品', category: '其他物品', quantity: 1,
+    ));
+    await database.into(database.shoppingEntries).insert(ShoppingEntriesCompanion.insert(
+      id: 'shopping-existing', itemName: '本地采购项',
+      createdAt: DateTime(2026, 9, 15), updatedAt: DateTime(2026, 9, 15),
+    ));
+    final backup = jsonDecode(await repository.exportJson()) as Map<String, dynamic>;
+    for (final row in backup['batches'] as List) {
+      (row as Map<String, dynamic>)['product_id'] = 'missing-product';
+    }
+    for (final row in backup['stock_movements'] as List) {
+      (row as Map<String, dynamic>)['product_id'] = 'missing-product';
+      row['batch_id'] = 'missing-batch';
+    }
+    for (final row in backup['shopping_entries'] as List) {
+      (row as Map<String, dynamic>)['product_id'] = 'missing-product';
+    }
+    final report = await repository.importJson(jsonEncode(backup));
+    expect(report.imported, 0);
+    expect(report.skipped, 4);
   });
 
   test('引用不存在时返回带 section/index/message 的失败明细并保持空库', () async {
