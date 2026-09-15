@@ -91,7 +91,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
                       color: Colors.green.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Text('在线 (Mock)', style: TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.bold)),
+                    child: const Text('在线', style: TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),

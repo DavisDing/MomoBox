@@ -71,6 +71,17 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
     state = state.copyWith(devices: _repository.devices);
   }
 
+
+  void setClimateMode(String id, String mode) {
+    _repository.setClimateMode(id, mode);
+    state = state.copyWith(devices: _repository.devices);
+  }
+
+  void setClimateWindSpeed(String id, String speed) {
+    _repository.setClimateWindSpeed(id, speed);
+    state = state.copyWith(devices: _repository.devices);
+  }
+
   void updateClimateTemperature(String id, double delta) {
     _repository.updateClimateTemperature(id, delta);
     state = state.copyWith(devices: _repository.devices);

@@ -35,6 +35,7 @@ class SmartDevice {
     this.brightness = 80,
     this.temperature = 25.0,
     this.mode = '制冷',
+    this.windSpeed = '自动',
     this.statusText = '已就绪',
     this.washerState = WasherState.idle,
     this.isReachable = true,
@@ -47,7 +48,8 @@ class SmartDevice {
   final bool isOn;
   final int brightness; // 0 - 100
   final double temperature; // 16.0 - 30.0
-  final String mode; // 制冷 / 制热 / 送风
+  final String mode; // 制冷 / 制热 / 送风 / 除湿
+  final String windSpeed; // 自动 / 低速 / 中速 / 高速
   final String statusText;
   final WasherState washerState;
   final bool isReachable;
@@ -61,6 +63,7 @@ class SmartDevice {
     int? brightness,
     double? temperature,
     String? mode,
+    String? windSpeed,
     String? statusText,
     WasherState? washerState,
     bool? isReachable,
@@ -74,6 +77,7 @@ class SmartDevice {
       brightness: brightness ?? this.brightness,
       temperature: temperature ?? this.temperature,
       mode: mode ?? this.mode,
+      windSpeed: windSpeed ?? this.windSpeed,
       statusText: statusText ?? this.statusText,
       washerState: washerState ?? this.washerState,
       isReachable: isReachable ?? this.isReachable,

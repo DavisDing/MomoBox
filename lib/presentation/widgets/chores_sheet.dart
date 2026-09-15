@@ -22,6 +22,9 @@ class ChoresSheet extends ConsumerStatefulWidget {
 }
 
 class _ChoresSheetState extends ConsumerState<ChoresSheet> {
+  String _searchKeyword = '';
+  String _selectedCategory = '全部';
+
   @override
   Widget build(BuildContext context) {
     final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
@@ -29,7 +32,7 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
     final choresAsync = ref.watch(choresProvider);
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.85,
+      initialChildSize: 0.88,
       minChildSize: 0.5,
       maxChildSize: 0.95,
       expand: false,
@@ -63,7 +66,7 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                   IconButton(
                     tooltip: '添加新提醒',
                     icon: Icon(Icons.add_circle_outline_rounded, color: palette.primary),
-                    onPressed: () => _showAddChoreDialog(context),
+                    onPressed: () => _showChoreEditDialog(context),
                   ),
                   IconButton(
                     icon: const Icon(Icons.close),
@@ -72,13 +75,68 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                 ],
               ),
             ),
+
+            // 搜索与分类过滤栏（查）
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: TextField(
+                decoration: InputDecoration(
+                  hintText: '搜索周期提醒事项或备注...',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  suffixIcon: _searchKeyword.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          onPressed: () => setState(() => _searchKeyword = ''),
+                        )
+                      : null,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  isDense: true,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onChanged: (val) => setState(() => _searchKeyword = val.trim()),
+              ),
+            ),
+            const SizedBox(height: 6),
+
+            // 分类筛选小胶囊
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: ['全部', '家居清洁', '个人卫生', '耗材更换', '设备维护'].map((cat) {
+                  final isSelected = _selectedCategory == cat;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: FilterChip(
+                      label: Text(cat, style: const TextStyle(fontSize: 12)),
+                      selected: isSelected,
+                      visualDensity: VisualDensity.compact,
+                      selectedColor: palette.primary.withValues(alpha: 0.18),
+                      onSelected: (_) => setState(() => _selectedCategory = cat),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+
+            const SizedBox(height: 6),
             const Divider(height: 1),
+
             // 列表
             Expanded(
               child: choresAsync.when(
                 loading: () => const Center(child: CircularProgressIndicator()),
                 error: (e, _) => Center(child: Text('加载失败：$e')),
-                data: (chores) {
+                data: (allChores) {
+                  // 根据搜索词和类别过滤（查）
+                  final chores = allChores.where((item) {
+                    final matchCategory = _selectedCategory == '全部' || item.category == _selectedCategory;
+                    final matchKeyword = _searchKeyword.isEmpty ||
+                        item.title.contains(_searchKeyword) ||
+                        (item.notes != null && item.notes!.contains(_searchKeyword));
+                    return matchCategory && matchKeyword;
+                  }).toList();
+
                   if (chores.isEmpty) {
                     return Center(
                       child: Column(
@@ -86,10 +144,15 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                         children: [
                           const Icon(Icons.check_circle_outline_rounded, size: 48, color: Colors.grey),
                           const SizedBox(height: 12),
-                          const Text('暂无周期提醒', style: TextStyle(color: Colors.grey)),
+                          Text(
+                            _searchKeyword.isNotEmpty || _selectedCategory != '全部'
+                                ? '未找到符合条件的周期提醒'
+                                : '暂无周期提醒',
+                            style: const TextStyle(color: Colors.grey),
+                          ),
                           const SizedBox(height: 8),
                           FilledButton.tonal(
-                            onPressed: () => _showAddChoreDialog(context),
+                            onPressed: () => _showChoreEditDialog(context),
                             child: const Text('添加一项（如换床单、洗浴巾）'),
                           ),
                         ],
@@ -118,90 +181,143 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                             width: isDue ? 1.5 : 1,
                           ),
                         ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: palette.primary.withValues(alpha: 0.12),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Text(
-                                      item.category,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                        color: palette.primary,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(16),
+                          onTap: () => _showChoreEditDialog(context, item: item),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: palette.primary.withValues(alpha: 0.12),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        item.category,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: palette.primary,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      item.title,
-                                      style: const TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.bold,
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        item.title,
+                                        style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.bold,
+                                          decoration: item.isEnabled ? null : TextDecoration.lineThrough,
+                                          color: item.isEnabled ? null : Colors.grey,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  // 打卡完成按钮
-                                  FilledButton.tonalIcon(
-                                    style: FilledButton.styleFrom(
-                                      visualDensity: VisualDensity.compact,
-                                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                                    // 打卡完成按钮
+                                    FilledButton.tonalIcon(
+                                      style: FilledButton.styleFrom(
+                                        visualDensity: VisualDensity.compact,
+                                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                                      ),
+                                      icon: const Icon(Icons.check, size: 16),
+                                      label: const Text('已完成', style: TextStyle(fontSize: 12)),
+                                      onPressed: () async {
+                                        await ref.read(choreServiceProvider).completeChore(item.id);
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: Text('已完成「${item.title}」，下一次提醒将于 ${item.intervalDays} 天后。'),
+                                              duration: const Duration(seconds: 2),
+                                            ),
+                                          );
+                                        }
+                                      },
                                     ),
-                                    icon: const Icon(Icons.check, size: 16),
-                                    label: const Text('已完成', style: TextStyle(fontSize: 12)),
-                                    onPressed: () async {
-                                      await ref.read(choreServiceProvider).completeChore(item.id);
-                                      if (context.mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Text('已完成「${item.title}」，下一次提醒将于 ${item.intervalDays} 天后。'),
-                                            duration: const Duration(seconds: 2),
+                                    const SizedBox(width: 4),
+                                    // 更多操作菜单（编辑、开关、删除）
+                                    PopupMenuButton<String>(
+                                      icon: const Icon(Icons.more_vert_rounded, size: 20, color: Colors.grey),
+                                      padding: EdgeInsets.zero,
+                                      onSelected: (action) async {
+                                        if (action == 'edit') {
+                                          _showChoreEditDialog(context, item: item);
+                                        } else if (action == 'toggle') {
+                                          await ref.read(choreServiceProvider).toggleChore(item.id, !item.isEnabled);
+                                        } else if (action == 'delete') {
+                                          _confirmDeleteChore(context, item);
+                                        }
+                                      },
+                                      itemBuilder: (_) => [
+                                        const PopupMenuItem(
+                                          value: 'edit',
+                                          child: Row(
+                                            children: [
+                                              Icon(Icons.edit_outlined, size: 18),
+                                              SizedBox(width: 8),
+                                              Text('编辑详情'),
+                                            ],
                                           ),
-                                        );
-                                      }
-                                    },
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  Icon(Icons.update_rounded, size: 14, color: theme.hintColor),
-                                  const SizedBox(width: 4),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'toggle',
+                                          child: Row(
+                                            children: [
+                                              Icon(item.isEnabled ? Icons.pause_circle_outline : Icons.play_circle_outline, size: 18),
+                                              const SizedBox(width: 8),
+                                              Text(item.isEnabled ? '暂停提醒' : '启用提醒'),
+                                            ],
+                                          ),
+                                        ),
+                                        const PopupMenuItem(
+                                          value: 'delete',
+                                          child: Row(
+                                            children: [
+                                              Icon(Icons.delete_outline, color: Colors.red, size: 18),
+                                              SizedBox(width: 8),
+                                              Text('删除提醒', style: TextStyle(color: Colors.red)),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Icon(Icons.update_rounded, size: 14, color: theme.hintColor),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '频率：${item.repeatDescription}',
+                                      style: TextStyle(fontSize: 12, color: theme.hintColor),
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      isDue
+                                          ? (days < 0 ? '已逾期 ${-days} 天' : '今日待办')
+                                          : '还有 $days 天到期',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: isDue ? Colors.redAccent : palette.primary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (item.notes != null && item.notes!.isNotEmpty) ...[
+                                  const SizedBox(height: 4),
                                   Text(
-                                    '频率：${item.repeatDescription}',
+                                    item.notes!,
                                     style: TextStyle(fontSize: 12, color: theme.hintColor),
                                   ),
-                                  const Spacer(),
-                                  Text(
-                                    isDue
-                                        ? (days < 0 ? '已逾期 ${-days} 天' : '今日待办')
-                                        : '还有 $days 天到期',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                      color: isDue ? Colors.redAccent : palette.primary,
-                                    ),
-                                  ),
                                 ],
-                              ),
-                              if (item.notes != null && item.notes!.isNotEmpty) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  item.notes!,
-                                  style: TextStyle(fontSize: 12, color: theme.hintColor),
-                                ),
                               ],
-                            ],
+                            ),
                           ),
                         ),
                       );
@@ -216,17 +332,53 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
     );
   }
 
-  void _showAddChoreDialog(BuildContext context) {
-    final titleController = TextEditingController();
-    final notesController = TextEditingController();
-    var category = '家居清洁';
-    var interval = ChoreRepeatInterval.weekly;
+  /// 确认删除周期提醒
+  void _confirmDeleteChore(BuildContext context, ChoreItem item) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('删除周期提醒'),
+        content: Text('确定要删除周期提醒「${item.title}」吗？此操作无法撤销。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              Navigator.pop(dialogCtx);
+              await ref.read(choreServiceProvider).deleteChore(item.id);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('已删除「${item.title}」')),
+                );
+              }
+            },
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 添加（增）或编辑（改）周期提醒
+  void _showChoreEditDialog(BuildContext context, {ChoreItem? item}) {
+    final isEditing = item != null;
+    final titleController = TextEditingController(text: item?.title ?? '');
+    final notesController = TextEditingController(text: item?.notes ?? '');
+    var category = item?.category ?? '家居清洁';
+    var interval = item?.repeatInterval ?? ChoreRepeatInterval.weekly;
+    DateTime nextDueDate = item?.nextDueDate ?? DateTime.now().add(const Duration(days: 7));
 
     showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('添加周期提醒', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+          title: Text(
+            isEditing ? '编辑周期提醒' : '添加周期提醒',
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+          ),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -241,7 +393,7 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
-                  initialValue: category,
+                  value: category,
                   decoration: const InputDecoration(labelText: '类别'),
                   items: const [
                     DropdownMenuItem(value: '家居清洁', child: Text('家居清洁')),
@@ -255,7 +407,7 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<ChoreRepeatInterval>(
-                  initialValue: interval,
+                  value: interval,
                   decoration: const InputDecoration(labelText: '重复周期'),
                   items: const [
                     DropdownMenuItem(value: ChoreRepeatInterval.daily, child: Text('每天')),
@@ -265,8 +417,47 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                     DropdownMenuItem(value: ChoreRepeatInterval.quarterly, child: Text('每季度 (90天)')),
                   ],
                   onChanged: (val) {
-                    if (val != null) setDialogState(() => interval = val);
+                    if (val != null) {
+                      setDialogState(() {
+                        interval = val;
+                        // 自动调整下一次到期时间预设
+                        final days = switch (val) {
+                          ChoreRepeatInterval.daily => 1,
+                          ChoreRepeatInterval.weekly => 7,
+                          ChoreRepeatInterval.biweekly => 14,
+                          ChoreRepeatInterval.monthly => 30,
+                          ChoreRepeatInterval.quarterly => 90,
+                        };
+                        nextDueDate = DateTime.now().add(Duration(days: days));
+                      });
+                    }
                   },
+                ),
+                const SizedBox(height: 12),
+                // 下一次提醒日期选择
+                InkWell(
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: nextDueDate,
+                      firstDate: DateTime.now().subtract(const Duration(days: 365)),
+                      lastDate: DateTime.now().add(const Duration(days: 3650)),
+                    );
+                    if (picked != null) {
+                      setDialogState(() => nextDueDate = picked);
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(8),
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: '下次提醒日期',
+                      suffixIcon: Icon(Icons.calendar_today_outlined, size: 18),
+                    ),
+                    child: Text(
+                      '${nextDueDate.year}-${nextDueDate.month.toString().padLeft(2, "0")}-${nextDueDate.day.toString().padLeft(2, "0")}',
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -280,6 +471,15 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
             ),
           ),
           actions: [
+            if (isEditing)
+              TextButton(
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  _confirmDeleteChore(context, item);
+                },
+                child: const Text('删除'),
+              ),
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
               child: const Text('取消'),
@@ -288,12 +488,26 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
               onPressed: () async {
                 final title = titleController.text.trim();
                 if (title.isEmpty) return;
-                await ref.read(choreServiceProvider).addChore(
-                      title: title,
-                      category: category,
-                      repeatInterval: interval,
-                      notes: notesController.text.trim(),
-                    );
+
+                if (isEditing) {
+                  await ref.read(choreServiceProvider).updateChore(
+                        id: item.id,
+                        title: title,
+                        category: category,
+                        repeatInterval: interval,
+                        nextDueDate: nextDueDate,
+                        notes: notesController.text.trim(),
+                      );
+                } else {
+                  await ref.read(choreServiceProvider).addChore(
+                        title: title,
+                        category: category,
+                        repeatInterval: interval,
+                        nextDueDate: nextDueDate,
+                        notes: notesController.text.trim(),
+                      );
+                }
+
                 if (dialogContext.mounted) {
                   Navigator.pop(dialogContext);
                 }

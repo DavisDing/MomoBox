@@ -85,6 +85,36 @@ class ChoreService {
     return updatedItem;
   }
 
+
+  /// 编辑更新周期家务
+  Future<void> updateChore({
+    required String id,
+    required String title,
+    required String category,
+    required ChoreRepeatInterval repeatInterval,
+    DateTime? nextDueDate,
+    String? notes,
+    bool? isEnabled,
+  }) async {
+    final chores = await getChores();
+    final index = chores.indexWhere((c) => c.id == id);
+    if (index == -1) return;
+
+    final existing = chores[index];
+    final updatedItem = existing.copyWith(
+      title: title.trim(),
+      category: category.trim(),
+      repeatInterval: repeatInterval,
+      nextDueDate: nextDueDate ?? existing.nextDueDate,
+      notes: notes?.trim(),
+      isEnabled: isEnabled ?? existing.isEnabled,
+    );
+
+    final updatedList = List<ChoreItem>.from(chores);
+    updatedList[index] = updatedItem;
+    await _saveChores(updatedList);
+  }
+
   /// 删除家务
   Future<void> deleteChore(String id) async {
     final chores = await getChores();

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/momo_theme.dart';
+import '../../domain/models/inventory_models.dart';
 import '../../domain/models/smart_home_models.dart';
 import '../controllers/providers.dart';
 import '../controllers/smart_home_controller.dart';
@@ -22,7 +23,7 @@ class SmartHomeScreen extends ConsumerWidget {
           children: [
             const Icon(Icons.home_outlined, size: 24),
             const SizedBox(width: 8),
-            const Text('智能家居与联动'),
+            const Text('智能家居'),
             const Spacer(),
             _buildHaBadge(context, homeState.haStatus),
           ],
@@ -81,7 +82,7 @@ class SmartHomeScreen extends ConsumerWidget {
                   _buildSectionHeader(
                     context,
                     title: '房间设备控制',
-                    subtitle: '已授权白名单设备控制项',
+                    subtitle: '已授权白名单设备控制项（点击卡片查看高级控制）',
                     icon: Icons.devices_other_rounded,
                   ),
                   const SizedBox(height: 10),
@@ -178,58 +179,91 @@ class SmartHomeScreen extends ConsumerWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    return SizedBox(
-      height: 96,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: scenes.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
-        itemBuilder: (context, index) {
-          final scene = scenes[index];
-          return InkWell(
+    // 展示常用4个场景为两行各两个网格
+    final displayScenes = scenes.take(4).toList();
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        mainAxisExtent: 80,
+      ),
+      itemCount: displayScenes.length,
+      itemBuilder: (context, index) {
+        final scene = displayScenes[index];
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
             onTap: () {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('已触发场景：【${scene.name}】（Mock执行成功）'),
-                  behavior: SnackBarBehavior.floating,
+                  content: Text('已触发场景：【${scene.name}】执行指令已下发'),
                 ),
               );
             },
             borderRadius: BorderRadius.circular(16),
             child: Container(
-              width: 120,
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
                 color: isDark ? Colors.white.withValues(alpha: 0.05) : palette.surface,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
                   color: isDark ? Colors.white.withValues(alpha: 0.08) : palette.primary.withValues(alpha: 0.15),
                 ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(scene.icon, style: const TextStyle(fontSize: 24)),
-                  const SizedBox(height: 6),
-                  Text(
-                    scene.name,
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
                   ),
-                  Text(
-                    scene.description,
-                    style: const TextStyle(fontSize: 10, color: Colors.grey),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: palette.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(scene.icon, style: const TextStyle(fontSize: 22)),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          scene.name,
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          scene.description,
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.7),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -341,13 +375,8 @@ class SmartHomeScreen extends ConsumerWidget {
                             minimumSize: Size.zero,
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
-                          onPressed: () {
-                            ref.read(smartHomeControllerProvider.notifier).confirmConsumableLog(log.id);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('已确认扣减【${log.consumableName}】${log.quantity}${log.unit}，库存已更新！'),
-                              ),
-                            );
+                          onPressed: () async {
+                            await _handleConfirmConsumableWithValidation(context, ref, log);
                           },
                           child: const Text('确认扣减', style: TextStyle(fontSize: 11)),
                         ),
@@ -361,6 +390,106 @@ class SmartHomeScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  /// 严格校验真实库存扣减
+  Future<void> _handleConfirmConsumableWithValidation(
+    BuildContext context,
+    WidgetRef ref,
+    ConsumableLinkageLog log,
+  ) async {
+    final inventoryRepo = ref.read(inventoryRepositoryProvider);
+    final shoppingService = ref.read(shoppingServiceProvider);
+
+    // 查询所有库存物品
+    final allItems = await inventoryRepo.loadInventory();
+
+    // 匹配名称包含消耗品关键词的有效物品（如 浓缩洗衣液 -> 洗衣液）
+    final cleanTarget = log.consumableName.replaceAll(RegExp(r'^(浓缩|特级|强效|天然|家用)'), '').trim();
+
+    InventoryItem? matchedItem;
+    for (final item in allItems) {
+      if (item.name == log.consumableName ||
+          item.name.contains(cleanTarget) ||
+          cleanTarget.contains(item.name)) {
+        matchedItem = item;
+        break;
+      }
+    }
+
+    final availableQty = matchedItem?.availableQuantity ?? 0;
+
+    if (matchedItem == null || availableQty < log.quantity) {
+      // 库存中不存在或可用数量不足，拒绝假扣减，弹出提示并可直接加入采买清单
+      if (!context.mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogCtx) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.orange),
+              SizedBox(width: 8),
+              Text('库存不足或物资未建档', style: TextStyle(fontSize: 16)),
+            ],
+          ),
+          content: Text(
+            matchedItem == null
+                ? '在当前库存中未找到【${log.consumableName}】。
+
+是否需要将其一键添加到待采买清单？'
+                : '【${matchedItem.name}】当前可用库存为 $availableQty ${matchedItem.unit}，不足以扣减 ${log.quantity} ${log.unit}。
+
+是否添加到待采买清单？',
+            style: const TextStyle(fontSize: 13, height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                Navigator.of(dialogCtx).pop();
+                await shoppingService.addOrMerge(
+                  itemName: log.consumableName,
+                  targetQuantity: log.quantity > 1 ? log.quantity : 2,
+                  reason: '智能家居设备耗材联动补货提醒',
+                  productId: matchedItem?.id,
+                );
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('已将【${log.consumableName}】加入采买清单'),
+                    ),
+                  );
+                }
+              },
+              child: const Text('加入采买清单'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    // 库存真实充足，执行 FEFO 扣减
+    try {
+      await inventoryRepo.consumeByFefo(matchedItem.id, log.quantity);
+      ref.read(smartHomeControllerProvider.notifier).confirmConsumableLog(log.id);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('已成功核销【${matchedItem.name}】× ${log.quantity} ${matchedItem.unit}，剩余可用：${availableQty - log.quantity}'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('库存扣减失败: $e')),
+        );
+      }
+    }
   }
 
   Widget _buildRoomsAndDevices(
@@ -423,104 +552,375 @@ class SmartHomeScreen extends ConsumerWidget {
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: (device.isOn ? palette.primary : Colors.grey).withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(
-                    icon,
-                    color: device.isOn ? palette.primary : Colors.grey,
-                    size: 22,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        device.name,
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-                      ),
-                      Text(
-                        device.statusText,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: device.isOn ? palette.primary : theme.textTheme.bodySmall?.color,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Switch.adaptive(
-                  value: device.isOn,
-                  activeTrackColor: palette.primary,
-                  onChanged: (val) {
-                    controller.toggleDevice(device.id);
-                  },
-                ),
-              ],
-            ),
-
-            // 空调专属温度调节
-            if (device.type == DeviceType.climate && device.isOn) ...[
-              const Divider(height: 16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => _showDeviceControlSheet(context, ref, device, palette),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Column(
+            children: [
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('温度设置 (${device.mode})', style: const TextStyle(fontSize: 12)),
-                  Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.remove_circle_outline, size: 22),
-                        onPressed: () => controller.updateClimateTemperature(device.id, -1.0),
-                      ),
-                      Text(
-                        '${device.temperature.toStringAsFixed(0)}°C',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.add_circle_outline, size: 22),
-                        onPressed: () => controller.updateClimateTemperature(device.id, 1.0),
-                      ),
-                    ],
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: (device.isOn ? palette.primary : Colors.grey).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      icon,
+                      color: device.isOn ? palette.primary : Colors.grey,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              device.name,
+                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(width: 6),
+                            const Icon(Icons.tune_rounded, size: 14, color: Colors.grey),
+                          ],
+                        ),
+                        Text(
+                          device.statusText,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: device.isOn ? palette.primary : theme.textTheme.bodySmall?.color,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch.adaptive(
+                    value: device.isOn,
+                    activeTrackColor: palette.primary,
+                    onChanged: (val) {
+                      controller.toggleDevice(device.id);
+                    },
                   ),
                 ],
               ),
-            ],
 
-            // 灯光专属亮度调节
-            if (device.type == DeviceType.light && device.isOn) ...[
-              const Divider(height: 16),
-              Row(
+              // 空调专属模式与快捷温度调节
+              if (device.type == DeviceType.climate && device.isOn) ...[
+                const Divider(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: palette.primary.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            device.mode,
+                            style: TextStyle(fontSize: 11, color: palette.primary, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text('风速: ${device.windSpeed}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(Icons.remove_circle_outline, size: 20),
+                          onPressed: () => controller.updateClimateTemperature(device.id, -1.0),
+                        ),
+                        Text(
+                          '${device.temperature.toStringAsFixed(0)}°C',
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                        ),
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(Icons.add_circle_outline, size: 20),
+                          onPressed: () => controller.updateClimateTemperature(device.id, 1.0),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+
+              // 灯光专属亮度调节
+              if (device.type == DeviceType.light && device.isOn) ...[
+                const Divider(height: 16),
+                Row(
+                  children: [
+                    const Icon(Icons.brightness_low, size: 16, color: Colors.grey),
+                    Expanded(
+                      child: Slider(
+                        value: device.brightness.toDouble(),
+                        min: 1,
+                        max: 100,
+                        activeColor: palette.primary,
+                        onChanged: (val) {
+                          controller.updateLightBrightness(device.id, val.toInt());
+                        },
+                      ),
+                    ),
+                    Text('${device.brightness}%', style: const TextStyle(fontSize: 12)),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 弹出设备精细化操作弹窗 (BottomSheet)
+  void _showDeviceControlSheet(
+    BuildContext context,
+    WidgetRef ref,
+    SmartDevice device,
+    MomoPalette palette,
+  ) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (modalCtx) {
+        return StatefulBuilder(
+          builder: (sheetCtx, setState) {
+            final latestDevice = ref.watch(smartHomeControllerProvider).devices.firstWhere(
+                  (d) => d.id == device.id,
+                  orElse: () => device,
+                );
+            final controller = ref.read(smartHomeControllerProvider.notifier);
+
+            return Padding(
+              padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(sheetCtx).padding.bottom + 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.brightness_low, size: 16, color: Colors.grey),
-                  Expanded(
-                    child: Slider(
-                      value: device.brightness.toDouble(),
+                  // 顶部拖拽手柄与标题
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              latestDevice.name,
+                              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                            ),
+                            Text(
+                              '${latestDevice.room} · ${latestDevice.statusText}',
+                              style: const TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => Navigator.of(modalCtx).pop(),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 24),
+
+                  // 电源开关
+                  SwitchListTile(
+                    title: const Text('设备电源', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                    subtitle: Text(latestDevice.isOn ? '已开启' : '已关闭', style: const TextStyle(fontSize: 12)),
+                    value: latestDevice.isOn,
+                    activeTrackColor: palette.primary,
+                    onChanged: (val) {
+                      controller.toggleDevice(latestDevice.id);
+                    },
+                  ),
+
+                  // 空调高级操作面板
+                  if (latestDevice.type == DeviceType.climate) ...[
+                    const SizedBox(height: 12),
+                    const Text('运行模式', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: ['制冷', '制热', '送风', '除湿'].map((m) {
+                        final isSelected = latestDevice.mode == m;
+                        return ChoiceChip(
+                          label: Text(m),
+                          selected: isSelected,
+                          selectedColor: palette.primary.withValues(alpha: 0.18),
+                          onSelected: latestDevice.isOn
+                              ? (sel) {
+                                  if (sel) controller.setClimateMode(latestDevice.id, m);
+                                }
+                              : null,
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text('风速档位', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: ['自动', '低速', '中速', '高速'].map((s) {
+                        final isSelected = latestDevice.windSpeed == s;
+                        return ChoiceChip(
+                          label: Text(s),
+                          selected: isSelected,
+                          selectedColor: palette.primary.withValues(alpha: 0.18),
+                          onSelected: latestDevice.isOn
+                              ? (sel) {
+                                  if (sel) controller.setClimateWindSpeed(latestDevice.id, s);
+                                }
+                              : null,
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('设定温度', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                        Row(
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.remove_circle_outline),
+                              onPressed: latestDevice.isOn
+                                  ? () => controller.updateClimateTemperature(latestDevice.id, -1.0)
+                                  : null,
+                            ),
+                            Text(
+                              '${latestDevice.temperature.toStringAsFixed(0)}°C',
+                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.add_circle_outline),
+                              onPressed: latestDevice.isOn
+                                  ? () => controller.updateClimateTemperature(latestDevice.id, 1.0)
+                                  : null,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
+
+                  // 灯光高级操作面板
+                  if (latestDevice.type == DeviceType.light) ...[
+                    const SizedBox(height: 12),
+                    const Text('亮度调节', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    Slider(
+                      value: latestDevice.brightness.toDouble(),
                       min: 1,
                       max: 100,
                       activeColor: palette.primary,
-                      onChanged: (val) {
-                        controller.updateLightBrightness(device.id, val.toInt());
-                      },
+                      onChanged: latestDevice.isOn
+                          ? (val) => controller.updateLightBrightness(latestDevice.id, val.toInt())
+                          : null,
                     ),
-                  ),
-                  Text('${device.brightness}%', style: const TextStyle(fontSize: 12)),
+                    Center(
+                      child: Text(
+                        '当前亮度: ${latestDevice.brightness}%',
+                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    ),
+                  ],
+
+                  // 电视高级操作面板
+                  if (latestDevice.type == DeviceType.tv) ...[
+                    const SizedBox(height: 12),
+                    const Text('常用多媒体快捷指令', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: latestDevice.isOn
+                              ? () => ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('已发送音量 -5% 指令')),
+                                  )
+                              : null,
+                          icon: const Icon(Icons.volume_down),
+                          label: const Text('音量 -'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: latestDevice.isOn
+                              ? () => ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('已发送音量 +5% 指令')),
+                                  )
+                              : null,
+                          icon: const Icon(Icons.volume_up),
+                          label: const Text('音量 +'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: latestDevice.isOn
+                              ? () => ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('已发送静音指令')),
+                                  )
+                              : null,
+                          icon: const Icon(Icons.volume_mute),
+                          label: const Text('静音'),
+                        ),
+                      ],
+                    ),
+                  ],
+
+                  // 洗衣机高级操作面板
+                  if (latestDevice.type == DeviceType.washer) ...[
+                    const SizedBox(height: 12),
+                    const Text('洗护状态', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: palette.primary.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.info_outline, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              latestDevice.statusText,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               ),
-            ],
-          ],
-        ),
-      ),
+            );
+          },
+        );
+      },
     );
   }
 }

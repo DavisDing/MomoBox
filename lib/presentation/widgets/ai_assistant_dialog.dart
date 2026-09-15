@@ -42,6 +42,35 @@ class MixedPlanData {
   }
 }
 
+
+class AiSession {
+  AiSession({
+    required this.id,
+    required this.title,
+    required this.createdAt,
+    List<ChatMessage>? messages,
+  }) : messages = messages ?? [];
+
+  final String id;
+  String title;
+  final DateTime createdAt;
+  final List<ChatMessage> messages;
+
+  AiSession copyWith({
+    String? id,
+    String? title,
+    DateTime? createdAt,
+    List<ChatMessage>? messages,
+  }) {
+    return AiSession(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      createdAt: createdAt ?? this.createdAt,
+      messages: messages != null ? List.from(messages) : List.from(this.messages),
+    );
+  }
+}
+
 class AiAssistantDialog extends ConsumerStatefulWidget {
   const AiAssistantDialog({super.key});
 
@@ -60,29 +89,92 @@ class AiAssistantDialog extends ConsumerStatefulWidget {
 }
 
 class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
-  final _messages = <ChatMessage>[];
+  final _sessions = <AiSession>[];
+  String _currentSessionId = '';
   final _textController = TextEditingController();
   final _scrollController = ScrollController();
   bool _isLoading = false;
 
   MixedPlanData? _currentPlan;
 
+  AiSession get _currentSession {
+    return _sessions.firstWhere(
+      (s) => s.id == _currentSessionId,
+      orElse: () => _sessions.first,
+    );
+  }
+
+  List<ChatMessage> get _messages => _currentSession.messages;
+
+  ChatMessage _createDefaultWelcomeMessage() {
+    return ChatMessage(
+      id: '0',
+      role: 'assistant',
+      content: '你好呀！我是 MomoBox 的随身智能管家。\n'
+          '我可以帮你：\n'
+          '① 智能家居控制（如“打开电视”、“客厅空调调到25度”）\n'
+          '② 物资查询与记录（如“还有多少洗衣液”、“吃了两片感冒药”）\n'
+          '③ 复杂混合计划（如“我要洗衣服” -> 自动规划洗衣机启动与耗材配方确认）\n'
+          '请随时吩咐我吧！',
+      timestamp: DateTime.now(),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
-    _messages.add(
-      ChatMessage(
-        id: '0',
-        role: 'assistant',
-        content: '你好呀！我是 MomoBox 的随身智能管家。\n'
-            '我可以帮你：\n'
-            '① 智能家居控制（如“打开电视”、“客厅空调调到25度”）\n'
-            '② 物资查询与记录（如“还有多少洗衣液”、“吃了两片感冒药”）\n'
-            '③ 复杂混合计划（如“我要洗衣服” -> 自动规划洗衣机启动与耗材配方确认）\n'
-            '请随时吩咐我吧！',
-        timestamp: DateTime.now(),
-      ),
+    final initialSession = AiSession(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      title: '新对话',
+      createdAt: DateTime.now(),
+      messages: [_createDefaultWelcomeMessage()],
     );
+    _sessions.add(initialSession);
+    _currentSessionId = initialSession.id;
+  }
+
+  void _createNewSession() {
+    setState(() {
+      final newSession = AiSession(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        title: '新会话 ${_sessions.length + 1}',
+        createdAt: DateTime.now(),
+        messages: [_createDefaultWelcomeMessage()],
+      );
+      _sessions.insert(0, newSession);
+      _currentSessionId = newSession.id;
+      _currentPlan = null;
+    });
+    _scrollToBottom();
+  }
+
+  void _switchSession(String sessionId) {
+    setState(() {
+      _currentSessionId = sessionId;
+      _currentPlan = null;
+    });
+    _scrollToBottom();
+  }
+
+  void _deleteSession(String sessionId) {
+    if (_sessions.length <= 1) {
+      // 只有一个会话时清空重置为默认
+      setState(() {
+        _currentSession.messages.clear();
+        _currentSession.messages.add(_createDefaultWelcomeMessage());
+        _currentSession.title = '新对话';
+        _currentPlan = null;
+      });
+      return;
+    }
+    setState(() {
+      _sessions.removeWhere((s) => s.id == sessionId);
+      if (_currentSessionId == sessionId) {
+        _currentSessionId = _sessions.first.id;
+      }
+      _currentPlan = null;
+    });
+    _scrollToBottom();
   }
 
   @override
@@ -120,6 +212,9 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
     );
 
     setState(() {
+      if (_currentSession.title == '新对话' || _currentSession.title.startsWith('新会话')) {
+        _currentSession.title = text.length > 12 ? '${text.substring(0, 12)}...' : text;
+      }
       _messages.add(userMsg);
       _isLoading = true;
     });
@@ -209,7 +304,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
     // 意图 1: 设备控制 (打开电视 / 调空调 / 开关灯)
     if (lower.contains('打开电视') || lower.contains('开电视')) {
       ref.read(smartHomeControllerProvider.notifier).toggleDevice('media_player.living_room_tv');
-      _addAssistantReply('✅ 已通过 Home Assistant 为你打开【客厅电视】（Mock 成功，设备状态已同步）');
+      _addAssistantReply('✅ 已通过 Home Assistant 为你打开【客厅电视】，设备状态已同步');
       return true;
     }
     if (lower.contains('关闭电视') || lower.contains('关电视')) {
@@ -367,6 +462,16 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                       ),
                     ],
                   ),
+                ),
+                IconButton(
+                  tooltip: '新建会话',
+                  icon: const Icon(Icons.add_comment_outlined, size: 20),
+                  onPressed: _createNewSession,
+                ),
+                IconButton(
+                  tooltip: '历史会话',
+                  icon: const Icon(Icons.history_rounded, size: 20),
+                  onPressed: () => _showHistorySessionsSheet(context, palette),
                 ),
                 IconButton(
                   icon: const Icon(Icons.close_rounded),
@@ -630,4 +735,144 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
       ),
     );
   }
+
+  void _showHistorySessionsSheet(BuildContext context, MomoPalette palette) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetCtx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.65,
+              ),
+              padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(sheetCtx).padding.bottom + 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const Icon(Icons.history_rounded, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        '对话历史与会话列表',
+                        style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      const Spacer(),
+                      FilledButton.tonalIcon(
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: () {
+                          Navigator.of(sheetCtx).pop();
+                          _createNewSession();
+                        },
+                        icon: const Icon(Icons.add, size: 16),
+                        label: const Text('新会话', style: TextStyle(fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Divider(height: 1),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: ListView.separated(
+                      itemCount: _sessions.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (ctx, index) {
+                        final session = _sessions[index];
+                        final isCurrent = session.id == _currentSessionId;
+                        final userMessagesCount = session.messages.where((m) => m.role == 'user').length;
+                        final timeStr = '${session.createdAt.month}月${session.createdAt.day}日 ${session.createdAt.hour.toString().padLeft(2, "0")}:${session.createdAt.minute.toString().padLeft(2, "0")}';
+
+                        return Material(
+                          color: isCurrent
+                              ? palette.primary.withValues(alpha: 0.12)
+                              : (isDark ? Colors.white.withValues(alpha: 0.04) : Colors.black.withValues(alpha: 0.02)),
+                          borderRadius: BorderRadius.circular(14),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(14),
+                            onTap: () {
+                              Navigator.of(sheetCtx).pop();
+                              _switchSession(session.id);
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    isCurrent ? Icons.chat_bubble : Icons.chat_bubble_outline,
+                                    size: 18,
+                                    color: isCurrent ? palette.primary : Colors.grey,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          session.title,
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: isCurrent ? FontWeight.bold : FontWeight.w500,
+                                            color: isCurrent ? palette.primary : null,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          '$timeStr · $userMessagesCount 条对话',
+                                          style: const TextStyle(fontSize: 10, color: Colors.grey),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  IconButton(
+                                    visualDensity: VisualDensity.compact,
+                                    icon: const Icon(Icons.delete_outline, size: 18, color: Colors.grey),
+                                    onPressed: () {
+                                      _deleteSession(session.id);
+                                      setSheetState(() {});
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
 }

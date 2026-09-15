@@ -250,6 +250,23 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
           bodyColor: text,
           displayColor: text,
         ),
+    snackBarTheme: SnackBarThemeData(
+      backgroundColor: (isDark ? const Color(0xFF1E293B) : Colors.white).withValues(alpha: 0.88),
+      contentTextStyle: TextStyle(
+        color: text,
+        fontSize: 13,
+        fontWeight: FontWeight.w500,
+      ),
+      behavior: SnackBarBehavior.floating,
+      elevation: 6,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: (isDark ? Colors.white.withValues(alpha: 0.15) : palette.primary.withValues(alpha: 0.2)),
+          width: 0.8,
+        ),
+      ),
+    ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: isDark ? const Color(0xFF1E293B) : surface,
@@ -278,4 +295,10 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
       ),
     ),
   );
+}
+
+class MomoAppInfo {
+  static const String appVersion = '0.1.0';
+  static const String buildNumber = '1';
+  static const String versionDisplay = '$appVersion（构建 $buildNumber）';
 }

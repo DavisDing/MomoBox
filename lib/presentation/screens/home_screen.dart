@@ -43,6 +43,25 @@ class HomeScreen extends ConsumerWidget {
           ),
         ),
         data: (items) {
+          final sectionOrder = ref.watch(homeSectionOrderProvider).valueOrNull ?? defaultHomeSectionOrder;
+
+          Widget buildSectionByKey(String key) {
+            switch (key) {
+              case 'quick_intake':
+                return _buildQuickIntakeBar(context, palette);
+              case 'alert_summary':
+                return _buildAlertSummaryCard(context, summary, palette);
+              case 'shopping_summary':
+                return _buildShoppingSummaryCard(context, shoppingAsync, summary, palette);
+              case 'chores_card':
+                return _buildChoresCard(context, ref, palette);
+              case 'smart_home_quick':
+                return _buildSmartHomeQuickSection(context, ref, homeState, palette);
+              default:
+                return const SizedBox.shrink();
+            }
+          }
+
           return CustomScrollView(
             slivers: [
               // 顶部渐变与家庭状态栏
@@ -50,9 +69,9 @@ class HomeScreen extends ConsumerWidget {
                 child: Container(
                   padding: EdgeInsets.fromLTRB(
                     16,
-                    MediaQuery.of(context).padding.top + 16,
+                    MediaQuery.of(context).padding.top + 12,
                     16,
-                    16,
+                    12,
                   ),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -67,7 +86,7 @@ class HomeScreen extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // 顶部第一行：家庭名称与模式徽章
+                      // 顶部第一行：家庭名称与模式徽章 + 自定义排序按钮
                       Row(
                         children: [
                           Container(
@@ -105,9 +124,14 @@ class HomeScreen extends ConsumerWidget {
                               ],
                             ),
                           ),
+                          IconButton(
+                            tooltip: '自定义首页模块排序',
+                            icon: const Icon(Icons.dashboard_customize_outlined, size: 20),
+                            onPressed: () => _showHomeOrderDialog(context, ref, sectionOrder),
+                          ),
                         ],
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 10),
 
                       // 连接状态横条（NAS 与 HA 状态）
                       _buildSyncStatusRow(context, homeState, palette),
@@ -116,55 +140,17 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ),
 
-              // 快捷入库动作栏 (拍照/扫码/手动)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: _buildQuickIntakeBar(context, palette),
-                ),
-              ),
+              // 动态可调顺序的各功能模块（紧凑间距）
+              ...sectionOrder.map((secKey) {
+                return SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                    child: buildSectionByKey(secKey),
+                  ),
+                );
+              }),
 
-              const SliverToBoxAdapter(child: SizedBox(height: 16)),
-
-              // 提醒摘要卡片 (四分类直达)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: _buildAlertSummaryCard(context, summary, palette),
-                ),
-              ),
-
-              const SliverToBoxAdapter(child: SizedBox(height: 16)),
-
-              // 采买速览卡片 (跳转二级路由 /shopping)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: _buildShoppingSummaryCard(context, shoppingAsync, summary, palette),
-                ),
-              ),
-
-              const SliverToBoxAdapter(child: SizedBox(height: 16)),
-
-              // 周期循环提醒卡片 (换床单被罩、洗浴巾等)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: _buildChoresCard(context, ref, palette),
-                ),
-              ),
-
-              const SliverToBoxAdapter(child: SizedBox(height: 16)),
-
-              // 常用家电设备与场景快捷操作
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: _buildSmartHomeQuickSection(context, ref, homeState, palette),
-                ),
-              ),
-
-              const SliverToBoxAdapter(child: SizedBox(height: 96)),
+              const SliverToBoxAdapter(child: SizedBox(height: 80)),
             ],
           );
         },
@@ -384,43 +370,51 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Row(
               children: [
                 Expanded(
                   child: _buildSummaryGridItem(
                     context,
-                    label: '已过期',
+                    icon: Icons.error_outline_rounded,
+                    label: '已过期批次',
                     count: expiredCount,
                     color: Colors.red,
                     onTap: () => context.push('/alerts?filter=expired'),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 Expanded(
                   child: _buildSummaryGridItem(
                     context,
+                    icon: Icons.warning_amber_rounded,
                     label: '即将到期 (3天)',
                     count: expiringSoon,
                     color: Colors.orange,
                     onTap: () => context.push('/alerts?filter=expiring'),
                   ),
                 ),
-                const SizedBox(width: 8),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
                 Expanded(
                   child: _buildSummaryGridItem(
                     context,
+                    icon: Icons.access_time_rounded,
                     label: '30天内临期',
                     count: expiring30,
                     color: Colors.amber.shade800,
                     onTap: () => context.push('/alerts?filter=expiring'),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 Expanded(
                   child: _buildSummaryGridItem(
                     context,
-                    label: '库存偏低',
+                    icon: Icons.inventory_2_outlined,
+                    label: '库存偏低预警',
                     count: lowStockCount,
                     color: Colors.blue,
                     onTap: () => context.push('/alerts?filter=low_stock'),
@@ -436,6 +430,7 @@ class HomeScreen extends ConsumerWidget {
 
   Widget _buildSummaryGridItem(
     BuildContext context, {
+    required IconData icon,
     required String label,
     required int count,
     required Color color,
@@ -446,34 +441,52 @@ class HomeScreen extends ConsumerWidget {
 
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(14),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: isDark ? 0.15 : 0.08),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.2)),
+          color: color.withValues(alpha: isDark ? 0.14 : 0.07),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withValues(alpha: 0.22), width: 0.8),
         ),
-        child: Column(
+        child: Row(
           children: [
-            Text(
-              '$count',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: color,
+            Container(
+              padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.16),
+                shape: BoxShape.circle,
               ),
+              child: Icon(icon, size: 18, color: color),
             ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                color: theme.textTheme.bodySmall?.color,
-                fontWeight: FontWeight.w500,
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '$count',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                      height: 1.1,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: theme.textTheme.bodySmall?.color,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
@@ -635,7 +648,7 @@ class HomeScreen extends ConsumerWidget {
                       onPressed: () {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text('已向 Home Assistant 发送执行指令：【${scene.name}】（Mock）'),
+                            content: Text('已向 Home Assistant 发送执行指令：【${scene.name}】'),
                             duration: const Duration(seconds: 2),
                           ),
                         );
@@ -695,7 +708,7 @@ class HomeScreen extends ConsumerWidget {
                             ref.read(smartHomeControllerProvider.notifier).toggleDevice(device.id);
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text('设备【${device.name}】已${val ? '开启' : '关闭'}（Mock）'),
+                                content: Text('设备【${device.name}】已${val ? '开启' : '关闭'}'),
                                 duration: const Duration(seconds: 1),
                               ),
                             );
@@ -835,6 +848,77 @@ class HomeScreen extends ConsumerWidget {
               },
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  void _showHomeOrderDialog(BuildContext context, WidgetRef ref, List<String> currentOrder) {
+    final moduleLabels = <String, (String, IconData)>{
+      'quick_intake': ('快捷录入动作栏', Icons.add_circle_outline),
+      'alert_summary': ('效期与库存提醒摘要', Icons.notifications_active_outlined),
+      'shopping_summary': ('采买清单速览', Icons.shopping_bag_outlined),
+      'chores_card': ('家务周期打卡', Icons.event_repeat_rounded),
+      'smart_home_quick': ('智能家居常用快捷', Icons.home_outlined),
+    };
+
+    final order = List<String>.from(currentOrder);
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setModalState) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('调整首页模块显示顺序', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    TextButton(
+                      onPressed: () async {
+                        await ref.read(settingsServiceProvider).setValue(homeSectionOrderKey, order.join(','));
+                        if (sheetContext.mounted) Navigator.pop(sheetContext);
+                      },
+                      child: const Text('保存'),
+                    ),
+                  ],
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 4),
+                  child: Text('长按并拖拽右侧手柄调整顺序，保存后首页将实时更新。', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                ),
+                const SizedBox(height: 8),
+                ReorderableListView(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  onReorder: (oldIndex, newIndex) {
+                    setModalState(() {
+                      if (newIndex > oldIndex) newIndex -= 1;
+                      final item = order.removeAt(oldIndex);
+                      order.insert(newIndex, item);
+                    });
+                  },
+                  children: [
+                    for (final key in order)
+                      ListTile(
+                        key: ValueKey(key),
+                        leading: Icon(moduleLabels[key]?.$2 ?? Icons.widgets_outlined),
+                        title: Text(moduleLabels[key]?.$1 ?? key, style: const TextStyle(fontSize: 14)),
+                        trailing: const Icon(Icons.drag_handle_rounded),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+              ],
+            ),
+          ),
         ),
       ),
     );

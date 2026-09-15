@@ -150,6 +150,30 @@ class MockSmartHomeRepository {
     }).toList();
   }
 
+
+  void setClimateMode(String id, String mode) {
+    _devices = _devices.map((d) {
+      if (d.id == id && d.type == DeviceType.climate) {
+        return d.copyWith(
+          mode: mode,
+          statusText: '$mode ${d.temperature.toStringAsFixed(0)}°C',
+        );
+      }
+      return d;
+    }).toList();
+  }
+
+  void setClimateWindSpeed(String id, String speed) {
+    _devices = _devices.map((d) {
+      if (d.id == id && d.type == DeviceType.climate) {
+        return d.copyWith(
+          windSpeed: speed,
+        );
+      }
+      return d;
+    }).toList();
+  }
+
   void updateClimateTemperature(String id, double delta) {
     _devices = _devices.map((d) {
       if (d.id == id && d.type == DeviceType.climate) {

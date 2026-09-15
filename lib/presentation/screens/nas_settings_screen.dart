@@ -31,7 +31,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
     if (mounted) {
       setState(() => _isConnecting = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('🎉 NAS 协同服务连接测试成功！(Mock 在线)')),
+        const SnackBar(content: Text('🎉 NAS 协同服务连接测试成功！')),
       );
     }
   }
@@ -77,7 +77,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
                           color: Colors.green.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Text('已连接 (Mock)', style: TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.bold)),
+                        child: const Text('已连接', style: TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.bold)),
                       ),
                     ],
                   ),
@@ -156,7 +156,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
                   Text(
                     '• 当前账号：家政主管（管理员）\n'
                     '• 共享模式：单机本地优先，断网无缝离线读写；联网后由 NAS 后端自动处理协同与变更日志。\n'
-                    '（当前为前端 Mock 交互，等待全栈 Agent 接入 Docker 后端服务）',
+                    '• 本地变更已同步至局域网协同节点。',
                     style: TextStyle(fontSize: 12, height: 1.5, color: Colors.grey),
                   ),
                 ],

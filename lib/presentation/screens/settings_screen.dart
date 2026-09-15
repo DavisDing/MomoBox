@@ -33,112 +33,149 @@ class SettingsScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         children: [
-          _buildSettingsTile(
-            context,
-            icon: Icons.dns_outlined,
-            title: 'NAS 协同管理',
-            subtitle: '局域网双向同步、家庭组识别码与多端协同',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const NasSettingsScreen()),
+          _buildSectionHeader(context, '外观与个性化'),
+          Card(
+            margin: const EdgeInsets.only(bottom: 16),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                _buildSettingsListTile(
+                  context,
+                  icon: Icons.palette_outlined,
+                  title: '主题中心与个性化',
+                  subtitle: '当前：${palette.label}（吉祥物：${palette.mascot} ${palette.mascotName}）',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const ThemeSettingsScreen()),
+                  ),
+                ),
+                const Divider(height: 1, indent: 56),
+                _buildSettingsListTile(
+                  context,
+                  icon: Icons.format_size_rounded,
+                  title: '界面字体大小',
+                  subtitle: '支持紧凑、标准、大号及关怀超大号字号',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const FontScaleSettingsScreen()),
+                  ),
+                ),
+              ],
             ),
           ),
-          _buildSettingsTile(
-            context,
-            icon: Icons.hub_outlined,
-            title: 'Home Assistant 连接配置',
-            subtitle: 'HA 地址、Token 授权状态与设备白名单',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const HomeAssistantSettingsScreen()),
+
+          _buildSectionHeader(context, '隐私、密钥与外部服务'),
+          Card(
+            margin: const EdgeInsets.only(bottom: 16),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                _buildSettingsListTile(
+                  context,
+                  icon: Icons.shield_outlined,
+                  title: '隐私与密钥安全',
+                  subtitle: 'AI 密钥与敏感凭证仅保存在设备安全存储中',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const PrivacySettingsScreen()),
+                  ),
+                ),
+                const Divider(height: 1, indent: 56),
+                _buildSettingsListTile(
+                  context,
+                  icon: Icons.psychology_outlined,
+                  title: 'AI 解析与模型配置',
+                  subtitle: '自动识别协议、chat/responses 双协议与多模型切换',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const AiSettingsScreen()),
+                  ),
+                ),
+                const Divider(height: 1, indent: 56),
+                _buildSettingsListTile(
+                  context,
+                  icon: Icons.analytics_outlined,
+                  title: 'AI 用量与日志汇总',
+                  subtitle: '当日/7天/30天/全部 Token 与明细统计',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const AiUsageScreen()),
+                  ),
+                ),
+                const Divider(height: 1, indent: 56),
+                _buildSettingsListTile(
+                  context,
+                  icon: Icons.qr_code_scanner,
+                  title: '外部条码 API 接口',
+                  subtitle: '多接口配置、免费源切换与调用角色',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const BarcodeSettingsScreen()),
+                  ),
+                ),
+              ],
             ),
           ),
-          _buildSettingsTile(
-            context,
-            icon: Icons.palette_outlined,
-            title: '主题中心与个性化',
-            subtitle: '当前：${palette.label}（吉祥物：${palette.mascot} ${palette.mascotName}）',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const ThemeSettingsScreen()),
+
+          _buildSectionHeader(context, '网络服务与家庭协同'),
+          Card(
+            margin: const EdgeInsets.only(bottom: 16),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                _buildSettingsListTile(
+                  context,
+                  icon: Icons.dns_outlined,
+                  title: 'NAS 协同管理',
+                  subtitle: '局域网双向同步、家庭组识别码与多端协同',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const NasSettingsScreen()),
+                  ),
+                ),
+                const Divider(height: 1, indent: 56),
+                _buildSettingsListTile(
+                  context,
+                  icon: Icons.hub_outlined,
+                  title: 'Home Assistant 连接配置',
+                  subtitle: 'HA 地址、Token 授权状态与设备白名单',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const HomeAssistantSettingsScreen()),
+                  ),
+                ),
+              ],
             ),
           ),
-          _buildSettingsTile(
-            context,
-            icon: Icons.format_size_rounded,
-            title: '界面字体大小设置',
-            subtitle: '支持紧凑、标准、大号及关怀超大号字号',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const FontScaleSettingsScreen()),
-            ),
-          ),
-          _buildSettingsTile(
-            context,
-            icon: Icons.qr_code_scanner,
-            title: '外部条码 API 接口',
-            subtitle: '多接口配置、免费源切换、默认查询源',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const BarcodeSettingsScreen()),
-            ),
-          ),
-          _buildSettingsTile(
-            context,
-            icon: Icons.psychology_outlined,
-            title: 'AI 解析与模型配置',
-            subtitle: '支持自动识别协议、chat/responses 双协议与多模型切换',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AiSettingsScreen()),
-            ),
-          ),
-          _buildSettingsTile(
-            context,
-            icon: Icons.analytics_outlined,
-            title: 'AI 用量与日志汇总',
-            subtitle: '当日/7天/30天/全部 Token、缓存命中与明细统计',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AiUsageScreen()),
-            ),
-          ),
-          _buildSettingsTile(
-            context,
-            icon: Icons.notifications_active_outlined,
-            title: '提醒与通知',
-            subtitle: '查看通知权限、重新授权并发送测试提醒',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const NotificationSettingsScreen()),
-            ),
-          ),
-          _buildSettingsTile(
-            context,
-            icon: Icons.storage_outlined,
-            title: '数据与存储空间',
-            subtitle: '查看本地占用、清理条码缓存和无用图片',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const StorageManagementScreen()),
-            ),
-          ),
-          _buildSettingsTile(
-            context,
-            icon: Icons.shield_outlined,
-            title: '隐私与密钥',
-            subtitle: 'AI 密钥仅保存在设备安全存储中',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const PrivacySettingsScreen()),
-            ),
-          ),
-          _buildSettingsTile(
-            context,
-            icon: Icons.backup_outlined,
-            title: '数据备份与迁移',
-            subtitle: '全量 JSON 备份导出、数据导入与快照管理',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const BackupSettingsScreen()),
-            ),
-          ),
-          _buildSettingsTile(
-            context,
-            icon: Icons.info_outline,
-            title: '关于嬷嬷的小箱子',
-            subtitle: '版本信息、本地数据说明与第三方许可',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AboutSettingsScreen()),
+
+          _buildSectionHeader(context, '数据与系统'),
+          Card(
+            margin: const EdgeInsets.only(bottom: 16),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                _buildSettingsListTile(
+                  context,
+                  icon: Icons.notifications_active_outlined,
+                  title: '提醒与通知',
+                  subtitle: '查看通知权限、重新授权并发送测试提醒',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const NotificationSettingsScreen()),
+                  ),
+                ),
+                const Divider(height: 1, indent: 56),
+                _buildSettingsListTile(
+                  context,
+                  icon: Icons.backup_outlined,
+                  title: '数据备份与迁移',
+                  subtitle: '全量 JSON 备份导出、数据导入与快照管理',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const BackupSettingsScreen()),
+                  ),
+                ),
+                const Divider(height: 1, indent: 56),
+                _buildSettingsListTile(
+                  context,
+                  icon: Icons.info_outline,
+                  title: '关于与存储信息',
+                  subtitle: '版本号、本地数据说明、存储空间管理与许可',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const AboutSettingsScreen()),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -146,25 +183,37 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildSettingsTile(
+  Widget _buildSectionHeader(BuildContext context, String title) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 8, top: 4),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.bold,
+          color: theme.colorScheme.primary,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSettingsListTile(
     BuildContext context, {
     required IconData icon,
     required String title,
     required String subtitle,
     required VoidCallback onTap,
   }) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
-          child: Icon(icon, color: Theme.of(context).colorScheme.primary),
-        ),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-        subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
-        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-        onTap: onTap,
+    return ListTile(
+      leading: CircleAvatar(
+        backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+        child: Icon(icon, color: Theme.of(context).colorScheme.primary),
       ),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+      trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+      onTap: onTap,
     );
   }
 }
@@ -835,13 +884,23 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                 DropdownButtonFormField<String>(
                   initialValue: endpointType,
                   isDense: true,
+                  isExpanded: true,
                   menuMaxHeight: 280,
                   borderRadius: BorderRadius.circular(16),
                   decoration: const InputDecoration(labelText: '接口协议类型'),
                   items: const [
-                    DropdownMenuItem(value: 'auto', child: Text('自动判断 (Auto 推荐)')),
-                    DropdownMenuItem(value: 'chat', child: Text('Chat Completions (/v1/chat/completions)')),
-                    DropdownMenuItem(value: 'responses', child: Text('Responses API (/v1/responses)')),
+                    DropdownMenuItem(
+                      value: 'auto',
+                      child: Text('自动判断 (Auto 推荐)', overflow: TextOverflow.ellipsis),
+                    ),
+                    DropdownMenuItem(
+                      value: 'chat',
+                      child: Text('Chat Completions (/v1/chat/completions)', overflow: TextOverflow.ellipsis),
+                    ),
+                    DropdownMenuItem(
+                      value: 'responses',
+                      child: Text('Responses API (/v1/responses)', overflow: TextOverflow.ellipsis),
+                    ),
                   ],
                   onChanged: (val) {
                     if (val != null) {
@@ -917,9 +976,14 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('模型服务列表（点按设为主服务；编辑可设置副服务或兜底服务）', style: TextStyle(fontWeight: FontWeight.bold)),
+              const Expanded(
+                child: Text(
+                  '模型服务列表（点按设为主服务；编辑可设置副服务或兜底服务）',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(width: 8),
               TextButton.icon(
                 icon: const Icon(Icons.add, size: 18),
                 label: const Text('添加配置'),
@@ -943,7 +1007,15 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                 ),
                 title: Row(
                   children: [
-                    Expanded(child: Text(p['name'] as String? ?? '', style: const TextStyle(fontWeight: FontWeight.bold))),
+                    Expanded(
+                      child: Text(
+                        p['name'] as String? ?? '',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
@@ -1633,23 +1705,27 @@ class AboutSettingsScreen extends ConsumerWidget {
             ),
             Card(
               child: ListTile(
-                leading: Icon(Icons.info_outline),
-                title: Text('版本号'),
-                subtitle: Text('0.1.0（构建 1）'),
+                leading: const Icon(Icons.info_outline),
+                title: const Text('版本号'),
+                subtitle: const Text(MomoAppInfo.versionDisplay),
               ),
             ),
             Card(
               child: ListTile(
-                leading: Icon(Icons.phonelink_lock_outlined),
-                title: Text('数据存储'),
-                subtitle: Text('核心数据默认仅保存于本机，不需要登录账号或连接网络。'),
+                leading: const Icon(Icons.storage_outlined),
+                title: const Text('数据存储与空间管理'),
+                subtitle: const Text('核心数据仅保存于本机；可查看本地占用并清理条码与图片缓存。'),
+                trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const StorageManagementScreen()),
+                ),
               ),
             ),
             Card(
               child: ListTile(
-                leading: Icon(Icons.description_outlined),
-                title: Text('第三方许可'),
-                subtitle: Text('本应用使用 Flutter 及其开源依赖构建；完整许可信息随应用和依赖包提供。'),
+                leading: const Icon(Icons.description_outlined),
+                title: const Text('第三方许可'),
+                subtitle: const Text('本应用使用 Flutter 及其开源依赖构建；完整许可信息随应用和依赖包提供。'),
               ),
             ),
           ],

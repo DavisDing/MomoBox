@@ -72,6 +72,26 @@ final themeNameProvider = StreamProvider<String?>(
   (ref) => ref.watch(settingsServiceProvider).watchValue('theme'),
 );
 
+const homeSectionOrderKey = 'home_section_order';
+const defaultHomeSectionOrder = <String>[
+  'quick_intake',
+  'alert_summary',
+  'shopping_summary',
+  'chores_card',
+  'smart_home_quick',
+];
+
+final homeSectionOrderProvider = StreamProvider<List<String>>((ref) {
+  return ref.watch(settingsServiceProvider).watchValue(homeSectionOrderKey).map((val) {
+    if (val == null || val.trim().isEmpty) return defaultHomeSectionOrder;
+    final list = val.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    if (list.isEmpty) return defaultHomeSectionOrder;
+    // ensure all known modules are present
+    final missing = defaultHomeSectionOrder.where((k) => !list.contains(k)).toList();
+    return [...list, ...missing];
+  });
+});
+
 final fontScaleProvider = StreamProvider<double>(
   (ref) => ref.watch(settingsServiceProvider).watchValue('font_scale').map((val) => double.tryParse(val ?? '1.0') ?? 1.0),
 );
