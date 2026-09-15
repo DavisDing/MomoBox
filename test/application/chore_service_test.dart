@@ -57,7 +57,7 @@ void main() {
 }
 
 class _FailOnceSettings extends SettingsRepository {
-  _FailOnceSettings(AppDatabase database) : super(database);
+  _FailOnceSettings(super.database);
   bool failed = false;
 
   @override
