@@ -119,6 +119,10 @@ class InventoryItem {
       .where((batch) => batch.isAvailable)
       .toList(growable: false);
 
+  int get availableQuantity => activeBatches
+      .where((batch) => batch.expiryStatus != ExpiryStatus.expired)
+      .fold<int>(0, (sum, batch) => sum + batch.remainingQuantity);
+
   InventoryBatch? get nearestDatedBatch {
     final dated = activeBatches.where((batch) => batch.expiryDate != null).toList()
       ..sort((a, b) => a.expiryDate!.compareTo(b.expiryDate!));

@@ -434,12 +434,8 @@ class SmartHomeScreen extends ConsumerWidget {
           ),
           content: Text(
             matchedItem == null
-                ? '在当前库存中未找到【${log.consumableName}】。
-
-是否需要将其一键添加到待采买清单？'
-                : '【${matchedItem.name}】当前可用库存为 $availableQty ${matchedItem.unit}，不足以扣减 ${log.quantity} ${log.unit}。
-
-是否添加到待采买清单？',
+                ? '在当前库存中未找到【${log.consumableName}】。\n\n是否需要将其一键添加到待采买清单？'
+                : '【${matchedItem.name}】当前可用库存为 $availableQty ${matchedItem.unit}，不足以扣减 ${log.quantity} ${log.unit}。\n\n是否添加到待采买清单？',
             style: const TextStyle(fontSize: 13, height: 1.4),
           ),
           actions: [

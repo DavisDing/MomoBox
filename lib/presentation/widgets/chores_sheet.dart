@@ -393,7 +393,7 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
-                  value: category,
+                  initialValue: category,
                   decoration: const InputDecoration(labelText: '类别'),
                   items: const [
                     DropdownMenuItem(value: '家居清洁', child: Text('家居清洁')),
@@ -407,7 +407,7 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<ChoreRepeatInterval>(
-                  value: interval,
+                  initialValue: interval,
                   decoration: const InputDecoration(labelText: '重复周期'),
                   items: const [
                     DropdownMenuItem(value: ChoreRepeatInterval.daily, child: Text('每天')),
