@@ -42,7 +42,7 @@ void main() {
         barcode: null,
         location: '冰箱二层',
         unit: '件',
-        lowStockThreshold: 1,
+        lowStockThreshold: 0,
         batches: [
           InventoryBatch(
             id: 'batch-milk-1',
