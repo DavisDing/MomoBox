@@ -901,8 +901,9 @@ class HomeScreen extends ConsumerWidget {
                 ReorderableListView(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
-                  onReorderItem: (oldIndex, newIndex) {
+                  onReorder: (oldIndex, newIndex) {
                     setModalState(() {
+                      if (newIndex > oldIndex) newIndex -= 1;
                       final item = order.removeAt(oldIndex);
                       order.insert(newIndex, item);
                     });

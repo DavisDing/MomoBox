@@ -90,7 +90,7 @@ void main() {
         barcode: null,
         location: null,
         unit: '件',
-        lowStockThreshold: 1,
+        lowStockThreshold: 0,
         batches: [
           InventoryBatch(
             id: 'batch-bread-1',
