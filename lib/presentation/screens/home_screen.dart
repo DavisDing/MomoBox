@@ -646,12 +646,14 @@ class HomeScreen extends ConsumerWidget {
                         side: BorderSide(color: palette.primary.withValues(alpha: 0.3)),
                       ),
                       onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('当前版本尚未支持 Home Assistant，未执行【${scene.name}】。'),
-                            duration: const Duration(seconds: 2),
-                          ),
-                        );
+                        ScaffoldMessenger.of(context)
+                          ..hideCurrentSnackBar()
+                          ..showSnackBar(
+                            SnackBar(
+                              content: Text('当前版本尚未支持 Home Assistant，未执行【${scene.name}】。'),
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
                       },
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -705,12 +707,14 @@ class HomeScreen extends ConsumerWidget {
                           value: device.isOn,
                           activeTrackColor: palette.primary,
                           onChanged: (val) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('当前版本尚未支持设备控制，未操作【${device.name}】。'),
-                                duration: const Duration(seconds: 1),
-                              ),
-                            );
+                            ScaffoldMessenger.of(context)
+                              ..hideCurrentSnackBar()
+                              ..showSnackBar(
+                                SnackBar(
+                                  content: Text('当前版本尚未支持设备控制，未操作【${device.name}】。'),
+                                  duration: const Duration(seconds: 1),
+                                ),
+                              );
                           },
                         ),
                       ],

@@ -77,7 +77,9 @@ void main() {
       // The request is still pending, so do not pumpAndSettle its spinner.
       await tester.pump(const Duration(milliseconds: 400));
       final row = find.ancestor(of: find.text('待删除请求').last, matching: find.byType(Row)).first;
-      await tester.tap(find.descendant(of: row, matching: find.byIcon(Icons.delete_outline)));
+      final deleteBtn = find.descendant(of: row, matching: find.byIcon(Icons.delete_outline));
+      await tester.ensureVisible(deleteBtn);
+      await tester.tap(deleteBtn);
       await tester.pump();
       service.reply.complete('不应该出现的旧回复');
       await tester.pumpAndSettle();
