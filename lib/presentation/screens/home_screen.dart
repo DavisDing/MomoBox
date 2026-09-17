@@ -901,6 +901,7 @@ class HomeScreen extends ConsumerWidget {
                 ReorderableListView(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
+                  // ignore: deprecated_member_use
                   onReorderItem: (oldIndex, newIndex) {
                     setModalState(() {
                       final item = order.removeAt(oldIndex);
