@@ -83,7 +83,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('不应该出现的旧回复'), findsNothing);
       // Close the history sheet by selecting the only remaining session.
-      await tester.tap(find.text(clearLast ? '新对话' : '新会话 2').last);
+      await tester.tap(find.descendant(of: find.byType(ListView), matching: find.text(clearLast ? '新对话' : '新会话 2')).last);
       await tester.pumpAndSettle();
       expect(find.text('不应该出现的旧回复'), findsNothing);
       expect(tester.takeException(), isNull);
