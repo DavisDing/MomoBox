@@ -66,17 +66,25 @@ class CalendarSyncService {
         final nextDateStr = _formatDateOnly(tomorrow.add(const Duration(days: 1)));
 
         buffer.writeln('BEGIN:VEVENT');
-        buffer.writeln('UID:$uid');
+        _writeTextProperty(buffer, 'UID', uid);
         buffer.writeln('DTSTAMP:$dtStamp');
         buffer.writeln('DTSTART;VALUE=DATE:$dateStr');
         buffer.writeln('DTEND;VALUE=DATE:$nextDateStr');
-        buffer.writeln('SUMMARY:[补货提醒] ${item.name} 库存偏低');
-        buffer.writeln(
-          'DESCRIPTION:物品：${item.name}\\n当前库存：${item.totalStock} ${item.unit}\\n预警阈值：${item.lowStockThreshold} ${item.unit}\\n存放位置：${item.location ?? '未标注'}\\n请及时补充库存。',
+        _writeTextProperty(buffer, 'SUMMARY', '[补货提醒] ${item.name} 库存偏低');
+        _writeTextProperty(
+          buffer,
+          'DESCRIPTION',
+          [
+            '物品：${item.name}',
+            '当前库存：${item.totalStock} ${item.unit}',
+            '预警阈值：${item.lowStockThreshold} ${item.unit}',
+            '存放位置：${item.location ?? '未标注'}',
+            '请及时补充库存。',
+          ].join('\n'),
         );
         buffer.writeln('BEGIN:VALARM');
         buffer.writeln('ACTION:DISPLAY');
-        buffer.writeln('DESCRIPTION:[补货提醒] ${item.name} 库存偏低');
+        _writeTextProperty(buffer, 'DESCRIPTION', '[补货提醒] ${item.name} 库存偏低');
         buffer.writeln('TRIGGER:PT9H'); // 当天早晨9点
         buffer.writeln('END:VALARM');
         buffer.writeln('END:VEVENT');
@@ -107,17 +115,29 @@ class CalendarSyncService {
           final nextDateStr = _formatDateOnly(today.add(const Duration(days: 1)));
 
           buffer.writeln('BEGIN:VEVENT');
-          buffer.writeln('UID:$uid');
+          _writeTextProperty(buffer, 'UID', uid);
           buffer.writeln('DTSTAMP:$dtStamp');
           buffer.writeln('DTSTART;VALUE=DATE:$dateStr');
           buffer.writeln('DTEND;VALUE=DATE:$nextDateStr');
-          buffer.writeln('SUMMARY:[已过期] ${item.name} (批次:${batch.batchNo ?? '默认'})');
-          buffer.writeln(
-            'DESCRIPTION:物品：${item.name}\\n到期日：${_formatDisplayDate(expiryDay)}\\n剩余数量：${batch.remainingQuantity} ${item.unit}\\n位置：${item.location ?? '未标注'}\\n物品已过期，请及时清理或更换。',
+          _writeTextProperty(
+            buffer,
+            'SUMMARY',
+            '[已过期] ${item.name} (批次:${batch.batchNo ?? '默认'})',
+          );
+          _writeTextProperty(
+            buffer,
+            'DESCRIPTION',
+            [
+              '物品：${item.name}',
+              '到期日：${_formatDisplayDate(expiryDay)}',
+              '剩余数量：${batch.remainingQuantity} ${item.unit}',
+              '位置：${item.location ?? '未标注'}',
+              '物品已过期，请及时清理或更换。',
+            ].join('\n'),
           );
           buffer.writeln('BEGIN:VALARM');
           buffer.writeln('ACTION:DISPLAY');
-          buffer.writeln('DESCRIPTION:[已过期] ${item.name}');
+          _writeTextProperty(buffer, 'DESCRIPTION', '[已过期] ${item.name}');
           buffer.writeln('TRIGGER:PT9H');
           buffer.writeln('END:VALARM');
           buffer.writeln('END:VEVENT');
@@ -129,23 +149,32 @@ class CalendarSyncService {
           final nextDateStr = _formatDateOnly(expiryDay.add(const Duration(days: 1)));
 
           buffer.writeln('BEGIN:VEVENT');
-          buffer.writeln('UID:$uid');
+          _writeTextProperty(buffer, 'UID', uid);
           buffer.writeln('DTSTAMP:$dtStamp');
           buffer.writeln('DTSTART;VALUE=DATE:$dateStr');
           buffer.writeln('DTEND;VALUE=DATE:$nextDateStr');
-          buffer.writeln('SUMMARY:[到期提醒] ${item.name} 批次到期');
-          buffer.writeln(
-            'DESCRIPTION:物品：${item.name}\\n批次：${batch.batchNo ?? '默认'}\\n到期日：${_formatDisplayDate(expiryDay)}\\n剩余数量：${batch.remainingQuantity} ${item.unit}\\n位置：${item.location ?? '未标注'}\\n请尽快使用完毕。',
+          _writeTextProperty(buffer, 'SUMMARY', '[到期提醒] ${item.name} 批次到期');
+          _writeTextProperty(
+            buffer,
+            'DESCRIPTION',
+            [
+              '物品：${item.name}',
+              '批次：${batch.batchNo ?? '默认'}',
+              '到期日：${_formatDisplayDate(expiryDay)}',
+              '剩余数量：${batch.remainingQuantity} ${item.unit}',
+              '位置：${item.location ?? '未标注'}',
+              '请尽快使用完毕。',
+            ].join('\n'),
           );
           // 提前3天和当天均提醒
           buffer.writeln('BEGIN:VALARM');
           buffer.writeln('ACTION:DISPLAY');
-          buffer.writeln('DESCRIPTION:[即将到期] ${item.name}');
+          _writeTextProperty(buffer, 'DESCRIPTION', '[即将到期] ${item.name}');
           buffer.writeln('TRIGGER:-P3D'); // 提前3天
           buffer.writeln('END:VALARM');
           buffer.writeln('BEGIN:VALARM');
           buffer.writeln('ACTION:DISPLAY');
-          buffer.writeln('DESCRIPTION:[今日到期] ${item.name}');
+          _writeTextProperty(buffer, 'DESCRIPTION', '[今日到期] ${item.name}');
           buffer.writeln('TRIGGER:PT9H'); // 当天上午9点
           buffer.writeln('END:VALARM');
           buffer.writeln('END:VEVENT');
@@ -168,13 +197,20 @@ class CalendarSyncService {
         final nextDateStr = _formatDateOnly(dueDate.add(const Duration(days: 1)));
 
         buffer.writeln('BEGIN:VEVENT');
-        buffer.writeln('UID:$uid');
+        _writeTextProperty(buffer, 'UID', uid);
         buffer.writeln('DTSTAMP:$dtStamp');
         buffer.writeln('DTSTART;VALUE=DATE:$dateStr');
         buffer.writeln('DTEND;VALUE=DATE:$nextDateStr');
-        buffer.writeln('SUMMARY:[周期家务] ${chore.title}');
-        buffer.writeln(
-          'DESCRIPTION:周期家务：${chore.title}\\n类别：${chore.category}\\n循环频率：${chore.repeatDescription}\\n备注：${chore.notes ?? '定期维护维护良好卫生习惯'}',
+        _writeTextProperty(buffer, 'SUMMARY', '[周期家务] ${chore.title}');
+        _writeTextProperty(
+          buffer,
+          'DESCRIPTION',
+          [
+            '周期家务：${chore.title}',
+            '类别：${chore.category}',
+            '循环频率：${chore.repeatDescription}',
+            '备注：${chore.notes ?? '定期维护维护良好卫生习惯'}',
+          ].join('\n'),
         );
 
         // 添加标准 RRULE 循环规则
@@ -189,7 +225,7 @@ class CalendarSyncService {
 
         buffer.writeln('BEGIN:VALARM');
         buffer.writeln('ACTION:DISPLAY');
-        buffer.writeln('DESCRIPTION:[家务提醒] ${chore.title}');
+        _writeTextProperty(buffer, 'DESCRIPTION', '[家务提醒] ${chore.title}');
         buffer.writeln('TRIGGER:PT9H');
         buffer.writeln('END:VALARM');
         buffer.writeln('END:VEVENT');
@@ -197,7 +233,7 @@ class CalendarSyncService {
     }
 
     buffer.writeln('END:VCALENDAR');
-    return buffer.toString();
+    return buffer.toString().replaceAll('\n', '\r\n');
   }
 
   /// 导出并调起系统共享/日历应用
@@ -221,6 +257,24 @@ class CalendarSyncService {
       subject: '嬷嬷的小箱子-日历日程',
       text: '已生成日历日程，轻点直接添加到您的系统日历中。',
     );
+  }
+
+  static void _writeTextProperty(
+    StringBuffer buffer,
+    String property,
+    String value,
+  ) {
+    buffer.writeln('$property:${_escapeText(value)}');
+  }
+
+  static String _escapeText(String value) {
+    return value
+        .replaceAll('\\', '\\\\')
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n')
+        .replaceAll('\n', r'\n')
+        .replaceAll(';', r'\;')
+        .replaceAll(',', r'\,');
   }
 
   static String _formatDateOnly(DateTime date) {

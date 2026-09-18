@@ -55,7 +55,7 @@ class ChoreService {
     String? notes,
   }) async {
     final chores = await getChores();
-    final now = DateTime.now();
+    final now = _clock();
     final due = nextDueDate ?? DateTime(now.year, now.month, now.day).add(
       Duration(
         days: switch (repeatInterval) {

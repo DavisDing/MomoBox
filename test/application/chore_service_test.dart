@@ -54,6 +54,21 @@ void main() {
     expect(await settings.getValue('recurring_chores_list'), isNull);
     expect(await service.watchChores().first, isNotEmpty);
   });
+
+  test('新增家务使用注入时钟计算默认到期日', () async {
+    final service = ChoreService(
+      settings,
+      clock: () => DateTime(2030, 1, 1, 23, 30),
+    );
+
+    final item = await service.addChore(
+      title: '测试家务',
+      category: '设备维护',
+      repeatInterval: ChoreRepeatInterval.weekly,
+    );
+
+    expect(item.nextDueDate, DateTime(2030, 1, 8));
+  });
 }
 
 class _FailOnceSettings extends SettingsRepository {

@@ -13,7 +13,13 @@ class InventoryRepository {
   final Uuid _uuid;
 
   Stream<List<InventoryItem>> watchInventory() {
-    return _database.select(_database.products).watch().asyncMap(loadInventory);
+    return _database
+        .customSelect(
+          'SELECT 1',
+          readsFrom: {_database.products, _database.productBatches},
+        )
+        .watch()
+        .asyncMap((_) => loadInventory());
   }
 
   Future<List<InventoryItem>> loadInventory([List<ProductRecord>? source]) async {

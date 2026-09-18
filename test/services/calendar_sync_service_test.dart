@@ -172,6 +172,62 @@ void main() {
       expect(ics30, contains('END:VCALENDAR'));
     });
 
+    test('转义动态文本并使用标准 CRLF 行结束符', () {
+      final item = InventoryItem(
+        id: 'prod-special',
+        name: '牛奶,特价;A\\B\n注入',
+        category: '食品生鲜',
+        brand: null,
+        specification: null,
+        barcode: null,
+        location: '冷藏\r\nX-TEST:bad',
+        unit: '盒,装',
+        lowStockThreshold: 2,
+        batches: [
+          InventoryBatch(
+            id: 'batch-special',
+            productId: 'prod-special',
+            batchNo: 'B,1;\\换行\nX-BATCH:bad',
+            initialQuantity: 1,
+            remainingQuantity: 1,
+            isDiscarded: false,
+            expiryDate: baseToday.add(const Duration(days: 3)),
+            productionDate: null,
+          ),
+        ],
+      );
+      final chore = ChoreItem(
+        id: 'chore-special',
+        title: '清洁,厨房;A\\B\nX-CHORE:bad',
+        category: '家居\r\nX-CATEGORY:bad',
+        repeatInterval: ChoreRepeatInterval.weekly,
+        nextDueDate: baseToday,
+        notes: '备注,一;二\\三\nX-NOTE:bad',
+      );
+
+      final ics = CalendarSyncService.buildIcsContent(
+        items: [item],
+        options: const CalendarSyncOptions(),
+        chores: [chore],
+        now: baseToday,
+      );
+
+      expect(
+        ics,
+        contains(r'SUMMARY:[补货提醒] 牛奶\,特价\;A\\B\n注入 库存偏低'),
+      );
+      expect(ics, contains(r'批次：B\,1\;\\换行\nX-BATCH:bad'));
+      expect(ics, contains(r'存放位置：冷藏\nX-TEST:bad'));
+      expect(ics, contains(r'备注：备注\,一\;二\\三\nX-NOTE:bad'));
+      expect(ics, isNot(contains('\r\nX-TEST:bad')));
+      expect(ics, isNot(contains('\r\nX-BATCH:bad')));
+      expect(ics, isNot(contains('\r\nX-CHORE:bad')));
+      expect(ics, isNot(contains('\r\nX-CATEGORY:bad')));
+      expect(ics, isNot(contains('\r\nX-NOTE:bad')));
+      expect(ics.replaceAll('\r\n', ''), isNot(contains('\n')));
+      expect(ics.replaceAll('\r\n', ''), isNot(contains('\r')));
+    });
+
     test('在近90天范围内导出日历应包含远期商品', () {
       final ics90 = CalendarSyncService.buildIcsContent(
         items: testItems,

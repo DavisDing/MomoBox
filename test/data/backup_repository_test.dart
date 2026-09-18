@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:drift/native.dart';
@@ -171,6 +172,52 @@ void main() {
 
     expect(await database.select(database.products).get(), isEmpty);
     expect(await database.select(database.productBatches).get(), isEmpty);
+  });
+
+  test('导入既有商品的新批次会触发库存流刷新', () async {
+    final inventory = InventoryRepository(database);
+    await inventory.createProductWithBatch(
+      const IntakeDraft(
+        name: '监听测试物品',
+        category: '其他物品',
+        quantity: 1,
+      ),
+    );
+
+    final initialEmission = Completer<List<InventoryItem>>();
+    final updatedEmission = Completer<List<InventoryItem>>();
+    final subscription = inventory.watchInventory().listen((items) {
+      if (!initialEmission.isCompleted) {
+        initialEmission.complete(items);
+      } else if (!updatedEmission.isCompleted) {
+        updatedEmission.complete(items);
+      }
+    });
+    addTearDown(subscription.cancel);
+
+    final initial = await initialEmission.future.timeout(
+      const Duration(seconds: 2),
+    );
+    expect(initial.single.batches, hasLength(1));
+
+    final backup = jsonDecode(await repository.exportJson()) as Map<String, dynamic>;
+    final batches = (backup['batches'] as List).cast<Map<String, dynamic>>();
+    batches.add({
+      ...batches.single,
+      'id': 'batch-imported',
+      'batch_no': 'B-IMPORT',
+      'created_at': '2026-09-18T08:00:00.000',
+      'updated_at': '2026-09-18T08:00:00.000',
+    });
+
+    final report = await repository.importJson(jsonEncode(backup));
+    expect(report.imported, 1);
+
+    final updated = await updatedEmission.future.timeout(
+      const Duration(seconds: 2),
+    );
+    expect(updated.single.batches, hasLength(2));
+    expect(updated.single.batches.map((batch) => batch.id), contains('batch-imported'));
   });
 
   test('已耗尽批次报废后仍可完成导出导入往返', () async {

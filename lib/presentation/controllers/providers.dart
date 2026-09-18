@@ -81,19 +81,44 @@ const defaultHomeSectionOrder = <String>[
   'smart_home_quick',
 ];
 
+List<String> normalizeHomeSectionOrder(String? value) {
+  if (value == null || value.trim().isEmpty) {
+    return List<String>.unmodifiable(defaultHomeSectionOrder);
+  }
+
+  final knownSections = defaultHomeSectionOrder.toSet();
+  final seen = <String>{};
+  final normalized = <String>[];
+  for (final rawKey in value.split(',')) {
+    final key = rawKey.trim();
+    if (knownSections.contains(key) && seen.add(key)) {
+      normalized.add(key);
+    }
+  }
+  normalized.addAll(defaultHomeSectionOrder.where(seen.add));
+  return List<String>.unmodifiable(normalized);
+}
+
+double normalizeFontScale(String? value) {
+  final scale = double.tryParse(value ?? '');
+  if (scale == null || !scale.isFinite || scale < 0.8 || scale > 1.6) {
+    return 1.0;
+  }
+  return scale;
+}
+
 final homeSectionOrderProvider = StreamProvider<List<String>>((ref) {
-  return ref.watch(settingsServiceProvider).watchValue(homeSectionOrderKey).map((val) {
-    if (val == null || val.trim().isEmpty) return defaultHomeSectionOrder;
-    final list = val.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-    if (list.isEmpty) return defaultHomeSectionOrder;
-    // ensure all known modules are present
-    final missing = defaultHomeSectionOrder.where((k) => !list.contains(k)).toList();
-    return [...list, ...missing];
-  });
+  return ref
+      .watch(settingsServiceProvider)
+      .watchValue(homeSectionOrderKey)
+      .map(normalizeHomeSectionOrder);
 });
 
 final fontScaleProvider = StreamProvider<double>(
-  (ref) => ref.watch(settingsServiceProvider).watchValue('font_scale').map((val) => double.tryParse(val ?? '1.0') ?? 1.0),
+  (ref) => ref
+      .watch(settingsServiceProvider)
+      .watchValue('font_scale')
+      .map(normalizeFontScale),
 );
 
 final backupRepositoryProvider = Provider<BackupRepository>(
