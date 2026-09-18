@@ -96,6 +96,8 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
   final _textController = TextEditingController();
   final _scrollController = ScrollController();
   bool _isLoading = false;
+  Object? _activeRequestToken;
+  String? _activeRequestSessionId;
 
   MixedPlanData? _currentPlan;
 
@@ -159,22 +161,23 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
 
   void _deleteSession(String sessionId) {
     if (_sessions.length <= 1) {
-      // 只有一个会话时清空重置为默认
+      // Keep the list item stable while clearing its contents. The request
+      // token is invalidated so a reply that finishes later cannot be written
+      // into the newly reset conversation.
       setState(() {
-        // Replace the session, invalidating replies from any cleared request.
-        final replacement = AiSession(
-          id: const Uuid().v4(),
-          title: '新对话',
-          createdAt: DateTime.now(),
-          messages: [_createDefaultWelcomeMessage()],
-        );
-        _sessions[0] = replacement;
-        _currentSessionId = replacement.id;
+        final session = _sessions.single;
+        _invalidateRequestForSession(session.id);
+        session
+          ..title = '新对话'
+          ..messages.clear()
+          ..messages.add(_createDefaultWelcomeMessage());
+        _currentSessionId = session.id;
         _currentPlan = null;
       });
       return;
     }
     setState(() {
+      _invalidateRequestForSession(sessionId);
       _sessions.removeWhere((s) => s.id == sessionId);
       if (_currentSessionId == sessionId) {
         _currentSessionId = _sessions.first.id;
@@ -182,6 +185,13 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
       _currentPlan = null;
     });
     _scrollToBottom();
+  }
+
+  void _invalidateRequestForSession(String sessionId) {
+    if (_activeRequestSessionId != sessionId) return;
+    _activeRequestToken = null;
+    _activeRequestSessionId = null;
+    _isLoading = false;
   }
 
   @override
@@ -213,6 +223,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
 
     final origin = _currentSession;
     final history = List<ChatMessage>.of(origin.messages);
+    final requestToken = Object();
     final userMsg = ChatMessage(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       role: 'user',
@@ -226,6 +237,8 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
       }
       origin.messages.add(userMsg);
       _isLoading = true;
+      _activeRequestToken = requestToken;
+      _activeRequestSessionId = origin.id;
     });
     _scrollToBottom();
 
@@ -234,7 +247,9 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
       // go through the real service and its database snapshot.
       final reply = _unsupportedActionReply(text) ??
           await ref.read(aiAssistantServiceProvider).ask(text, history);
-      if (mounted && _sessions.contains(origin)) {
+      if (mounted &&
+          identical(_activeRequestToken, requestToken) &&
+          _sessions.contains(origin)) {
         setState(() {
           origin.messages.add(ChatMessage(
             id: const Uuid().v4(),
@@ -245,7 +260,9 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
         });
       }
     } catch (error) {
-      if (mounted && _sessions.contains(origin)) {
+      if (mounted &&
+          identical(_activeRequestToken, requestToken) &&
+          _sessions.contains(origin)) {
         final message = error is TimeoutException
             ? '请求超时，请检查网络后重试。'
             : '请检查「我的」中的 AI 地址、模型、API Key 和网络后重试。';
@@ -259,9 +276,11 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
         });
       }
     } finally {
-      if (mounted) {
+      if (mounted && identical(_activeRequestToken, requestToken)) {
         setState(() {
           _isLoading = false;
+          _activeRequestToken = null;
+          _activeRequestSessionId = null;
         });
         _scrollToBottom();
       }

@@ -647,7 +647,7 @@ class HomeScreen extends ConsumerWidget {
                       ),
                       onPressed: () {
                         ScaffoldMessenger.of(context)
-                          ..hideCurrentSnackBar()
+                          ..removeCurrentSnackBar()
                           ..showSnackBar(
                             SnackBar(
                               content: Text('当前版本尚未支持 Home Assistant，未执行【${scene.name}】。'),
@@ -708,7 +708,7 @@ class HomeScreen extends ConsumerWidget {
                           activeTrackColor: palette.primary,
                           onChanged: (val) {
                             ScaffoldMessenger.of(context)
-                              ..hideCurrentSnackBar()
+                              ..removeCurrentSnackBar()
                               ..showSnackBar(
                                 SnackBar(
                                   content: Text('当前版本尚未支持设备控制，未操作【${device.name}】。'),

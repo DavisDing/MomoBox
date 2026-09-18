@@ -81,6 +81,13 @@ void main() {
       await tester.ensureVisible(deleteBtn);
       await tester.tap(deleteBtn);
       await tester.pump();
+      if (clearLast) {
+        expect(find.text('新对话'), findsOneWidget);
+        final sendButton = tester.widget<IconButton>(
+          find.widgetWithIcon(IconButton, Icons.send_rounded),
+        );
+        expect(sendButton.onPressed, isNotNull);
+      }
       service.reply.complete('不应该出现的旧回复');
       await tester.pumpAndSettle();
       expect(find.text('不应该出现的旧回复'), findsNothing);
