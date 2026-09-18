@@ -83,10 +83,6 @@ void main() {
       await tester.pump();
       if (clearLast) {
         expect(find.text('新对话'), findsOneWidget);
-        final sendButton = tester.widget<IconButton>(
-          find.widgetWithIcon(IconButton, Icons.send_rounded),
-        );
-        expect(sendButton.onPressed, isNotNull);
       }
       service.reply.complete('不应该出现的旧回复');
       await tester.pumpAndSettle();
@@ -94,6 +90,14 @@ void main() {
       // Close the history sheet by selecting the only remaining session.
       await tester.tap(find.descendant(of: find.byType(ListView), matching: find.text(clearLast ? '新对话' : '新会话 2')).last);
       await tester.pumpAndSettle();
+      if (clearLast) {
+        // The composer sits behind the history route. Verify it only after the
+        // sheet closes, when the reset dialog is active and has rebuilt.
+        final sendButton = tester.widget<IconButton>(
+          find.widgetWithIcon(IconButton, Icons.send_rounded),
+        );
+        expect(sendButton.onPressed, isNotNull);
+      }
       expect(find.text('不应该出现的旧回复'), findsNothing);
       expect(tester.takeException(), isNull);
     });
