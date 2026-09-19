@@ -78,7 +78,13 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       final row = find.ancestor(of: find.text('待删除请求').last, matching: find.byType(Row)).first;
       final deleteBtn = find.descendant(of: row, matching: find.byIcon(Icons.delete_outline));
-      await tester.ensureVisible(deleteBtn);
+      // The history sheet owns a second ListView. Explicitly scroll that
+      // viewport so the delete button is inside the test surface before tap.
+      await tester.scrollUntilVisible(
+        deleteBtn,
+        200,
+        scrollable: find.byType(ListView).last,
+      );
       await tester.tap(deleteBtn);
       await tester.pump();
       if (clearLast) {
