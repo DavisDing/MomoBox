@@ -74,17 +74,32 @@ void main() {
         await tester.pump();
       }
       await tester.tap(find.byTooltip('历史会话'));
-      // The request is still pending, so do not pumpAndSettle its spinner.
+      // Start the sheet transition, then advance it without waiting for the
+      // still-pending request's continuously animating spinner to settle.
+      await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
-      final row = find.ancestor(of: find.text('待删除请求').last, matching: find.byType(Row)).first;
+      final historyList = find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.byType(ListView),
+      );
+      expect(historyList, findsOneWidget);
+      final sessionTitle = find.descendant(
+        of: historyList,
+        matching: find.text('待删除请求'),
+      );
+      final row = find.ancestor(of: sessionTitle, matching: find.byType(Row)).first;
       final deleteBtn = find.descendant(of: row, matching: find.byIcon(Icons.delete_outline));
-      // The history sheet owns a second ListView. Explicitly scroll that
-      // viewport so the delete button is inside the test surface before tap.
+      // scrollUntilVisible requires the ListView's inner Scrollable, not the
+      // ListView itself. Scope it to the sheet instead of the chat viewport.
       await tester.scrollUntilVisible(
         deleteBtn,
         200,
-        scrollable: find.byType(ListView).last,
+        scrollable: find.descendant(
+          of: historyList,
+          matching: find.byType(Scrollable),
+        ),
       );
+      expect(deleteBtn.hitTestable(), findsOneWidget);
       await tester.tap(deleteBtn);
       await tester.pump();
       if (clearLast) {
@@ -94,7 +109,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('不应该出现的旧回复'), findsNothing);
       // Close the history sheet by selecting the only remaining session.
-      await tester.tap(find.descendant(of: find.byType(ListView), matching: find.text(clearLast ? '新对话' : '新会话 2')).last);
+      await tester.tap(find.descendant(
+        of: historyList,
+        matching: find.text(clearLast ? '新对话' : '新会话 2'),
+      ));
       await tester.pumpAndSettle();
       if (clearLast) {
         // The composer sits behind the history route. Verify it only after the
