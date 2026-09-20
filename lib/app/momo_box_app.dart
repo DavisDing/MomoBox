@@ -13,6 +13,7 @@ import '../presentation/screens/settings_screen.dart';
 import '../presentation/screens/shopping_screen.dart';
 import '../presentation/screens/smart_home_screen.dart';
 import '../presentation/widgets/app_scaffold.dart';
+import '../presentation/widgets/app_back_guard.dart';
 import 'momo_theme.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
@@ -20,7 +21,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     initialLocation: '/',
     routes: [
       ShellRoute(
-        builder: (context, state, child) => AppScaffold(child: child),
+        builder: (context, state, child) => AppBackGuard(child: AppScaffold(child: child)),
         routes: [
           // 1. 首页 (Home / Dashboard)
           GoRoute(path: '/', builder: (context, state) => const HomeScreen()),

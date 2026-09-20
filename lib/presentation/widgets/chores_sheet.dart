@@ -393,13 +393,14 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
+                  isExpanded: true,
                   initialValue: category,
                   decoration: const InputDecoration(labelText: '类别'),
                   items: const [
-                    DropdownMenuItem(value: '家居清洁', child: Text('家居清洁')),
-                    DropdownMenuItem(value: '个人卫生', child: Text('个人卫生')),
-                    DropdownMenuItem(value: '耗材更换', child: Text('耗材更换')),
-                    DropdownMenuItem(value: '设备维护', child: Text('设备维护')),
+                    DropdownMenuItem(value: '家居清洁', child: Text('家居清洁', overflow: TextOverflow.ellipsis)),
+                    DropdownMenuItem(value: '个人卫生', child: Text('个人卫生', overflow: TextOverflow.ellipsis)),
+                    DropdownMenuItem(value: '耗材更换', child: Text('耗材更换', overflow: TextOverflow.ellipsis)),
+                    DropdownMenuItem(value: '设备维护', child: Text('设备维护', overflow: TextOverflow.ellipsis)),
                   ],
                   onChanged: (val) {
                     if (val != null) setDialogState(() => category = val);
@@ -407,14 +408,15 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<ChoreRepeatInterval>(
+                  isExpanded: true,
                   initialValue: interval,
                   decoration: const InputDecoration(labelText: '重复周期'),
                   items: const [
-                    DropdownMenuItem(value: ChoreRepeatInterval.daily, child: Text('每天')),
-                    DropdownMenuItem(value: ChoreRepeatInterval.weekly, child: Text('每周 (7天)')),
-                    DropdownMenuItem(value: ChoreRepeatInterval.biweekly, child: Text('每两周 (14天)')),
-                    DropdownMenuItem(value: ChoreRepeatInterval.monthly, child: Text('每月 (30天)')),
-                    DropdownMenuItem(value: ChoreRepeatInterval.quarterly, child: Text('每季度 (90天)')),
+                    DropdownMenuItem(value: ChoreRepeatInterval.daily, child: Text('每天', overflow: TextOverflow.ellipsis)),
+                    DropdownMenuItem(value: ChoreRepeatInterval.weekly, child: Text('每周 (7天)', overflow: TextOverflow.ellipsis)),
+                    DropdownMenuItem(value: ChoreRepeatInterval.biweekly, child: Text('每两周 (14天)', overflow: TextOverflow.ellipsis)),
+                    DropdownMenuItem(value: ChoreRepeatInterval.monthly, child: Text('每月 (30天)', overflow: TextOverflow.ellipsis)),
+                    DropdownMenuItem(value: ChoreRepeatInterval.quarterly, child: Text('每季度 (90天)', overflow: TextOverflow.ellipsis)),
                   ],
                   onChanged: (val) {
                     if (val != null) {

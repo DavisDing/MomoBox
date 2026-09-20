@@ -352,13 +352,22 @@ class _SortSelector extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    // Match the menu to the trigger, including the user's font scaling.
+    const labelStyle = TextStyle(fontSize: 12, fontWeight: FontWeight.w500);
+    final painter = TextPainter(
+      text: TextSpan(text: current.label, style: DefaultTextStyle.of(context).style.merge(labelStyle)),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout();
+    final triggerWidth = painter.width.ceilToDouble() + 18 + 4 + 20 + 2;
+    painter.dispose();
     return PopupMenuButton<InventorySortOption>(
       tooltip: '排序：${current.label}',
       onSelected: onSelected,
       position: PopupMenuPosition.under,
       elevation: 4,
       shadowColor: Colors.black.withValues(alpha: 0.12),
-      constraints: const BoxConstraints(minWidth: 128, maxWidth: 152),
+      constraints: BoxConstraints.tightFor(width: triggerWidth),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
@@ -374,18 +383,14 @@ class _SortSelector extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Row(
                 children: [
-                  Icon(
-                    option == current ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
-                    size: 16,
-                    color: option == current ? theme.colorScheme.primary : theme.hintColor.withValues(alpha: 0.4),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    option.label,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: option == current ? FontWeight.w600 : FontWeight.normal,
-                      color: option == current ? theme.colorScheme.primary : null,
+                  Expanded(
+                    child: Text(
+                      option.label,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: option == current ? FontWeight.w600 : FontWeight.normal,
+                        color: option == current ? theme.colorScheme.primary : null,
+                      ),
                     ),
                   ),
                 ],
@@ -394,6 +399,7 @@ class _SortSelector extends StatelessWidget {
           )
           .toList(growable: false),
       child: Container(
+        width: triggerWidth,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),

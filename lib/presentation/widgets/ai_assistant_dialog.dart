@@ -355,7 +355,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: palette.surface,
+              color: Theme.of(context).colorScheme.surface,
               borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
               border: Border(
                 bottom: BorderSide(
@@ -460,7 +460,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                       constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.82),
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       decoration: BoxDecoration(
-                        color: isUser ? palette.primary : palette.surface,
+                        color: isUser ? palette.primary : theme.colorScheme.surface,
                         borderRadius: BorderRadius.only(
                           topLeft: const Radius.circular(16),
                           topRight: const Radius.circular(16),
@@ -514,7 +514,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
           Container(
             padding: EdgeInsets.fromLTRB(16, 8, 16, MediaQuery.of(context).viewInsets.bottom + 12),
             decoration: BoxDecoration(
-              color: palette.surface,
+              color: Theme.of(context).colorScheme.surface,
               border: Border(
                 top: BorderSide(
                   color: (isDark ? Colors.white.withValues(alpha: 0.08) : palette.primary.withValues(alpha: 0.1)),
@@ -552,7 +552,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
   Widget _buildQuickChip(String label, MomoPalette palette) {
     return ActionChip(
       label: Text(label, style: const TextStyle(fontSize: 12)),
-      backgroundColor: palette.surface,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       side: BorderSide(color: palette.primary.withValues(alpha: 0.2)),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       onPressed: _isLoading ? null : () => _sendMessage(label.replaceAll(RegExp(r'^[^\s]+\s+'), '')),

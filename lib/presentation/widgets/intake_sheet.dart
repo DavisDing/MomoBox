@@ -624,6 +624,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
                   TextFormField(controller: _name, decoration: const InputDecoration(labelText: '物品名称 *'), validator: (value) => value == null || value.trim().isEmpty ? '请填写物品名称' : null),
                   const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: _category,
                     isDense: true,
                     menuMaxHeight: 280,
@@ -674,8 +675,8 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
                         underline: const SizedBox.shrink(),
                         onChanged: (value) => setState(() => _shelfLifeUnit = value ?? _shelfLifeUnit),
                         items: const [
-                          DropdownMenuItem(value: ShelfLifeUnit.days, child: Text('天')),
-                          DropdownMenuItem(value: ShelfLifeUnit.months, child: Text('个月')),
+                          DropdownMenuItem(value: ShelfLifeUnit.days, child: Text('天', overflow: TextOverflow.ellipsis)),
+                          DropdownMenuItem(value: ShelfLifeUnit.months, child: Text('个月', overflow: TextOverflow.ellipsis)),
                         ],
                       ),
                     ],
@@ -774,7 +775,7 @@ class _MediaDraftSection extends StatelessWidget {
                             Positioned.fill(
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(10),
-                                child: Image.file(File(asset.localPath), fit: BoxFit.cover, errorBuilder: (_, __, ___) => const ColoredBox(color: Color(0xFFE0E0E0), child: Icon(Icons.broken_image_outlined))),
+                                child: Image.file(File(asset.localPath), fit: BoxFit.cover, errorBuilder: (_, __, ___) => ColoredBox(color: Theme.of(context).colorScheme.surfaceContainerHighest, child: const Icon(Icons.broken_image_outlined))),
                               ),
                             ),
                             Positioned(left: 4, bottom: 4, child: DecoratedBox(decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)), child: Padding(padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2), child: Text(asset.type.label, style: const TextStyle(color: Colors.white, fontSize: 10))))),

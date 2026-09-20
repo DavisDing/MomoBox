@@ -705,7 +705,7 @@ class _ProductMediaSectionState extends ConsumerState<_ProductMediaSection> {
                       width: 138,
                       child: Stack(
                         children: [
-                          Positioned.fill(child: ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.file(File(asset.localPath), fit: BoxFit.cover, errorBuilder: (_, __, ___) => const ColoredBox(color: Color(0xFFE0E0E0), child: Icon(Icons.broken_image_outlined))))),
+                          Positioned.fill(child: ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.file(File(asset.localPath), fit: BoxFit.cover, errorBuilder: (_, __, ___) => ColoredBox(color: Theme.of(context).colorScheme.surfaceContainerHighest, child: const Icon(Icons.broken_image_outlined))))),
                           Positioned(left: 4, bottom: 4, child: DecoratedBox(decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)), child: Padding(padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2), child: Text(asset.type.label, style: const TextStyle(color: Colors.white, fontSize: 10))))),
                           Positioned(right: 0, top: 0, child: IconButton(iconSize: 16, style: IconButton.styleFrom(backgroundColor: Colors.black54, foregroundColor: Colors.white), onPressed: () => _delete(asset), icon: const Icon(Icons.close))),
                           if (asset.hasOcrText) const Positioned(left: 5, top: 5, child: Icon(Icons.text_snippet, color: Colors.white, size: 18)),

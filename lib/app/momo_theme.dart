@@ -187,6 +187,7 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
 
   return ThemeData(
     useMaterial3: true,
+    buttonTheme: const ButtonThemeData(alignedDropdown: true),
     brightness: brightness,
     colorScheme: colorScheme,
     scaffoldBackgroundColor: background,
@@ -298,7 +299,12 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
 }
 
 class MomoAppInfo {
-  static const String appVersion = '0.1.0';
-  static const String buildNumber = '1';
+  // Release builds inject the same values used by --build-name/--build-number.
+  static const String appVersion = String.fromEnvironment(
+    'MOMO_APP_VERSION', defaultValue: '0.1.0',
+  );
+  static const String buildNumber = String.fromEnvironment(
+    'MOMO_BUILD_NUMBER', defaultValue: '1',
+  );
   static const String versionDisplay = '$appVersion（构建 $buildNumber）';
 }

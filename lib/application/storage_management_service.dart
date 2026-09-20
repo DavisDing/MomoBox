@@ -31,6 +31,16 @@ class StorageUsage {
   int get deviceTotalBytes => databaseBytes + mediaBytes;
 }
 
+class StorageCleanupReport {
+  const StorageCleanupReport({
+    required this.barcodeEntries,
+    required this.media,
+  });
+
+  final int barcodeEntries;
+  final MediaCleanupReport media;
+}
+
 class StorageManagementService {
   StorageManagementService(
     this._barcodeCache,
@@ -58,6 +68,16 @@ class StorageManagementService {
       barcodeCacheEntries: barcode.entries,
       aiUsageLogBytes: utf8.encode(aiLog).length,
     );
+  }
+
+  /// Only disposable data is removed. Keep inventory, purchase/history records,
+  /// credentials, backups and referenced media (including recent intake drafts).
+  /// Failures propagate; callers must not report a partial cleanup as success.
+  Future<StorageCleanupReport> cleanAll() async {
+    final barcodeEntries = await clearAllBarcodeCache();
+    await clearAiUsageLogs();
+    final media = await cleanUnusedMedia();
+    return StorageCleanupReport(barcodeEntries: barcodeEntries, media: media);
   }
 
   Future<int> clearExpiredBarcodeCache() => _barcodeCache.purgeExpired();

@@ -330,6 +330,18 @@ testWidgets('提醒支持单条和分组已处理，确认状态持久化', (tes
     expect(tester.takeException(), isNull);
     expect(find.byTooltip('搜索物品').hitTestable(), findsOneWidget);
     expect(find.byType(PopupMenuButton<InventorySortOption>).hitTestable(), findsOneWidget);
+    final sortButton = find.byType(PopupMenuButton<InventorySortOption>);
+    final triggerWidth = tester.getSize(sortButton).width;
+    await tester.tap(sortButton);
+    await _pumpForUi(tester);
+    for (final entry in find.byType(PopupMenuItem<InventorySortOption>).evaluate()) {
+      expect(tester.getSize(find.byWidget(entry.widget)).width, closeTo(triggerWidth, 1));
+    }
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('库存从多到少'));
+    await _pumpForUi(tester);
+    expect(tester.takeException(), isNull);
+
 
     tester.widget<FloatingActionButton>(find.byType(FloatingActionButton)).onPressed!();
     await tester.pump();

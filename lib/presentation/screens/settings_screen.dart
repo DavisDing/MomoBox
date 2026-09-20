@@ -426,13 +426,14 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
                 TextField(controller: urlCtrl, decoration: const InputDecoration(labelText: 'API 地址模板（含 {barcode}）')),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
+                  isExpanded: true,
                   initialValue: role,
                   decoration: const InputDecoration(labelText: '调用角色'),
                   items: const [
-                    DropdownMenuItem(value: BarcodeLookupService.primaryRole, child: Text('主服务')),
-                    DropdownMenuItem(value: BarcodeLookupService.secondaryRole, child: Text('副服务（主服务失败时调用）')),
-                    DropdownMenuItem(value: BarcodeLookupService.fallbackRole, child: Text('兜底服务（前两者失败时调用）')),
-                    DropdownMenuItem(value: BarcodeLookupService.standbyRole, child: Text('仅保存，不参与调用')),
+                    DropdownMenuItem(value: BarcodeLookupService.primaryRole, child: Text('主服务', overflow: TextOverflow.ellipsis)),
+                    DropdownMenuItem(value: BarcodeLookupService.secondaryRole, child: Text('副服务（主服务失败时调用）', overflow: TextOverflow.ellipsis)),
+                    DropdownMenuItem(value: BarcodeLookupService.fallbackRole, child: Text('兜底服务（前两者失败时调用）', overflow: TextOverflow.ellipsis)),
+                    DropdownMenuItem(value: BarcodeLookupService.standbyRole, child: Text('仅保存，不参与调用', overflow: TextOverflow.ellipsis)),
                   ],
                   onChanged: (value) {
                     if (value != null) setDialogState(() => role = value);
@@ -867,14 +868,15 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                 TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: '配置名称（如：主力模型）')),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
+                  isExpanded: true,
                   initialValue: fallbackRole,
                   isDense: true,
                   decoration: const InputDecoration(labelText: '容灾角色'),
                   items: const [
-                    DropdownMenuItem(value: AiDraftService.primaryRole, child: Text('主服务（优先调用）')),
-                    DropdownMenuItem(value: AiDraftService.secondaryRole, child: Text('副服务（主服务失败时调用）')),
-                    DropdownMenuItem(value: AiDraftService.fallbackRole, child: Text('兜底服务（前两者失败时调用）')),
-                    DropdownMenuItem(value: AiDraftService.standbyRole, child: Text('仅保存，不参与调用')),
+                    DropdownMenuItem(value: AiDraftService.primaryRole, child: Text('主服务（优先调用）', overflow: TextOverflow.ellipsis)),
+                    DropdownMenuItem(value: AiDraftService.secondaryRole, child: Text('副服务（主服务失败时调用）', overflow: TextOverflow.ellipsis)),
+                    DropdownMenuItem(value: AiDraftService.fallbackRole, child: Text('兜底服务（前两者失败时调用）', overflow: TextOverflow.ellipsis)),
+                    DropdownMenuItem(value: AiDraftService.standbyRole, child: Text('仅保存，不参与调用', overflow: TextOverflow.ellipsis)),
                   ],
                   onChanged: (value) {
                     if (value != null) setDialogState(() => fallbackRole = value);
@@ -1005,30 +1007,34 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                   isDefault ? Icons.check_circle : Icons.radio_button_unchecked,
                   color: isDefault ? Theme.of(context).primaryColor : Colors.grey,
                 ),
-                title: Row(
+                title: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        p['name'] as String? ?? '',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                    Text(
+                      p['name'] as String? ?? '',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: badgeColor.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        type == 'auto' ? '自动 (auto)' : type,
-                        style: TextStyle(fontSize: 10, color: badgeColor),
-                      ),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: badgeColor.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            type == 'auto' ? '自动 (auto)' : type,
+                            style: TextStyle(fontSize: 10, color: badgeColor),
+                          ),
+                        ),
+                        Text(_roleLabel(p), style: const TextStyle(fontSize: 11)),
+                      ],
                     ),
-                    const SizedBox(width: 6),
-                    Text(_roleLabel(p), style: const TextStyle(fontSize: 11)),
                   ],
                 ),
                 subtitle: Text(
@@ -1452,30 +1458,63 @@ class _StorageManagementScreenState extends ConsumerState<StorageManagementScree
         false;
   }
 
+  Future<void> _cleanAll() async {
+    final confirmed = await _confirm(
+      '一键清理？',
+      '将清空全部条码缓存、AI 用量日志，并清理无用图片（临时入库图片保留 1 天）。'
+      '不会删除库存、采购清单、历史记录、备份、服务配置和正在使用的商品图片。'
+      'AI 用量日志清空后无法恢复，下次条码查询可能需要联网。',
+      '确认清理',
+    );
+    if (!confirmed || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      final report = await ref.read(storageManagementServiceProvider).cleanAll();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('清理完成：${report.barcodeEntries} 条条码缓存、'
+            '${report.media.deletedFiles} 个无用文件、'
+            '${report.media.deletedMetadata} 条无效图片记录；AI 用量日志已清空。'),
+      ));
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('清理未全部完成，已完成的清理不会回退，可重试：$error'),
+        ));
+      }
+    } finally {
+      if (mounted) await _reload();
+    }
+  }
+
   Future<void> _clearExpiredBarcodeCache() async {
-    if (!await _confirm('清理过期条码缓存？', '只会删除已经失效的条码查询结果，不影响库存与商品数据。', '清理')) return;
+    if (!await _confirm('清理过期条码缓存？', '只会删除已经失效的条码查询结果，不影响库存与商品数据。', '清理') || !mounted) return;
     setState(() => _busy = true);
     try {
       final count = await ref.read(storageManagementServiceProvider).clearExpiredBarcodeCache();
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已清理 $count 条过期缓存。')));
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('清理失败，可重试：$error')));
     } finally {
-      await _reload();
+      if (mounted) await _reload();
     }
   }
 
   Future<void> _clearAllBarcodeCache() async {
-    if (!await _confirm('清空所有条码缓存？', '下次扫码查询时可能需要重新联网获取商品信息；不会删除库存记录。', '清空')) return;
+    if (!await _confirm('清空所有条码缓存？', '下次扫码查询时可能需要重新联网获取商品信息；不会删除库存记录。', '清空') || !mounted) return;
     setState(() => _busy = true);
     try {
       final count = await ref.read(storageManagementServiceProvider).clearAllBarcodeCache();
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已清空 $count 条条码缓存。')));
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('清理失败，可重试：$error')));
     } finally {
-      await _reload();
+      if (mounted) await _reload();
     }
   }
 
   Future<void> _cleanUnusedMedia() async {
-    if (!await _confirm('清理无用图片？', '只会删除未被商品引用的临时或遗失图片，不会删除正在使用的商品图片。', '清理')) return;
+    if (!await _confirm('清理无用图片？', '只会删除未被商品引用的临时或遗失图片，不会删除正在使用的商品图片。', '清理') || !mounted) return;
     setState(() => _busy = true);
     try {
       final report = await ref.read(storageManagementServiceProvider).cleanUnusedMedia();
@@ -1484,8 +1523,10 @@ class _StorageManagementScreenState extends ConsumerState<StorageManagementScree
           SnackBar(content: Text('已清理 ${report.deletedFiles} 个文件、${report.deletedMetadata} 条无效记录。')),
         );
       }
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('清理失败，可重试：$error')));
     } finally {
-      await _reload();
+      if (mounted) await _reload();
     }
   }
 
@@ -1526,6 +1567,15 @@ class _StorageManagementScreenState extends ConsumerState<StorageManagementScree
                     ),
             ),
           ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: _busy ? null : _cleanAll,
+            icon: _busy
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.cleaning_services_outlined),
+            label: Text(_busy ? '正在处理…' : '一键清理'),
+          ),
+          const SizedBox(height: 12),
           Card(
             child: ListTile(
               leading: const Icon(Icons.auto_delete_outlined),

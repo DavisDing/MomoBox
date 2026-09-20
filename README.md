@@ -45,6 +45,15 @@
 
 `docs:`、`chore:`、`style:`、`refactor:`、测试提交和非 Conventional Commit 不会触发发布。首次满足规则的发布使用 `pubspec.yaml` 中的基础版本（当前为 `v0.1.0`）；之后以最新 Git 标签为准。工作流把计算出的版本和 GitHub Actions 的运行序号传给 Flutter，因此 APK/AAB 内的版本与 Release 标签一致，无需由工作流回写提交。
 
+“关于”页通过 `MOMO_APP_VERSION` / `MOMO_BUILD_NUMBER` 编译变量显示版本。Release 工作流会将它们与 `--build-name` / `--build-number` 设为同一组值。本地手动打包自定义版本时也应同时传入，例如：
+
+```sh
+flutter build apk --build-name=0.2.0 --build-number=42 \
+  --dart-define=MOMO_APP_VERSION=0.2.0 --dart-define=MOMO_BUILD_NUMBER=42
+```
+
+未传入编译变量的开发构建默认显示 `0.1.0` / `1`。
+
 ### GitHub 仓库配置
 
 1. 将目标发布分支设为 GitHub 仓库的默认分支。

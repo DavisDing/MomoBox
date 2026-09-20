@@ -56,6 +56,7 @@ class _AiUsageScreenState extends ConsumerState<AiUsageScreen> {
         children: [
           // 时间段切换 Tab
           SegmentedButton<int>(
+            showSelectedIcon: false,
             segments: const [
               ButtonSegment(value: 0, label: Text('当日')),
               ButtonSegment(value: 1, label: Text('近7天')),

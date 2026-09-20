@@ -66,9 +66,13 @@ jobs:
 
       - name: Verify release candidate
         if: steps.version.outputs.release_required == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD_NUMBER: ${{ github.run_number }}
         run: |
           flutter analyze
-          flutter test --reporter expanded
+          flutter test --reporter expanded \
+            --dart-define="MOMO_APP_VERSION=$VERSION" --dart-define="MOMO_BUILD_NUMBER=$BUILD_NUMBER"
 
       - name: Build versioned Android packages
         if: steps.version.outputs.release_required == 'true'
@@ -76,8 +80,10 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           BUILD_NUMBER: ${{ github.run_number }}
         run: |
-          flutter build apk --release --build-name "$VERSION" --build-number "$BUILD_NUMBER"
-          flutter build appbundle --release --build-name "$VERSION" --build-number "$BUILD_NUMBER"
+          flutter build apk --release --build-name "$VERSION" --build-number "$BUILD_NUMBER" \
+            --dart-define="MOMO_APP_VERSION=$VERSION" --dart-define="MOMO_BUILD_NUMBER=$BUILD_NUMBER"
+          flutter build appbundle --release --build-name "$VERSION" --build-number "$BUILD_NUMBER" \
+            --dart-define="MOMO_APP_VERSION=$VERSION" --dart-define="MOMO_BUILD_NUMBER=$BUILD_NUMBER"
           mkdir -p dist
           cp build/app/outputs/flutter-apk/app-release.apk "dist/MomoBox-v${VERSION}.apk"
           cp build/app/outputs/bundle/release/app-release.aab "dist/MomoBox-v${VERSION}.aab"
