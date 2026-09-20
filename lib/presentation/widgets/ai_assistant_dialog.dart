@@ -246,7 +246,11 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
       // Only capability limitations are handled locally; inventory answers must
       // go through the real service and its database snapshot.
       final reply = _unsupportedActionReply(text) ??
-          await ref.read(aiAssistantServiceProvider).ask(text, history);
+          await ref.read(aiAssistantServiceProvider).ask(
+              text,
+              history,
+              requestToken: requestToken.toString(),
+            );
       if (mounted &&
           identical(_activeRequestToken, requestToken) &&
           _sessions.contains(origin)) {

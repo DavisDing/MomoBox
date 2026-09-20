@@ -47,6 +47,40 @@ void main() {
     expect(plugin.pending.values.single, contains('剩余 2 件'));
   });
 
+  test('通知权限拒绝时跳过排程，不影响同步调用完成', () async {
+    final plugin = _RecordingPlugin();
+    final service = LocalNotificationService(
+      plugin: plugin,
+      permissionStatusReader: () async => NotificationPermissionStatus.denied,
+    );
+    await service.initialize();
+
+    await service.sync([_lowStockItem(1)], now: now);
+
+    expect(plugin.cancelCalls, 0);
+    expect(plugin.scheduleCalls, 0);
+  });
+
+  test('通知平台不可用时跳过排程并保持后续同步可用', () async {
+    final plugin = _RecordingPlugin();
+    var statusCalls = 0;
+    final service = LocalNotificationService(
+      plugin: plugin,
+      permissionStatusReader: () async {
+        statusCalls++;
+        return NotificationPermissionStatus.unavailable;
+      },
+    );
+    await service.initialize();
+
+    await service.sync([_lowStockItem(1)], now: now);
+    await service.sync([_lowStockItem(2)], now: now);
+
+    expect(statusCalls, 2);
+    expect(plugin.cancelCalls, 0);
+    expect(plugin.scheduleCalls, 0);
+  });
+
   test('一次排程失败会返回错误，但不会阻塞后续同步', () async {
     final plugin = _RecordingPlugin()..failNextCancel = true;
     final service = LocalNotificationService(plugin: plugin);

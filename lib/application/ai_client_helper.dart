@@ -1,4 +1,3 @@
-
 /// AI 协议调用与自适应辅助工具
 class AiClientHelper {
   const AiClientHelper._();
@@ -42,6 +41,15 @@ class AiClientHelper {
     return parsed.replace(pathSegments: [...parsed.pathSegments, 'responses']);
   }
 
+  /// 只保留可用于诊断的地址部分，避免把 API key 等查询参数写入日志。
+  static String sanitizeEndpoint(String endpoint) {
+    final parsed = Uri.tryParse(endpoint.trim());
+    if (parsed == null || !parsed.hasScheme || !parsed.hasAuthority) {
+      return endpoint.split('?').first.split('#').first;
+    }
+    return parsed.replace(query: null, fragment: '').toString();
+  }
+
   /// 统一从响应体（Chat 或 Responses 格式）解析文本内容
   static String? extractResponseText(Map<String, dynamic> decoded) {
     // 1. 尝试 Responses API 格式
@@ -74,4 +82,14 @@ class AiClientHelper {
 
     return null;
   }
+}
+
+/// 仅表示当前服务调用已经被后续请求替代，不代表 AI 服务本身失败。
+class AiRequestSupersededException implements Exception {
+  const AiRequestSupersededException(this.requestToken);
+
+  final String requestToken;
+
+  @override
+  String toString() => 'AI 请求已被更新的请求替代。';
 }

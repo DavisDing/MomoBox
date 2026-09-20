@@ -1,4 +1,5 @@
 import '../models/inventory_models.dart';
+import 'expiry_rules.dart';
 
 enum InventorySortOption {
   expirySoonest('最近到期'),
@@ -17,15 +18,17 @@ List<InventoryItem> sortInventoryItems(
   Iterable<InventoryItem> source,
   InventorySortOption option,
 ) {
-  final items = source.toList(growable: false);
+  final items = source.toList();
   items.sort((left, right) {
     final comparison = switch (option) {
       InventorySortOption.expirySoonest => _compareByExpiry(left, right),
       InventorySortOption.nameAscending => _compareName(left, right),
-      InventorySortOption.stockAscending => left.totalStock.compareTo(right.totalStock),
-      InventorySortOption.stockDescending => right.totalStock.compareTo(left.totalStock),
+      InventorySortOption.stockAscending =>
+        left.totalStock.compareTo(right.totalStock),
+      InventorySortOption.stockDescending =>
+        right.totalStock.compareTo(left.totalStock),
     };
-    return comparison == 0 ? _compareName(left, right) : comparison;
+    return comparison == 0 ? _compareIdentity(left, right) : comparison;
   });
   return items;
 }
@@ -36,8 +39,14 @@ int _compareByExpiry(InventoryItem left, InventoryItem right) {
   if (leftDate == null && rightDate == null) return 0;
   if (leftDate == null) return 1;
   if (rightDate == null) return -1;
-  return leftDate.compareTo(rightDate);
+
+  return ExpiryRules.dateOnly(leftDate).compareTo(
+    ExpiryRules.dateOnly(rightDate),
+  );
 }
 
 int _compareName(InventoryItem left, InventoryItem right) =>
     left.name.toLowerCase().compareTo(right.name.toLowerCase());
+
+int _compareIdentity(InventoryItem left, InventoryItem right) =>
+    left.id.compareTo(right.id);

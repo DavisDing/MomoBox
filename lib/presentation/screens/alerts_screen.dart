@@ -1,6 +1,7 @@
 import '../widgets/calendar_sync_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../widgets/app_feedback.dart';
 
 import '../../domain/inventory/reminder_rules.dart';
 import '../../domain/models/inventory_models.dart';
@@ -379,7 +380,7 @@ class _AlertSection extends ConsumerWidget {
           );
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnackBar(context,
           SnackBar(content: Text('标记提醒失败：$error')),
         );
       }
@@ -394,13 +395,13 @@ class _AlertSection extends ConsumerWidget {
       });
       await ref.read(reminderServiceProvider).acknowledgeAll(reminders);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnackBar(context,
           SnackBar(content: Text('已将 $title 提醒标记为已处理。')),
         );
       }
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnackBar(context,
           SnackBar(content: Text('批量标记失败：$error')),
         );
       }
@@ -428,13 +429,13 @@ Future<void> _addToShopping(
           category: item.category,
         );
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnackBar(context,
         SnackBar(content: Text('已将${item.name}加入采购清单。')),
       );
     }
   } catch (error) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnackBar(context,
         SnackBar(content: Text('加入采购清单失败：$error')),
       );
     }

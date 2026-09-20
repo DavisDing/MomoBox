@@ -9,6 +9,8 @@
 ## 2. 技术栈
 
 - Frontend：Flutter / Dart
+- NAS backend：Go 1.22 + PostgreSQL 16；独立 Go module 位于 `backend/`
+- NAS deployment：`backend/` 独立 Docker build context；Compose 仅包含 `momo-backend` 与 `postgres`
 - State：flutter_riverpod
 - Routing：go_router
 - Local database：Drift + SQLite
@@ -32,6 +34,9 @@ lib/
 
 test/domain/                  # 可在 Flutter CI 中运行的领域测试
 scripts/ci/                   # CI 平台壳生成、补丁回归测试
+backend/                      # Go NAS 后端、migration、后端测试和独立 Dockerfile
+deploy/nas/                   # NAS Compose、环境变量示例、备份恢复脚本
+docs/nas/                     # NAS 领域、API、安全和部署契约
 ```
 
 ## 4. 长期架构
@@ -49,7 +54,7 @@ Repositories & External Connectors
   └─ Home Assistant Connector (NAS 侧托管令牌，局域网控制，可选增强)
 ```
 
-单机模式不依赖 NAS、账号、网络或 HA。未来 NAS 同步与 Home Assistant 控制必须作为独立模块实现，不能破坏本地数据源和离线基础操作。
+单机模式不依赖 NAS、账号、网络或 HA。NAS 同步与 Home Assistant 控制作为独立可选模块实现，不能破坏本地数据源和离线基础操作。Home Assistant 管理 Token 只在 NAS 后端加密保存；家庭成员控制必须经过实体权限与 typed command 白名单。AI/Ollama 仍由 Flutter 直连用户配置的服务，NAS 不内置 Ollama，也不提供 AI Proxy。
 
 ## 5. 已确认业务规则
 
@@ -73,7 +78,9 @@ Repositories & External Connectors
 
 交互与维护规则：Android 系统返回优先关闭弹窗/返回子页，其他一级页回首页；首页首次返回提示“再按一次退出软件”，2 秒内再次返回才退出。一键清理须确认，仅清理条码缓存、AI 用量日志和无用图片；保留业务数据、服务配置、备份、在用图片及 1 天内的临时入库图片。Release 工作流将相同的版本/构建号同时注入原生包和“关于”页；本地自定义版本的编译参数见 README。
 
-未实现：NAS/家庭账号/同步、后端 PostgreSQL、Docker、说明书外部链接或检索式问答、统计图表、社区共享数据。
+NAS 阶段已实现 Go 后端基础能力：家庭账号与成员、同步设备、增量同步、库存命令、PostgreSQL migration、Home Assistant 外部连接/发现/实体权限/typed control，以及独立 Dockerfile、双服务 Compose 和 PostgreSQL 备份恢复脚本。当前环境已通过 Go 测试、vet、Linux 二进制构建和静态契约检查；因本机无 Docker/PostgreSQL 客户端，镜像构建、Compose 启动、真实 migration/备份恢复、HA 实机联调及 Flutter 端到端联调仍为 `NOT_EXECUTED`。
+
+仍未实现：说明书外部链接或检索式问答、统计图表、社区共享数据。
 
 ## 7. 开发规则
 
@@ -102,4 +109,4 @@ CI 使用 Flutter stable channel，并执行：
 
 ## 9. AI_CONTEXT Update Proposal
 
-2026-09-11：已确认将条码扫描、图片/本地 OCR 和用户自配 AI 辅助能力纳入当前单机版本范围，并同步实际实现与隐私边界。后续只有技术栈、长期架构、核心业务决策或验证基线发生变化时才更新本文件。
+2026-09-20：NAS 后端已进入实现状态；确认 Go/PostgreSQL、`backend/` 独立 Docker 构建上下文、双服务 Compose、外部 Home Assistant typed control，以及“不内置 Ollama、不提供 AI Proxy”的长期边界。Docker/数据库/HA 实机验证尚未执行。后续只有技术栈、长期架构、核心业务决策或验证基线发生变化时才更新本文件。

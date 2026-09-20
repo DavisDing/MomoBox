@@ -26,12 +26,18 @@ class ReminderRepository {
   }
 
   Future<void> acknowledge({required String reminderKey, required String fingerprint}) async {
-    if (reminderKey.trim().isEmpty) throw ArgumentError('提醒标识不能为空。');
-    if (fingerprint.trim().isEmpty) throw ArgumentError('提醒状态不能为空。');
+    final normalizedKey = reminderKey.trim();
+    final normalizedFingerprint = fingerprint.trim();
+    if (normalizedKey.isEmpty) throw ArgumentError('提醒标识不能为空。');
+    if (normalizedFingerprint.isEmpty) throw ArgumentError('提醒状态不能为空。');
+
+    // The database primary key is reminderKey. Replacing the row makes a
+    // second acknowledgement advance the current reminder cycle instead of
+    // accumulating stale fingerprints forever.
     await _database.into(_database.reminderAcknowledgments).insertOnConflictUpdate(
           ReminderAcknowledgmentsCompanion.insert(
-            reminderKey: reminderKey,
-            fingerprint: fingerprint,
+            reminderKey: normalizedKey,
+            fingerprint: normalizedFingerprint,
             acknowledgedAt: DateTime.now(),
           ),
         );
@@ -47,6 +53,7 @@ class ReminderRepository {
     final keys = items
         .where((item) => !item.isLowStock)
         .map((item) => '${item.id}:low-stock')
+        .toSet()
         .toList(growable: false);
     if (keys.isEmpty) return;
     await (_database.delete(_database.reminderAcknowledgments)

@@ -6,6 +6,7 @@ import '../data/repositories/inventory_repository.dart';
 import '../data/repositories/settings_repository.dart';
 import '../domain/models/ai_usage_models.dart';
 import '../services/secure_settings_service.dart';
+import 'ai_client_helper.dart';
 import 'ai_draft_service.dart';
 import 'ai_fallback_executor.dart';
 import 'ai_usage_service.dart';
@@ -40,9 +41,32 @@ class AiAssistantService {
   final InventoryRepository _inventoryRepository;
   final AiUsageService _usageService;
   final AiFallbackExecutor _fallbackExecutor;
+  int _requestSequence = 0;
+  String? _latestRequestToken;
 
-  Future<String> ask(String question, List<ChatMessage> history) async {
+  /// Begins a new assistant request. A newer request invalidates an older
+  /// response before it can be returned to the UI.
+  String createRequestToken() {
+    final token = '${DateTime.now().microsecondsSinceEpoch}-${++_requestSequence}';
+    _latestRequestToken = token;
+    return token;
+  }
+
+  Future<String> ask(
+    String question,
+    List<ChatMessage> history, {
+    String? requestToken,
+  }) async {
+    final token = requestToken ?? createRequestToken();
+    _latestRequestToken = token;
+    void ensureCurrent() {
+      if (_latestRequestToken != token) {
+        throw AiRequestSupersededException(token);
+      }
+    }
+    ensureCurrent();
     final configs = await _resolveFallbackConfigs();
+    ensureCurrent();
     if (configs.isEmpty) {
       throw StateError('请先在「设置 -> AI 解析配置」中填写兼容 OpenAI 的 AI 地址、模型和 API Key。');
     }
@@ -52,6 +76,7 @@ class AiAssistantService {
         .watchInventory()
         .first
         .timeout(const Duration(seconds: 3));
+    ensureCurrent();
 
     final buffer = StringBuffer();
     buffer.writeln('【当前时间】：${DateTime.now().toIso8601String().substring(0, 10)}');
@@ -98,10 +123,23 @@ ${buffer.toString()}
         temperature: 0.3,
       );
 
-      _recordUsage(response.rawDecoded, response.usedConfig.model, response.actualProtocol);
+      ensureCurrent();
+      _recordUsage(
+        response.rawDecoded,
+        response.usedConfig.model,
+        response.actualProtocol,
+        providerLevel: response.usedLevel.name,
+        elapsedMs: response.traceLogs.fold<int>(0, (sum, log) => sum + log.durationMs),
+      );
 
+      ensureCurrent();
       return response.content.trim();
+    } on AiRequestSupersededException {
+      rethrow;
     } on AiFallbackException catch (error) {
+      if (_latestRequestToken == token) {
+        _recordFailureAttempts(error.traceLogs, 'qa');
+      }
       throw StateError('AI 服务异常：$error');
     }
   }
@@ -109,20 +147,27 @@ ${buffer.toString()}
   Future<List<AiEndpointConfig>> _resolveFallbackConfigs() =>
       AiDraftService.resolveFallbackConfigs(_settings, _secureSettings);
 
-  void _recordUsage(Map<String, dynamic> decoded, String model, String endpointType) {
+  void _recordUsage(
+    Map<String, dynamic> decoded,
+    String model,
+    String endpointType, {
+    String? providerLevel,
+    int elapsedMs = 0,
+  }) {
     try {
-      final usage = decoded['usage'];
-      if (usage is! Map) return;
+      final usage = decoded['usage'] is Map
+          ? decoded['usage'] as Map
+          : const <String, dynamic>{};
 
-      final prompt = (usage['prompt_tokens'] ?? usage['input_tokens'] ?? 0) as num;
-      final completion = (usage['completion_tokens'] ?? usage['output_tokens'] ?? 0) as num;
-      final total = (usage['total_tokens'] ?? (prompt + completion)) as num;
+      final prompt = _asNum(usage['prompt_tokens'] ?? usage['input_tokens']);
+      final completion = _asNum(usage['completion_tokens'] ?? usage['output_tokens']);
+      final total = _asNum(usage['total_tokens'], fallback: prompt + completion);
 
       int cachedRead = 0;
       int cachedWrite = 0;
       final promptDetails = usage['prompt_tokens_details'] ?? usage['input_token_details'];
       if (promptDetails is Map) {
-        cachedRead = ((promptDetails['cached_tokens'] ?? 0) as num).toInt();
+        cachedRead = _asNum(promptDetails['cached_tokens']).toInt();
       }
       final cacheCreation = usage['cache_creation_input_tokens'];
       if (cacheCreation is num) {
@@ -141,8 +186,36 @@ ${buffer.toString()}
           cachedWriteTokens: cachedWrite,
           cachedReadTokens: cachedRead,
           purpose: 'qa',
+          providerLevel: providerLevel,
+          elapsedMs: elapsedMs,
         ),
       );
     } catch (_) {}
   }
+
+  void _recordFailureAttempts(
+    List<AiExecutionAttemptLog> attempts,
+    String purpose,
+  ) {
+    for (final attempt in attempts) {
+      _usageService.recordUsage(
+        AiUsageRecord(
+          id: '${DateTime.now().microsecondsSinceEpoch}-${attempt.level.name}',
+          timestamp: DateTime.now(),
+          model: attempt.model,
+          endpointType: 'unknown',
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0,
+          purpose: purpose,
+          status: 'failure',
+          providerLevel: attempt.level.name,
+          failureReason: attempt.failureReason,
+          elapsedMs: attempt.durationMs,
+        ),
+      );
+    }
+  }
 }
+
+num _asNum(Object? value, {num fallback = 0}) => value is num && value.isFinite ? value : fallback;

@@ -3,6 +3,7 @@ import '../widgets/chores_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../widgets/app_feedback.dart';
 
 import '../../app/momo_theme.dart';
 import '../../domain/models/inventory_models.dart';
@@ -831,7 +832,7 @@ class HomeScreen extends ConsumerWidget {
                               onTap: () async {
                                 await ref.read(choreServiceProvider).completeChore(chore.id);
                                 if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
+                                  showAppSnackBar(context,
                                     SnackBar(content: Text('已打卡「${chore.title}」'), duration: const Duration(seconds: 1)),
                                   );
                                 }

@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import '../widgets/app_feedback.dart';
 
 import '../../app/momo_theme.dart';
 import '../../application/ai_draft_service.dart';
@@ -367,7 +368,7 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
       _profiles = profiles;
     });
     if (configurationError != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnackBar(context,
         SnackBar(content: Text(configurationError)),
       );
     }
@@ -379,7 +380,7 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
     await settings.setValue(BarcodeLookupService.profilesKey, jsonEncode(_profiles));
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('条码配置已保存')));
+      showAppSnackBar(context, const SnackBar(content: Text('条码配置已保存')));
     }
   }
 
@@ -792,7 +793,7 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
     await secureSettings.deleteAiApiKey();
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('AI 配置已保存；密钥仅保存在设备安全存储中。')));
+      showAppSnackBar(context, const SnackBar(content: Text('AI 配置已保存；密钥仅保存在设备安全存储中。')));
     }
   }
 
@@ -1107,7 +1108,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
       );
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('导出失败：$error')));
+        showAppSnackBar(context, SnackBar(content: Text('导出失败：$error')));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1148,10 +1149,10 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
       if (mounted) await _showImportFailures(error.failures);
     } on FormatException {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('文件不是有效的 UTF-8 JSON 备份。')));
+        showAppSnackBar(context, const SnackBar(content: Text('文件不是有效的 UTF-8 JSON 备份。')));
       }
     } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('导入失败：$error')));
+      if (mounted) showAppSnackBar(context, SnackBar(content: Text('导入失败：$error')));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1345,12 +1346,12 @@ class _NotificationSettingsScreenState extends ConsumerState<NotificationSetting
     try {
       final granted = await ref.read(localNotificationServiceProvider).requestPermission();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnackBar(context,
           SnackBar(content: Text(granted ? '通知权限已开启。' : '通知权限未开启，请在系统设置中允许通知。')),
         );
       }
     } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('无法请求通知权限：$error')));
+      if (mounted) showAppSnackBar(context, SnackBar(content: Text('无法请求通知权限：$error')));
     } finally {
       await _refreshStatus();
     }
@@ -1360,9 +1361,9 @@ class _NotificationSettingsScreenState extends ConsumerState<NotificationSetting
     setState(() => _busy = true);
     try {
       await ref.read(localNotificationServiceProvider).showTestNotification();
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('测试通知已发送。')));
+      if (mounted) showAppSnackBar(context, const SnackBar(content: Text('测试通知已发送。')));
     } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$error')));
+      if (mounted) showAppSnackBar(context, SnackBar(content: Text('$error')));
     } finally {
       await _refreshStatus();
     }
@@ -1437,7 +1438,7 @@ class _StorageManagementScreenState extends ConsumerState<StorageManagementScree
       final usage = await ref.read(storageManagementServiceProvider).loadUsage();
       if (mounted) setState(() => _usage = usage);
     } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('无法读取存储空间：$error')));
+      if (mounted) showAppSnackBar(context, SnackBar(content: Text('无法读取存储空间：$error')));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1471,14 +1472,14 @@ class _StorageManagementScreenState extends ConsumerState<StorageManagementScree
     try {
       final report = await ref.read(storageManagementServiceProvider).cleanAll();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      showAppSnackBar(context, SnackBar(
         content: Text('清理完成：${report.barcodeEntries} 条条码缓存、'
             '${report.media.deletedFiles} 个无用文件、'
             '${report.media.deletedMetadata} 条无效图片记录；AI 用量日志已清空。'),
       ));
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        showAppSnackBar(context, SnackBar(
           content: Text('清理未全部完成，已完成的清理不会回退，可重试：$error'),
         ));
       }
@@ -1492,9 +1493,9 @@ class _StorageManagementScreenState extends ConsumerState<StorageManagementScree
     setState(() => _busy = true);
     try {
       final count = await ref.read(storageManagementServiceProvider).clearExpiredBarcodeCache();
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已清理 $count 条过期缓存。')));
+      if (mounted) showAppSnackBar(context, SnackBar(content: Text('已清理 $count 条过期缓存。')));
     } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('清理失败，可重试：$error')));
+      if (mounted) showAppSnackBar(context, SnackBar(content: Text('清理失败，可重试：$error')));
     } finally {
       if (mounted) await _reload();
     }
@@ -1505,9 +1506,9 @@ class _StorageManagementScreenState extends ConsumerState<StorageManagementScree
     setState(() => _busy = true);
     try {
       final count = await ref.read(storageManagementServiceProvider).clearAllBarcodeCache();
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已清空 $count 条条码缓存。')));
+      if (mounted) showAppSnackBar(context, SnackBar(content: Text('已清空 $count 条条码缓存。')));
     } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('清理失败，可重试：$error')));
+      if (mounted) showAppSnackBar(context, SnackBar(content: Text('清理失败，可重试：$error')));
     } finally {
       if (mounted) await _reload();
     }
@@ -1519,12 +1520,12 @@ class _StorageManagementScreenState extends ConsumerState<StorageManagementScree
     try {
       final report = await ref.read(storageManagementServiceProvider).cleanUnusedMedia();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnackBar(context,
           SnackBar(content: Text('已清理 ${report.deletedFiles} 个文件、${report.deletedMetadata} 条无效记录。')),
         );
       }
     } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('清理失败，可重试：$error')));
+      if (mounted) showAppSnackBar(context, SnackBar(content: Text('清理失败，可重试：$error')));
     } finally {
       if (mounted) await _reload();
     }
@@ -1695,7 +1696,7 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
     }
     await secure.deleteAiApiKey();
     await _load();
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('所有 AI 密钥已从设备安全存储中移除。')));
+    if (mounted) showAppSnackBar(context, const SnackBar(content: Text('所有 AI 密钥已从设备安全存储中移除。')));
   }
 
   @override

@@ -51,6 +51,17 @@ void main() {
     expect(records.single.fingerprint, 'threshold:1');
   });
 
+  test('标记已处理会规范化 key 和 fingerprint，避免空白造成去重失效', () async {
+    await repository.acknowledge(
+      reminderKey: '  product-1:low-stock  ',
+      fingerprint: '  threshold:1  ',
+    );
+
+    final records = await database.select(database.reminderAcknowledgments).get();
+    expect(records.single.reminderKey, 'product-1:low-stock');
+    expect(records.single.fingerprint, 'threshold:1');
+  });
+
   test('同一提醒再次标记会更新 fingerprint 而不是新增记录', () async {
     await repository.acknowledge(
       reminderKey: 'product-1:low-stock',

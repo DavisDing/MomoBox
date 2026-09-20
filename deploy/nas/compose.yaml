@@ -1,0 +1,56 @@
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-momo}
+      POSTGRES_USER: ${POSTGRES_USER:-momo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  momo-backend:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      APP_VERSION: ${APP_VERSION:-0.1.0}
+      HTTP_ADDR: 0.0.0.0:8080
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      REFRESH_TOKEN_PEPPER: ${REFRESH_TOKEN_PEPPER:?set REFRESH_TOKEN_PEPPER in .env}
+      HA_TOKEN_ENCRYPTION_KEY: ${HA_TOKEN_ENCRYPTION_KEY:?set HA_TOKEN_ENCRYPTION_KEY in .env}
+      REGISTRATION_MODE: ${REGISTRATION_MODE:-first_setup}
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-15m}
+      REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL:-720h}
+      MAX_REQUEST_BODY_BYTES: ${MAX_REQUEST_BODY_BYTES:-1048576}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${MOMO_BACKEND_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "/app/momo-backend", "healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  postgres_data:

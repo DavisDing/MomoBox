@@ -12,13 +12,18 @@ import '../domain/models/inventory_models.dart';
 enum NotificationPermissionStatus { allowed, denied, unavailable }
 
 class LocalNotificationService {
-  LocalNotificationService({FlutterLocalNotificationsPlugin? plugin}) : _plugin = plugin ?? FlutterLocalNotificationsPlugin();
+  LocalNotificationService({
+    FlutterLocalNotificationsPlugin? plugin,
+    Future<NotificationPermissionStatus> Function()? permissionStatusReader,
+  })  : _plugin = plugin ?? FlutterLocalNotificationsPlugin(),
+        _permissionStatusReader = permissionStatusReader;
 
   static const _channelId = 'momobox_reminders';
   static const _channelName = '库存提醒';
   static const _channelDescription = '效期、过期和低库存提醒';
 
   final FlutterLocalNotificationsPlugin _plugin;
+  final Future<NotificationPermissionStatus> Function()? _permissionStatusReader;
   bool _initialized = false;
   Future<void> _syncTail = Future<void>.value();
 
@@ -140,6 +145,12 @@ class LocalNotificationService {
     List<ReminderCandidate> candidates,
     DateTime reference,
   ) async {
+    // Notification delivery is an optional enhancement. Permission denial or
+    // an unavailable platform API must not turn an inventory update into a
+    // failed operation, and must not cause us to claim that scheduling worked.
+    final status = await (_permissionStatusReader?.call() ?? permissionStatus());
+    if (status != NotificationPermissionStatus.allowed) return;
+
     await _plugin.cancelAll();
     for (final candidate in candidates) {
       final scheduled = _nextNineAm(candidate.date, reference);

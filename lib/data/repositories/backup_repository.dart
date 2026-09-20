@@ -59,8 +59,8 @@ class BackupRepository {
     final barcodeCache = await _database.select(_database.barcodeLookupCache).get();
 
     return const JsonEncoder.withIndent('  ').convert({
-      'format': 'momobox-backup',
-      'version': 3,
+      'format': BackupFormat.formatName,
+      'version': BackupFormat.supportedVersion,
       'exported_at': DateTime.now().toIso8601String(),
       'products': products.map(_productToJson).toList(),
       'batches': batches.map(_batchToJson).toList(),
@@ -73,6 +73,9 @@ class BackupRepository {
   }
 
   Future<ImportReport> importJson(String content) async {
+    // Materialize and validate every section before opening the write
+    // transaction. This keeps malformed records from ever becoming a partial
+    // restore, even when a later section is invalid.
     final document = BackupFormat.parse(content);
     final products = _records(document, 'products');
     final batches = _records(document, 'batches');

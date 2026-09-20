@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../widgets/app_feedback.dart';
 
 import '../../domain/inventory/expiry_rules.dart';
 import '../../domain/inventory/inventory_sorting.dart';
@@ -720,13 +721,13 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
     try {
       await ref.read(inventoryServiceProvider).consume(item.id, result);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnackBar(context,
           SnackBar(content: Text('已消耗 ${item.name} $result ${item.unit}（按最早到期优先扣减）。')),
         );
       }
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('消耗失败：$error')));
+        showAppSnackBar(context, SnackBar(content: Text('消耗失败：$error')));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -739,14 +740,14 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
     try {
       await ref.read(inventoryServiceProvider).consume(item.id, 1);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnackBar(context,
           SnackBar(content: Text('已消耗 ${item.name} 1 ${item.unit}。')),
         );
         setState(() => _actionsVisible = false);
       }
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('快速消耗失败：$error')));
+        showAppSnackBar(context, SnackBar(content: Text('快速消耗失败：$error')));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -764,14 +765,14 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
     try {
       await ref.read(inventoryServiceProvider).replenishBatch(batch.id, 1);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnackBar(context,
           SnackBar(content: Text('已补充 ${item.name} 1 ${item.unit}。')),
         );
         setState(() => _actionsVisible = false);
       }
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('快速补充失败：$error')));
+        showAppSnackBar(context, SnackBar(content: Text('快速补充失败：$error')));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -793,14 +794,14 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
             category: item.category,
           );
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnackBar(context,
           SnackBar(content: Text('已将 ${item.name} 加入采购清单。')),
         );
         setState(() => _actionsVisible = false);
       }
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('加入采购失败：$error')));
+        showAppSnackBar(context, SnackBar(content: Text('加入采购失败：$error')));
       }
     } finally {
       if (mounted) setState(() => _busy = false);

@@ -77,6 +77,19 @@ void main() {
     );
   });
 
+  test('校验备份头中的导出时间，避免接受损坏的头部元数据', () {
+    final valid = validDocument()..['exported_at'] = '2026-09-20T08:00:00.000Z';
+    expect(BackupFormat.parse(jsonEncode(valid)), isNotEmpty);
+
+    for (final value in [123, 'not-a-date']) {
+      final invalid = validDocument()..['exported_at'] = value;
+      expect(
+        () => BackupFormat.parse(jsonEncode(invalid)),
+        throwsA(isA<FormatException>()),
+      );
+    }
+  });
+
   test('拒绝非对象、缺字段、错误字段类型或错误库存约束的备份记录', () {
     final nonObject = validDocument()..['products'] = ['not-a-record'];
     expect(

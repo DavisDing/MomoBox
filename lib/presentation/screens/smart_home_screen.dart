@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../widgets/app_feedback.dart';
 
 import '../../app/momo_theme.dart';
 import '../../domain/models/inventory_models.dart';
@@ -198,7 +199,7 @@ class SmartHomeScreen extends ConsumerWidget {
           color: Colors.transparent,
           child: InkWell(
             onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
+              showAppSnackBar(context,
                 SnackBar(
                   content: Text('已触发场景：【${scene.name}】执行指令已下发'),
                 ),
@@ -453,7 +454,7 @@ class SmartHomeScreen extends ConsumerWidget {
                   productId: matchedItem?.id,
                 );
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  showAppSnackBar(context,
                     SnackBar(
                       content: Text('已将【${log.consumableName}】加入采买清单'),
                     ),
@@ -473,7 +474,7 @@ class SmartHomeScreen extends ConsumerWidget {
       await inventoryRepo.consumeByFefo(matchedItem.id, log.quantity);
       ref.read(smartHomeControllerProvider.notifier).confirmConsumableLog(log.id);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnackBar(context,
           SnackBar(
             content: Text('已成功核销【${matchedItem.name}】× ${log.quantity} ${matchedItem.unit}，剩余可用：${availableQty - log.quantity}'),
           ),
@@ -481,7 +482,7 @@ class SmartHomeScreen extends ConsumerWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnackBar(context,
           SnackBar(content: Text('库存扣减失败: $e')),
         );
       }
@@ -857,7 +858,7 @@ class SmartHomeScreen extends ConsumerWidget {
                       children: [
                         OutlinedButton.icon(
                           onPressed: latestDevice.isOn
-                              ? () => ScaffoldMessenger.of(context).showSnackBar(
+                              ? () => showAppSnackBar(context,
                                     const SnackBar(content: Text('已发送音量 -5% 指令')),
                                   )
                               : null,
@@ -866,7 +867,7 @@ class SmartHomeScreen extends ConsumerWidget {
                         ),
                         OutlinedButton.icon(
                           onPressed: latestDevice.isOn
-                              ? () => ScaffoldMessenger.of(context).showSnackBar(
+                              ? () => showAppSnackBar(context,
                                     const SnackBar(content: Text('已发送音量 +5% 指令')),
                                   )
                               : null,
@@ -875,7 +876,7 @@ class SmartHomeScreen extends ConsumerWidget {
                         ),
                         OutlinedButton.icon(
                           onPressed: latestDevice.isOn
-                              ? () => ScaffoldMessenger.of(context).showSnackBar(
+                              ? () => showAppSnackBar(context,
                                     const SnackBar(content: Text('已发送静音指令')),
                                   )
                               : null,

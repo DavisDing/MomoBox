@@ -94,6 +94,11 @@ class BackupFormat {
     if (version is! int || !legacyVersions.contains(version)) {
       throw const FormatException('当前版本不支持该备份格式。');
     }
+    final exportedAt = decoded['exported_at'];
+    if (exportedAt != null &&
+        (exportedAt is! String || DateTime.tryParse(exportedAt) == null)) {
+      throw const FormatException('备份头中的 "exported_at" 必须是 ISO 8601 日期时间。');
+    }
     final document = Map<String, dynamic>.from(decoded);
     for (final section in requiredSections) {
       final isLegacyOptional = version < 3 && (section == 'reminder_acknowledgements' || section == 'barcode_lookup_cache');

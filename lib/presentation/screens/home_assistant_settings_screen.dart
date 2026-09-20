@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../widgets/app_feedback.dart';
 
 import '../../app/momo_theme.dart';
 import '../controllers/providers.dart';
@@ -35,7 +36,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
   }
 
   void _testConnection() {
-    ScaffoldMessenger.of(context).showSnackBar(
+    showAppSnackBar(context,
       const SnackBar(content: Text('当前版本尚未支持 Home Assistant，未校验令牌、保存配置或连接设备。')),
     );
   }

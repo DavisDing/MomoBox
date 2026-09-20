@@ -1,0 +1,13 @@
+.git
+.gitignore
+.dart_tool
+build
+android
+ios
+lib
+test
+tests
+**/*_test.go
+.env
+.env.*
+Dockerfile*

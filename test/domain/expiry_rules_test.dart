@@ -57,6 +57,14 @@ void main() {
         ),
         DateTime(2025, 12, 31),
       );
+      expect(
+        ExpiryRules.calculateProduction(
+          expiryDate: DateTime(2026, 1, 31),
+          amount: 13,
+          unit: ShelfLifeUnit.months,
+        ),
+        DateTime(2024, 12, 31),
+      );
     });
 
     test('支持按天或按月计算到期日和生产日', () {

@@ -165,7 +165,7 @@ class AiFallbackExecutor {
             (log) => AiExecutionAttemptLog(
               level: log.config.level,
               model: log.config.model,
-              endpoint: log.endpoint,
+              endpoint: AiClientHelper.sanitizeEndpoint(log.endpoint),
               durationMs: log.durationMs,
               isSuccess: log.isSuccess,
               failureReason: log.failureReason,
@@ -190,7 +190,7 @@ class AiFallbackExecutor {
             (log) => AiExecutionAttemptLog(
               level: log.config.level,
               model: log.config.model,
-              endpoint: log.endpoint,
+              endpoint: AiClientHelper.sanitizeEndpoint(log.endpoint),
               durationMs: log.durationMs,
               isSuccess: log.isSuccess,
               failureReason: log.failureReason,

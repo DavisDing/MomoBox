@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../widgets/app_feedback.dart';
 
 import '../../app/momo_theme.dart';
 import '../controllers/providers.dart';
@@ -26,7 +27,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
   }
 
   void _testConnection() {
-    ScaffoldMessenger.of(context).showSnackBar(
+    showAppSnackBar(context,
       const SnackBar(content: Text('当前版本尚未支持 NAS 连接与同步，未测试连接或保存配置。')),
     );
   }

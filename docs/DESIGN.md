@@ -102,7 +102,7 @@ Flutter 的 Android/iOS 原生壳和 Drift 生成文件不提交到仓库，由 
 
 PRD 第 1、5 节描述 NAS 使用 PostgreSQL，但第 6.5 节 compose 使用 `DB_PATH=/data/momo.db`，实际更像 SQLite，且 compose 没有 PostgreSQL 服务。
 
-**决策**：NAS 正式版采用独立 PostgreSQL 服务；后端保持模块化单体容器，Ollama 作为可选独立容器。原因是家庭组、多设备并发写入、事务和同步游标更适合 PostgreSQL。部署复杂度通过 Docker Compose、健康检查、初始化迁移和备份说明控制。
+**决策**：NAS 正式版采用独立 PostgreSQL 服务；后端保持模块化单体容器。Ollama、LLM 厂商 API 和代理均不内置在 NAS 后端：Flutter 客户端直接连接用户配置的 LLM 服务或用户在其他位置部署的 Ollama。原因是家庭组、多设备并发写入、事务和同步游标更适合 PostgreSQL，同时避免 NAS 保存 AI Key 或承担 AI 代理职责。部署复杂度通过 Docker Compose、健康检查、初始化迁移和备份说明控制。
 
 V0.x 单机模式仍只使用手机本地 SQLite；不再规划“NAS 后端 SQLite 作为正式方案”，避免后续出现两套服务端数据库行为。
 
@@ -279,16 +279,16 @@ internal/
 ├── shopping      # 采购清单
 ├── sync          # push/pull、cursor、冲突
 ├── media         # 图片元数据和文件访问
-├── ai            # provider adapter、Ollama 代理、审计
+├── homeassistant # 外部 HA 连接、发现、实体权限和受控命令
 ├── importexport  # JSON/CSV 备份与恢复
 └── platform      # 配置、数据库、日志、健康检查
 ```
 
 ## 4.3 部署
 
-NAS 正式部署采用 PostgreSQL；AI 服务不作为必选基础设施，只有用户主动配置 Ollama 或其他服务时才启用。
+NAS 正式部署采用 PostgreSQL；AI 服务不作为 NAS 基础设施。Flutter 客户端只保存用户配置的 LLM/Ollama 连接信息，并直接访问对应服务；NAS 后端不保存 AI Key、不提供 AI 代理，也不编排 Ollama 生命周期。
 
-推荐三类服务：
+推荐两类服务：
 
 ```text
 手机 App
@@ -296,14 +296,14 @@ NAS 正式部署采用 PostgreSQL；AI 服务不作为必选基础设施，只�
   └─ NAS：Flutter UI → 本地领域服务 → Sync/API Client
                                       ↓ HTTPS/局域网 HTTP
                                momo-backend → PostgreSQL
-                                      └→ Ollama（可选）
+                                      └→ Home Assistant（外部服务）
 ```
 
 正式 compose 至少需要明确：
 
 - `momo-backend`；
 - `postgres` 及其持久化卷；
-- `ollama` 可选；
+- 不包含 `ollama`、AI proxy 或 barcode proxy；
 - 网络、健康检查、数据库迁移、备份策略、环境变量和密钥注入。
 
 该方案不使用 NAS 后端 SQLite；如未来需要改变数据库选型，必须单独设计数据迁移、并发控制和备份恢复方案。

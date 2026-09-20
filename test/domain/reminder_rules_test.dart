@@ -115,6 +115,32 @@ void main() {
     expect(visible, isEmpty);
   });
 
+  test('低库存确认只覆盖当前周期，恢复后再次跌破会重新出现', () {
+    final lowStock = item('低库存', stock: 1, threshold: 2);
+    final acknowledgement = ReminderAcknowledgement(
+      reminderKey: '低库存:low-stock',
+      fingerprint: 'threshold:2',
+      acknowledgedAt: today,
+    );
+
+    expect(
+      ReminderRules.visibleCandidates([lowStock], [acknowledgement], today: today),
+      isEmpty,
+    );
+    expect(
+      ReminderRules.visibleCandidates(
+        [item('低库存', stock: 3, threshold: 2)],
+        [acknowledgement],
+        today: today,
+      ),
+      isEmpty,
+    );
+    expect(
+      ReminderRules.visibleCandidates([lowStock], const [], today: today),
+      hasLength(1),
+    );
+  });
+
   test('提醒状态变化后新的 fingerprint 不会被旧记录隐藏', () {
     final target = item('低库存', stock: 1, threshold: 1);
     final visible = ReminderRules.visibleCandidates(

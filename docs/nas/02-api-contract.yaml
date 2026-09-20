@@ -1,0 +1,1505 @@
+openapi: 3.1.0
+info:
+  title: MomoBox NAS API
+  version: 0.1.0
+  description: |
+    MomoBox 家庭 NAS 后端 API。AI/Ollama 不经过此 API；Home Assistant 由后端代表家庭成员受控访问。
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: health
+  - name: auth
+  - name: families
+  - name: devices
+  - name: sync
+  - name: home-assistant
+paths:
+  /health:
+    get:
+      tags: [health]
+      security: []
+      responses:
+        '200':
+          description: 服务和数据库健康
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /version:
+    get:
+      tags: [health]
+      security: []
+      responses:
+        '200':
+          description: 后端版本和协议版本
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionResponse'
+
+  /capabilities:
+    get:
+      tags: [health]
+      security: []
+      responses:
+        '200':
+          description: 服务端能力
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapabilitiesResponse'
+
+  /auth/register:
+    post:
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: 注册成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          description: 注册模式不允许或账号已存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/login:
+    post:
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/InvalidCredentials'
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: 刷新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '204':
+          description: 注销成功
+        '401':
+          $ref: '#/components/responses/InvalidToken'
+
+  /me:
+    get:
+      tags: [auth]
+      responses:
+        '200':
+          description: 当前用户、家庭和设备摘要
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /families:
+    post:
+      tags: [families]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFamilyRequest'
+      responses:
+        '201':
+          description: 家庭创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FamilyResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /families/current:
+    get:
+      tags: [families]
+      responses:
+        '200':
+          description: 当前家庭
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FamilyResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /families/invites:
+    post:
+      tags: [families]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInviteRequest'
+      responses:
+        '201':
+          description: 邀请创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InviteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /families/join:
+    post:
+      tags: [families]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JoinFamilyRequest'
+      responses:
+        '200':
+          description: 加入成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FamilyResponse'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: 邀请无效
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /families/members:
+    get:
+      tags: [families]
+      responses:
+        '200':
+          description: 家庭成员
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [members]
+                properties:
+                  members:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FamilyMember'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /devices:
+    post:
+      tags: [devices]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterDeviceRequest'
+      responses:
+        '201':
+          description: 同步设备注册成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncDevice'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    get:
+      tags: [devices]
+      responses:
+        '200':
+          description: 当前用户的同步设备
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [devices]
+                properties:
+                  devices:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SyncDevice'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /devices/{device_id}:
+    delete:
+      tags: [devices]
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '204':
+          description: 设备撤销成功
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /sync/bootstrap:
+    get:
+      tags: [sync]
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '200':
+          description: 首次连接快照和合并提示
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BootstrapResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /sync/bootstrap/confirm:
+    post:
+      tags: [sync]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BootstrapConfirmRequest'
+      responses:
+        '200':
+          description: 合并模式确认
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BootstrapConfirmResponse'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /sync/push:
+    post:
+      tags: [sync]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PushRequest'
+      responses:
+        '200':
+          description: 变更处理结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PushResponse'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /sync/pull:
+    get:
+      tags: [sync]
+      parameters:
+        - name: cursor
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        '200':
+          description: 增量变更
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PullResponse'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /home-assistant/integrations:
+    post:
+      tags: [home-assistant]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddHAIntegrationRequest'
+      responses:
+        '201':
+          description: HA 集成创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HAIntegration'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    get:
+      tags: [home-assistant]
+      responses:
+        '200':
+          description: 当前家庭 HA 集成
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [integrations]
+                properties:
+                  integrations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/HAIntegration'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /home-assistant/integrations/{integration_id}:
+    patch:
+      tags: [home-assistant]
+      parameters:
+        - $ref: '#/components/parameters/IntegrationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateHAIntegrationRequest'
+      responses:
+        '200':
+          description: HA 集成更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HAIntegration'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [home-assistant]
+      parameters:
+        - $ref: '#/components/parameters/IntegrationId'
+      responses:
+        '204':
+          description: HA 集成删除成功
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /home-assistant/integrations/{integration_id}/test:
+    post:
+      tags: [home-assistant]
+      parameters:
+        - $ref: '#/components/parameters/IntegrationId'
+      responses:
+        '200':
+          description: 连接测试结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HAConnectionTestResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          description: HA 不可用
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /home-assistant/integrations/{integration_id}/discover:
+    post:
+      tags: [home-assistant]
+      parameters:
+        - $ref: '#/components/parameters/IntegrationId'
+      responses:
+        '200':
+          description: 发现并缓存 HA 设备和实体
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoverHAResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /home-assistant/entities:
+    get:
+      tags: [home-assistant]
+      parameters:
+        - name: integration_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: controllable_only
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: 当前家庭可见实体
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entities]
+                properties:
+                  entities:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/HAEntity'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /home-assistant/entities/{entity_id}/state:
+    get:
+      tags: [home-assistant]
+      parameters:
+        - $ref: '#/components/parameters/EntityId'
+        - name: integration_id
+          in: query
+          required: true
+          description: 与 entity_id 共同唯一定位家庭内的 HA 实体
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 实体状态
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HAEntityState'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /home-assistant/entities/{entity_id}/commands:
+    post:
+      tags: [home-assistant]
+      parameters:
+        - $ref: '#/components/parameters/EntityId'
+        - name: integration_id
+          in: query
+          required: true
+          description: 与 entity_id 共同唯一定位家庭内的 HA 实体
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HACommandRequest'
+      responses:
+        '200':
+          description: 控制结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HACommandResponse'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /home-assistant/permissions:
+    get:
+      tags: [home-assistant]
+      responses:
+        '200':
+          description: 实体权限配置
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [permissions]
+                properties:
+                  permissions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/HAEntityPermission'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags: [home-assistant]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateHAPermissionRequest'
+      responses:
+        '200':
+          description: 权限更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HAEntityPermission'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    DeviceId:
+      name: device_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    IntegrationId:
+      name: integration_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    EntityId:
+      name: entity_id
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+
+  responses:
+    Unauthorized:
+      description: 未认证或 access token 无效
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InvalidToken:
+      description: Token 无效、过期或已撤销
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InvalidCredentials:
+      description: 账号或密码错误
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: 权限不足
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationFailed:
+      description: 参数校验失败
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: 资源不存在
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: 版本冲突或幂等冲突
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ServiceUnavailable:
+      description: 依赖服务不可用
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, request_id]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+            request_id:
+              type: string
+              format: uuid
+
+    RegisterRequest:
+      type: object
+      required: [email, password, nickname]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 12
+          maxLength: 128
+        nickname:
+          type: string
+          minLength: 1
+          maxLength: 80
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 1
+          maxLength: 128
+        device:
+          $ref: '#/components/schemas/RegisterDeviceRequest'
+
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+          minLength: 32
+
+    AuthResponse:
+      type: object
+      required: [user, access_token, refresh_token, expires_in]
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        expires_in:
+          type: integer
+          format: int64
+          minimum: 1
+
+    User:
+      type: object
+      required: [id, email, nickname]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        nickname:
+          type: string
+
+    MeResponse:
+      type: object
+      required: [user, families, devices]
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        families:
+          type: array
+          items:
+            $ref: '#/components/schemas/FamilyMembership'
+        devices:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncDevice'
+
+    CreateFamilyRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+
+    FamilyResponse:
+      type: object
+      required: [family, membership]
+      properties:
+        family:
+          $ref: '#/components/schemas/Family'
+        membership:
+          $ref: '#/components/schemas/FamilyMembership'
+
+    Family:
+      type: object
+      required: [id, name, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    FamilyMembership:
+      type: object
+      required: [family_id, role]
+      properties:
+        family_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [owner, admin, member]
+
+    FamilyMember:
+      allOf:
+        - $ref: '#/components/schemas/User'
+        - type: object
+          required: [role, joined_at]
+          properties:
+            role:
+              type: string
+              enum: [owner, admin, member]
+            joined_at:
+              type: string
+              format: date-time
+
+    CreateInviteRequest:
+      type: object
+      required: [expires_in_hours, max_uses]
+      properties:
+        expires_in_hours:
+          type: integer
+          minimum: 1
+          maximum: 720
+        max_uses:
+          type: integer
+          minimum: 1
+          maximum: 20
+
+    InviteResponse:
+      type: object
+      required: [invite_id, code, expires_at, remaining_uses]
+      properties:
+        invite_id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        remaining_uses:
+          type: integer
+
+    JoinFamilyRequest:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          minLength: 8
+          maxLength: 128
+
+    RegisterDeviceRequest:
+      type: object
+      required: [device_id, device_name, platform]
+      properties:
+        device_id:
+          type: string
+          format: uuid
+        device_name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        platform:
+          type: string
+          enum: [android, ios, other]
+        app_version:
+          type: string
+
+    SyncDevice:
+      type: object
+      required: [id, device_name, platform, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        device_name:
+          type: string
+        platform:
+          type: string
+        app_version:
+          type: string
+        last_seen_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    BootstrapResponse:
+      type: object
+      required: [schema_version, sync_protocol_version, server_cursor, merge_required, available_modes]
+      properties:
+        schema_version:
+          type: integer
+        sync_protocol_version:
+          type: integer
+        server_cursor:
+          type: integer
+          format: int64
+        merge_required:
+          type: boolean
+        available_modes:
+          type: array
+          items:
+            type: string
+            enum: [join_and_merge, create_new_family, keep_local_only]
+        family:
+          $ref: '#/components/schemas/Family'
+        snapshot:
+          type: object
+          additionalProperties: true
+
+    BootstrapConfirmRequest:
+      type: object
+      required: [mode, device_id]
+      properties:
+        mode:
+          type: string
+          enum: [join_and_merge, create_new_family, keep_local_only]
+        device_id:
+          type: string
+          format: uuid
+        local_workspace_id:
+          type: string
+          format: uuid
+
+    BootstrapConfirmResponse:
+      type: object
+      required: [accepted, next_action, server_cursor]
+      properties:
+        accepted:
+          type: boolean
+        next_action:
+          type: string
+          enum: [pull_snapshot, push_local_changes, keep_local_only]
+        server_cursor:
+          type: integer
+          format: int64
+
+    SyncChange:
+      type: object
+      required: [change_id, operation, idempotency_key]
+      description: |
+        单条同步变更。四类 operation 使用互斥字段集合，不得混用。
+        home_assistant_command 的 change_id 同时作为 HA 命令审计 request_id。
+      properties:
+        change_id:
+          type: string
+          format: uuid
+        operation:
+          type: string
+          enum: [entity_upsert, entity_delete, inventory_command, home_assistant_command]
+        entity:
+          type: string
+        entity_id:
+          type: string
+        base_version:
+          type: integer
+          format: int64
+          minimum: 0
+        payload:
+          type: object
+          additionalProperties: true
+        command:
+          type: string
+        operation_id:
+          type: string
+          format: uuid
+        allocations:
+          type: array
+          items:
+            $ref: '#/components/schemas/InventoryAllocation'
+        integration_id:
+          type: string
+          format: uuid
+        parameters:
+          $ref: '#/components/schemas/HACommandParameters'
+        idempotency_key:
+          type: string
+          minLength: 16
+          maxLength: 255
+        client_updated_at:
+          type: string
+          format: date-time
+      oneOf:
+        - title: Entity upsert
+          required: [entity, entity_id, base_version, payload]
+          properties:
+            operation:
+              const: entity_upsert
+        - title: Entity delete
+          required: [entity, entity_id, base_version]
+          properties:
+            operation:
+              const: entity_delete
+        - title: Inventory command
+          required: [command, operation_id]
+          description: allocations 是否必填由具体库存命令决定。
+          properties:
+            operation:
+              const: inventory_command
+            command:
+              enum: [consume_fefo, consume_allocated, restock, discard]
+        - title: Home Assistant command
+          required: [integration_id, entity_id, command]
+          description: |
+            只允许固定 typed command 与 HACommandParameters；不得携带 entity、
+            base_version、payload、operation_id 或 allocations。
+          properties:
+            operation:
+              const: home_assistant_command
+            command:
+              enum: [turn_on, turn_off, toggle, set_brightness, set_temperature, set_hvac_mode, play, pause, activate_scene, run_script]
+
+    InventoryAllocation:
+      type: object
+      required: [batch_id, quantity]
+      properties:
+        batch_id:
+          type: string
+          format: uuid
+        quantity:
+          type: integer
+          format: int64
+          minimum: 1
+
+    HACommandParameters:
+      type: object
+      additionalProperties: false
+      description: |
+        HA typed command 参数白名单。只允许 brightness、temperature、hvac_mode；
+        禁止 domain、service、service_data、transition 和任何未知字段。
+      properties:
+        brightness:
+          type: integer
+          minimum: 0
+          maximum: 100
+        temperature:
+          type: number
+          minimum: -100
+          maximum: 200
+        hvac_mode:
+          type: string
+          minLength: 1
+          maxLength: 64
+
+    PushRequest:
+      type: object
+      required: [device_id, base_cursor, changes]
+      properties:
+        device_id:
+          type: string
+          format: uuid
+        base_cursor:
+          type: integer
+          format: int64
+          minimum: 0
+        changes:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/SyncChange'
+
+    PushResponse:
+      type: object
+      required: [accepted, conflicts, rejected, cursor]
+      properties:
+        accepted:
+          type: array
+          items:
+            $ref: '#/components/schemas/AcceptedChange'
+        conflicts:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncConflict'
+        rejected:
+          type: array
+          items:
+            $ref: '#/components/schemas/RejectedChange'
+        cursor:
+          type: integer
+          format: int64
+
+    AcceptedChange:
+      type: object
+      required: [change_id, server_cursor]
+      properties:
+        change_id:
+          type: string
+          format: uuid
+        entity_id:
+          type: string
+        server_version:
+          type: integer
+          format: int64
+        server_cursor:
+          type: integer
+          format: int64
+        result:
+          type: object
+          additionalProperties: true
+
+    SyncConflict:
+      type: object
+      required: [change_id, entity, reason]
+      properties:
+        change_id:
+          type: string
+          format: uuid
+        entity:
+          type: string
+        entity_id:
+          type: string
+        reason:
+          type: string
+          enum: [VERSION_CONFLICT, FAMILY_SCOPE_VIOLATION]
+        server_version:
+          type: integer
+          format: int64
+        server_payload:
+          type: object
+          additionalProperties: true
+        client_payload:
+          type: object
+          additionalProperties: true
+
+    RejectedChange:
+      type: object
+      required: [change_id, code, message]
+      properties:
+        change_id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+
+    PullResponse:
+      type: object
+      required: [changes, next_cursor, has_more]
+      properties:
+        changes:
+          type: array
+          items:
+            type: object
+            required: [cursor, operation, entity]
+            properties:
+              cursor:
+                type: integer
+                format: int64
+              operation:
+                type: string
+              entity:
+                type: string
+              entity_id:
+                type: string
+              version:
+                type: integer
+                format: int64
+              payload:
+                type: object
+                additionalProperties: true
+        next_cursor:
+          type: integer
+          format: int64
+        has_more:
+          type: boolean
+
+    AddHAIntegrationRequest:
+      type: object
+      required: [name, base_url, access_token]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        base_url:
+          type: string
+          format: uri
+        access_token:
+          type: string
+          minLength: 16
+          writeOnly: true
+
+    UpdateHAIntegrationRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        base_url:
+          type: string
+          format: uri
+        access_token:
+          type: string
+          minLength: 16
+          writeOnly: true
+        enabled:
+          type: boolean
+
+    HAIntegration:
+      type: object
+      required: [id, name, base_url, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        base_url:
+          type: string
+          format: uri
+        status:
+          type: string
+          enum: [unknown, healthy, unavailable, invalid_credentials, disabled]
+        last_checked_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    HAConnectionTestResponse:
+      type: object
+      required: [connected, checked_at]
+      properties:
+        connected:
+          type: boolean
+        checked_at:
+          type: string
+          format: date-time
+        server_version:
+          type: string
+        error_code:
+          type: string
+          nullable: true
+
+    DiscoverHAResponse:
+      type: object
+      required: [integration_id, devices, entities]
+      properties:
+        integration_id:
+          type: string
+          format: uuid
+        devices:
+          type: integer
+          minimum: 0
+        entities:
+          type: integer
+          minimum: 0
+
+    HAEntity:
+      type: object
+      required: [id, integration_id, entity_id, domain, name, is_visible, is_controllable]
+      properties:
+        id:
+          type: string
+          format: uuid
+        integration_id:
+          type: string
+          format: uuid
+        entity_id:
+          type: string
+        domain:
+          type: string
+        name:
+          type: string
+        area_name:
+          type: string
+          nullable: true
+        capabilities:
+          type: array
+          items:
+            type: string
+        current_state:
+          type: string
+          nullable: true
+        is_visible:
+          type: boolean
+        is_controllable:
+          type: boolean
+        last_state_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    HAEntityState:
+      type: object
+      required: [entity_id, state, fetched_at]
+      properties:
+        entity_id:
+          type: string
+        state:
+          type: string
+        attributes:
+          type: object
+          additionalProperties: true
+        fetched_at:
+          type: string
+          format: date-time
+
+    HACommandRequest:
+      type: object
+      required: [command, request_id]
+      properties:
+        command:
+          type: string
+          enum: [turn_on, turn_off, toggle, set_brightness, set_temperature, set_hvac_mode, play, pause, activate_scene, run_script]
+        parameters:
+          type: object
+          additionalProperties: true
+        request_id:
+          type: string
+          format: uuid
+
+    HACommandResponse:
+      type: object
+      required: [accepted, entity_id, command, executed_at]
+      properties:
+        accepted:
+          type: boolean
+        entity_id:
+          type: string
+        command:
+          type: string
+        executed_at:
+          type: string
+          format: date-time
+        state:
+          $ref: '#/components/schemas/HAEntityState'
+
+    HAEntityPermission:
+      type: object
+      required: [integration_id, entity_id, role, can_view, can_control, allowed_commands]
+      properties:
+        integration_id:
+          type: string
+          format: uuid
+        entity_id:
+          type: string
+        role:
+          type: string
+          enum: [owner, admin, member]
+        can_view:
+          type: boolean
+        can_control:
+          type: boolean
+        allowed_commands:
+          type: array
+          items:
+            type: string
+
+    UpdateHAPermissionRequest:
+      type: object
+      required: [integration_id, entity_id, role, can_view, can_control, allowed_commands]
+      properties:
+        integration_id:
+          type: string
+          format: uuid
+        entity_id:
+          type: string
+        role:
+          type: string
+          enum: [owner, admin, member]
+        can_view:
+          type: boolean
+        can_control:
+          type: boolean
+        allowed_commands:
+          type: array
+          items:
+            type: string
+
+    HealthResponse:
+      type: object
+      required: [status, database]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        database:
+          type: string
+          enum: [ok, unavailable]
+
+    VersionResponse:
+      type: object
+      required: [app_version, api_version, schema_version]
+      properties:
+        app_version:
+          type: string
+        api_version:
+          type: string
+        schema_version:
+          type: integer
+
+    CapabilitiesResponse:
+      type: object
+      required: [schema_version, sync_protocol_version, media_upload, ai_proxy, ollama_embedded, inventory_commands, home_assistant]
+      properties:
+        schema_version:
+          type: integer
+        sync_protocol_version:
+          type: integer
+        media_upload:
+          type: boolean
+        ai_proxy:
+          type: boolean
+        ollama_embedded:
+          type: boolean
+        inventory_commands:
+          type: boolean
+        home_assistant:
+          type: boolean

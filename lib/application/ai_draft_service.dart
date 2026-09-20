@@ -7,6 +7,7 @@ import '../domain/models/ai_usage_models.dart';
 import '../domain/models/recognition_models.dart';
 import '../domain/recognition/ai_draft_parser.dart';
 import '../services/secure_settings_service.dart';
+import 'ai_client_helper.dart';
 import 'ai_fallback_executor.dart';
 import 'ai_usage_service.dart';
 
@@ -50,14 +51,33 @@ class AiDraftService {
   final AiDraftParser _parser;
   final AiUsageService _usageService;
   final AiFallbackExecutor _fallbackExecutor;
+  int _requestSequence = 0;
+  String? _latestRequestToken;
 
-  Future<IntakeDraftSuggestion> parseOcrText(String text) async {
+  /// Begins a new OCR-to-draft request. A newer request supersedes an older
+  /// one, so a late network response cannot overwrite the current draft.
+  String createRequestToken() {
+    final token = '${DateTime.now().microsecondsSinceEpoch}-${++_requestSequence}';
+    _latestRequestToken = token;
+    return token;
+  }
+
+  Future<IntakeDraftSuggestion> parseOcrText(String text, {String? requestToken}) async {
+    final token = requestToken ?? createRequestToken();
+    _latestRequestToken = token;
+    void ensureCurrent() {
+      if (_latestRequestToken != token) {
+        throw AiRequestSupersededException(token);
+      }
+    }
+    ensureCurrent();
     final content = text.trim();
     if (content.isEmpty) throw ArgumentError('请先对说明书或包装图片执行本地 OCR。');
     if (content.length > 20000) throw ArgumentError('OCR 文本过长，请先保留与商品信息相关的页面。');
 
     // 1. 构建三级配置
     final configs = await _resolveFallbackConfigs();
+    ensureCurrent();
     if (configs.isEmpty) {
       throw StateError('请先在设置中填写兼容 OpenAI 的 AI 地址、模型和 API Key。');
     }
@@ -73,18 +93,27 @@ class AiDraftService {
         temperature: 0,
       );
 
-      // 记录 Token 用量
+      ensureCurrent();
+      // 记录 Token 用量 only after confirming this request is still current.
       _recordUsageFromResponse(
         response.rawDecoded,
         response.usedConfig.model,
         response.actualProtocol,
         'draft',
+        providerLevel: response.usedLevel.name,
+        elapsedMs: response.traceLogs.fold<int>(0, (sum, log) => sum + log.durationMs),
       );
 
       final suggestion = _parser.parse(response.content);
       if (suggestion.isEmpty) throw const FormatException('AI 未识别出可填写的字段。');
+      ensureCurrent();
       return suggestion;
+    } on AiRequestSupersededException {
+      rethrow;
     } on AiFallbackException catch (error) {
+      if (_latestRequestToken == token) {
+        _recordFailureAttempts(error.traceLogs, 'draft');
+      }
       throw StateError('AI 服务异常，草稿未写入：$error');
     } on FormatException catch (error) {
       throw StateError('AI 返回的草稿无法使用：${error.message}');
@@ -176,22 +205,25 @@ class AiDraftService {
     Map<String, dynamic> decoded,
     String model,
     String endpointType,
-    String purpose,
-  ) {
+    String purpose, {
+    String? providerLevel,
+    int elapsedMs = 0,
+  }) {
     try {
-      final usage = decoded['usage'];
-      if (usage is! Map) return;
+      final usage = decoded['usage'] is Map
+          ? decoded['usage'] as Map
+          : const <String, dynamic>{};
 
-      final prompt = (usage['prompt_tokens'] ?? usage['input_tokens'] ?? 0) as num;
-      final completion = (usage['completion_tokens'] ?? usage['output_tokens'] ?? 0) as num;
-      final total = (usage['total_tokens'] ?? (prompt + completion)) as num;
+      final prompt = _asNum(usage['prompt_tokens'] ?? usage['input_tokens']);
+      final completion = _asNum(usage['completion_tokens'] ?? usage['output_tokens']);
+      final total = _asNum(usage['total_tokens'], fallback: prompt + completion);
 
       int cachedRead = 0;
       int cachedWrite = 0;
 
       final promptDetails = usage['prompt_tokens_details'] ?? usage['input_token_details'];
       if (promptDetails is Map) {
-        cachedRead = ((promptDetails['cached_tokens'] ?? 0) as num).toInt();
+        cachedRead = _asNum(promptDetails['cached_tokens']).toInt();
       }
       final cacheCreation = usage['cache_creation_input_tokens'];
       if (cacheCreation is num) {
@@ -210,8 +242,36 @@ class AiDraftService {
           cachedWriteTokens: cachedWrite,
           cachedReadTokens: cachedRead,
           purpose: purpose,
+          providerLevel: providerLevel,
+          elapsedMs: elapsedMs,
         ),
       );
     } catch (_) {}
   }
+
+  void _recordFailureAttempts(
+    List<AiExecutionAttemptLog> attempts,
+    String purpose,
+  ) {
+    for (final attempt in attempts) {
+      _usageService.recordUsage(
+        AiUsageRecord(
+          id: '${DateTime.now().microsecondsSinceEpoch}-${attempt.level.name}',
+          timestamp: DateTime.now(),
+          model: attempt.model,
+          endpointType: 'unknown',
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0,
+          purpose: purpose,
+          status: 'failure',
+          providerLevel: attempt.level.name,
+          failureReason: attempt.failureReason,
+          elapsedMs: attempt.durationMs,
+        ),
+      );
+    }
+  }
 }
+
+num _asNum(Object? value, {num fallback = 0}) => value is num && value.isFinite ? value : fallback;

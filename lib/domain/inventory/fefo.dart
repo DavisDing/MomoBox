@@ -15,27 +15,22 @@ class Fefo {
     DateTime? today,
   }) {
     if (requestedQuantity < 1) {
-      throw ArgumentError.value(requestedQuantity, 'requestedQuantity', '数量必须大于 0');
+      throw ArgumentError.value(
+        requestedQuantity,
+        'requestedQuantity',
+        '数量必须大于 0',
+      );
     }
 
     final eligible = batches
-        .where(
-          (batch) =>
-              batch.isAvailable &&
-              ExpiryRules.statusFor(batch.expiryDate, today: today) !=
-                  ExpiryStatus.expired,
-        )
+        .where((batch) => _isEligible(batch, today: today))
         .toList()
-      ..sort((left, right) {
-        final leftDate = left.expiryDate;
-        final rightDate = right.expiryDate;
-        if (leftDate == null && rightDate == null) return left.id.compareTo(right.id);
-        if (leftDate == null) return 1;
-        if (rightDate == null) return -1;
-        return leftDate.compareTo(rightDate);
-      });
+      ..sort(_compareBatches);
 
-    final available = eligible.fold<int>(0, (sum, batch) => sum + batch.remainingQuantity);
+    final available = eligible.fold<int>(
+      0,
+      (sum, batch) => sum + batch.remainingQuantity,
+    );
     if (available < requestedQuantity) {
       throw StateError('可消耗库存不足，不能产生负库存。');
     }
@@ -51,5 +46,26 @@ class Fefo {
       remaining -= quantity;
     }
     return allocations;
+  }
+
+  static bool _isEligible(InventoryBatch batch, {DateTime? today}) {
+    if (!batch.isAvailable) return false;
+    return ExpiryRules.statusFor(batch.expiryDate, today: today) !=
+        ExpiryStatus.expired;
+  }
+
+  static int _compareBatches(InventoryBatch left, InventoryBatch right) {
+    final leftDate = left.expiryDate;
+    final rightDate = right.expiryDate;
+    if (leftDate == null && rightDate == null) {
+      return left.id.compareTo(right.id);
+    }
+    if (leftDate == null) return 1;
+    if (rightDate == null) return -1;
+
+    final dateComparison = ExpiryRules.dateOnly(leftDate).compareTo(
+      ExpiryRules.dateOnly(rightDate),
+    );
+    return dateComparison == 0 ? left.id.compareTo(right.id) : dateComparison;
   }
 }

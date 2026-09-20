@@ -10,18 +10,28 @@ class AiUsageRecord {
     this.cachedWriteTokens = 0,
     this.cachedReadTokens = 0,
     this.purpose = 'draft',
+    this.status = 'success',
+    this.providerLevel,
+    this.failureReason,
+    this.elapsedMs = 0,
   });
 
   final String id;
   final DateTime timestamp;
   final String model;
-  final String endpointType; // 'chat' or 'responses'
+  final String endpointType; // 'chat', 'responses' or 'unknown'
   final int promptTokens;
   final int completionTokens;
   final int totalTokens;
   final int cachedWriteTokens;
   final int cachedReadTokens;
   final String purpose; // 'draft' or 'qa'
+  final String status; // 'success' or 'failure'
+  final String? providerLevel; // 'primary', 'secondary' or 'fallback'
+  final String? failureReason;
+  final int elapsedMs;
+
+  bool get isSuccess => status == 'success';
 
   int get effectiveTotal => totalTokens > 0 ? totalTokens : (promptTokens + completionTokens);
 
@@ -42,20 +52,28 @@ class AiUsageRecord {
         'cachedWriteTokens': cachedWriteTokens,
         'cachedReadTokens': cachedReadTokens,
         'purpose': purpose,
+        'status': status,
+        if (providerLevel != null) 'providerLevel': providerLevel,
+        if (failureReason != null) 'failureReason': failureReason,
+        'elapsedMs': elapsedMs,
       };
 
   factory AiUsageRecord.fromJson(Map<String, dynamic> json) {
     return AiUsageRecord(
-      id: json['id'] as String? ?? DateTime.now().millisecondsSinceEpoch.toString(),
-      timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '') ?? DateTime.now(),
-      model: json['model'] as String? ?? 'unknown',
-      endpointType: json['endpointType'] as String? ?? 'chat',
-      promptTokens: (json['promptTokens'] as num?)?.toInt() ?? 0,
-      completionTokens: (json['completionTokens'] as num?)?.toInt() ?? 0,
-      totalTokens: (json['totalTokens'] as num?)?.toInt() ?? 0,
-      cachedWriteTokens: (json['cachedWriteTokens'] as num?)?.toInt() ?? 0,
-      cachedReadTokens: (json['cachedReadTokens'] as num?)?.toInt() ?? 0,
-      purpose: json['purpose'] as String? ?? 'draft',
+      id: _stringOr(json['id'], DateTime.now().millisecondsSinceEpoch.toString()),
+      timestamp: DateTime.tryParse(_stringOr(json['timestamp'], '')) ?? DateTime.now(),
+      model: _stringOr(json['model'], 'unknown'),
+      endpointType: _stringOr(json['endpointType'], 'chat'),
+      promptTokens: _intOr(json['promptTokens']),
+      completionTokens: _intOr(json['completionTokens']),
+      totalTokens: _intOr(json['totalTokens']),
+      cachedWriteTokens: _intOr(json['cachedWriteTokens']),
+      cachedReadTokens: _intOr(json['cachedReadTokens']),
+      purpose: _stringOr(json['purpose'], 'draft'),
+      status: _stringOr(json['status'], 'success'),
+      providerLevel: _nullableString(json['providerLevel']),
+      failureReason: _nullableString(json['failureReason']),
+      elapsedMs: _intOr(json['elapsedMs']),
     );
   }
 }
@@ -106,3 +124,9 @@ class AiUsageSummary {
     );
   }
 }
+
+String _stringOr(Object? value, String fallback) => value is String && value.trim().isNotEmpty ? value : fallback;
+
+String? _nullableString(Object? value) => value is String && value.trim().isNotEmpty ? value : null;
+
+int _intOr(Object? value) => value is num && value.isFinite ? value.toInt() : 0;

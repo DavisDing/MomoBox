@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:momo_box/core/database/app_database.dart';
@@ -172,6 +173,51 @@ void main() {
 
     expect(await database.select(database.products).get(), isEmpty);
     expect(await database.select(database.productBatches).get(), isEmpty);
+  });
+
+  test('后续数据段格式错误时不会写入前面已经解析成功的记录', () async {
+    final backup = backupWithInvalidReference()
+      ..['batches'] = []
+      ..['products'] = [validProduct()]
+      ..['settings'] = [
+        {
+          'key': 'broken',
+          'value': 123,
+          'updated_at': '2026-09-20T00:00:00.000',
+        },
+      ];
+
+    await expectLater(
+      repository.importJson(jsonEncode(backup)),
+      throwsA(isA<BackupImportException>()),
+    );
+    expect(await database.select(database.products).get(), isEmpty);
+    expect(await database.select(database.appSettings).get(), isEmpty);
+  });
+
+  test('再次导入相同备份时按各表主键跳过，不覆盖本地记录', () async {
+    final backup = backupWithInvalidReference()
+      ..['batches'] = []
+      ..['settings'] = [
+        {
+          'key': 'preserved',
+          'value': 'from-backup',
+          'updated_at': '2026-09-20T00:00:00.000',
+        },
+      ];
+    final first = await repository.importJson(jsonEncode(backup));
+    expect(first.imported, 2);
+    expect(first.skipped, 0);
+
+    await (database.update(database.products)
+          ..where((row) => row.id.equals('product-1')))
+        .write(const ProductsCompanion(name: Value('本地修改')));
+    final second = await repository.importJson(jsonEncode(backup));
+
+    expect(second.imported, 0);
+    expect(second.skipped, 2);
+    expect((await database.select(database.products).getSingle()).name, '本地修改');
+    expect((await database.select(database.appSettings).getSingle()).value, 'from-backup');
   });
 
   test('导入既有商品的新批次会触发库存流刷新', () async {

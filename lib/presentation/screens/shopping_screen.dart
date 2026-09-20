@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../widgets/app_feedback.dart';
 
 import '../../domain/models/inventory_models.dart';
 import '../controllers/providers.dart';
@@ -86,7 +87,7 @@ class ShoppingScreen extends ConsumerWidget {
                 if (dialogContext.mounted) Navigator.pop(dialogContext);
               } catch (error) {
                 if (dialogContext.mounted) {
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(SnackBar(content: Text('$error')));
+                  showAppSnackBar(dialogContext, SnackBar(content: Text('$error')));
                 }
               }
             },

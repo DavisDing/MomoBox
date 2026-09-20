@@ -51,6 +51,19 @@ void main() {
       expect(alreadyResp.toString(), 'https://api.openai.com/v1/responses');
     });
 
+    test('sanitizeEndpoint removes query and fragment from diagnostics', () {
+      expect(
+        AiClientHelper.sanitizeEndpoint(
+          'https://api.example.com/v1?api_key=secret#fragment',
+        ),
+        'https://api.example.com/v1',
+      );
+      expect(
+        AiClientHelper.sanitizeEndpoint('not-a-url?token=secret#x'),
+        'not-a-url',
+      );
+    });
+
     test('extractResponseText extracts from both Responses API and Chat Completions', () {
       // Chat format
       final chatJson = {

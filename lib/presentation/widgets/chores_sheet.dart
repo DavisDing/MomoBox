@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'app_feedback.dart';
 
 import '../../app/momo_theme.dart';
 import '../../domain/models/chore_models.dart';
@@ -229,7 +230,7 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                                       onPressed: () async {
                                         await ref.read(choreServiceProvider).completeChore(item.id);
                                         if (context.mounted) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
+                                          showAppSnackBar(context,
                                             SnackBar(
                                               content: Text('已完成「${item.title}」，下一次提醒将于 ${item.intervalDays} 天后。'),
                                               duration: const Duration(seconds: 2),
@@ -350,7 +351,7 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
               Navigator.pop(dialogCtx);
               await ref.read(choreServiceProvider).deleteChore(item.id);
               if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                showAppSnackBar(context,
                   SnackBar(content: Text('已删除「${item.title}」')),
                 );
               }

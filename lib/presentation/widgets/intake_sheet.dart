@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:uuid/uuid.dart';
+import 'app_feedback.dart';
 
 import '../../domain/inventory/expiry_rules.dart';
 import '../../domain/models/inventory_models.dart';
@@ -469,7 +470,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
       _intakeDraft.clear();
       widget.onIntakeSuccess?.call(productId);
       Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnackBar(context,
         SnackBar(content: Text(mediaWarning ?? '已入库。')),
       );
     } catch (error) {
@@ -959,7 +960,7 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen>
         }
       }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnackBar(context,
           const SnackBar(content: Text('图片中未识别到有效商品条码，请调整拍摄角度或光线后重试。')),
         );
       }
@@ -967,7 +968,7 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen>
       debugPrint('Barcode image analysis failed: $error');
       debugPrintStack(stackTrace: stackTrace);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnackBar(context,
           const SnackBar(content: Text('识别图片条码失败，请稍后重试。')),
         );
       }

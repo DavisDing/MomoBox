@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'app_feedback.dart';
 
 import '../../app/momo_theme.dart';
 import '../../services/calendar_sync_service.dart';
@@ -163,13 +164,13 @@ class _CalendarSyncDialogState extends ConsumerState<CalendarSyncDialog> {
 
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnackBar(context,
           const SnackBar(content: Text('已生成日历文件，请在弹出的系统菜单中选择“添加到日历”')),
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showAppSnackBar(context,
           SnackBar(content: Text('日历同步失败：$e')),
         );
       }
