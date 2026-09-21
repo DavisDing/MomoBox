@@ -47,7 +47,7 @@ class AiClientHelper {
     if (parsed == null || !parsed.hasScheme || !parsed.hasAuthority) {
       return endpoint.split('?').first.split('#').first;
     }
-    return parsed.replace(query: null, fragment: '').toString();
+    return parsed.replace(query: null, fragment: null).toString();
   }
 
   /// 统一从响应体（Chat 或 Responses 格式）解析文本内容
