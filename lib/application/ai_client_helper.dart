@@ -43,11 +43,9 @@ class AiClientHelper {
 
   /// 只保留可用于诊断的地址部分，避免把 API key 等查询参数写入日志。
   static String sanitizeEndpoint(String endpoint) {
-    final parsed = Uri.tryParse(endpoint.trim());
-    if (parsed == null || !parsed.hasScheme || !parsed.hasAuthority) {
-      return endpoint.split('?').first.split('#').first;
-    }
-    return parsed.replace(query: null, fragment: null).toString();
+    final trimmed = endpoint.trim();
+    final separator = trimmed.indexOf(RegExp(r'[?#]'));
+    return separator < 0 ? trimmed : trimmed.substring(0, separator);
   }
 
   /// 统一从响应体（Chat 或 Responses 格式）解析文本内容
