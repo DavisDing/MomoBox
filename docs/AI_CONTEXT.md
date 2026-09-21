@@ -10,7 +10,7 @@
 
 - Frontend：Flutter / Dart
 - NAS backend：Go 1.22 + PostgreSQL 16；独立 Go module 位于 `backend/`
-- NAS deployment：`backend/` 独立 Docker build context；Compose 仅包含 `momo-backend` 与 `postgres`
+- NAS deployment：生产 Compose 从公开 GHCR 拉取 `ghcr.io/davisding/momobox-backend:latest`；本地开发可通过 override 以 `backend/` 为独立 Docker build context；Compose 仅包含 `momo-backend` 与 `postgres`
 - State：flutter_riverpod
 - Routing：go_router
 - Local database：Drift + SQLite
@@ -35,7 +35,7 @@ lib/
 test/domain/                  # 可在 Flutter CI 中运行的领域测试
 scripts/ci/                   # CI 平台壳生成、补丁回归测试
 backend/                      # Go NAS 后端、migration、后端测试和独立 Dockerfile
-deploy/nas/                   # NAS Compose、环境变量示例、备份恢复脚本
+deploy/nas/                   # GHCR 生产 Compose、本地构建 override、环境变量示例、备份恢复更新脚本
 docs/nas/                     # NAS 领域、API、安全和部署契约
 ```
 
@@ -78,7 +78,7 @@ Repositories & External Connectors
 
 交互与维护规则：Android 系统返回优先关闭弹窗/返回子页，其他一级页回首页；首页首次返回提示“再按一次退出软件”，2 秒内再次返回才退出。一键清理须确认，仅清理条码缓存、AI 用量日志和无用图片；保留业务数据、服务配置、备份、在用图片及 1 天内的临时入库图片。Release 工作流将相同的版本/构建号同时注入原生包和“关于”页；本地自定义版本的编译参数见 README。
 
-NAS 阶段已实现 Go 后端基础能力：家庭账号与成员、同步设备、增量同步、库存命令、PostgreSQL migration、Home Assistant 外部连接/发现/实体权限/typed control，以及独立 Dockerfile、双服务 Compose 和 PostgreSQL 备份恢复脚本。当前环境已通过 Go 测试、vet、Linux 二进制构建和静态契约检查；因本机无 Docker/PostgreSQL 客户端，镜像构建、Compose 启动、真实 migration/备份恢复、HA 实机联调及 Flutter 端到端联调仍为 `NOT_EXECUTED`。
+NAS 阶段已实现 Go 后端基础能力：家庭账号与成员、同步设备、增量同步、库存命令、PostgreSQL migration、Home Assistant 外部连接/发现/实体权限/typed control，以及独立 Dockerfile、双服务 Compose、PostgreSQL 备份恢复与安全更新脚本。GitHub Actions 会在默认分支后端变更通过 Go 测试、vet 和双架构 Buildx 构建后发布公开 GHCR `latest`/`sha-<commit>` 镜像，并在正式产品 Release 发布 `vX.Y.Z` 镜像；首次发布后仍需在 GitHub Packages 将该包设为 Public。当前环境已通过 Go 测试、vet、Linux 二进制构建和静态契约检查；因本机无 Docker/PostgreSQL 客户端，镜像构建、Compose 启动、真实 migration/备份恢复、HA 实机联调及 Flutter 端到端联调仍为 `NOT_EXECUTED`。
 
 仍未实现：说明书外部链接或检索式问答、统计图表、社区共享数据。
 

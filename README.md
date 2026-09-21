@@ -8,7 +8,7 @@
 
 条码查询和 AI 均不是本地核心流程的前置条件：外部查询失败、AI 未配置或请求失败时，仍可继续手动录入和管理库存。AI 草稿只会在用户确认后填入表单，正式入库仍需用户确认；OCR 文本发送前会再次征得确认，原图不会发送。发起库存问答时，问题、近期对话和当前本地库存/批次快照会发送至用户自己配置的 AI 服务，不包含原图。
 
-尚未实现：NAS/家庭账号同步、后端 PostgreSQL、Docker 部署、说明书外部链接/检索式问答、统计图表和社区共享数据。
+尚未实现：Flutter 客户端的 NAS/家庭账号同步接入、说明书外部链接/检索式问答、统计图表和社区共享数据。Go NAS 后端、PostgreSQL migration、Docker Compose、备份恢复和 GHCR 镜像发布流程已落地；真实 NAS/HA/Flutter 端到端联调仍按部署文档单独验收。
 
 ## 开发与验证
 
@@ -28,10 +28,10 @@
 
 ### 发布范围与预留项
 
-当前自动发布范围仅包含 **Android APK/AAB**。iOS 和后端 Docker 发布已预留为后续工作，但当前不会创建 IPA、Docker 镜像或额外 GitHub Release 附件：
+当前自动发布范围包含 **Android APK/AAB** 与 NAS 后端 Docker 镜像。iOS 发布仍为后续工作：
 
 - **iOS**：CI 保留无签名构建验证；待确定 Bundle ID，并配置 Apple 证书、Provisioning Profile 和 App Store Connect 凭据后，再增加签名 IPA / TestFlight 发布。
-- **后端 Docker**：待后端工程及 `Dockerfile` 落地后，再构建并发布镜像至 GitHub Container Registry（GHCR）；不创建没有实际服务内容的占位镜像。
+- **后端 Docker**：`backend/` 已提供实际 Go 后端与 Dockerfile。默认分支后端变更在通过 Go 测试、vet 与双架构 Buildx 构建后发布公开 GHCR 镜像 `ghcr.io/davisding/momobox-backend:latest`；正式产品 Release 同时发布 `vX.Y.Z` 标签。NAS 使用 `deploy/nas/scripts/update.sh` 按“备份 → 拉取 → migration → 启动”流程更新。
 
 ### 发布提交规范
 

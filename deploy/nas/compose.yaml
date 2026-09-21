@@ -16,9 +16,7 @@ services:
       start_period: 10s
 
   momo-backend:
-    build:
-      context: ../../backend
-      dockerfile: Dockerfile
+    image: ${MOMO_BACKEND_IMAGE:-ghcr.io/davisding/momobox-backend:latest}
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -29,7 +27,7 @@ services:
       - no-new-privileges:true
     environment:
       APP_ENV: ${APP_ENV:-production}
-      APP_VERSION: ${APP_VERSION:-0.1.0}
+      APP_VERSION: ${APP_VERSION:-latest}
       HTTP_ADDR: 0.0.0.0:8080
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}

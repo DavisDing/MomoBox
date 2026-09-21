@@ -6,6 +6,7 @@ PROGRAM=${0##*/}
 SCRIPT_DIR=$(CDPATH= cd -P "$(dirname "$0")" && pwd)
 BACKUP=$SCRIPT_DIR/backup.sh
 RESTORE=$SCRIPT_DIR/restore.sh
+UPDATE=$SCRIPT_DIR/update.sh
 TMP_DIR=${TMPDIR:-/tmp}/momobox-nas-script-test-$$
 
 cleanup() {
@@ -19,7 +20,7 @@ fail() {
     exit 1
 }
 
-for script in "$BACKUP" "$RESTORE" "$0"; do
+for script in "$BACKUP" "$RESTORE" "$UPDATE" "$0"; do
     sh -n "$script" || fail "syntax check failed: $script"
 done
 
@@ -29,8 +30,10 @@ done
     cd "$TMP_DIR"
     "$BACKUP" --help >backup-help.txt
     "$RESTORE" --help >restore-help.txt
+    "$UPDATE" --help >update-help.txt
     grep -q '^Usage:' backup-help.txt
     grep -q '^Usage:' restore-help.txt
+    grep -q '^Usage:' update-help.txt
 ) || fail "help behavior test failed"
 
 if "$RESTORE" >"$TMP_DIR/restore-no-arg.out" 2>"$TMP_DIR/restore-no-arg.err"; then
@@ -42,5 +45,10 @@ if "$BACKUP" --not-a-real-option >"$TMP_DIR/backup-unknown.out" 2>"$TMP_DIR/back
     fail "backup with an unknown option unexpectedly succeeded"
 fi
 grep -q 'unknown option' "$TMP_DIR/backup-unknown.err" || fail "backup unknown-option error was not descriptive"
+
+if "$UPDATE" --not-a-real-option >"$TMP_DIR/update-unknown.out" 2>"$TMP_DIR/update-unknown.err"; then
+    fail "update with an unknown option unexpectedly succeeded"
+fi
+grep -q 'unknown option' "$TMP_DIR/update-unknown.err" || fail "update unknown-option error was not descriptive"
 
 printf '%s\n' "All shell syntax and help/argument behavior checks passed."

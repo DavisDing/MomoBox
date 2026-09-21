@@ -1,7 +1,7 @@
 # MomoBox NAS Docker 部署契约
 
-- 文档版本：v0.1
-- 更新时间：2026-09-20
+- 文档版本：v0.2
+- 更新时间：2026-09-21
 - 适用范围：Go NAS 后端和 PostgreSQL
 
 ## 1. 仓库目录隔离
@@ -21,7 +21,8 @@ MomoBox/
 │   └── tests/
 ├── deploy/
 │   └── nas/
-│       ├── compose.yaml
+│       ├── compose.yaml              # 生产环境：拉取 GHCR 镜像
+│       ├── compose.local-build.yaml  # 开发环境：本地构建 override
 │       ├── .env.example
 │       ├── README.md
 │       └── scripts/
@@ -46,17 +47,15 @@ Compose 位于：
 /Users/dinghao/Downloads/MomoBox/deploy/nas/compose.yaml
 ```
 
-示意配置：
+生产 NAS 的 Compose 使用 GHCR 镜像，而非在 NAS 从源码构建：
 
 ```yaml
 services:
   momo-backend:
-    build:
-      context: ../../backend
-      dockerfile: Dockerfile
+    image: ${MOMO_BACKEND_IMAGE:-ghcr.io/davisding/momobox-backend:latest}
 ```
 
-这样 Flutter、Android、iOS、`.dart_tool` 和本地资源不会进入后端镜像。
+`MOMO_BACKEND_IMAGE` 默认指向公开的多架构 `latest`。版本化发布另有 `vX.Y.Z` 标签，供排障和回退。开发机如需本地构建，显式叠加 `compose.local-build.yaml`；该 override 的构建上下文固定为 `../../backend`。这样 Flutter、Android、iOS、`.dart_tool` 和本地资源不会进入后端镜像。
 
 ## 2. 服务拓扑
 
@@ -124,6 +123,8 @@ postgres_data:/var/lib/postgresql/data
 
 ```text
 APP_ENV=production
+MOMO_BACKEND_IMAGE=ghcr.io/davisding/momobox-backend:latest
+APP_VERSION=latest
 MOMO_BACKEND_PORT=8080
 DATABASE_URL=postgres://momo:change-me@postgres:5432/momo?sslmode=disable
 JWT_SECRET=replace-with-long-random-secret
@@ -144,6 +145,8 @@ LOG_LEVEL=info
 - `HA_TOKEN_ENCRYPTION_KEY`。
 
 推荐使用 `openssl rand -hex 32` 生成 JWT Secret 和 Refresh Token Pepper，使用 `openssl rand -hex 16` 生成 HA Token 加密密钥。后者输出恰好 32 个 ASCII 字符，满足后端“32 bytes”校验；不要把换行或引号计入变量值。`POSTGRES_PASSWORD` 与 `DATABASE_URL` 中的密码必须一致，特殊字符必须进行 URL 编码。Compose 内服务固定监听 `0.0.0.0:8080`，宿主机映射端口只通过 `MOMO_BACKEND_PORT` 调整，避免端口映射与健康检查失配。
+
+`MOMO_BACKEND_IMAGE` 默认使用 GHCR 的 `latest`，每次后端 CI 成功后更新。正常升级必须使用 `scripts/update.sh`，它会先备份、拉取镜像、运行 migration，再启动业务服务。若要回退应用镜像，将此变量改为 `ghcr.io/davisding/momobox-backend:vX.Y.Z`；镜像回退不会自动回退数据库 schema。
 
 不提供以下后端变量：
 
@@ -166,9 +169,13 @@ AI_PROXY_URL
 - 使用固定 Go 基础镜像版本；
 - 构建产物支持 `linux/amd64` 和 `linux/arm64`；
 - 不使用 `latest` 作为生产基础镜像标签；
-- 使用 `backend/.dockerignore` 排除测试缓存和本地构建产物。
+- 使用 `backend/.dockerignore` 排除测试缓存和本地构建产物；
+- 由 GitHub Actions 构建并推送至 `ghcr.io/davisding/momobox-backend`；
+- 每次默认分支的后端变更通过 `go test ./...`、`go vet ./...` 和 Buildx 构建后更新 `latest` 与 `sha-<commit>` 标签；
+- 正式产品 Release 额外发布不可变的 `vX.Y.Z` 标签；
+- 首次发布后必须在 GitHub Packages 将镜像包显式设为 Public，公开 NAS 才能匿名拉取。
 
-Compose 中的 `momo-backend` 使用只读根文件系统，删除全部 Linux capabilities，启用 `no-new-privileges`，并只提供受限的 `/tmp` tmpfs。
+`latest` 是 NAS 的部署标签，不得作为 Dockerfile 的基础镜像标签。Compose 中的 `momo-backend` 使用只读根文件系统，删除全部 Linux capabilities，启用 `no-new-privileges`，并只提供受限的 `/tmp` tmpfs。
 
 ## 6. 启动与迁移
 
@@ -179,15 +186,23 @@ momo-backend migrate
 momo-backend serve
 ```
 
-推荐启动流程：
+首次启动流程：
 
 ```text
+docker compose pull momo-backend
 docker compose up -d postgres
 docker compose run --rm momo-backend migrate
 docker compose up -d momo-backend
 ```
 
-迁移执行必须：
+日常升级流程固定为：
+
+```text
+scripts/update.sh
+# backup → pull MOMO_BACKEND_IMAGE → stop backend → migrate → start backend
+```
+
+不得使用自动重启型镜像更新器绕过 migration。迁移执行必须：
 
 - 使用 PostgreSQL advisory lock 或等价锁；
 - 记录已执行迁移；
@@ -274,6 +289,7 @@ go vet ./...
 docker build --platform linux/amd64 -t momo-backend:test backend/
 docker build --platform linux/arm64 -t momo-backend:test-arm64 backend/
 docker compose -f deploy/nas/compose.yaml config
+./deploy/nas/scripts/self-test.sh
 ```
 
 如果本机未安装 Go 或 Docker，必须标记为 `NOT_EXECUTED`，不能声称镜像或 NAS 部署已经验证通过。

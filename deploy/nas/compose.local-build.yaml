@@ -1,0 +1,9 @@
+# Development-only override. Keep production NAS deployments on the published
+# GHCR image from compose.yaml; invoke this file only when building backend/
+# source on a development machine.
+services:
+  momo-backend:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    image: momo-backend:local
