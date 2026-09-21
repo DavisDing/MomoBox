@@ -189,9 +189,17 @@ class _ControlledAssistant implements AiAssistantService {
   final reply = Completer<String>();
   final questions = <String>[];
   final histories = <List<ChatMessage>>[];
+  int _requestSequence = 0;
 
   @override
-  Future<String> ask(String question, List<ChatMessage> history) {
+  String createRequestToken() => 'test-request-${++_requestSequence}';
+
+  @override
+  Future<String> ask(
+    String question,
+    List<ChatMessage> history, {
+    String? requestToken,
+  }) {
     questions.add(question);
     histories.add(history);
     return reply.future;
