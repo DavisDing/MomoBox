@@ -1,3 +1,4 @@
+import '../support/memory_settings_repository.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -169,8 +170,11 @@ void main() {
 Future<void> _pumpAssistant(WidgetTester tester, _ControlledAssistant service) async {
   await tester.binding.setSurfaceSize(const Size(1000, 1100));
   addTearDown(() => tester.binding.setSurfaceSize(null));
+  final settings = MemorySettingsRepository();
+  addTearDown(settings.close);
   await tester.pumpWidget(ProviderScope(
     overrides: [
+      settingsRepositoryProvider.overrideWithValue(settings),
       themeNameProvider.overrideWith((ref) => Stream.value('default')),
       aiAssistantServiceProvider.overrideWithValue(service),
     ],
@@ -182,6 +186,7 @@ Future<void> _pumpAssistant(WidgetTester tester, _ControlledAssistant service) a
 Future<void> _ask(WidgetTester tester, String text) async {
   await tester.enterText(find.byType(TextField), text);
   await tester.tap(find.byIcon(Icons.send_rounded));
+  await tester.pump();
   await tester.pump();
 }
 

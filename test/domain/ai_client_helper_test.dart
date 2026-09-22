@@ -2,6 +2,23 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:momo_box/application/ai_client_helper.dart';
 
 void main() {
+  test('Responses skips reasoning and joins all message text parts', () {
+    expect(AiClientHelper.extractResponseText({
+      'output': [
+        {'type': 'reasoning', 'summary': [{'text': 'private reasoning'}]},
+        {'type': 'message', 'content': [
+          {'type': 'output_text', 'text': '第一段'},
+          {'type': 'output_text', 'text': '第二段'},
+        ]},
+      ],
+    }), '第一段\n第二段');
+  });
+  test('chat content arrays and full URLs with query are recognized', () {
+    expect(AiClientHelper.extractResponseText({'choices': [
+      {'message': {'content': [{'type': 'text', 'text': '你好'}]}}
+    ]}), '你好');
+    expect(AiClientHelper.resolveProtocol('https://example.com/v1/responses?key=test', 'auto'), 'responses');
+  });
   group('AiClientHelper tests', () {
     test('resolveProtocol correctly detects explicit endings', () {
       expect(
@@ -62,6 +79,15 @@ void main() {
         AiClientHelper.sanitizeEndpoint('not-a-url?token=secret#x'),
         'not-a-url',
       );
+    });
+
+    test('URI path normalization preserves query and diagnostics remove credentials', () {
+      expect(AiClientHelper.chatCompletionUri('https://example.com/v1/?tenant=a').toString(),
+          'https://example.com/v1/chat/completions?tenant=a');
+      expect(AiClientHelper.responsesUri('https://example.com/v1/responses/?tenant=a').toString(),
+          'https://example.com/v1/responses?tenant=a');
+      expect(AiClientHelper.sanitizeEndpoint('https://user:secret@example.com/v1?key=secret'),
+          'https://example.com/v1');
     });
 
     test('extractResponseText extracts from both Responses API and Chat Completions', () {

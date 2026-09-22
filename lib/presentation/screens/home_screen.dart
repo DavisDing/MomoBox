@@ -7,7 +7,6 @@ import '../widgets/app_feedback.dart';
 
 import '../../app/momo_theme.dart';
 import '../../domain/models/inventory_models.dart';
-import '../../domain/models/smart_home_models.dart';
 import '../controllers/providers.dart';
 import '../controllers/smart_home_controller.dart';
 import '../widgets/intake_sheet.dart';
@@ -49,7 +48,7 @@ class HomeScreen extends ConsumerWidget {
           Widget buildSectionByKey(String key) {
             switch (key) {
               case 'quick_intake':
-                return _buildQuickIntakeBar(context, palette);
+                return _buildQuickIntakeBar(context, ref, palette);
               case 'alert_summary':
                 return _buildAlertSummaryCard(context, summary, palette);
               case 'shopping_summary':
@@ -132,10 +131,7 @@ class HomeScreen extends ConsumerWidget {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 10),
 
-                      // 连接状态横条（NAS 与 HA 状态）
-                      _buildSyncStatusRow(context, homeState, palette),
                     ],
                   ),
                 ),
@@ -177,47 +173,6 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildSyncStatusRow(BuildContext context, SmartHomeState homeState, MomoPalette palette) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: (isDark ? Colors.white.withValues(alpha: 0.05) : Colors.white),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.05),
-        ),
-      ),
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 6,
-        alignment: WrapAlignment.spaceBetween,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          // NAS 状态
-          _buildStatusDot(
-            label: 'NAS 局域网',
-            isOnline: homeState.nasOnline,
-            detail: homeState.nasOnline ? '已同步' : '未连接',
-          ),
-          // HA 状态
-          _buildStatusDot(
-            label: 'Home Assistant',
-            isOnline: homeState.haStatus == HaConnectionStatus.online,
-            detail: switch (homeState.haStatus) {
-              HaConnectionStatus.online => '在线就绪',
-              HaConnectionStatus.syncing => '同步中',
-              HaConnectionStatus.offline => '离线',
-              HaConnectionStatus.unconfigured => '未配置',
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildStatusDot({
     required String label,
     required bool isOnline,
@@ -239,19 +194,19 @@ class HomeScreen extends ConsumerWidget {
           '$label: ',
           style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
         ),
-        Text(
+        Flexible(child: Text(
           detail,
           style: TextStyle(
             fontSize: 12,
             color: isOnline ? Colors.green.shade700 : Colors.orange.shade700,
             fontWeight: FontWeight.w600,
           ),
-        ),
+        )),
       ],
     );
   }
 
-  Widget _buildQuickIntakeBar(BuildContext context, MomoPalette palette) {
+  Widget _buildQuickIntakeBar(BuildContext context, WidgetRef ref, MomoPalette palette) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -261,7 +216,7 @@ class HomeScreen extends ConsumerWidget {
             _buildQuickActionBtn(
               context,
               icon: Icons.qr_code_scanner,
-              label: '扫码入库',
+              label: '入库',
               color: palette.primary,
               onTap: () => showModalBottomSheet<void>(
                 context: context,
@@ -270,30 +225,19 @@ class HomeScreen extends ConsumerWidget {
                 builder: (_) => const IntakeSheet(),
               ),
             ),
-            _buildQuickActionBtn(
-              context,
-              icon: Icons.camera_alt_outlined,
-              label: '拍照识别',
-              color: palette.secondary,
-              onTap: () => showModalBottomSheet<void>(
-                context: context,
-                isScrollControlled: true,
-                useSafeArea: true,
-                builder: (_) => const IntakeSheet(),
-              ),
-            ),
-            _buildQuickActionBtn(
-              context,
-              icon: Icons.edit_note_rounded,
-              label: '手动录入',
-              color: Colors.deepPurpleAccent,
-              onTap: () => showModalBottomSheet<void>(
-                context: context,
-                isScrollControlled: true,
-                useSafeArea: true,
-                builder: (_) => const IntakeSheet(),
-              ),
-            ),
+            const SizedBox(width: 24),
+            Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildStatusDot(label: 'NAS', isOnline: false, detail: '未接入'),
+                const SizedBox(height: 10),
+                _buildStatusDot(label: 'HA', isOnline: false, detail: '未接入'),
+                const SizedBox(height: 10),
+                _buildStatusDot(label: 'AI', isOnline: false,
+                  detail: ref.watch(aiConfigurationStatusProvider).valueOrNull == true
+                      ? '已配置 · 待验证' : '未配置'),
+              ],
+            )),
           ],
         ),
       ),

@@ -69,7 +69,8 @@ class InventoryService {
     return _repository.replenishBatch(batchId, quantity);
   }
 
-  Future<void> discardBatch(String batchId) => _repository.discardBatch(batchId);
+  Future<void> discardBatch(String batchId, {int? expectedRemainingQuantity}) =>
+      _repository.discardBatch(batchId, expectedRemainingQuantity: expectedRemainingQuantity);
 
   void _validateDraft(IntakeDraft draft) {
     if (draft.name.trim().isEmpty) throw ArgumentError('请填写物品名称。');

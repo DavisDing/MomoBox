@@ -1,3 +1,4 @@
+import '../../application/ai_fallback_executor.dart';
 import 'nas_settings_screen.dart';
 import 'home_assistant_settings_screen.dart';
 import 'dart:convert';
@@ -411,6 +412,9 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
   void _addOrEditProfile([Map<String, dynamic>? item]) {
     final nameCtrl = TextEditingController(text: item?['name'] as String? ?? '');
     final urlCtrl = TextEditingController(text: item?['endpoint'] as String? ?? '');
+    final barcodeCtrl = TextEditingController(text: '3017620422003');
+    bool testing = false;
+    String? testResult;
     var role = item?[BarcodeLookupService.profileRoleKey] as String? ?? BarcodeLookupService.standbyRole;
 
     showDialog<void>(
@@ -425,6 +429,10 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
                 TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: '接口名称')),
                 const SizedBox(height: 12),
                 TextField(controller: urlCtrl, decoration: const InputDecoration(labelText: 'API 地址模板（含 {barcode}）')),
+                const SizedBox(height: 12),
+                TextField(controller: barcodeCtrl, keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: '测试条码（仅点击测试时发送）')),
+                if (testResult != null) Text(testResult!),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   isExpanded: true,
@@ -444,6 +452,26 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
             ),
           ),
           actions: [
+            TextButton(onPressed: testing ? null : () async {
+              final endpoint = urlCtrl.text.trim();
+              final barcode = barcodeCtrl.text.trim();
+              final service = ref.read(barcodeLookupServiceProvider);
+              setDialogState(() { testing = true; testResult = null; });
+              String result;
+              try {
+                final product = await service.testEndpoint(endpoint, barcode);
+                result = product == null ? '接口可用，但公共库未收录该条码；可继续手动录入。'
+                    : '接口可用：${product.name ?? '已返回商品信息'}';
+              } catch (_) {
+                result = '测试失败，请检查条码格式、接口地址和网络。';
+              }
+              if (!context.mounted) return;
+              setDialogState(() {
+                testing = false;
+                testResult = endpoint == urlCtrl.text.trim() && barcode == barcodeCtrl.text.trim()
+                    ? result : '配置或条码已变化，请重新测试。';
+              });
+            }, child: Text(testing ? '测试中…' : '测试接口')),
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
             FilledButton(
               onPressed: () {
@@ -477,7 +505,7 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
         children: [
           SwitchListTile(
             title: const Text('启用外部条码查询'),
-            subtitle: const Text('已预配免费的 Open Food Facts；开启后，条码会发送给主服务，失败时依次尝试副服务和兜底服务。'),
+            subtitle: const Text('已预配 Open Food Facts 食品公共库，无需 Key；默认关闭，需主动启用。并非所有国内商品或非食品条码都有记录。开启后条码将发送给所选外部服务。'),
             value: _useExternal,
             onChanged: (value) {
               setState(() => _useExternal = value);
@@ -853,6 +881,8 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
     final urlCtrl = TextEditingController(text: item?['endpoint'] as String? ?? 'https://api.openai.com/v1');
     final modelCtrl = TextEditingController(text: item?['model'] as String? ?? 'gpt-4o-mini');
     final keyCtrl = TextEditingController();
+    bool testing = false;
+    String? testResult;
     String endpointType = item?['endpointType'] as String? ?? 'auto';
     String fallbackRole = item?[AiDraftService.profileRoleKey] as String? ??
         (item?['id'] == _activeId ? AiDraftService.primaryRole : AiDraftService.standbyRole);
@@ -907,27 +937,74 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                   ],
                   onChanged: (val) {
                     if (val != null) {
-                      setDialogState(() => endpointType = val);
+                      setDialogState(() { endpointType = val; testResult = null; });
                     }
                   },
                 ),
                 const SizedBox(height: 8),
-                TextField(controller: urlCtrl, decoration: const InputDecoration(labelText: 'API 地址 (Base URL)')),
+                TextField(controller: urlCtrl, onChanged: (_) => setDialogState(() => testResult = null), decoration: const InputDecoration(labelText: 'API 地址 (Base URL)')),
                 const SizedBox(height: 8),
-                TextField(controller: modelCtrl, decoration: const InputDecoration(labelText: '模型名称 (Model)')),
+                TextField(controller: modelCtrl, onChanged: (_) => setDialogState(() => testResult = null), decoration: const InputDecoration(labelText: '模型名称 (Model)')),
                 const SizedBox(height: 8),
                 TextField(
                   controller: keyCtrl,
+                  onChanged: (_) => setDialogState(() => testResult = null),
                   decoration: const InputDecoration(labelText: 'API Key', hintText: '留空则保留已保存的密钥'),
                   obscureText: true,
                 ),
+                const SizedBox(height: 8),
+                const Text('测试只发送简短验证消息，不发送库存或对话；可能产生少量调用费用。',
+                    style: TextStyle(fontSize: 12)),
+                if (testResult != null) Text(testResult!),
               ],
             ),
           ),
           actions: [
+            TextButton.icon(
+              icon: testing
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.network_check),
+              label: Text(testing ? '测试中…' : '测试可用性'),
+              onPressed: testing ? null : () async {
+                final endpoint = urlCtrl.text.trim();
+                final model = modelCtrl.text.trim();
+                final protocol = endpointType;
+                final enteredKey = keyCtrl.text.trim();
+                final secure = ref.read(secureSettingsServiceProvider);
+                final executor = ref.read(aiConnectionTestExecutorProvider);
+                setDialogState(() { testing = true; testResult = null; });
+                String result;
+                try {
+                  final key = enteredKey.isNotEmpty ? enteredKey
+                      : item?['_apiKeyDraft'] as String? ??
+                          (item == null ? '' : await secure.readAiApiKeyForProfile(item['id'] as String)) ?? '';
+                  if (endpoint.isEmpty || model.isEmpty || key.isEmpty) {
+                    result = '请填写 API 地址、模型和 API Key 后测试。';
+                  } else {
+                    final response = await executor.execute(
+                      configs: [AiEndpointConfig(level: AiApiLevel.primary,
+                          endpoint: endpoint, model: model, apiKey: key, endpointType: protocol)],
+                      systemPrompt: 'This is a connectivity test. Reply briefly.',
+                      userPrompt: 'Reply OK.',
+                    );
+                    result = '测试通过 · $model · ${response.actualProtocol} · '
+                        '${response.traceLogs.last.durationMs} ms（尚未保存）';
+                  }
+                } catch (error) {
+                  result = '测试失败：${aiFailureMessage(error)}';
+                }
+                if (!context.mounted) return;
+                setDialogState(() {
+                  testing = false;
+                  testResult = endpoint == urlCtrl.text.trim() && model == modelCtrl.text.trim() &&
+                      protocol == endpointType && enteredKey == keyCtrl.text.trim()
+                      ? result : '配置已变化，请重新测试。';
+                });
+              },
+            ),
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
             FilledButton(
-              onPressed: () {
+              onPressed: testing ? null : () {
                 final name = nameCtrl.text.trim();
                 final url = urlCtrl.text.trim();
                 final model = modelCtrl.text.trim();
@@ -978,6 +1055,24 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          SwitchListTile.adaptive(
+            title: const Text('允许 AI 提议库存操作'),
+            subtitle: const Text('消耗、补充、报废均需逐次确认；关闭后只读查询。'),
+            value: ref.watch(aiInventoryPermissionProvider).valueOrNull ?? false,
+            onChanged: (value) async {
+              try {
+                await ref.read(settingsServiceProvider).setValue('ai_allow_inventory_writes', value.toString());
+              } catch (_) {
+                if (context.mounted) showAppSnackBar(context, const SnackBar(content: Text('权限保存失败，请重试。')));
+              }
+            },
+          ),
+          const SwitchListTile.adaptive(
+            title: Text('允许 AI 控制设备'),
+            subtitle: Text('需先接入真实 NAS 登录、HA 实体与设备权限；当前不可启用。'),
+            value: false, onChanged: null,
+          ),
+          const Divider(),
           Row(
             children: [
               const Expanded(

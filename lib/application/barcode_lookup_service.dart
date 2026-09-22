@@ -23,7 +23,7 @@ class BarcodeEndpointConfig {
     required this.level,
     required this.name,
     required this.endpoint,
-    this.timeout = const Duration(seconds: 8),
+    this.timeout = const Duration(seconds: 20),
   });
 
   final BarcodeApiLevel level;
@@ -131,6 +131,15 @@ class BarcodeLookupService {
     }
   }
 
+  /// Explicit user-triggered probe, bypasses cache and saved enabled/role flags.
+  /// Tests exactly the supplied draft endpoint, never a fallback service.
+  Future<BarcodeLookupResult?> testEndpoint(String endpoint, String barcode) {
+    if (!_isValidBarcode(barcode.trim())) throw ArgumentError('条码格式不正确。');
+    return _lookupFromEndpoint(BarcodeEndpointConfig(
+      level: BarcodeApiLevel.primary, name: '测试接口', endpoint: endpoint,
+    ), barcode.trim());
+  }
+
   Future<List<BarcodeEndpointConfig>> _resolveFallbackConfigs() async {
     final profiles = parseProfiles(await _settings.getValue(profilesKey));
     final configs = <BarcodeEndpointConfig>[];
@@ -185,10 +194,19 @@ class BarcodeLookupService {
             },
           )
           .timeout(config.timeout);
+      final body = utf8.decode(response.bodyBytes);
+      // OFF returns HTTP 404 + status:0 for a valid lookup with no product.
+      // A plain proxy/server 404 is still a configuration/network failure.
+      if (response.statusCode == 404) {
+        try {
+          final decoded = jsonDecode(body);
+          if (decoded is Map && (decoded['status'] == 0 || decoded['found'] == false)) return null;
+        } on FormatException { /* not a product-miss response */ }
+      }
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw StateError('${config.name} 返回 ${response.statusCode}');
       }
-      return _parseResponse(barcode, response.body);
+      return _parseResponse(barcode, body);
     } on TimeoutException {
       throw StateError('${config.name} 请求超时');
     } on FormatException {
@@ -203,13 +221,17 @@ class BarcodeLookupService {
     if (raw.contains('{barcode}')) {
       final encoded = Uri.encodeComponent(barcode);
       final uri = Uri.tryParse(raw.replaceAll('{barcode}', encoded));
-      if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
+      if (uri == null || !['https', 'http'].contains(uri.scheme) || !uri.hasAuthority || uri.userInfo.isNotEmpty) {
         throw ArgumentError('条码 API 地址无效。');
+      }
+      if (uri.host == 'world.openfoodfacts.org' && !uri.queryParameters.containsKey('fields')) {
+        return uri.replace(queryParameters: {...uri.queryParameters,
+          'fields': 'product_name,product_name_zh,brands,quantity,categories'});
       }
       return uri;
     }
     final uri = Uri.tryParse(raw);
-    if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
+    if (uri == null || !['https', 'http'].contains(uri.scheme) || !uri.hasAuthority || uri.userInfo.isNotEmpty) {
       throw ArgumentError('条码 API 地址无效。');
     }
     return uri.replace(pathSegments: [...uri.pathSegments, barcode]);
@@ -228,8 +250,8 @@ class BarcodeLookupService {
       return null;
     }
     final name = _textOrNull(data['name']) ??
-        _textOrNull(data['product_name']) ??
-        _textOrNull(data['product_name_zh']);
+        _textOrNull(data['product_name_zh']) ??
+        _textOrNull(data['product_name']);
     final category = _textOrNull(data['category']) ?? _lastCategory(data['categories']);
     final result = BarcodeLookupResult(
       barcode: barcode,

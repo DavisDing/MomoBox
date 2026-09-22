@@ -1,4 +1,5 @@
-import 'dart:async';
+import '../../application/ai_inventory_action_service.dart';
+import '../../application/ai_conversation_store.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -45,34 +46,6 @@ class MixedPlanData {
 }
 
 
-class AiSession {
-  AiSession({
-    required this.id,
-    required this.title,
-    required this.createdAt,
-    List<ChatMessage>? messages,
-  }) : messages = messages ?? [];
-
-  final String id;
-  String title;
-  final DateTime createdAt;
-  final List<ChatMessage> messages;
-
-  AiSession copyWith({
-    String? id,
-    String? title,
-    DateTime? createdAt,
-    List<ChatMessage>? messages,
-  }) {
-    return AiSession(
-      id: id ?? this.id,
-      title: title ?? this.title,
-      createdAt: createdAt ?? this.createdAt,
-      messages: messages != null ? List.from(messages) : List.from(this.messages),
-    );
-  }
-}
-
 class AiAssistantDialog extends ConsumerStatefulWidget {
   const AiAssistantDialog({super.key});
 
@@ -91,13 +64,12 @@ class AiAssistantDialog extends ConsumerStatefulWidget {
 }
 
 class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
-  final _sessions = <AiSession>[];
-  String _currentSessionId = '';
+  AiConversationStore get _store => ref.read(aiConversationStoreProvider);
+  List<AiSession> get _sessions => _store.sessions;
+  String get _currentSessionId => _store.currentId;
+  bool get _isLoading => !_store.ready || _store.isLoading;
   final _textController = TextEditingController();
   final _scrollController = ScrollController();
-  bool _isLoading = false;
-  Object? _activeRequestToken;
-  String? _activeRequestSessionId;
 
   MixedPlanData? _currentPlan;
 
@@ -110,88 +82,21 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
 
   List<ChatMessage> get _messages => _currentSession.messages;
 
-  ChatMessage _createDefaultWelcomeMessage() {
-    return ChatMessage(
-      id: '0',
-      role: 'assistant',
-      content: '你好呀！我是 MomoBox 的随身智能管家。\n'
-          '我可以帮你：\n'
-          '① 基于真实库存查询数量、效期和存放位置\n'
-          '② 提供采买建议（需先配置 AI 服务）\n'
-          '当前助手只读，不会扣减库存或控制设备。请在库存页确认消耗；NAS、家居控制与混合计划尚未支持。',
-      timestamp: DateTime.now(),
-    );
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    final initialSession = AiSession(
-      id: const Uuid().v4(),
-      title: '新对话',
-      createdAt: DateTime.now(),
-      messages: [_createDefaultWelcomeMessage()],
-    );
-    _sessions.add(initialSession);
-    _currentSessionId = initialSession.id;
-  }
-
   void _createNewSession() {
-    setState(() {
-      final newSession = AiSession(
-        id: const Uuid().v4(),
-        title: '新会话 ${_sessions.length + 1}',
-        createdAt: DateTime.now(),
-        messages: [_createDefaultWelcomeMessage()],
-      );
-      _sessions.insert(0, newSession);
-      _currentSessionId = newSession.id;
-      _currentPlan = null;
-    });
+    _store.create();
+    setState(() => _currentPlan = null);
     _scrollToBottom();
   }
 
   void _switchSession(String sessionId) {
-    setState(() {
-      _currentSessionId = sessionId;
-      _currentPlan = null;
-    });
+    _store.select(sessionId);
+    setState(() => _currentPlan = null);
     _scrollToBottom();
   }
 
   void _deleteSession(String sessionId) {
-    if (_sessions.length <= 1) {
-      // Keep the list item stable while clearing its contents. The request
-      // token is invalidated so a reply that finishes later cannot be written
-      // into the newly reset conversation.
-      setState(() {
-        final session = _sessions.single;
-        _invalidateRequestForSession(session.id);
-        session
-          ..title = '新对话'
-          ..messages.clear()
-          ..messages.add(_createDefaultWelcomeMessage());
-        _currentSessionId = session.id;
-        _currentPlan = null;
-      });
-      return;
-    }
-    setState(() {
-      _invalidateRequestForSession(sessionId);
-      _sessions.removeWhere((s) => s.id == sessionId);
-      if (_currentSessionId == sessionId) {
-        _currentSessionId = _sessions.first.id;
-      }
-      _currentPlan = null;
-    });
-    _scrollToBottom();
-  }
-
-  void _invalidateRequestForSession(String sessionId) {
-    if (_activeRequestSessionId != sessionId) return;
-    _activeRequestToken = null;
-    _activeRequestSessionId = null;
-    _isLoading = false;
+    _store.delete(sessionId);
+    setState(() => _currentPlan = null);
   }
 
   @override
@@ -216,84 +121,19 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
   Future<void> _sendMessage([String? presetText]) async {
     final text = (presetText ?? _textController.text).trim();
     if (text.isEmpty || _isLoading) return;
-
-    if (presetText == null) {
-      _textController.clear();
-    }
-
-    final origin = _currentSession;
-    final history = List<ChatMessage>.of(origin.messages);
-    final requestToken = Object();
-    final userMsg = ChatMessage(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      role: 'user',
-      content: text,
-      timestamp: DateTime.now(),
-    );
-
-    setState(() {
-      if (origin.title == '新对话' || origin.title.startsWith('新会话')) {
-        origin.title = text.length > 12 ? '${text.substring(0, 12)}...' : text;
-      }
-      origin.messages.add(userMsg);
-      _isLoading = true;
-      _activeRequestToken = requestToken;
-      _activeRequestSessionId = origin.id;
-    });
+    _textController.clear();
+    final store = _store;
+    final service = ref.read(aiAssistantServiceProvider);
+    final operation = store.send(text, service, localReply: _unsupportedActionReply(text));
     _scrollToBottom();
-
-    try {
-      // Only capability limitations are handled locally; inventory answers must
-      // go through the real service and its database snapshot.
-      final reply = _unsupportedActionReply(text) ??
-          await ref.read(aiAssistantServiceProvider).ask(
-              text,
-              history,
-              requestToken: requestToken.toString(),
-            );
-      if (mounted &&
-          identical(_activeRequestToken, requestToken) &&
-          _sessions.contains(origin)) {
-        setState(() {
-          origin.messages.add(ChatMessage(
-            id: const Uuid().v4(),
-            role: 'assistant',
-            content: reply,
-            timestamp: DateTime.now(),
-          ));
-        });
-      }
-    } catch (error) {
-      if (mounted &&
-          identical(_activeRequestToken, requestToken) &&
-          _sessions.contains(origin)) {
-        final message = error is TimeoutException
-            ? '请求超时，请检查网络后重试。'
-            : '请检查「我的」中的 AI 地址、模型、API Key 和网络后重试。';
-        setState(() {
-          origin.messages.add(ChatMessage(
-            id: const Uuid().v4(),
-            role: 'assistant',
-            content: '本次请求失败，未执行任何库存或设备操作。$message',
-            timestamp: DateTime.now(),
-          ));
-        });
-      }
-    } finally {
-      if (mounted && identical(_activeRequestToken, requestToken)) {
-        setState(() {
-          _isLoading = false;
-          _activeRequestToken = null;
-          _activeRequestSessionId = null;
-        });
-        _scrollToBottom();
-      }
-    }
+    await operation;
+    if (mounted) _scrollToBottom();
   }
 
   String? _unsupportedActionReply(String text) {
-    if (text.contains('吃了') || text.contains('消耗') || text.contains('扣减')) {
-      return '当前 AI 助手只支持查询，未扣减库存或写入记录。请在库存页选择商品并确认消耗数量。';
+    if (!(ref.read(aiInventoryPermissionProvider).valueOrNull ?? false) &&
+        (text.contains('吃了') || text.contains('消耗') || text.contains('扣减') || text.contains('补充') || text.contains('报废'))) {
+      return '当前 AI 助手只支持查询，未扣减库存或写入记录。请在设置中开启库存操作权限，或在库存页手动确认。';
     }
     if (text.contains('洗衣服') || text.contains('洗涤') ||
         text.contains('开洗衣机') || text.contains('打开电视') ||
@@ -303,6 +143,54 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
       return '当前版本尚未接入 Home Assistant，无法执行设备控制或混合计划。未发送设备指令，也未扣减耗材。';
     }
     return null;
+  }
+
+  Future<void> _confirmInventoryAction(ChatMessage message) async {
+    final action = AiInventoryAction.parse(message.content);
+    if (action == null) return;
+    final store = _store;
+    final origin = _currentSession;
+    final service = ref.read(aiInventoryActionServiceProvider);
+    // Lock before opening the confirmation route to prevent duplicate dialogs.
+    if (store.actionReceipts.containsKey(message.id)) return;
+    setState(() => store.actionReceipts[message.id] = '等待确认');
+    bool executing = false;
+    try {
+      final description = await service.describe(action);
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+        title: const Text('确认库存变更'),
+        content: Text(description),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('确认执行')),
+        ],
+      ));
+      if (confirmed != true || !store.sessions.contains(origin)) return;
+      if (await service.describe(action) != description) {
+        throw StateError('库存已变化，请重新确认。');
+      }
+      store.actionReceipts[message.id] = '执行中／中断后请核实库存，勿重复提交';
+      await store.save();
+      executing = true;
+      await service.execute(action, confirmedDescription: description);
+      store.actionReceipts[message.id] = '已执行';
+      origin.messages.add(ChatMessage(id: const Uuid().v4(), role: 'assistant',
+        content: '已完成：$description', timestamp: DateTime.now()));
+      await store.save();
+    } catch (error) {
+      if (executing && store.actionReceipts[message.id] != '已执行') {
+        store.actionReceipts[message.id] = '执行失败，请核实库存后重新提问';
+      }
+      if (mounted) {
+        final detail = error is StateError ? error.message : '操作或记录保存失败，请核实库存后重试。';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(detail)));
+      }
+    } finally {
+      if (!executing) store.actionReceipts.remove(message.id);
+      try { await store.save(); } catch (_) { /* visible storage warning */ }
+      if (mounted) setState(() {});
+    }
   }
 
   void _confirmPlan() {
@@ -336,6 +224,8 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(aiConversationStoreProvider);
+    ref.watch(aiInventoryPermissionProvider);
     final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -404,7 +294,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                       ),
                       const SizedBox(height: 2),
                       const Text(
-                        '真实库存问答 · 只读，不执行库存或设备操作',
+                        '真实库存问答 · 库存操作须授权并确认',
                         style: TextStyle(fontSize: 11, color: Colors.grey),
                       ),
                     ],
@@ -428,6 +318,17 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
             ),
           ),
 
+          if (_store.storageError != null)
+            ListTile(
+              title: Text(_store.storageError!, style: const TextStyle(color: Colors.red)),
+              trailing: TextButton(onPressed: () async {
+                if (_store.ready) {
+                  try { await _store.save(); } catch (_) { /* visible in store */ }
+                } else {
+                  await _store.load();
+                }
+              }, child: const Text('重试')),
+            ),
           // 快捷提问意图胶囊
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
@@ -479,14 +380,24 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                                     : palette.primary.withValues(alpha: 0.12)),
                               ),
                       ),
-                      child: SelectableText(
-                        msg.content,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [SelectableText(
+                        isUser ? msg.content : AiInventoryAction.displayText(msg.content),
                         style: TextStyle(
                           color: isUser ? Colors.white : theme.textTheme.bodyMedium?.color,
                           fontSize: 14,
                           height: 1.4,
                         ),
                       ),
+                      if (!isUser && AiInventoryAction.parse(msg.content) != null)
+                        TextButton(
+                          onPressed: _store.actionReceipts.containsKey(msg.id) ||
+                              !(ref.watch(aiInventoryPermissionProvider).valueOrNull ?? false)
+                              ? null : () => _confirmInventoryAction(msg),
+                          child: Text(_store.actionReceipts[msg.id] ?? '查看并确认库存操作'),
+                        ),
+                      ],),
                     ),
                   );
                 } else {
@@ -497,7 +408,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
             ),
           ),
 
-          if (_isLoading)
+          if (_isLoading && _store.storageError == null)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 6),
               child: Row(

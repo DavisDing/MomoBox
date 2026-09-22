@@ -29,6 +29,32 @@ void main() {
 
   tearDown(() => database.close());
 
+  testWidgets('首页只有一个入库入口，右侧按行展示真实服务接入状态', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(320, 720));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await SettingsRepository(database).setValue(homeSectionOrderKey, 'quick_intake');
+    await _pumpApp(tester, database);
+    await _pumpUntilFound(tester, find.text('入库'));
+    expect(find.text('入库'), findsOneWidget);
+    expect(find.text('扫码入库'), findsNothing);
+    expect(find.text('拍照识别'), findsNothing);
+    expect(find.text('手动录入'), findsNothing);
+    final nas = tester.getTopLeft(find.text('NAS: '));
+    final ha = tester.getTopLeft(find.text('HA: '));
+    final ai = tester.getTopLeft(find.text('AI: '));
+    expect(nas.dx, greaterThan(tester.getTopLeft(find.text('入库')).dx));
+    expect(nas.dx, ha.dx);
+    expect(ha.dx, ai.dx);
+    expect(nas.dy, lessThan(ha.dy));
+    expect(ha.dy, lessThan(ai.dy));
+    expect(find.text('未接入'), findsNWidgets(2));
+    expect(find.text('未配置'), findsOneWidget);
+    await tester.tap(find.text('入库'));
+    await _pumpUntilFound(tester, find.byType(IntakeSheet));
+    expect(tester.takeException(), isNull);
+    await _disposeWidgetTree(tester);
+  });
+
   testWidgets('首页家居预览不伪报场景或设备执行成功', (tester) async {
     await SettingsRepository(database).setValue(homeSectionOrderKey, 'smart_home_quick');
     await _pumpApp(tester, database);

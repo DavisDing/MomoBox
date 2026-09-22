@@ -25,7 +25,7 @@ class AiEndpointConfig {
     required this.apiKey,
     required this.model,
     this.endpointType = 'auto',
-    this.timeout = const Duration(seconds: 5),
+    this.timeout = const Duration(seconds: 60),
     this.maxRetries = 0,
   });
 
@@ -120,6 +120,8 @@ class AiFallbackExecutor {
   })  : _client = client ?? http.Client(),
         _contentFilter = contentFilter;
 
+  void close() => _client.close();
+
   final http.Client _client;
   final bool Function(String content)? _contentFilter;
   static const _executor = FailoverExecutor<AiEndpointConfig, _AiApiCallResult>();
@@ -168,7 +170,7 @@ class AiFallbackExecutor {
               endpoint: AiClientHelper.sanitizeEndpoint(log.endpoint),
               durationMs: log.durationMs,
               isSuccess: log.isSuccess,
-              failureReason: log.failureReason,
+              failureReason: _safeFailure(log.failureReason),
             ),
           )
           .toList(growable: false);
@@ -193,11 +195,11 @@ class AiFallbackExecutor {
               endpoint: AiClientHelper.sanitizeEndpoint(log.endpoint),
               durationMs: log.durationMs,
               isSuccess: log.isSuccess,
-              failureReason: log.failureReason,
+              failureReason: _safeFailure(log.failureReason),
             ),
           )
           .toList(growable: false);
-      developer.log(error.message, name: 'AiFallbackExecutor', error: error);
+      developer.log(error.message, name: 'AiFallbackExecutor');
       throw AiFallbackException(error.message, traceLogs);
     }
   }
@@ -244,7 +246,6 @@ class AiFallbackExecutor {
             }
           : {
               'model': config.model.trim(),
-              'temperature': temperature,
               'messages': [
                 {'role': 'system', 'content': systemPrompt},
                 ...chatHistory,
@@ -278,12 +279,12 @@ class AiFallbackExecutor {
     // 判定 2: HTTP 状态码非 2xx
     if (response == null || response.statusCode < 200 || response.statusCode >= 300) {
       throw http.ClientException(
-        'HTTP ${response?.statusCode ?? "无响应"}: ${response?.body ?? ""}',
+        'HTTP ${response?.statusCode ?? "无响应"}（上游请求失败）',
       );
     }
 
     // 判定 3: 格式解析失败或缺少必需字段
-    final decoded = jsonDecode(response.body);
+    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('响应 Body 不是标准 JSON Map 结构');
     }
@@ -302,4 +303,32 @@ class AiFallbackExecutor {
       'protocol': actualUsedType,
     };
   }
+}
+
+String? _safeFailure(String? reason) {
+  if (reason == null) return null;
+  final status = RegExp(r'HTTP (\d{3})').firstMatch(reason)?.group(1);
+  if (status != null) return 'HTTP $status';
+  if (reason.contains('TimeoutException')) return '请求超时（60 秒默认等待上限）';
+  if (reason.contains('为空')) return '服务返回内容为空';
+  if (reason.contains('FormatException')) return '响应格式不兼容或缺少文本';
+  return '连接失败，请检查网络、证书与服务地址';
+}
+
+/// Only display sanitized classifications, never upstream bodies or URLs.
+String aiFailureMessage(Object error) {
+  if (error is AiFallbackException) {
+    return error.traceLogs.map((attempt) {
+      final reason = attempt.failureReason ?? '请求失败';
+      final hint = reason.contains('401') || reason.contains('403')
+          ? '，请检查 API Key 与模型访问权限'
+          : reason.contains('429') ? '，额度不足或限流，请稍后重试'
+          : reason.contains('404') || reason.contains('405')
+              ? '，请检查地址路径与接口协议'
+              : '，请检查配置或稍后重试';
+      return '${attempt.level.name}: $reason$hint';
+    }).join('；');
+  }
+  if (error is TimeoutException) return '请求超时，请检查网络后重试。';
+  return '请检查「我的」中的 AI 地址、模型、API Key 和网络后重试。';
 }

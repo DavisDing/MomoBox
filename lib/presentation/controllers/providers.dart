@@ -1,3 +1,6 @@
+import '../../application/ai_inventory_action_service.dart';
+import '../../application/ai_fallback_executor.dart';
+import '../../application/ai_conversation_store.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/ai_assistant_service.dart';
@@ -252,3 +255,28 @@ final choreServiceProvider = Provider<ChoreService>((ref) {
 final choresProvider = StreamProvider<List<ChoreItem>>((ref) {
   return ref.watch(choreServiceProvider).watchChores();
 });
+
+final aiConversationStoreProvider = ChangeNotifierProvider<AiConversationStore>((ref) {
+  final store = AiConversationStore(ref.watch(settingsRepositoryProvider));
+  store.load();
+  return store;
+});
+
+final aiConnectionTestExecutorProvider = Provider<AiFallbackExecutor>((ref) {
+  final executor = AiFallbackExecutor();
+  ref.onDispose(executor.close);
+  return executor;
+});
+
+final aiInventoryPermissionProvider = StreamProvider<bool>((ref) => ref
+    .watch(settingsServiceProvider).watchValue('ai_allow_inventory_writes')
+    .map((value) => value == 'true'));
+
+// Configured does not imply reachable: the home page must never claim online
+// based on a URL alone, nor reuse the mock smart-home status.
+final aiConfigurationStatusProvider = StreamProvider<bool>((ref) => ref
+    .watch(settingsServiceProvider).watchValue(AiDraftService.modelKey)
+    .map((value) => value?.trim().isNotEmpty == true));
+
+final aiInventoryActionServiceProvider = Provider<AiInventoryActionService>((ref) =>
+    AiInventoryActionService(ref.watch(settingsRepositoryProvider), ref.watch(inventoryServiceProvider)));

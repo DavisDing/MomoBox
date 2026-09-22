@@ -1,3 +1,4 @@
+import '../support/memory_settings_repository.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -49,6 +50,8 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
     addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+    final settings = MemorySettingsRepository();
+    addTearDown(settings.close);
     final darkTheme = buildMomoTheme(
       MomoPalette.defaultPalette,
       Brightness.dark,
@@ -56,6 +59,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          settingsRepositoryProvider.overrideWithValue(settings),
           themeNameProvider.overrideWith((ref) => Stream.value('default')),
         ],
         child: MaterialApp(

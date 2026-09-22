@@ -11,6 +11,39 @@ import 'package:momo_box/data/repositories/barcode_cache_repository.dart';
 import 'package:momo_box/data/repositories/settings_repository.dart';
 
 void main() {
+  test('独立接口测试绕过开关和缓存，404 未收录不是故障', () async {
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    var calls = 0;
+    final service = BarcodeLookupService(BarcodeCacheRepository(db),
+      SettingsService(SettingsRepository(db)),
+      client: MockClient((request) async {
+        calls++;
+        expect(request.url.queryParameters['fields'], contains('product_name_zh'));
+        return http.Response(jsonEncode({'status': 0, 'status_verbose': 'product not found'}), 404);
+      }),
+    );
+    expect(await service.lookup('3017620422003'), isNull);
+    expect(calls, 0);
+    expect(await service.testEndpoint(BarcodeLookupService.defaultFreeEndpoint, '3017620422003'), isNull);
+    expect(calls, 1);
+  });
+
+  test('UTF-8 无 charset 商品名正常且优先中文，普通 404 仍失败', () async {
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    var missing = false;
+    final service = BarcodeLookupService(BarcodeCacheRepository(db), SettingsService(SettingsRepository(db)),
+      client: MockClient((_) async => missing ? http.Response('Not Found', 404)
+        : http.Response.bytes(utf8.encode(jsonEncode({'product': {
+          'product_name': 'Milk', 'product_name_zh': '牛奶'
+        }})), 200)),
+    );
+    expect((await service.testEndpoint(BarcodeLookupService.defaultFreeEndpoint, '3017620422003'))?.name, '牛奶');
+    missing = true;
+    await expectLater(service.testEndpoint(BarcodeLookupService.defaultFreeEndpoint, '3017620422003'), throwsStateError);
+  });
+
   Future<BarcodeLookupService> serviceWithProfiles({
     required AppDatabase database,
     required http.Client client,

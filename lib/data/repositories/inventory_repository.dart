@@ -337,13 +337,16 @@ class InventoryRepository {
     });
   }
 
-  Future<void> discardBatch(String batchId) async {
+  Future<void> discardBatch(String batchId, {int? expectedRemainingQuantity}) async {
     final now = DateTime.now();
     await _database.transaction(() async {
       final batch = await (_database.select(_database.productBatches)
             ..where((entry) => entry.id.equals(batchId)))
           .getSingle();
       if (batch.isDiscarded) throw StateError('批次已经报废。');
+      if (expectedRemainingQuantity != null && batch.remainingQuantity != expectedRemainingQuantity) {
+        throw StateError('库存已变化，请重新确认。');
+      }
       await (_database.update(_database.productBatches)
             ..where((entry) => entry.id.equals(batchId)))
           .write(

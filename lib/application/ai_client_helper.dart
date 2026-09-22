@@ -8,7 +8,7 @@ class AiClientHelper {
   /// 如果显式以 `/chat/completions` 结尾，则判定为 chat；
   /// 否则若配置为 'auto'，返回 auto 并提供优先尝试的协议。
   static String resolveProtocol(String endpoint, String configuredType) {
-    final clean = endpoint.trim().replaceAll(RegExp(r'/+$'), '');
+    final clean = (Uri.tryParse(endpoint.trim())?.path ?? '').replaceAll(RegExp(r'/+$'), '');
     if (clean.endsWith('/responses')) {
       return 'responses';
     }
@@ -22,9 +22,9 @@ class AiClientHelper {
   }
 
   static Uri chatCompletionUri(String endpoint) {
-    final clean = endpoint.trim().replaceAll(RegExp(r'/+$'), '');
-    final parsed = Uri.tryParse(clean);
-    if (parsed == null || !parsed.hasScheme || !parsed.hasAuthority) {
+    final input = Uri.tryParse(endpoint.trim());
+    final parsed = input?.replace(path: input.path.replaceAll(RegExp(r'/+$'), ''));
+    if (parsed == null || !['http', 'https'].contains(parsed.scheme) || parsed.host.isEmpty || parsed.userInfo.isNotEmpty) {
       throw ArgumentError('AI 服务地址无效。');
     }
     if (parsed.path.endsWith('/chat/completions')) return parsed;
@@ -32,9 +32,9 @@ class AiClientHelper {
   }
 
   static Uri responsesUri(String endpoint) {
-    final clean = endpoint.trim().replaceAll(RegExp(r'/+$'), '');
-    final parsed = Uri.tryParse(clean);
-    if (parsed == null || !parsed.hasScheme || !parsed.hasAuthority) {
+    final input = Uri.tryParse(endpoint.trim());
+    final parsed = input?.replace(path: input.path.replaceAll(RegExp(r'/+$'), ''));
+    if (parsed == null || !['http', 'https'].contains(parsed.scheme) || parsed.host.isEmpty || parsed.userInfo.isNotEmpty) {
       throw ArgumentError('AI 服务地址无效。');
     }
     if (parsed.path.endsWith('/responses')) return parsed;
@@ -45,37 +45,43 @@ class AiClientHelper {
   static String sanitizeEndpoint(String endpoint) {
     final trimmed = endpoint.trim();
     final separator = trimmed.indexOf(RegExp(r'[?#]'));
-    return separator < 0 ? trimmed : trimmed.substring(0, separator);
+    final withoutQuery = separator < 0 ? trimmed : trimmed.substring(0, separator);
+    final parsed = Uri.tryParse(withoutQuery);
+    return parsed?.hasAuthority == true
+        ? parsed!.replace(userInfo: '').toString()
+        : withoutQuery;
   }
 
   /// 统一从响应体（Chat 或 Responses 格式）解析文本内容
   static String? extractResponseText(Map<String, dynamic> decoded) {
-    // 1. 尝试 Responses API 格式
-    final output = decoded['output'];
-    if (output is List && output.isNotEmpty) {
-      final first = output.first;
-      if (first is Map) {
-        final contentList = first['content'];
-        if (contentList is List && contentList.isNotEmpty) {
-          final textItem = contentList.first;
-          if (textItem is Map && textItem['text'] is String) {
-            return textItem['text'] as String;
-          }
-        }
-      }
-    }
-    final outputText = decoded['output_text'];
-    if (outputText is String && outputText.isNotEmpty) {
-      return outputText;
+    String? textParts(Object? content) {
+      if (content is String) return content;
+      if (content is! List) return null;
+      final text = content.whereType<Map>()
+          .where((part) => part['type'] == null ||
+              part['type'] == 'text' || part['type'] == 'output_text')
+          .map((part) => part['text'])
+          .whereType<String>().where((text) => text.trim().isNotEmpty)
+          .join('\n');
+      return text.isEmpty ? null : text;
     }
 
-    // 2. 尝试 Chat Completions 格式
+    // Reasoning/tool items may precede assistant messages. Read every text
+    // part, without exposing reasoning summaries or tool arguments as answers.
+    final output = decoded['output'];
+    if (output is List) {
+      final text = output.whereType<Map>()
+          .where((item) => item['type'] == null || item['type'] == 'message')
+          .map((item) => textParts(item['content']))
+          .whereType<String>().join('\n');
+      if (text.isNotEmpty) return text;
+    }
+    final outputText = textParts(decoded['output_text']);
+    if (outputText != null) return outputText;
     final choices = decoded['choices'];
     if (choices is List && choices.isNotEmpty && choices.first is Map) {
       final message = (choices.first as Map)['message'];
-      if (message is Map && message['content'] is String) {
-        return message['content'] as String;
-      }
+      if (message is Map) return textParts(message['content']);
     }
 
     return null;

@@ -13,6 +13,8 @@ class AiUsageScreen extends ConsumerStatefulWidget {
 }
 
 class _AiUsageScreenState extends ConsumerState<AiUsageScreen> {
+  int _page = 0;
+  int _pageSize = 20;
   int _selectedFilterIndex = 0; // 0: 当日, 1: 近7天, 2: 近30天, 3: 全部
 
   @override
@@ -20,6 +22,9 @@ class _AiUsageScreenState extends ConsumerState<AiUsageScreen> {
     final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
     final usageLogs = ref.watch(aiUsageLogsProvider).valueOrNull ?? const <AiUsageRecord>[];
     final filteredLogs = _filterLogs(usageLogs, _selectedFilterIndex);
+    final pageCount = (filteredLogs.length / _pageSize).ceil().clamp(1, 1000000);
+    final page = _page.clamp(0, pageCount - 1);
+    final pageLogs = filteredLogs.skip(page * _pageSize).take(_pageSize);
     final summary = AiUsageSummary.aggregate(filteredLogs);
 
     return Scaffold(
@@ -67,6 +72,7 @@ class _AiUsageScreenState extends ConsumerState<AiUsageScreen> {
             onSelectionChanged: (set) {
               setState(() {
                 _selectedFilterIndex = set.first;
+                _page = 0;
               });
             },
           ),
@@ -117,6 +123,24 @@ class _AiUsageScreenState extends ConsumerState<AiUsageScreen> {
           const Text('调用明细记录', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           const SizedBox(height: 8),
 
+          Wrap(
+            spacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text('共 ${filteredLogs.length} 条'),
+              const Text('每页'),
+              DropdownButton<int>(
+                value: _pageSize,
+                items: [10, 20, 50, 100].map((size) => DropdownMenuItem(
+                    value: size, child: Text('$size 条'))).toList(),
+                onChanged: (size) { if (size != null) setState(() { _pageSize = size; _page = 0; }); },
+              ),
+              IconButton(tooltip: '上一页', icon: const Icon(Icons.chevron_left),
+                onPressed: page > 0 ? () => setState(() => _page = page - 1) : null),
+              Text('${page + 1} / $pageCount'),
+              IconButton(tooltip: '下一页', icon: const Icon(Icons.chevron_right),
+                onPressed: page + 1 < pageCount ? () => setState(() => _page = page + 1) : null),
+            ],
+          ),
           if (filteredLogs.isEmpty)
             Card(
               child: Padding(
@@ -133,7 +157,8 @@ class _AiUsageScreenState extends ConsumerState<AiUsageScreen> {
               ),
             )
           else
-            ...filteredLogs.map((log) => _buildLogCard(log, palette)),
+            ...pageLogs.map((log) => _buildLogCard(log, palette)),
+
         ],
       ),
     );
@@ -160,6 +185,7 @@ class _AiUsageScreenState extends ConsumerState<AiUsageScreen> {
     final isQa = log.purpose == 'qa';
 
     return Card(
+      key: ValueKey('ai-log-${log.id}'),
       margin: const EdgeInsets.only(bottom: 8),
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -195,6 +221,10 @@ class _AiUsageScreenState extends ConsumerState<AiUsageScreen> {
               ],
             ),
             const SizedBox(height: 8),
+            Text('${log.status == 'failure' ? '失败' : '成功'} · ${log.endpointType} · '
+                '${log.providerLevel ?? 'primary'} · ${log.elapsedMs} ms'),
+            if (log.status == 'failure')
+              Text(log.failureReason ?? '请求失败', style: const TextStyle(color: Colors.red)),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
