@@ -4,35 +4,19 @@
 
 本项目开发机不安装 Flutter。所有编译、代码生成、静态检查和测试由 GitHub Actions 执行，Android APK/AAB 下载后在真实设备上进行安装验收。
 
-## CI 验证
+## CI 与发布链路验证
 
-### Pull Request / 分支推送
+`.github/workflows/pipeline.yml` 是唯一的 Actions Workflow，Pull Request、分支推送和手动触发均进入同一次运行：
 
-`.github/workflows/flutter-ci.yml` 执行：
+1. `prepare`：运行版本计算与平台壳脚本回归测试，计算发布版本并检测后端变更；
+2. 并行验证：
+   - `flutter-verify` 使用 Flutter stable，安装 Android 17 SDK platform，生成平台壳和 Drift 文件，执行 `flutter analyze`、`flutter test` 与 Android debug build；
+   - `ios-verify` 使用 `runs-on: xcode-27`，确认 iOS 27 SDK 可用，生成平台壳和 Drift 文件并执行 iOS unsigned build；
+   - `backend-verify` 使用 Go 1.22.8 执行 `go test ./...` 和 `go vet ./...`；
+3. `build-release-packages`：通过 `needs` 等待三项验证全部成功；仅当默认分支命中 Conventional Commit 发布规则时构建版本化 APK/AAB、生成 SHA256SUMS 并上传临时制品；
+4. `publish`：通过 `needs` 等待打包节点成功后，才允许推送 GHCR 镜像和创建/更新 GitHub Release。
 
-- Flutter stable channel；
-- 运行平台壳补丁回归测试；
-- Ubuntu job 安装 Android 17 SDK platform；Xcode 27 iOS job（`runs-on: xcode-27`）在构建前确认 iOS 27 SDK 可用；
-- 生成 Android/iOS 平台壳；
-- 注入 Android API 36（`minSdk`）、Android API 37（`compileSdk`/`targetSdk`）和 iOS 27.0 deployment target；
-- 注入本地通知权限、重启恢复 receiver、flutter_local_notifications Java 8 desugaring、通知图标保留和 iOS delegate；
-- `flutter pub get`；
-- Drift 代码生成；
-- `flutter analyze`；
-- `flutter test`；
-- Android debug build；
-- macOS 上的 iOS unsigned build。
-
-### 默认分支发布
-
-`.github/workflows/release.yml` 在 Conventional Commit 触发发布时执行：
-
-- 运行平台壳补丁回归测试；
-- 安装 Android 17 SDK platform，再生成 Android/iOS 平台壳并注入 Android API 36 minSdk、Android API 37 compile/target SDK、iOS 27.0 及本地通知平台设置；iOS 27 SDK 的实际构建验证由 Pull Request / 分支推送中的 `xcode-27` job 执行；
-- 生成 Drift 文件；
-- analyze/test；
-- 构建 APK/AAB；
-- 上传 APK、AAB 和 SHA256SUMS 到 GitHub Release。
+任一验证或打包节点失败时，后续发布不会执行。非发布提交仍完成完整验证，但跳过正式安装包构建和 GitHub Release；默认分支的后端变更可在同一链路末端发布 `latest`/`sha-*` 镜像。
 
 ## 兼容性验收
 

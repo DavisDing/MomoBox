@@ -178,67 +178,99 @@ class HomeScreen extends ConsumerWidget {
     required bool isOnline,
     required String detail,
   }) {
+    final statusColor = isOnline ? Colors.green : Colors.grey.shade500;
+    final detailColor = isOnline ? Colors.green.shade700 : Colors.grey.shade700;
+
     return Row(
-      mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 8,
-          height: 8,
+          width: 7,
+          height: 7,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: isOnline ? Colors.green : Colors.orange,
+            color: statusColor,
           ),
         ),
-        const SizedBox(width: 6),
+        const SizedBox(width: 5),
         Text(
           '$label: ',
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
         ),
-        Flexible(child: Text(
-          detail,
-          style: TextStyle(
-            fontSize: 12,
-            color: isOnline ? Colors.green.shade700 : Colors.orange.shade700,
-            fontWeight: FontWeight.w600,
+        Expanded(
+          child: Text(
+            detail,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 11,
+              color: detailColor,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-        )),
+        ),
       ],
     );
   }
 
   Widget _buildQuickIntakeBar(BuildContext context, WidgetRef ref, MomoPalette palette) {
+    final aiConfigured = ref.watch(aiConfigurationStatusProvider).valueOrNull == true;
+
     return Card(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _buildQuickActionBtn(
-              context,
-              icon: Icons.qr_code_scanner,
-              label: '入库',
-              color: palette.primary,
-              onTap: () => showModalBottomSheet<void>(
-                context: context,
-                isScrollControlled: true,
-                useSafeArea: true,
-                builder: (_) => const IntakeSheet(),
+        // The compact height is intentional: the entry point remains visible without
+        // pushing the reminder and shopping sections below the fold.
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: SizedBox(
+          height: 52,
+          child: Row(
+            children: [
+              Expanded(
+                flex: 1,
+                child: _buildQuickActionBtn(
+                  context,
+                  icon: Icons.qr_code_scanner,
+                  label: '入库',
+                  color: palette.primary,
+                  onTap: () => showModalBottomSheet<void>(
+                    context: context,
+                    isScrollControlled: true,
+                    useSafeArea: true,
+                    builder: (_) => const IntakeSheet(),
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(width: 24),
-            Expanded(child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildStatusDot(label: 'NAS', isOnline: false, detail: '未接入'),
-                const SizedBox(height: 10),
-                _buildStatusDot(label: 'HA', isOnline: false, detail: '未接入'),
-                const SizedBox(height: 10),
-                _buildStatusDot(label: 'AI', isOnline: false,
-                  detail: ref.watch(aiConfigurationStatusProvider).valueOrNull == true
-                      ? '已配置 · 待验证' : '未配置'),
-              ],
-            )),
-          ],
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 2,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 2),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.45)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: _buildStatusDot(label: 'NAS', isOnline: false, detail: '未接入'),
+                      ),
+                      Divider(height: 1, color: Theme.of(context).dividerColor.withValues(alpha: 0.35)),
+                      Expanded(
+                        child: _buildStatusDot(label: 'HA', isOnline: false, detail: '未接入'),
+                      ),
+                      Divider(height: 1, color: Theme.of(context).dividerColor.withValues(alpha: 0.35)),
+                      Expanded(
+                        child: _buildStatusDot(
+                          label: 'AI',
+                          isOnline: false,
+                          detail: aiConfigured ? '已配置 · 待验证' : '未配置',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -255,20 +287,28 @@ class HomeScreen extends ConsumerWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        child: Column(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Row(
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(7),
               decoration: BoxDecoration(
                 color: color.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: color, size: 22),
+              child: Icon(icon, color: color, size: 18),
             ),
-            const SizedBox(height: 6),
-            Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            const SizedBox(width: 7),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+            ),
           ],
         ),
       ),

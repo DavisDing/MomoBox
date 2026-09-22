@@ -6,21 +6,30 @@ readonly script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly temporary_root="$(mktemp -d)"
 trap 'rm -rf "$temporary_root"' EXIT
 
-# Keep both GitHub workflows aligned with the Android 17 SDK package ID.
-for workflow in "$script_dir/../../.github/workflows/flutter-ci.yml" \
-                "$script_dir/../../.github/workflows/release.yml"; do
-  grep -q 'platforms;android-37.0' "$workflow"
-  if grep -q 'platforms;android-37"' "$workflow"; then
-    printf 'FAIL: stale Android SDK package reference in %s\n' "$workflow" >&2
-    exit 1
-  fi
-done
+# Keep the single chained GitHub workflow aligned with the platform baseline.
+readonly workflow="$script_dir/../../.github/workflows/pipeline.yml"
 
-grep -q '^    runs-on: xcode-27$' "$script_dir/../../.github/workflows/flutter-ci.yml"
-if grep -q '^    runs-on: macos-latest$' "$script_dir/../../.github/workflows/flutter-ci.yml"; then
+grep -q 'platforms;android-37.0' "$workflow"
+if grep -q 'platforms;android-37"' "$workflow"; then
+  printf 'FAIL: stale Android SDK package reference in %s\n' "$workflow" >&2
+  exit 1
+fi
+
+grep -q '^    runs-on: xcode-27$' "$workflow"
+if grep -q '^    runs-on: macos-latest$' "$workflow"; then
   printf 'FAIL: iOS CI must use the Xcode 27 runner\n' >&2
   exit 1
 fi
+
+grep -q '^    needs: \[prepare, flutter-verify, ios-verify, backend-verify\]$' "$workflow"
+grep -q '^    needs: \[prepare, build-release-packages\]$' "$workflow"
+
+for obsolete_workflow in flutter-ci.yml release.yml backend-image.yml; do
+  if [[ -e "$script_dir/../../.github/workflows/$obsolete_workflow" ]]; then
+    printf 'FAIL: obsolete standalone workflow still exists: %s\n' "$obsolete_workflow" >&2
+    exit 1
+  fi
+done
 
 mkdir -p "$temporary_root/bin" "$temporary_root/project"
 cat > "$temporary_root/bin/flutter" <<'FLUTTER'

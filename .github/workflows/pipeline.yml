@@ -1,0 +1,364 @@
+name: MomoBox CI and Release
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: momobox-pipeline-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare pipeline
+    runs-on: ubuntu-latest
+    outputs:
+      release_required: ${{ steps.plan.outputs.release_required }}
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      backend_changed: ${{ steps.plan.outputs.backend_changed }}
+      backend_latest_required: ${{ steps.plan.outputs.backend_latest_required }}
+      publish_required: ${{ steps.plan.outputs.publish_required }}
+    steps:
+      - name: Check out source and tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Validate release version calculation
+        run: scripts/release/test-next-version.sh
+
+      - name: Validate platform preparation script
+        run: scripts/ci/test-prepare-flutter-platforms.sh
+
+      - name: Calculate release and backend publication plan
+        id: plan
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+
+          release_required=false
+          version=''
+          tag=''
+          backend_changed=false
+          backend_latest_required=false
+          publish_required=false
+          default_ref="refs/heads/${DEFAULT_BRANCH}"
+
+          if [[ "$GITHUB_REF" == "$default_ref" && "$GITHUB_EVENT_NAME" != 'pull_request' ]]; then
+            version_output="$(mktemp)"
+            GITHUB_OUTPUT="$version_output" scripts/release/next-version.sh
+            release_required="$(sed -n 's/^release_required=//p' "$version_output" | tail -n 1)"
+            version="$(sed -n 's/^version=//p' "$version_output" | tail -n 1)"
+            tag="$(sed -n 's/^tag=//p' "$version_output" | tail -n 1)"
+            rm -f "$version_output"
+          fi
+
+          changed_files="$(mktemp)"
+          case "$GITHUB_EVENT_NAME" in
+            pull_request)
+              git diff --name-only "${PR_BASE_SHA}...${GITHUB_SHA}" > "$changed_files"
+              ;;
+            push)
+              if [[ -z "${BEFORE_SHA:-}" || "$BEFORE_SHA" == '0000000000000000000000000000000000000000' ]]; then
+                git show --pretty='' --name-only "$GITHUB_SHA" > "$changed_files"
+              elif git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+                git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" > "$changed_files"
+              else
+                git show --pretty='' --name-only "$GITHUB_SHA" > "$changed_files"
+              fi
+              ;;
+            workflow_dispatch)
+              # A manual run on the default branch explicitly requests that
+              # the current backend image be rebuilt and republished.
+              backend_changed=true
+              ;;
+          esac
+
+          if grep -q '^backend/' "$changed_files"; then
+            backend_changed=true
+          fi
+          rm -f "$changed_files"
+
+          if [[ "$GITHUB_REF" == "$default_ref" && "$GITHUB_EVENT_NAME" != 'pull_request' && "$backend_changed" == 'true' ]]; then
+            backend_latest_required=true
+          fi
+          if [[ "$release_required" == 'true' || "$backend_latest_required" == 'true' ]]; then
+            publish_required=true
+          fi
+
+          {
+            echo "release_required=$release_required"
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "backend_changed=$backend_changed"
+            echo "backend_latest_required=$backend_latest_required"
+            echo "publish_required=$publish_required"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Release required: $release_required"
+          echo "Backend changed: $backend_changed"
+          echo "Publish backend latest: $backend_latest_required"
+
+  flutter-verify:
+    name: Flutter analyze, test and Android debug build
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Android 17 SDK platform
+        run: $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "platforms;android-37.0"
+
+      - name: Generate Android and iOS project shells
+        run: scripts/ci/prepare-flutter-platforms.sh
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Generate Drift sources
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Static analysis
+        run: flutter analyze
+
+      - name: Unit tests
+        run: flutter test --reporter expanded
+
+      - name: Android debug build
+        run: flutter build apk --debug
+
+  ios-verify:
+    name: iOS unsigned build (Xcode 27)
+    needs: prepare
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Select Xcode 27
+        run: |
+          sudo xcode-select --switch /Applications/Xcode_27.0.0.app/Contents/Developer
+          echo "DEVELOPER_DIR=/Applications/Xcode_27.0.0.app/Contents/Developer" >> "$GITHUB_ENV"
+          xcodebuild -version
+
+      - name: Verify iOS 27 SDK is available
+        run: |
+          sdk_version=$(xcrun --sdk iphoneos --show-sdk-version)
+          python3 - "$sdk_version" <<'PY'
+          import sys
+
+          actual = tuple(int(part) for part in sys.argv[1].split('.') if part.isdigit())
+          required = (27, 0)
+          if actual < required:
+              raise SystemExit(
+                  f'iOS 27 SDK is required for this build; runner only provides {sys.argv[1]}.'
+              )
+          print(f'Using iOS SDK {sys.argv[1]}.')
+          PY
+
+      - name: Generate Android and iOS project shells
+        run: scripts/ci/prepare-flutter-platforms.sh
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Generate Drift sources
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: iOS no-codesign build
+        run: flutter build ios --no-codesign
+
+  backend-verify:
+    name: Backend test and vet
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.8'
+          cache-dependency-path: backend/go.sum
+
+      - name: Test backend
+        working-directory: backend
+        run: go test ./...
+
+      - name: Vet backend
+        working-directory: backend
+        run: go vet ./...
+
+  build-release-packages:
+    name: Build release packages
+    needs: [prepare, flutter-verify, ios-verify, backend-verify]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain why release packages are not needed
+        if: needs.prepare.outputs.release_required != 'true'
+        run: echo 'No releasable Conventional Commit was found; package build is not required.'
+
+      - name: Check out source
+        if: needs.prepare.outputs.release_required == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        if: needs.prepare.outputs.release_required == 'true'
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Android 17 SDK platform
+        if: needs.prepare.outputs.release_required == 'true'
+        run: $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "platforms;android-37.0"
+
+      - name: Generate the Android project shell
+        if: needs.prepare.outputs.release_required == 'true'
+        run: scripts/ci/prepare-flutter-platforms.sh
+
+      - name: Install Dart packages
+        if: needs.prepare.outputs.release_required == 'true'
+        run: flutter pub get
+
+      - name: Generate Drift files
+        if: needs.prepare.outputs.release_required == 'true'
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build versioned Android packages
+        if: needs.prepare.outputs.release_required == 'true'
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          flutter build apk --release --build-name "$VERSION" --build-number "$BUILD_NUMBER" \
+            --dart-define="MOMO_APP_VERSION=$VERSION" --dart-define="MOMO_BUILD_NUMBER=$BUILD_NUMBER"
+          flutter build appbundle --release --build-name "$VERSION" --build-number "$BUILD_NUMBER" \
+            --dart-define="MOMO_APP_VERSION=$VERSION" --dart-define="MOMO_BUILD_NUMBER=$BUILD_NUMBER"
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk "dist/MomoBox-v${VERSION}.apk"
+          cp build/app/outputs/bundle/release/app-release.aab "dist/MomoBox-v${VERSION}.aab"
+          sha256sum dist/* > dist/SHA256SUMS.txt
+
+      - name: Upload release packages for publication
+        if: needs.prepare.outputs.release_required == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: momobox-${{ needs.prepare.outputs.tag }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish image and GitHub Release
+    needs: [prepare, build-release-packages]
+    if: needs.prepare.outputs.publish_required == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Download release packages
+        if: needs.prepare.outputs.release_required == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: momobox-${{ needs.prepare.outputs.tag }}
+          path: dist
+
+      - name: Set up QEMU for ARM64 image builds
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Prepare backend image tags
+        id: backend-image
+        env:
+          RELEASE_REQUIRED: ${{ needs.prepare.outputs.release_required }}
+          BACKEND_LATEST_REQUIRED: ${{ needs.prepare.outputs.backend_latest_required }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/momobox-backend"
+          {
+            echo "image=$image"
+            echo 'tags<<EOF'
+            if [[ "$BACKEND_LATEST_REQUIRED" == 'true' ]]; then
+              echo "$image:latest"
+            fi
+            if [[ "$RELEASE_REQUIRED" == 'true' ]]; then
+              echo "$image:v${VERSION}"
+            fi
+            echo "$image:sha-${GITHUB_SHA::7}"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and publish multi-architecture backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.backend-image.outputs.tags }}
+          labels: |
+            org.opencontainers.image.title=MomoBox NAS backend
+            org.opencontainers.image.description=MomoBox Go backend for NAS deployment
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Create or update GitHub Release and upload packages
+        if: needs.prepare.outputs.release_required == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TARGET: ${{ github.sha }}
+        run: |
+          assets=(
+            "dist/MomoBox-v${VERSION}.apk"
+            "dist/MomoBox-v${VERSION}.aab"
+            'dist/SHA256SUMS.txt'
+          )
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; replacing its package assets."
+            gh release upload "$TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$TAG" \
+              --target "$TARGET" \
+              --title "MomoBox v${VERSION}" \
+              --generate-notes \
+              "${assets[@]}"
+          fi

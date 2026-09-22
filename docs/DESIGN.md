@@ -65,7 +65,7 @@ MomoBox/
 ├── lib/                       # Flutter 客户端、领域规则、Drift 数据层和页面
 ├── test/                      # 领域规则、备份校验和事务回滚测试
 ├── scripts/ci/                # CI 生成平台壳和通知平台配置
-├── .github/workflows/         # CI、Android 发布
+├── .github/workflows/         # 单一 CI、打包与发布链路
 └── docs/                      # 需求、设计、上下文和验证基线
 ```
 
