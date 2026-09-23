@@ -13,10 +13,10 @@
    - `flutter-verify` 使用 Flutter stable，安装 Android 17 SDK platform，生成平台壳和 Drift 文件，执行 `flutter analyze`、`flutter test` 与 Android debug build；
    - `ios-verify` 使用 `runs-on: xcode-27`，确认 iOS 27 SDK 可用，生成平台壳和 Drift 文件并执行 iOS unsigned build；
    - `backend-verify` 使用 Go 1.22.8 执行 `go test ./...` 和 `go vet ./...`；
-3. `build-release-packages`：通过 `needs` 等待三项验证全部成功；仅当默认分支命中 Conventional Commit 发布规则时构建版本化 APK/AAB、生成 SHA256SUMS 并上传临时制品；
+3. `build-release-packages`：通过 `needs` 等待三项验证全部成功；默认分支每次推送都构建版本化 APK/AAB、生成 SHA256SUMS 并上传临时制品；
 4. `publish`：通过 `needs` 等待打包节点成功后，才允许推送 GHCR 镜像和创建/更新 GitHub Release。
 
-任一验证或打包节点失败时，后续发布不会执行。非发布提交仍完成完整验证，但跳过正式安装包构建和 GitHub Release；默认分支的后端变更可在同一链路末端发布 `latest`/`sha-*` 镜像。
+任一验证或打包节点失败时，后续发布不会执行。PR 和其他分支仍完成完整验证，但不构建正式安装包或创建 GitHub Release；默认分支的每次推送均创建或更新 Release，后端变更还会在同一链路末端发布 `latest`/`sha-*` 镜像。
 
 ## 兼容性验收
 

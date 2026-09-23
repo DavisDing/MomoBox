@@ -15,7 +15,7 @@
 本项目**不要求本地安装 Flutter**。仓库不提交 Flutter 自动生成的 Android/iOS 平台目录和 Drift 生成文件，统一由 GitHub Actions 生成并验证：
 
 - 单一 Workflow：先并行完成 Flutter/Android、iOS 与 Go 后端验证，再进入发布包构建和发布节点；
-- Release：仅在默认分支命中 Conventional Commit 发布规则后构建并上传 Android APK/AAB；
+- Release：默认分支每次推送都会构建并上传 Android APK/AAB，并创建或更新对应的 GitHub Release；PR 和其他分支只做验证；
 - 真机：下载 GitHub Release APK 后执行安装验收。
 
 平台壳和通知配置由 `scripts/ci/prepare-flutter-platforms.sh` 注入；对应的无 Flutter 回归测试在 `scripts/ci/test-prepare-flutter-platforms.sh`。`.gitignore` 明确排除生成的 Android/iOS 目录和 Drift 文件，防止将 CI 产物误提交。完整流程、当前验证状态和安装清单见 `docs/VALIDATION.md`。
@@ -23,8 +23,8 @@
 ## CI 与自动发布
 
 - `.github/workflows/pipeline.yml` 是唯一的 Actions 入口，在 Pull Request、分支推送和手动触发时依次执行 `prepare → Flutter/Android + iOS + Go 后端并行验证 → build-release-packages → publish`。发布节点通过 `needs` 串联，任何验证或打包失败都会阻止镜像和 GitHub Release 发布。
-- 默认分支推送会读取自最近一个 `vX.Y.Z` 标签以来的 Conventional Commit；命中发布规则后先构建并上传工作流制品，再由最后的 `publish` job 创建或更新 GitHub Release。默认分支的后端变更会在同一条链路末端发布 `latest`/`sha-*` 镜像，正式版本同时发布 `vX.Y.Z` 镜像。
-- 工作流不硬编码 `main`，使用仓库配置的默认分支；对同一版本重跑时会替换已存在 Release 的发布附件。`scripts/release/test-next-version.sh` 覆盖首次发布、patch/minor/major 优先级及非发布提交，并在 `prepare` job 中执行。
+- 默认分支每次推送都会从最近的 `vX.Y.Z` 标签递增 patch 版本，先构建并上传工作流制品，再由最后的 `publish` job 创建或更新 GitHub Release。默认分支的后端变更会在同一条链路末端发布 `latest`/`sha-*` 镜像，正式版本同时发布 `vX.Y.Z` 镜像；PR 和其他分支不会创建 Release。
+- 工作流不硬编码 `main`，使用仓库配置的默认分支；并发推送使用 Actions 运行序号避免版本标签冲突；对同一提交重跑时会复用指向该提交的版本标签并替换 Release 附件，不会重复递增版本。`scripts/release/test-next-version.sh` 覆盖首次发布、每次推送 patch 递增、重跑复用版本以及兼容旧 Conventional Commit 计算逻辑，并在 `prepare` job 中执行。
 
 ### 发布范围与预留项
 
@@ -33,32 +33,24 @@
 - **iOS**：CI 保留无签名构建验证；待确定 Bundle ID，并配置 Apple 证书、Provisioning Profile 和 App Store Connect 凭据后，再增加签名 IPA / TestFlight 发布。
 - **后端 Docker**：`backend/` 已提供实际 Go 后端与 Dockerfile。默认分支后端变更在通过 Go 测试、vet 与双架构 Buildx 构建后发布公开 GHCR 镜像 `ghcr.io/davisding/momobox-backend:latest`；正式产品 Release 同时发布 `vX.Y.Z` 标签。NAS 使用 `deploy/nas/scripts/update.sh` 按“备份 → 拉取 → migration → 启动”流程更新。
 
-### 发布提交规范
+### 发布版本规则
 
-发布工作流只会根据以下提交创建 Release：
+默认分支每次推送都会创建一个 Release：
 
-| 提交示例 | 版本变更 |
-| --- | --- |
-| `feat: 支持批次快速录入` | minor，例如 `v0.1.0 → v0.2.0` |
-| `fix: 修复临期日期计算`、`perf: 优化列表渲染`、`revert: 回退错误功能` | patch，例如 `v0.1.0 → v0.1.1` |
-| `feat!: 调整备份文件格式` 或提交正文包含 `BREAKING CHANGE:` | major，例如 `v0.2.0 → v1.0.0` |
+- 没有历史版本标签时，使用 `pubspec.yaml` 中的基础版本；
+- 已有 `vX.Y.Z` 标签时，每次新的默认分支推送递增一个 patch 版本，例如 `v0.12.0 → v0.12.1`；
+- 多次推送不会被并发队列合并，重叠运行时使用 Actions 运行序号避免版本标签冲突；
+- 重跑同一个提交的 Workflow 会复用该提交已有的版本标签，更新同一个 Release，不会再次递增；
+- PR、其他分支推送和验证失败不会创建 Release；
+- 版本化 APK/AAB 内的版本号和 Release 标签一致，构建号使用 GitHub Actions 运行序号。
 
-`docs:`、`chore:`、`style:`、`refactor:`、测试提交和非 Conventional Commit 不会触发发布。首次满足规则的发布使用 `pubspec.yaml` 中的基础版本（当前为 `v0.1.0`）；之后以最新 Git 标签为准。工作流把计算出的版本和 GitHub Actions 的运行序号传给 Flutter，因此 APK/AAB 内的版本与 Release 标签一致，无需由工作流回写提交。
-
-“关于”页通过 `MOMO_APP_VERSION` / `MOMO_BUILD_NUMBER` 编译变量显示版本。统一工作流的发布包构建节点会将它们与 `--build-name` / `--build-number` 设为同一组值。本地手动打包自定义版本时也应同时传入，例如：
-
-```sh
-flutter build apk --build-name=0.2.0 --build-number=42 \
-  --dart-define=MOMO_APP_VERSION=0.2.0 --dart-define=MOMO_BUILD_NUMBER=42
-```
-
-未传入编译变量的开发构建默认显示 `0.1.0` / `1`。
+历史上的 `scripts/release/next-version.sh` 仍保留 Conventional Commit 计算逻辑，供脚本回归测试和兼容调用；默认分支 Workflow 使用 `RELEASE_EVERY_PUSH=true` 模式。
 
 ### GitHub 仓库配置
 
 1. 将目标发布分支设为 GitHub 仓库的默认分支。
 2. 在仓库 **Settings → Actions → General → Workflow permissions** 中允许工作流拥有 **Read and write permissions**。`pipeline.yml` 的 `publish` job 显式声明了 `contents: write` 和 `packages: write`，用于创建 Release 与推送 GHCR 镜像。
-3. 将需要发布的变更以 Conventional Commit 合并/推送到默认分支。
+3. 将需要发布的变更推送到默认分支；每次推送都会触发发布链路。
 
 发布成功后，Release 会附带：
 

@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
-# Calculate the next MomoBox release version from Conventional Commit messages.
-# Supported release commits:
+# Calculate the next MomoBox release version.
+#
+# By default, releases are inferred from Conventional Commit messages:
 #   feat: ...                    -> minor
 #   fix:, perf:, revert: ...     -> patch
 #   type!: ... / BREAKING CHANGE -> major
-# Other commits are intentionally ignored and do not create a release.
+# Other commits are intentionally ignored.
+#
+# Set RELEASE_EVERY_PUSH=true for the default branch pipeline to create one
+# patch release for every push. RELEASE_SEQUENCE can provide a unique workflow
+# sequence number for overlapping pushes. A tag already pointing at HEAD is
+# reused so rerunning the same workflow does not create another version.
 set -euo pipefail
 
 readonly semver_tag_pattern='^v[0-9]+\.[0-9]+\.[0-9]+$'
@@ -61,9 +67,54 @@ contains_breaking_change() {
   grep -Eqi '(^|[[:space:]])BREAKING[ -]CHANGE:' <<< "$commit_body"
 }
 
+release_for_every_push() {
+  local previous_tag previous_version next_version existing_head_tag
+  local major minor patch next_patch release_sequence
+
+  # A rerun of a workflow must update the same Release rather than bumping
+  # the version again.
+  existing_head_tag="$(git tag --points-at HEAD --list 'v*' | grep -E "$semver_tag_pattern" | sort -V | tail -n 1 || true)"
+  if [[ -n "$existing_head_tag" ]]; then
+    next_version="${existing_head_tag#v}"
+    write_output 'release_required' 'true'
+    write_output 'previous_tag' "$existing_head_tag"
+    write_output 'release_level' 'patch'
+    write_output 'version' "$next_version"
+    write_output 'tag' "$existing_head_tag"
+    printf 'Reusing release %s for the current HEAD.\n' "$existing_head_tag"
+    return 0
+  fi
+
+  previous_tag="$(latest_release_tag)"
+  if [[ -n "$previous_tag" ]]; then
+    previous_version="${previous_tag#v}"
+    IFS='.' read -r major minor patch <<< "$previous_version"
+    next_patch="$((patch + 1))"
+    release_sequence="${RELEASE_SEQUENCE:-}"
+    if [[ "$release_sequence" =~ ^[0-9]+$ ]] && (( release_sequence > next_patch )); then
+      next_patch="$release_sequence"
+    fi
+    next_version="${major}.${minor}.${next_patch}"
+  else
+    next_version="$(read_manifest_version)"
+  fi
+
+  write_output 'release_required' 'true'
+  write_output 'previous_tag' "$previous_tag"
+  write_output 'release_level' 'patch'
+  write_output 'version' "$next_version"
+  write_output 'tag' "v${next_version}"
+  printf 'Release v%s (patch) created for every push.\n' "$next_version"
+}
+
 main() {
   local previous_tag previous_version range commit_hash subject body
   local release_level='' ignored_count=0 releasable_count=0
+
+  if [[ "${RELEASE_EVERY_PUSH:-false}" == 'true' ]]; then
+    release_for_every_push
+    return 0
+  fi
 
   previous_tag="$(latest_release_tag)"
   if [[ -n "$previous_tag" ]]; then

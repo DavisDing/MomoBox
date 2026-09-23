@@ -104,7 +104,32 @@ BREAKING CHANGE: old backup files require migration.'
   assert_output "$output" release_level major
 )
 
-# Non-release commits must not create a package or GitHub Release.
+# The every-push mode creates a patch release even for a non-Conventional Commit.
+repository="$(new_repository every-push)"
+(
+  cd "$repository"
+  git tag v0.1.0
+  commit 'Refactor code structure for improved readability and maintainability'
+  output="$temporary_root/every-push.out"
+  RELEASE_EVERY_PUSH=true run_version_script "$output"
+  assert_output "$output" release_required true
+  assert_output "$output" release_level patch
+  assert_output "$output" version 0.1.1
+  assert_output "$output" tag v0.1.1
+
+  overlapping_output="$temporary_root/every-push-overlapping.out"
+  RELEASE_EVERY_PUSH=true RELEASE_SEQUENCE=2 run_version_script "$overlapping_output"
+  assert_output "$overlapping_output" version 0.1.2
+  assert_output "$overlapping_output" tag v0.1.2
+
+  git tag v0.1.1
+  rerun_output="$temporary_root/every-push-rerun.out"
+  RELEASE_EVERY_PUSH=true run_version_script "$rerun_output"
+  assert_output "$rerun_output" version 0.1.1
+  assert_output "$rerun_output" tag v0.1.1
+)
+
+# Non-release commits remain ignored when every-push mode is not enabled.
 repository="$(new_repository ignored-commit)"
 (
   cd "$repository"

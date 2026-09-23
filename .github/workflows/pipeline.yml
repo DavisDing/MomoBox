@@ -9,10 +9,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: momobox-pipeline-${{ github.repository }}-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   prepare:
     name: Prepare pipeline
@@ -56,7 +52,7 @@ jobs:
 
           if [[ "$GITHUB_REF" == "$default_ref" && "$GITHUB_EVENT_NAME" != 'pull_request' ]]; then
             version_output="$(mktemp)"
-            GITHUB_OUTPUT="$version_output" scripts/release/next-version.sh
+            RELEASE_EVERY_PUSH=true RELEASE_SEQUENCE="$GITHUB_RUN_NUMBER" GITHUB_OUTPUT="$version_output" scripts/release/next-version.sh
             release_required="$(sed -n 's/^release_required=//p' "$version_output" | tail -n 1)"
             version="$(sed -n 's/^version=//p' "$version_output" | tail -n 1)"
             tag="$(sed -n 's/^tag=//p' "$version_output" | tail -n 1)"
@@ -217,7 +213,7 @@ jobs:
     steps:
       - name: Explain why release packages are not needed
         if: needs.prepare.outputs.release_required != 'true'
-        run: echo 'No releasable Conventional Commit was found; package build is not required.'
+        run: echo 'This is not a push to the default branch; release packages are not required.'
 
       - name: Check out source
         if: needs.prepare.outputs.release_required == 'true'
