@@ -965,7 +965,6 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
           actionsOverflowButtonSpacing: 8,
           actions: [
             TextButton(
-              child: Text(testing ? '测试中…' : '测试'),
               onPressed: testing ? null : () async {
                 final endpoint = urlCtrl.text.trim();
                 final model = modelCtrl.text.trim();
@@ -1002,6 +1001,7 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                       ? result : '配置已变化，请重新测试。';
                 });
               },
+              child: Text(testing ? '测试中…' : '测试'),
             ),
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
             FilledButton(

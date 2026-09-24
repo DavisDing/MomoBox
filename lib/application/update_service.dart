@@ -157,7 +157,9 @@ class UpdateService {
   static List<int> _versionParts(String value) {
     final normalized = value.trim().replaceFirst(RegExp(r'^[vV]'), '').split('+').first.split('-').first;
     final numbers = normalized.split('.').map((part) => int.tryParse(part) ?? 0).take(3).toList();
-    while (numbers.length < 3) numbers.add(0);
+    while (numbers.length < 3) {
+      numbers.add(0);
+    }
     return numbers;
   }
 }
