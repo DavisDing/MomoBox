@@ -240,7 +240,7 @@ void main() {
     await tester.enterText(fields.at(1), 'https://draft.example/v1');
     await tester.enterText(fields.at(2), 'draft-model');
     await tester.enterText(fields.at(3), 'secret-test-key');
-    await tester.tap(find.text('测试可用性'));
+    await tester.tap(find.text('测试'));
     await tester.pumpAndSettle();
     expect(requests, hasLength(1));
     expect(requests.single.url.host, 'draft.example');

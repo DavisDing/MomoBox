@@ -219,7 +219,7 @@ class HomeScreen extends ConsumerWidget {
 
   String _nasStatusLabel(NasConnectionStatus status) {
     return switch (status) {
-      NasConnectionStatus.unconfigured => '未配置',
+      NasConnectionStatus.unconfigured => '未接入',
       NasConnectionStatus.checking => '连接中',
       NasConnectionStatus.connected => '已连接',
       NasConnectionStatus.unavailable => '服务不可用',
@@ -283,7 +283,7 @@ class HomeScreen extends ConsumerWidget {
                         child: _buildStatusDot(
                           label: 'Home Assistant 服务',
                           isConnected: false,
-                          detail: '未配置',
+                          detail: '未接入',
                         ),
                       ),
                       Divider(height: 1, color: Theme.of(context).dividerColor.withValues(alpha: 0.35)),

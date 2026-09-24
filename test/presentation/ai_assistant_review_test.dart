@@ -160,7 +160,11 @@ void main() {
       await tester.ensureVisible(button);
       await tester.tap(button);
       await tester.pumpAndSettle();
-      expect(find.textContaining('当前版本尚未支持'), findsWidgets);
+      if (nas) {
+        expect(find.textContaining('请输入有效的 NAS 地址'), findsWidgets);
+      } else {
+        expect(find.textContaining('当前版本尚未支持'), findsWidgets);
+      }
       expect(find.textContaining('连接测试成功'), findsNothing);
       expect(find.textContaining('校验成功'), findsNothing);
     });

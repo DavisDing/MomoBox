@@ -39,9 +39,9 @@ void main() {
     expect(find.text('扫码入库'), findsNothing);
     expect(find.text('拍照识别'), findsNothing);
     expect(find.text('手动录入'), findsNothing);
-    final nas = tester.getTopLeft(find.text('NAS: '));
-    final ha = tester.getTopLeft(find.text('HA: '));
-    final ai = tester.getTopLeft(find.text('AI: '));
+    final nas = tester.getTopLeft(find.text('NAS 协同服务'));
+    final ha = tester.getTopLeft(find.text('Home Assistant 服务'));
+    final ai = tester.getTopLeft(find.text('AI 模型服务'));
     expect(nas.dx, greaterThan(tester.getTopLeft(find.text('入库')).dx));
     expect(nas.dx, ha.dx);
     expect(ha.dx, ai.dx);
