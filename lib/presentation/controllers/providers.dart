@@ -300,9 +300,13 @@ class NasConnectionController extends StateNotifier<NasConnectionState> {
   }
 
   Future<void> refresh({String? serverUrl, String? familyCode}) async {
+    final hasExplicitServerUrl = serverUrl != null;
     final url = (serverUrl ?? state.serverUrl).trim();
     final code = (familyCode ?? state.familyCode).trim();
-    if (url.isEmpty) {
+    // Keep a passive refresh with no saved URL unconfigured, but let an
+    // explicit empty value from the settings form reach the service so the
+    // user gets validation feedback instead of a misleading generic status.
+    if (url.isEmpty && !hasExplicitServerUrl) {
       state = NasConnectionState(
         status: NasConnectionStatus.unconfigured,
         serverUrl: url,
