@@ -7,6 +7,7 @@ import '../widgets/app_feedback.dart';
 
 import '../../app/momo_theme.dart';
 import '../../domain/models/inventory_models.dart';
+import '../../application/nas_connection_service.dart';
 import '../controllers/providers.dart';
 import '../controllers/smart_home_controller.dart';
 import '../widgets/intake_sheet.dart';
@@ -24,6 +25,7 @@ class HomeScreen extends ConsumerWidget {
     final summary = ref.watch(reminderSummaryProvider);
     final shoppingAsync = ref.watch(shoppingProvider);
     final homeState = ref.watch(smartHomeControllerProvider);
+    final nasState = ref.watch(nasConnectionProvider);
 
     return Scaffold(
       body: inventoryAsync.when(
@@ -111,7 +113,7 @@ class HomeScreen extends ConsumerWidget {
                                       ),
                                     ),
                                     const SizedBox(width: 8),
-                                    _buildModeBadge(context, isNas: homeState.nasOnline),
+                                    _buildModeBadge(context, isNas: nasState.isConnected),
                                   ],
                                 ),
                                 const SizedBox(height: 2),
@@ -175,53 +177,66 @@ class HomeScreen extends ConsumerWidget {
 
   Widget _buildStatusDot({
     required String label,
-    required bool isOnline,
     required String detail,
+    required bool isConnected,
   }) {
-    final statusColor = isOnline ? Colors.green : Colors.grey.shade500;
-    final detailColor = isOnline ? Colors.green.shade700 : Colors.grey.shade700;
+    final statusColor = isConnected ? Colors.green : Colors.blueGrey.shade400;
+    final detailColor = isConnected ? Colors.green.shade700 : Colors.blueGrey.shade700;
 
     return Row(
       children: [
         Container(
-          width: 7,
-          height: 7,
+          width: 9,
+          height: 9,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: statusColor,
           ),
         ),
-        const SizedBox(width: 5),
-        Text(
-          '$label: ',
-          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
-        ),
+        const SizedBox(width: 10),
         Expanded(
           child: Text(
-            detail,
+            label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 11,
-              color: detailColor,
-              fontWeight: FontWeight.w600,
-            ),
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          detail,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 14,
+            color: detailColor,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ],
     );
   }
 
+  String _nasStatusLabel(NasConnectionStatus status) {
+    return switch (status) {
+      NasConnectionStatus.unconfigured => '未配置',
+      NasConnectionStatus.checking => '连接中',
+      NasConnectionStatus.connected => '已连接',
+      NasConnectionStatus.unavailable => '服务不可用',
+      NasConnectionStatus.failed => '连接失败',
+    };
+  }
+
   Widget _buildQuickIntakeBar(BuildContext context, WidgetRef ref, MomoPalette palette) {
     final aiConfigured = ref.watch(aiConfigurationStatusProvider).valueOrNull == true;
+    final nasState = ref.watch(nasConnectionProvider);
+    final aiStatus = aiConfigured ? '待验证' : '未配置';
 
     return Card(
       child: Padding(
-        // The compact height is intentional: the entry point remains visible without
-        // pushing the reminder and shopping sections below the fold.
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.all(12),
         child: SizedBox(
-          height: 52,
+          height: 132,
           child: Row(
             children: [
               Expanded(
@@ -239,30 +254,44 @@ class HomeScreen extends ConsumerWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               Expanded(
                 flex: 2,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 2),
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
                   decoration: BoxDecoration(
                     border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.45)),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(14),
                   ),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Expanded(
-                        child: _buildStatusDot(label: 'NAS', isOnline: false, detail: '未接入'),
+                      Text(
+                        '服务状态',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
                       ),
-                      Divider(height: 1, color: Theme.of(context).dividerColor.withValues(alpha: 0.35)),
+                      const SizedBox(height: 5),
                       Expanded(
-                        child: _buildStatusDot(label: 'HA', isOnline: false, detail: '未接入'),
+                        child: _buildStatusDot(
+                          label: 'NAS 协同服务',
+                          isConnected: nasState.isConnected,
+                          detail: _nasStatusLabel(nasState.status),
+                        ),
                       ),
                       Divider(height: 1, color: Theme.of(context).dividerColor.withValues(alpha: 0.35)),
                       Expanded(
                         child: _buildStatusDot(
-                          label: 'AI',
-                          isOnline: false,
-                          detail: aiConfigured ? '已配置 · 待验证' : '未配置',
+                          label: 'Home Assistant 服务',
+                          isConnected: false,
+                          detail: '未配置',
+                        ),
+                      ),
+                      Divider(height: 1, color: Theme.of(context).dividerColor.withValues(alpha: 0.35)),
+                      Expanded(
+                        child: _buildStatusDot(
+                          label: 'AI 模型服务',
+                          isConnected: false,
+                          detail: aiStatus,
                         ),
                       ),
                     ],

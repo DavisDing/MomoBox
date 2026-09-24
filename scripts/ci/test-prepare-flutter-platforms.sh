@@ -35,12 +35,18 @@ mkdir -p "$temporary_root/bin" "$temporary_root/project"
 cat > "$temporary_root/bin/flutter" <<'FLUTTER'
 #!/usr/bin/env bash
 set -euo pipefail
-mkdir -p android/app/src/main/res/values ios/Runner ios/Flutter ios/Runner.xcodeproj test
+mkdir -p android/app/src/main/res/values android/app/src/main/kotlin/com/example/momo_box \
+  ios/Runner ios/Flutter ios/Runner.xcodeproj test
 cat > test/widget_test.dart <<'DART'
 void main() {
   MyApp();
 }
 DART
+cat > android/app/src/main/kotlin/com/example/momo_box/MainActivity.kt <<'KOTLIN'
+package com.example.momo_box
+
+class MainActivity
+KOTLIN
 cat > android/app/src/main/AndroidManifest.xml <<'XML'
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
@@ -149,10 +155,21 @@ cp "$script_dir/prepare-flutter-platforms.sh" "$temporary_root/project/prepare.s
   grep -q 'android.permission.POST_NOTIFICATIONS' android/app/src/main/AndroidManifest.xml
   grep -q 'android.permission.RECEIVE_BOOT_COMPLETED' android/app/src/main/AndroidManifest.xml
   grep -q 'android.permission.CAMERA' android/app/src/main/AndroidManifest.xml
+  grep -q 'android:usesCleartextTraffic="true"' android/app/src/main/AndroidManifest.xml
   test "$(grep -c 'POST_NOTIFICATIONS' android/app/src/main/AndroidManifest.xml)" -eq 1
   test "$(grep -c 'android.permission.CAMERA' android/app/src/main/AndroidManifest.xml)" -eq 1
   test "$(grep -c 'ScheduledNotificationReceiver' android/app/src/main/AndroidManifest.xml)" -eq 1
   test "$(grep -c 'ScheduledNotificationBootReceiver' android/app/src/main/AndroidManifest.xml)" -eq 1
+  grep -q 'android.permission.REQUEST_INSTALL_PACKAGES' android/app/src/main/AndroidManifest.xml
+  test "$(grep -c 'android.permission.REQUEST_INSTALL_PACKAGES' android/app/src/main/AndroidManifest.xml)" -eq 1
+  grep -q 'androidx.core.content.FileProvider' android/app/src/main/AndroidManifest.xml
+  test -f android/app/src/main/res/xml/file_paths.xml
+  grep -q 'external-files-path' android/app/src/main/res/xml/file_paths.xml
+  grep -q 'androidx.core:core-ktx:1.15.0' android/app/build.gradle
+  grep -q 'androidx.core:core-ktx:1.15.0' android/app/build.gradle.kts
+  grep -q 'com.example.momo_box/update' android/app/src/main/kotlin/com/example/momo_box/MainActivity.kt
+  grep -q 'installApk' android/app/src/main/kotlin/com/example/momo_box/MainActivity.kt
+  grep -q 'openUrl' android/app/src/main/kotlin/com/example/momo_box/MainActivity.kt
   grep -q 'compileSdk = 37' android/app/build.gradle
   grep -q 'minSdk = 36' android/app/build.gradle
   grep -q 'targetSdk = 37' android/app/build.gradle
@@ -183,6 +200,8 @@ cp "$script_dir/prepare-flutter-platforms.sh" "$temporary_root/project/prepare.s
   grep -q '<string>27.0</string>' ios/Flutter/AppFrameworkInfo.plist
   grep -q 'NSCameraUsageDescription' ios/Runner/Info.plist
   grep -q 'NSPhotoLibraryUsageDescription' ios/Runner/Info.plist
+  grep -q 'NSLocalNetworkUsageDescription' ios/Runner/Info.plist
+  grep -q 'NSAllowsLocalNetworking' ios/Runner/Info.plist
   test "$(grep -c 'NSCameraUsageDescription' ios/Runner/Info.plist)" -eq 1
   test "$(grep -c 'NSPhotoLibraryUsageDescription' ios/Runner/Info.plist)" -eq 1
 )

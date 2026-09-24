@@ -16,6 +16,7 @@ import '../../app/momo_theme.dart';
 import '../../application/ai_draft_service.dart';
 import '../../application/barcode_lookup_service.dart';
 import '../../application/storage_management_service.dart';
+import '../../application/update_service.dart';
 import '../../data/repositories/backup_repository.dart';
 import '../../services/local_notification_service.dart';
 import '../controllers/providers.dart';
@@ -959,12 +960,12 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
               ],
             ),
           ),
+          actionsAlignment: MainAxisAlignment.start,
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          actionsOverflowButtonSpacing: 8,
           actions: [
-            TextButton.icon(
-              icon: testing
-                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.network_check),
-              label: Text(testing ? '测试中…' : '测试可用性'),
+            TextButton(
+              child: Text(testing ? '测试中…' : '测试'),
               onPressed: testing ? null : () async {
                 final endpoint = urlCtrl.text.trim();
                 final model = modelCtrl.text.trim();
@@ -1828,54 +1829,201 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
       );
 }
 
-class AboutSettingsScreen extends ConsumerWidget {
+class AboutSettingsScreen extends ConsumerStatefulWidget {
   const AboutSettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
-    return Scaffold(
-        appBar: AppBar(title: const Text('关于嬷嬷的小箱子')),
-        body: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Card(
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: palette.primary.withValues(alpha: 0.15),
-                  child: Icon(palette.appLogoIcon, color: palette.primary),
-                ),
-                title: const Text('嬷嬷的小箱子'),
-                subtitle: const Text('本地优先的家庭物品效期与库存管理工具'),
-              ),
-            ),
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.info_outline),
-                title: const Text('版本号'),
-                subtitle: const Text(MomoAppInfo.versionDisplay),
-              ),
-            ),
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.storage_outlined),
-                title: const Text('数据存储与空间管理'),
-                subtitle: const Text('核心数据仅保存于本机；可查看本地占用并清理条码与图片缓存。'),
-                trailing: const Icon(Icons.arrow_forward_ios, size: 14),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const StorageManagementScreen()),
-                ),
-              ),
-            ),
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.description_outlined),
-                title: const Text('第三方许可'),
-                subtitle: const Text('本应用使用 Flutter 及其开源依赖构建；完整许可信息随应用和依赖包提供。'),
-              ),
-            ),
-          ],
-        ),
-      );
+  ConsumerState<AboutSettingsScreen> createState() => _AboutSettingsScreenState();
 }
+
+class _AboutSettingsScreenState extends ConsumerState<AboutSettingsScreen> {
+  late final UpdateService _updateService;
+  bool _checking = false;
+  bool _downloading = false;
+  UpdateCheckResult? _checkResult;
+  String? _updateMessage;
+  double? _downloadProgress;
+
+  @override
+  void initState() {
+    super.initState();
+    _updateService = UpdateService();
+  }
+
+  @override
+  void dispose() {
+    _updateService.close();
+    super.dispose();
+  }
+
+  Future<void> _checkForUpdates() async {
+    setState(() {
+      _checking = true;
+      _updateMessage = null;
+    });
+    try {
+      final result = await _updateService.checkForUpdates();
+      if (!mounted) return;
+      setState(() {
+        _checkResult = result;
+        _checking = false;
+        _updateMessage = result.hasUpdate
+            ? '发现新版本 ${result.release!.version}'
+            : '当前已是最新版本';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _checking = false;
+        _updateMessage = '检测更新失败：$error';
+      });
+    }
+  }
+
+  Future<void> _downloadAndInstall() async {
+    final release = _checkResult?.release;
+    if (release == null) return;
+    if (!Platform.isAndroid) {
+      try {
+        await _updateService.openReleasePage(release.htmlUrl);
+      } catch (error) {
+        if (mounted) showAppSnackBar(context, SnackBar(content: Text('无法打开 Release 页面：$error')));
+      }
+      return;
+    }
+
+    setState(() {
+      _downloading = true;
+      _downloadProgress = null;
+      _updateMessage = '正在下载 APK…';
+    });
+    try {
+      final file = await _updateService.downloadApk(
+        release,
+        onProgress: (received, total) {
+          if (!mounted || total <= 0) return;
+          setState(() => _downloadProgress = received / total);
+        },
+      );
+      await _updateService.installApk(file);
+      if (!mounted) return;
+      setState(() {
+        _downloading = false;
+        _updateMessage = 'APK 已下载，正在打开系统安装器。';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _downloading = false;
+        _updateMessage = '更新下载失败：$error';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
+    final release = _checkResult?.release;
+    return Scaffold(
+      appBar: AppBar(title: const Text('关于嬷嬷的小箱子')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: ListTile(
+              leading: CircleAvatar(
+                backgroundColor: palette.primary.withValues(alpha: 0.15),
+                child: Icon(palette.appLogoIcon, color: palette.primary),
+              ),
+              title: const Text('嬷嬷的小箱子'),
+              subtitle: const Text('本地优先的家庭物品效期与库存管理工具'),
+            ),
+          ),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.info_outline),
+              title: const Text('版本号'),
+              subtitle: const Text(MomoAppInfo.versionDisplay),
+            ),
+          ),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(Icons.system_update_outlined),
+                          title: Text('检测更新'),
+                          subtitle: Text('从 GitHub Releases 检查最新版本'),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _checking || _downloading ? null : _checkForUpdates,
+                        child: Text(_checking ? '检测中…' : '检查'),
+                      ),
+                    ],
+                  ),
+                  if (_updateMessage != null) ...[
+                    const SizedBox(height: 4),
+                    Text(_updateMessage!, style: TextStyle(fontSize: 12, color: palette.primary)),
+                  ],
+                  if (release != null && _checkResult!.hasUpdate) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      '${release.name} · ${release.publishedAt == null ? '' : _formatReleaseDate(release.publishedAt!)}',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    if (release.body.trim().isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(release.body.trim(), maxLines: 5, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+                    ],
+                    const SizedBox(height: 10),
+                    if (_downloading && _downloadProgress != null) LinearProgressIndicator(value: _downloadProgress),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: FilledButton.icon(
+                        onPressed: _downloading ? null : _downloadAndInstall,
+                        icon: _downloading
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : Icon(Platform.isAndroid ? Icons.download : Icons.open_in_new),
+                        label: Text(Platform.isAndroid ? '下载并安装' : '打开 Release 页面'),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.storage_outlined),
+              title: const Text('数据存储与空间管理'),
+              subtitle: const Text('核心数据仅保存于本机；可查看本地占用并清理条码与图片缓存。'),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const StorageManagementScreen()),
+              ),
+            ),
+          ),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.description_outlined),
+              title: const Text('第三方许可'),
+              subtitle: const Text('本应用使用 Flutter 及其开源依赖构建；完整许可信息随应用和依赖包提供。'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatReleaseDate(DateTime date) {
+    final local = date.toLocal();
+    return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
+  }
 }

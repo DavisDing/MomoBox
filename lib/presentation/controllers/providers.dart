@@ -10,6 +10,7 @@ import '../../application/backup_service.dart';
 import '../../application/barcode_lookup_service.dart';
 import '../../application/inventory_service.dart';
 import '../../application/media_service.dart';
+import '../../application/nas_connection_service.dart';
 import '../../application/reminder_service.dart';
 import '../../application/settings_service.dart';
 import '../../application/storage_management_service.dart';
@@ -280,3 +281,52 @@ final aiConfigurationStatusProvider = StreamProvider<bool>((ref) => ref
 
 final aiInventoryActionServiceProvider = Provider<AiInventoryActionService>((ref) =>
     AiInventoryActionService(ref.watch(settingsRepositoryProvider), ref.watch(inventoryServiceProvider)));
+
+class NasConnectionController extends StateNotifier<NasConnectionState> {
+  NasConnectionController(this._service)
+      : super(const NasConnectionState(status: NasConnectionStatus.unconfigured)) {
+    load();
+  }
+
+  final NasConnectionService _service;
+
+  Future<void> load() async {
+    final loaded = await _service.loadState();
+    if (!mounted) return;
+    state = loaded;
+    if (loaded.serverUrl.trim().isNotEmpty) {
+      await refresh();
+    }
+  }
+
+  Future<void> refresh({String? serverUrl, String? familyCode}) async {
+    final url = (serverUrl ?? state.serverUrl).trim();
+    final code = (familyCode ?? state.familyCode).trim();
+    if (url.isEmpty) {
+      state = NasConnectionState(
+        status: NasConnectionStatus.unconfigured,
+        serverUrl: url,
+        familyCode: code,
+      );
+      return;
+    }
+    state = state.copyWith(
+      status: NasConnectionStatus.checking,
+      serverUrl: url,
+      familyCode: code,
+      clearMessage: true,
+    );
+    final next = await _service.saveAndCheck(serverUrl: url, familyCode: code);
+    if (mounted) state = next;
+  }
+}
+
+final nasConnectionServiceProvider = Provider<NasConnectionService>((ref) {
+  final service = NasConnectionService(ref.watch(settingsServiceProvider));
+  ref.onDispose(service.close);
+  return service;
+});
+
+final nasConnectionProvider = StateNotifierProvider<NasConnectionController, NasConnectionState>((ref) {
+  return NasConnectionController(ref.watch(nasConnectionServiceProvider));
+});
