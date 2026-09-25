@@ -20,6 +20,9 @@ class Products extends Table {
   IntColumn get lowStockThreshold => integer().withDefault(const Constant(1))();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
+  IntColumn get serverVersion => integer().withDefault(const Constant(0))();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+  TextColumn get updatedByDevice => text().nullable()();
 
   @override
   Set<Column<Object>> get primaryKey => {id};
@@ -40,6 +43,9 @@ class ProductBatches extends Table {
   BoolColumn get isDiscarded => boolean().withDefault(const Constant(false))();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
+  IntColumn get serverVersion => integer().withDefault(const Constant(0))();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+  TextColumn get updatedByDevice => text().nullable()();
 
   @override
   Set<Column<Object>> get primaryKey => {id};
@@ -70,6 +76,9 @@ class ShoppingEntries extends Table {
   BoolColumn get isCompleted => boolean().withDefault(const Constant(false))();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
+  IntColumn get serverVersion => integer().withDefault(const Constant(0))();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+  TextColumn get updatedByDevice => text().nullable()();
 
   @override
   Set<Column<Object>> get primaryKey => {id};
@@ -129,6 +138,89 @@ class AppSettings extends Table {
   Set<Column<Object>> get primaryKey => {key};
 }
 
+
+@DataClassName('SyncStateRecord')
+class SyncStates extends Table {
+  TextColumn get scopeId => text()();
+  TextColumn get familyId => text().nullable()();
+  TextColumn get deviceId => text().nullable()();
+  TextColumn get localWorkspaceId => text().nullable()();
+  TextColumn get bootstrapStatus =>
+      text().withDefault(const Constant('unconfigured'))();
+  IntColumn get pullCursor => integer().withDefault(const Constant(0))();
+  IntColumn get pushAckCursor => integer().withDefault(const Constant(0))();
+  DateTimeColumn get lastPushAt => dateTime().nullable()();
+  DateTimeColumn get lastPullAt => dateTime().nullable()();
+  DateTimeColumn get lastSuccessAt => dateTime().nullable()();
+  TextColumn get lastErrorCode => text().nullable()();
+  TextColumn get lastErrorMessage => text().nullable()();
+  IntColumn get consecutiveFailures => integer().withDefault(const Constant(0))();
+  DateTimeColumn get nextRetryAt => dateTime().nullable()();
+  IntColumn get serverSchemaVersion => integer().nullable()();
+  IntColumn get syncProtocolVersion => integer().nullable()();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {scopeId};
+}
+
+@DataClassName('SyncOutboxRecord')
+class SyncOutbox extends Table {
+  TextColumn get changeId => text()();
+  TextColumn get scopeId => text()();
+  TextColumn get operation => text()();
+  TextColumn get entity => text().nullable()();
+  TextColumn get entityId => text().nullable()();
+  IntColumn get baseVersion => integer().withDefault(const Constant(0))();
+  TextColumn get operationId => text().nullable()();
+  TextColumn get integrationId => text().nullable()();
+  TextColumn get command => text().nullable()();
+  TextColumn get idempotencyKey => text()();
+  TextColumn get requestJson => text()();
+  TextColumn get status => text().withDefault(const Constant('pending'))();
+  IntColumn get attemptCount => integer().withDefault(const Constant(0))();
+  DateTimeColumn get nextAttemptAt => dateTime().nullable()();
+  TextColumn get lastErrorCode => text().nullable()();
+  TextColumn get lastErrorMessage => text().nullable()();
+  IntColumn get serverCursor => integer().nullable()();
+  IntColumn get serverVersion => integer().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+  DateTimeColumn get completedAt => dateTime().nullable()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {changeId};
+}
+
+@DataClassName('SyncConflictRecord')
+class SyncConflicts extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get scopeId => text()();
+  TextColumn get changeId => text()();
+  TextColumn get outboxChangeId => text().nullable()();
+  TextColumn get entity => text()();
+  TextColumn get entityId => text().nullable()();
+  TextColumn get reason => text()();
+  IntColumn get serverVersion => integer().nullable()();
+  TextColumn get serverPayloadJson => text().nullable()();
+  TextColumn get clientPayloadJson => text().nullable()();
+  TextColumn get status => text().withDefault(const Constant('open'))();
+  TextColumn get resolution => text().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get resolvedAt => dateTime().nullable()();
+}
+
+@DataClassName('SyncAppliedChangeRecord')
+class SyncAppliedChanges extends Table {
+  TextColumn get scopeId => text()();
+  TextColumn get changeId => text()();
+  IntColumn get cursor => integer()();
+  DateTimeColumn get appliedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {scopeId, changeId};
+}
+
 @DriftDatabase(
   tables: [
     Products,
@@ -139,6 +231,10 @@ class AppSettings extends Table {
     ReminderAcknowledgments,
     BarcodeLookupCache,
     MediaAssets,
+    SyncStates,
+    SyncOutbox,
+    SyncConflicts,
+    SyncAppliedChanges,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -147,7 +243,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -159,6 +255,21 @@ class AppDatabase extends _$AppDatabase {
           if (from < 3) {
             await migrator.createTable(barcodeLookupCache);
             await migrator.createTable(mediaAssets);
+          }
+          if (from < 4) {
+            await migrator.addColumn(products, products.serverVersion);
+            await migrator.addColumn(products, products.deletedAt);
+            await migrator.addColumn(products, products.updatedByDevice);
+            await migrator.addColumn(productBatches, productBatches.serverVersion);
+            await migrator.addColumn(productBatches, productBatches.deletedAt);
+            await migrator.addColumn(productBatches, productBatches.updatedByDevice);
+            await migrator.addColumn(shoppingEntries, shoppingEntries.serverVersion);
+            await migrator.addColumn(shoppingEntries, shoppingEntries.deletedAt);
+            await migrator.addColumn(shoppingEntries, shoppingEntries.updatedByDevice);
+            await migrator.createTable(syncStates);
+            await migrator.createTable(syncOutbox);
+            await migrator.createTable(syncConflicts);
+            await migrator.createTable(syncAppliedChanges);
           }
         },
         beforeOpen: (details) async {

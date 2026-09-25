@@ -88,6 +88,48 @@ void main() {
   });
 
   for (final ai in [false, true]) {
+    testWidgets('${ai ? 'AI' : '条码'}配置右滑先关闭弹窗，保留配置页', (tester) async {
+      FlutterSecureStorage.setMockInitialValues({});
+      final rootKey = GlobalKey<NavigatorState>();
+      final settingsKey = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(ProviderScope(
+        overrides: [settingsServiceProvider.overrideWithValue(_MemorySettings())],
+        child: MaterialApp(
+          navigatorKey: rootKey,
+          theme: ThemeData(platform: TargetPlatform.iOS),
+          home: Navigator(
+            key: settingsKey,
+            onGenerateRoute: (_) => MaterialPageRoute<void>(
+              builder: (_) => Scaffold(body: TextButton(
+                onPressed: () => settingsKey.currentState!.push(MaterialPageRoute<void>(
+                  builder: (_) => ai ? const AiSettingsScreen() : const BarcodeSettingsScreen(),
+                )),
+                child: const Text('打开配置页'),
+              )),
+            ),
+          ),
+        ),
+      ));
+      await tester.tap(find.text('打开配置页'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('添加配置'));
+      await tester.pumpAndSettle();
+      final title = ai ? '添加 AI 模型服务' : '添加条码接口';
+      expect(find.text(title), findsOneWidget);
+      expect(rootKey.currentState!.canPop(), isFalse, reason: '弹窗不应挂在根导航器');
+      expect(settingsKey.currentState!.canPop(), isTrue);
+      final actions = tester.widget<AlertDialog>(find.byType(AlertDialog)).actions!;
+      expect(actions.map((action) => ((action as ButtonStyleButton).child! as Text).data),
+          ['测试', '取消', '确定']);
+      await tester.dragFrom(const Offset(2, 400), const Offset(150, 0));
+      await tester.pumpAndSettle();
+      expect(find.text(title), findsNothing);
+      expect(find.text('添加配置'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final ai in [false, true]) {
     testWidgets('${ai ? 'AI' : '条码'}配置窄屏下拉菜单不超过输入框宽度', (tester) async {
       await tester.binding.setSurfaceSize(const Size(360, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));

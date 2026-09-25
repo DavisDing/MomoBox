@@ -6,15 +6,18 @@
 
 - `0001_initial_schema.sql` 创建 NAS MVP 所需的全部表、约束、索引、更新时间触发器和 `schema_migrations` 版本记录。
 - 文件使用 `CREATE ... IF NOT EXISTS`、幂等索引和 `ON CONFLICT DO NOTHING`，可重复执行；重复执行不会重复扣库存、覆盖数据或重复写入版本记录。
-- 每次迁移在事务内获取 PostgreSQL advisory transaction lock。并发启动的后端不会同时执行迁移；失败会回滚并以非零退出码结束。
-- 已应用的版本必须视为不可变。后续结构变化新增 `0002_*.sql`，不要改写已经记录的 SQL。生产迁移 runner 应校验 `schema_migrations.version/name/checksum`，发现同版本 checksum 不一致时拒绝启动。
-- 该 SQL 文件本身记录版本 `1`。如果后续 Go migration runner 统一负责版本表，也必须复用 `schema_migrations` 的字段和不变性语义。
+- 生产环境应通过 Go migration runner 执行迁移。runner 在 PostgreSQL 事务中获取 advisory transaction lock，维护 `schema_migrations`，按数字版本顺序只执行未应用文件，并校验 `version/name/checksum`。并发启动的后端不会同时执行迁移；失败会回滚并以非零退出码结束。
+- runner 负责事务边界，因此会去除迁移文件最外层的 `BEGIN;`/`COMMIT;`，避免嵌套事务。迁移文件中的 advisory lock 仍可保留，以兼容直接 bootstrap。
+- 已应用的版本必须视为不可变。后续结构变化新增 `0002_*.sql`，不要改写已经记录的 SQL。发现同版本 name 或 checksum 不一致时，runner 拒绝启动。checksum 使用迁移文件原始字节的 `sha256:<hex>`。
+- 该 SQL 文件包含历史 SQL-only bootstrap 的版本记录。runner 会在首次接管这个 legacy marker 时将其原子升级为文件实际 checksum；之后修改已应用文件会被拒绝。生产环境不要再直接用 `psql` 绕过 runner 执行迁移。
 
-示例（在已启动的 PostgreSQL 上）：
+生产执行示例（在已启动的 PostgreSQL 上）：
 
 ```bash
-psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file backend/migrations/0001_initial_schema.sql
+momo-backend migrate
 ```
+
+仅用于 SQL bootstrap/故障排查时，才直接执行迁移文件；直接执行会保留 SQL 文件中的 legacy checksum，首次由 runner 接管时会完成 checksum 标准化。
 
 验证版本记录：
 
@@ -51,7 +54,11 @@ psql "$DATABASE_URL" --set ON_ERROR_STOP=1 \
 本次 SQL-only 变更建议执行：
 
 ```bash
-# 语法/幂等验证（需要 PostgreSQL 客户端和可连接的数据库）
+# 生产 runner 验证（需要已构建的后端和可连接的 PostgreSQL）
+momo-backend migrate
+momo-backend migrate
+
+# SQL bootstrap/语法验证（仅在明确绕过 runner 时使用）
 psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file backend/migrations/0001_initial_schema.sql
 psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file backend/migrations/0001_initial_schema.sql
 

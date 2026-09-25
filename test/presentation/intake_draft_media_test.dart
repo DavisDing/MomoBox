@@ -6,6 +6,33 @@ import 'package:momo_box/presentation/controllers/providers.dart';
 import 'package:momo_box/presentation/widgets/intake_sheet.dart';
 
 void main() {
+  testWidgets('入库分类覆盖家庭常见物品，旧分类仍可编辑', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(900, 1100));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        mediaAssetsProvider.overrideWith((ref, target) => Stream.value(<MediaAsset>[])),
+      ],
+      child: MaterialApp(home: Scaffold(body: const IntakeSheet(
+        initialName: '旧商品', initialCategory: '原有自定义分类',
+      ))),
+    ));
+    await tester.pumpAndSettle();
+    final dropdown = tester.widget<DropdownButtonFormField<String>>(
+      find.byType(DropdownButtonFormField<String>).first,
+    );
+    final categories = dropdown.items!.map((item) => item.value).toList();
+    expect(categories, containsAll([
+      '原有自定义分类', '药品保健', '其他物品', '粮油调味', '宠物用品',
+      '家居清洁', '数码电器', '工具五金', '运动户外',
+    ]));
+    expect(categories.toSet().length, categories.length);
+    expect(find.text('图片'), findsOneWidget);
+    expect(find.text('OCR'), findsOneWidget);
+    expect(find.text('AI解析'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final name in ['带图片的草稿', '']) {
     testWidgets('${name.isEmpty ? '纯图片' : '文字和图片'}草稿重开后沿用同一个媒体关联', (tester) async {
       await tester.binding.setSurfaceSize(const Size(1000, 1100));

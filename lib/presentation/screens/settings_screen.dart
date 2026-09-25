@@ -420,8 +420,11 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
 
     showDialog<void>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
+      useRootNavigator: false,
+      builder: (ctx) => _SwipeDismissProfileDialog(
+        onDismiss: () => Navigator.pop(ctx),
+        child: StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
           title: Text(item == null ? '添加条码接口' : '编辑条码接口'),
           content: SingleChildScrollView(
             child: Column(
@@ -472,7 +475,7 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
                 testResult = endpoint == urlCtrl.text.trim() && barcode == barcodeCtrl.text.trim()
                     ? result : '配置或条码已变化，请重新测试。';
               });
-            }, child: Text(testing ? '测试中…' : '测试接口')),
+            }, child: Text(testing ? '测试中…' : '测试')),
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
             FilledButton(
               onPressed: () {
@@ -492,6 +495,7 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
               child: const Text('确定'),
             ),
           ],
+          ),
         ),
       ),
     );
@@ -890,8 +894,11 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
 
     showDialog<void>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
+      useRootNavigator: false,
+      builder: (ctx) => _SwipeDismissProfileDialog(
+        onDismiss: () => Navigator.pop(ctx),
+        child: StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
           title: Text(item == null ? '添加 AI 模型服务' : '编辑 AI 模型服务'),
           content: SingleChildScrollView(
             child: Column(
@@ -960,9 +967,6 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
               ],
             ),
           ),
-          actionsAlignment: MainAxisAlignment.start,
-          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          actionsOverflowButtonSpacing: 8,
           actions: [
             TextButton(
               onPressed: testing ? null : () async {
@@ -1044,6 +1048,7 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
               child: const Text('确定'),
             ),
           ],
+          ),
         ),
       ),
     );
@@ -2026,4 +2031,32 @@ class _AboutSettingsScreenState extends ConsumerState<AboutSettingsScreen> {
     final local = date.toLocal();
     return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
   }
+}
+
+/// Capture an iOS-style right swipe across the modal (including its outer
+/// margin), so the configuration page cannot be dismissed behind it.
+class _SwipeDismissProfileDialog extends StatefulWidget {
+  const _SwipeDismissProfileDialog({required this.onDismiss, required this.child});
+
+  final VoidCallback onDismiss;
+  final Widget child;
+
+  @override
+  State<_SwipeDismissProfileDialog> createState() => _SwipeDismissProfileDialogState();
+}
+
+class _SwipeDismissProfileDialogState extends State<_SwipeDismissProfileDialog> {
+  double _dragDistance = 0;
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    behavior: HitTestBehavior.translucent,
+    onHorizontalDragStart: (_) => _dragDistance = 0,
+    onHorizontalDragUpdate: (details) => _dragDistance += details.delta.dx,
+    onHorizontalDragEnd: (_) {
+      if (_dragDistance > 80) widget.onDismiss();
+      _dragDistance = 0;
+    },
+    child: SizedBox.expand(child: Center(child: widget.child)),
+  );
 }

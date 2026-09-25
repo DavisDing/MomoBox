@@ -22,7 +22,7 @@ class InventoryScreen extends ConsumerStatefulWidget {
 class _InventoryScreenState extends ConsumerState<InventoryScreen> {
   String _query = '';
   String _category = '全部';
-  String _status = '全部';
+  bool _showAnomalies = false;
   InventorySortOption _sortOption = InventorySortOption.expirySoonest;
   bool _searchExpanded = false;
   final _searchController = TextEditingController();
@@ -95,13 +95,11 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                   .whereType<String>()
                   .any((value) => value.toLowerCase().contains(normalized));
           final matchesCategory = _category == '全部' || item.category == _category;
-          final matchesStatus = switch (_status) {
-            '临期' => item.overallExpiryStatus == ExpiryStatus.expiring,
-            '已过期' => item.overallExpiryStatus == ExpiryStatus.expired,
-            '低库存' => item.isLowStock,
-            _ => true,
-          };
-          return matchesQuery && matchesCategory && matchesStatus;
+          final matchesAnomaly = !_showAnomalies ||
+              item.isLowStock ||
+              item.overallExpiryStatus == ExpiryStatus.expiring ||
+              item.overallExpiryStatus == ExpiryStatus.expired;
+          return matchesQuery && matchesCategory && matchesAnomaly;
         }).toList();
         final sorted = sortInventoryItems(filtered, _sortOption);
 
@@ -198,7 +196,17 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
-                    child: _SummaryCard(summary: summary),
+                    child: _SummaryCard(
+                      summary: summary,
+                      selected: _showAnomalies,
+                      onTap: () => setState(() {
+                        _showAnomalies = !_showAnomalies;
+                        _category = '全部';
+                        _query = '';
+                        _searchController.clear();
+                        _searchExpanded = false;
+                      }),
+                    ),
                   ),
                 ),
                 SliverPersistentHeader(
@@ -229,23 +237,6 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                                       label: Text(cat, style: const TextStyle(fontSize: 12)),
                                       selected: _category == cat,
                                       onSelected: (_) => setState(() => _category = cat),
-                                    ),
-                                  ),
-                                ),
-                                Container(
-                                  height: 20,
-                                  width: 1,
-                                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                                  color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
-                                ),
-                                ...['全部', '临期', '已过期', '低库存'].map(
-                                  (st) => Padding(
-                                    padding: const EdgeInsets.only(right: 6),
-                                    child: FilterChip(
-                                      visualDensity: VisualDensity.compact,
-                                      label: Text(st, style: const TextStyle(fontSize: 12)),
-                                      selected: _status == st,
-                                      onSelected: (_) => setState(() => _status = st),
                                     ),
                                   ),
                                 ),
@@ -316,27 +307,32 @@ class _StickyFilterHeaderDelegate extends SliverPersistentHeaderDelegate {
 }
 
 class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({required this.summary});
+  const _SummaryCard({required this.summary, required this.selected, required this.onTap});
   final ReminderSummary summary;
+  final bool selected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Card(
       color: theme.colorScheme.primaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
           children: [
             const Text('📦', style: TextStyle(fontSize: 36)),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                '有 ${summary.expiring.length + summary.expired.length} 项效期提醒，${summary.lowStock.length} 项库存偏低。',
+                '有 ${summary.expiring.length + summary.expired.length} 项效期提醒，${summary.lowStock.length} 项库存偏低。${selected ? '正在查看异常物品' : '点击查看异常物品'}',
                 style: theme.textTheme.titleSmall,
               ),
             ),
           ],
+          ),
         ),
       ),
     );

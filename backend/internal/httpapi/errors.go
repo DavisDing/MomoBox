@@ -101,7 +101,7 @@ func familyStatus(code string) int {
 
 func haStatus(code string) int {
 	switch code {
-	case "HA_INVALID_ARGUMENT", "HA_INVALID_URL", "HA_INVALID_COMMAND", "HA_INVALID_PARAMETERS", "HA_INVALID_ROLE":
+	case "HA_INVALID_ARGUMENT", "HA_INVALID_URL", "HA_INVALID_COMMAND", "HA_INVALID_PARAMETERS", "HA_UNSUPPORTED_COMMAND", "HA_INVALID_ROLE":
 		return http.StatusBadRequest
 	case "HA_UNAUTHORIZED":
 		return http.StatusUnauthorized

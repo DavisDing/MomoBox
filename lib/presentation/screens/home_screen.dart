@@ -273,7 +273,7 @@ class HomeScreen extends ConsumerWidget {
                       const SizedBox(height: 5),
                       Expanded(
                         child: _buildStatusDot(
-                          label: 'NAS 协同服务',
+                          label: 'NAS服务',
                           isConnected: nasState.isConnected,
                           detail: _nasStatusLabel(nasState.status),
                         ),
@@ -281,7 +281,7 @@ class HomeScreen extends ConsumerWidget {
                       Divider(height: 1, color: Theme.of(context).dividerColor.withValues(alpha: 0.35)),
                       Expanded(
                         child: _buildStatusDot(
-                          label: 'Home Assistant 服务',
+                          label: 'HA服务',
                           isConnected: false,
                           detail: '未接入',
                         ),
@@ -289,7 +289,7 @@ class HomeScreen extends ConsumerWidget {
                       Divider(height: 1, color: Theme.of(context).dividerColor.withValues(alpha: 0.35)),
                       Expanded(
                         child: _buildStatusDot(
-                          label: 'AI 模型服务',
+                          label: 'AI服务',
                           isConnected: false,
                           detail: aiStatus,
                         ),
@@ -317,7 +317,7 @@ class HomeScreen extends ConsumerWidget {
       borderRadius: BorderRadius.circular(12),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Row(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -329,14 +329,12 @@ class HomeScreen extends ConsumerWidget {
               ),
               child: Icon(icon, color: color, size: 18),
             ),
-            const SizedBox(width: 7),
-            Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-              ),
+            const SizedBox(height: 7),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
           ],
         ),

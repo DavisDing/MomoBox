@@ -80,7 +80,15 @@ class IntakeSheet extends ConsumerStatefulWidget {
 }
 
 class _IntakeSheetState extends ConsumerState<IntakeSheet> {
-  static const _categories = ['药品保健', '食品生鲜', '美妆个护', '母婴用品', '其他物品'];
+  // Keep existing values stable: saved products and backups store category as text.
+  static const _categories = [
+    '药品保健', '食品生鲜', '美妆个护', '母婴用品',
+    '粮油调味', '零食饮料', '冷冻速食', '宠物用品',
+    '家居清洁', '纸品湿巾', '厨房用品', '餐具水具',
+    '衣物鞋帽', '家纺寝具', '数码电器', '电池灯具',
+    '文具办公', '工具五金', '运动户外', '玩具图书',
+    '园艺绿植', '汽车用品', '其他物品',
+  ];
 
   final _formKey = GlobalKey<FormState>();
   final _name = TextEditingController();
@@ -116,7 +124,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
     if (widget.initialName != null || widget.initialCategory != null) {
       _name.text = widget.initialName ?? '';
       _quantity.text = widget.initialQuantity.toString();
-      if (widget.initialCategory != null && _categories.contains(widget.initialCategory)) {
+      if (widget.initialCategory != null && widget.initialCategory!.isNotEmpty) {
         _category = widget.initialCategory!;
       }
     } else if (_intakeDraft.hasContent) {
@@ -631,7 +639,8 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
                     menuMaxHeight: 280,
                     borderRadius: BorderRadius.circular(16),
                     decoration: const InputDecoration(labelText: '分类 *'),
-                    items: _categories.map((category) => DropdownMenuItem(value: category, child: Text(category))).toList(),
+                    items: [if (!_categories.contains(_category)) _category, ..._categories]
+                        .map((category) => DropdownMenuItem(value: category, child: Text(category))).toList(),
                     onChanged: (value) => setState(() => _category = value ?? _category),
                   ),
                   const SizedBox(height: 10),
@@ -753,9 +762,9 @@ class _MediaDraftSection extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  OutlinedButton.icon(onPressed: onAddInstruction, icon: const Icon(Icons.description_outlined), label: const Text('添加说明书图片')),
-                  FilledButton.tonalIcon(onPressed: recognizing ? null : onOcr, icon: recognizing ? const SizedBox.square(dimension: 14, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.document_scanner_outlined), label: Text(recognizing ? '识别中…' : '本地 OCR')),
-                  FilledButton.tonalIcon(onPressed: parsingAi ? null : onAi, icon: parsingAi ? const SizedBox.square(dimension: 14, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.auto_awesome_outlined), label: Text(parsingAi ? '解析中…' : 'AI 解析草稿')),
+                  OutlinedButton.icon(onPressed: onAddInstruction, icon: const Icon(Icons.description_outlined), label: const Text('图片')),
+                  FilledButton.tonalIcon(onPressed: recognizing ? null : onOcr, icon: recognizing ? const SizedBox.square(dimension: 14, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.document_scanner_outlined), label: Text(recognizing ? '识别中…' : 'OCR')),
+                  FilledButton.tonalIcon(onPressed: parsingAi ? null : onAi, icon: parsingAi ? const SizedBox.square(dimension: 14, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.auto_awesome_outlined), label: Text(parsingAi ? '解析中…' : 'AI解析')),
                 ],
               ),
               if (loading) const Padding(padding: EdgeInsets.only(top: 10), child: LinearProgressIndicator()),

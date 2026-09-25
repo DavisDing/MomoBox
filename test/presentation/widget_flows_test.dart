@@ -17,6 +17,7 @@ import 'package:momo_box/presentation/controllers/smart_home_controller.dart';
 import 'package:momo_box/presentation/screens/alerts_screen.dart';
 import 'package:momo_box/presentation/screens/product_detail_screen.dart';
 import 'package:momo_box/presentation/screens/shopping_screen.dart';
+import 'package:momo_box/presentation/screens/inventory_screen.dart';
 import 'package:momo_box/presentation/screens/settings_screen.dart';
 import 'package:momo_box/presentation/widgets/intake_sheet.dart';
 
@@ -39,10 +40,11 @@ void main() {
     expect(find.text('扫码入库'), findsNothing);
     expect(find.text('拍照识别'), findsNothing);
     expect(find.text('手动录入'), findsNothing);
-    final nas = tester.getTopLeft(find.text('NAS 协同服务'));
-    final ha = tester.getTopLeft(find.text('Home Assistant 服务'));
-    final ai = tester.getTopLeft(find.text('AI 模型服务'));
+    final nas = tester.getTopLeft(find.text('NAS服务'));
+    final ha = tester.getTopLeft(find.text('HA服务'));
+    final ai = tester.getTopLeft(find.text('AI服务'));
     expect(nas.dx, greaterThan(tester.getTopLeft(find.text('入库')).dx));
+    expect(tester.getTopLeft(find.text('入库')).dy, greaterThan(tester.getTopLeft(find.byIcon(Icons.qr_code_scanner).first).dy));
     expect(nas.dx, ha.dx);
     expect(ha.dx, ai.dx);
     expect(nas.dy, lessThan(ha.dy));
@@ -122,7 +124,7 @@ void main() {
     await _disposeWidgetTree(tester);
   });
 
-  testWidgets('勾选采购项后打开预填的入库表单', (tester) async {
+  testWidgets('采购多选与右侧编辑入库互不干扰', (tester) async {
     final shopping = ShoppingService(ShoppingRepository(database));
     await shopping.addOrMerge(
       itemName: '洗衣液',
@@ -130,19 +132,115 @@ void main() {
       reason: '已用完',
       category: '其他物品',
     );
+    await shopping.addOrMerge(
+      itemName: '肥皂', targetQuantity: 1, reason: '补货', category: '家居清洁',
+    );
 
     await _pumpScreen(tester, database, const ShoppingScreen());
     await _pumpUntilFound(tester, find.text('洗衣液'));
-    expect(find.text('洗衣液'), findsOneWidget);
-    await tester.tap(find.byType(Checkbox));
+    final laundryCard = find.ancestor(of: find.text('洗衣液'), matching: find.byType(Card));
+    await tester.tap(find.descendant(of: laundryCard, matching: find.byType(Checkbox)));
     await _pumpForUi(tester);
+    expect(find.text('入库（1）'), findsOneWidget);
+    expect(_field('物品名称 *'), findsNothing);
+    expect((await database.select(database.shoppingEntries).get()).every((entry) => !entry.isCompleted), isTrue);
+    await tester.tap(find.text('全选'));
+    await _pumpForUi(tester);
+    expect(find.text('取消全选'), findsOneWidget);
+    await tester.tap(find.text('取消全选'));
+    await _pumpForUi(tester);
+    expect(find.text('入库（1）'), findsNothing);
 
+    await tester.tap(find.descendant(of: laundryCard, matching: find.byTooltip('编辑入库')));
     await _pumpUntilFound(tester, _field('物品名称 *'));
-    expect(find.text('入库'), findsOneWidget);
     expect(_fieldController(tester, '物品名称 *').text, '洗衣液');
     expect(_fieldController(tester, '入库数量 *').text, '3');
-    expect((await database.select(database.shoppingEntries).get()).single.isCompleted, isTrue);
     await _dismissModalRoute(tester);
+    await _disposeWidgetTree(tester);
+  });
+
+  testWidgets('已关联采购项批量入库新增批次并保留原库存', (tester) async {
+    final inventory = InventoryService(InventoryRepository(database));
+    final productId = await inventory.intake(const IntakeDraft(
+      name: '牛奶', category: '食品生鲜', quantity: 2,
+    ));
+    await ShoppingService(ShoppingRepository(database)).addOrMerge(
+      itemName: '牛奶', targetQuantity: 3, reason: '补货',
+      productId: productId, category: '食品生鲜',
+    );
+    await _pumpScreen(tester, database, const ShoppingScreen());
+    await _pumpUntilFound(tester, find.text('牛奶'));
+    await tester.tap(find.byType(Checkbox));
+    await _pumpForUi(tester);
+    await tester.tap(find.text('入库（1）'));
+    await _pumpUntilFound(tester, find.text('确认批量入库'));
+    await tester.tap(find.text('确认入库'));
+    await _pumpForUi(tester);
+    await _pumpUntilAbsent(tester, find.text('牛奶'));
+    final items = await InventoryRepository(database).loadInventory();
+    expect(items.single.id, productId);
+    expect(items.single.totalStock, 5);
+    expect(items.single.batches, hasLength(2));
+    expect(await database.select(database.shoppingEntries).get(), isEmpty);
+    await _disposeWidgetTree(tester);
+  });
+
+  testWidgets('未关联采购项遇相似商品须确认，取消不写入库存', (tester) async {
+    final inventory = InventoryService(InventoryRepository(database));
+    await inventory.intake(const IntakeDraft(
+      name: '纸巾', category: '纸品湿巾', quantity: 2,
+    ));
+    await ShoppingService(ShoppingRepository(database)).addOrMerge(
+      itemName: '纸巾', targetQuantity: 3, reason: '补货', category: '纸品湿巾',
+    );
+    await _pumpScreen(tester, database, const ShoppingScreen());
+    await _pumpUntilFound(tester, find.text('纸巾'));
+    await tester.tap(find.byType(Checkbox));
+    await _pumpForUi(tester);
+    await tester.tap(find.text('入库（1）'));
+    await _pumpUntilFound(tester, find.text('「纸巾」可能已在库存中'));
+    await tester.tap(find.text('取消本次入库'));
+    await _pumpForUi(tester);
+    expect((await InventoryRepository(database).loadInventory()).single.totalStock, 2);
+    expect(await database.select(database.shoppingEntries).get(), hasLength(1));
+    await _disposeWidgetTree(tester);
+  });
+
+  testWidgets('采买清单可按类别筛选', (tester) async {
+    final shopping = ShoppingService(ShoppingRepository(database));
+    await shopping.addOrMerge(itemName: '苹果', targetQuantity: 1, reason: '购买', category: '食品生鲜');
+    await shopping.addOrMerge(itemName: '电池', targetQuantity: 1, reason: '购买', category: '电池灯具');
+    await _pumpScreen(tester, database, const ShoppingScreen());
+    await _pumpUntilFound(tester, find.text('苹果'));
+    await tester.tap(find.text('全部类别'));
+    await _pumpForUi(tester);
+    await tester.tap(find.text('食品生鲜').last);
+    await _pumpForUi(tester);
+    expect(find.text('苹果'), findsOneWidget);
+    expect(find.text('电池'), findsNothing);
+    await _disposeWidgetTree(tester);
+  });
+
+  testWidgets('库存总览点击后显示异常商品并可退出', (tester) async {
+    final inventory = InventoryService(InventoryRepository(database));
+    await inventory.intake(IntakeDraft(
+      name: '临期商品', category: '食品生鲜', quantity: 2,
+      expiryDate: DateTime.now().add(const Duration(days: 1)),
+    ));
+    await inventory.intake(const IntakeDraft(
+      name: '正常商品', category: '食品生鲜', quantity: 2,
+    ));
+    await _pumpScreen(tester, database, const InventoryScreen());
+    await _pumpUntilFound(tester, find.text('正常商品'));
+    expect(find.text('临期商品'), findsOneWidget);
+    expect(find.text('低库存'), findsNothing);
+    await tester.tap(find.textContaining('点击查看异常物品'));
+    await _pumpForUi(tester);
+    expect(find.text('临期商品'), findsOneWidget);
+    expect(find.text('正常商品'), findsNothing);
+    await tester.tap(find.textContaining('正在查看异常物品'));
+    await _pumpForUi(tester);
+    expect(find.text('正常商品'), findsOneWidget);
     await _disposeWidgetTree(tester);
   });
 
