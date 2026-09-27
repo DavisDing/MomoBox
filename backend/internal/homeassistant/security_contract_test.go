@@ -175,7 +175,7 @@ func contractService(integration Integration, entity HAEntity, permissions ...En
 	cipher := &contractCipher{encrypted: []byte("ciphertext"), version: "v1", plaintext: "secret-token-123456"}
 	client := &contractHAClient{}
 	service := NewService(integrations, contractDeviceRepo{}, entities, permissionRepo, audit, cipher, client)
-	service.Now = func() time.Time { return time.Date(2026, 9, 25, 0, 0, 0, time.UTC) }
+	service.Now = func() time.Time { return time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC) }
 	return service, integrations, entities, permissionRepo, audit, cipher, client
 }
 

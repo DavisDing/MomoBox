@@ -190,8 +190,15 @@ jobs:
       - name: Generate Drift sources
         run: dart run build_runner build --delete-conflicting-outputs
 
-      - name: iOS no-codesign build
-        run: flutter build ios --no-codesign
+      - name: Generate iOS build configuration
+        run: flutter build ios --config-only
+
+      - name: iOS unsigned build
+        run: >-
+          xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner
+          -configuration Release -sdk iphoneos -destination 'generic/platform=iOS'
+          CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=''
+          DEVELOPMENT_TEAM='' build
 
   backend-verify:
     name: Backend test and vet

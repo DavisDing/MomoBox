@@ -18,10 +18,14 @@ void main() {
       ))),
     ));
     await tester.pumpAndSettle();
-    final dropdown = tester.widget<DropdownButtonFormField<String>>(
-      find.byType(DropdownButtonFormField<String>).first,
-    );
-    final categories = dropdown.items!.map((item) => item.value).toList();
+    final dropdownFinder = find.byType(DropdownButtonFormField<String>).first;
+    await tester.tap(dropdownFinder);
+    await tester.pumpAndSettle();
+    final categories = tester
+        .widgetList<DropdownMenuItem<String>>(find.byType(DropdownMenuItem<String>))
+        .map((item) => item.value)
+        .whereType<String>()
+        .toList();
     expect(categories, containsAll([
       '原有自定义分类', '药品保健', '其他物品', '粮油调味', '宠物用品',
       '家居清洁', '数码电器', '工具五金', '运动户外',

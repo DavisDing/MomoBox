@@ -33,6 +33,7 @@ func (*contractHAHTTPService) ListEntities(context.Context, homeassistant.Actor,
 func (*contractHAHTTPService) GetState(context.Context, homeassistant.Actor, string, string) (homeassistant.StateDTO, error) { return homeassistant.StateDTO{}, nil }
 func (s *contractHAHTTPService) ExecuteCommand(_ context.Context, _ homeassistant.Actor, _ string, _ string, request homeassistant.CommandRequest) (homeassistant.CommandDTO, error) { s.commandCalls++; s.lastCommand = request; return homeassistant.CommandDTO{}, nil }
 func (*contractHAHTTPService) ListPermissions(context.Context, homeassistant.Actor) ([]homeassistant.PermissionDTO, error) { return nil, nil }
+func (*contractHAHTTPService) ListConsumableGroups(context.Context, homeassistant.Actor) ([]homeassistant.ConsumableGroup, error) { return nil, nil }
 func (*contractHAHTTPService) UpdatePermission(context.Context, homeassistant.Actor, homeassistant.PermissionRequest) (homeassistant.PermissionDTO, error) { return homeassistant.PermissionDTO{}, nil }
 
 func contractHAClaims() auth.AccessTokenClaims { return auth.AccessTokenClaims{UserID: "user-1", FamilyID: "family-1", Role: string(homeassistant.RoleMember), ExpiresAt: time.Now().Add(time.Hour)} }
