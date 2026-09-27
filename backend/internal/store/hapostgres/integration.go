@@ -31,6 +31,12 @@ func NewIntegrationRepository(db DB, actorResolver ...ActorResolver) *Integratio
 
 var _ homeassistant.IntegrationRepository = (*IntegrationRepository)(nil)
 
+// AutomationRepository exposes the HA consumable-linkage repository through
+// the existing composition root without changing the integration contract.
+func (r *IntegrationRepository) AutomationRepository() homeassistant.AutomationRepository {
+	return NewAutomationRepository(r.db)
+}
+
 func (r *IntegrationRepository) Create(ctx context.Context, integration homeassistant.Integration) error {
 	if err := requireDB(r.db); err != nil {
 		return err

@@ -8,9 +8,11 @@
 # Other commits are intentionally ignored.
 #
 # Set RELEASE_EVERY_PUSH=true for the default branch pipeline to create one
-# patch release for every push. RELEASE_SEQUENCE can provide a unique workflow
-# sequence number for overlapping pushes. A tag already pointing at HEAD is
-# reused so rerunning the same workflow does not create another version.
+# patch release for every push. RELEASE_SEQUENCE can provide a monotonic workflow
+# sequence number after an existing release tag. The workflow-level concurrency
+# group serializes default-branch runs so the first release cannot be calculated
+# twice before its tag exists. A tag already pointing at HEAD is reused so
+# rerunning the same workflow does not create another version.
 set -euo pipefail
 
 readonly semver_tag_pattern='^v[0-9]+\.[0-9]+\.[0-9]+$'

@@ -45,8 +45,12 @@ type Command struct {
 }
 
 type Allocation struct {
-	BatchID  string
-	Quantity int
+	BatchID        string
+	Quantity       int
+	BeforeQuantity int
+	FinalQuantity  int
+	BeforeVersion  int64
+	AfterVersion   int64
 }
 
 type Batch struct {
@@ -55,6 +59,7 @@ type Batch struct {
 	ProductID string
 	ExpiresOn *time.Time
 	Quantity  int
+	Version   int64
 	Status    BatchStatus
 }
 
@@ -136,7 +141,15 @@ func (s *Service) Execute(ctx context.Context, command Command) (Result, error) 
 			return err
 		}
 		changes := make([]BatchChange, 0, len(allocations))
-		for _, allocation := range allocations {
+		for index := range allocations {
+			allocation := &allocations[index]
+			if allocation.FinalQuantity == 0 && allocation.BeforeQuantity == 0 {
+				// FEFO and allocated planners attach authoritative pre-state below;
+				// this fallback is only for a custom Store implementation.
+				allocation.BeforeQuantity = 0
+			}
+			allocation.FinalQuantity = allocation.BeforeQuantity + quantityDelta(command.Command, allocation.Quantity)
+			allocation.AfterVersion = allocation.BeforeVersion + 1
 			changes = append(changes, BatchChange{BatchID: allocation.BatchID, QuantityDelta: quantityDelta(command.Command, allocation.Quantity)})
 		}
 		if command.Command == CommandDiscard {
@@ -188,7 +201,7 @@ func (s *Service) plan(ctx context.Context, tx Tx, command Command) ([]Allocatio
 		if command.Command == CommandDiscard && command.Quantity > batch.Quantity {
 			return nil, ErrInsufficientStock
 		}
-		return []Allocation{{BatchID: batch.ID, Quantity: command.Quantity}}, nil
+		return []Allocation{{BatchID: batch.ID, Quantity: command.Quantity, BeforeQuantity: batch.Quantity, BeforeVersion: batch.Version}}, nil
 	default:
 		return nil, ErrInvalidCommand
 	}
@@ -236,7 +249,7 @@ func allocateFEFO(batches []Batch, quantity int, now time.Time) ([]Allocation, e
 		if amount > remaining {
 			amount = remaining
 		}
-		allocations = append(allocations, Allocation{BatchID: batch.ID, Quantity: amount})
+		allocations = append(allocations, Allocation{BatchID: batch.ID, Quantity: amount, BeforeQuantity: batch.Quantity, BeforeVersion: batch.Version})
 		remaining -= amount
 		if remaining == 0 {
 			break
@@ -269,6 +282,8 @@ func validateAllocated(ctx context.Context, tx Tx, command Command, now time.Tim
 		if batch.ExpiresOn != nil && dateOnly(*batch.ExpiresOn).Before(dateOnly(now)) {
 			return nil, ErrBatchUnavailable
 		}
+		allocation.BeforeQuantity = batch.Quantity
+		allocation.BeforeVersion = batch.Version
 		out = append(out, allocation)
 	}
 	return out, nil

@@ -50,6 +50,35 @@ type ConflictRepository interface {
 	RecordConflict(ctx context.Context, conflict SyncConflict) error
 }
 
+// ConflictRecordRepository is an optional richer writer. It lets a persistent
+// adapter return the database conflict id without breaking older fakes.
+type ConflictRecordRepository interface {
+	RecordConflictWithID(ctx context.Context, conflict *SyncConflict) error
+}
+
+type ConflictQueryRepository interface {
+	ListConflicts(ctx context.Context, request ConflictListRequest) (ConflictListResponse, error)
+	GetConflict(ctx context.Context, conflictID string) (SyncConflict, error)
+	ResolveConflict(ctx context.Context, request ConflictResolveRequest, actor DeviceScope) (ConflictResolveResponse, error)
+}
+
+// ScopedConflictQueryRepository is the preferred adapter for multi-device
+// conflict access. The legacy ConflictQueryRepository methods remain for
+// compatibility with small in-memory adapters, but production storage should
+// implement these methods so every read is constrained by the authenticated
+// device's family.
+type ScopedConflictQueryRepository interface {
+	ListConflictsForScope(ctx context.Context, request ConflictListRequest, actor DeviceScope) (ConflictListResponse, error)
+	GetConflictForScope(ctx context.Context, conflictID string, actor DeviceScope) (SyncConflict, error)
+}
+
+// DeviceBootstrapRepository lets a storage adapter return a device-specific
+// checkpoint without changing the minimal Repository interface used by older
+// adapters.
+type DeviceBootstrapRepository interface {
+	ReadBootstrapForDevice(ctx context.Context, familyID, deviceID string) (BootstrapSnapshot, error)
+}
+
 type SyncTransaction interface {
 	EntityRepository
 	InventoryRepository

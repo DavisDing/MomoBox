@@ -31,6 +31,13 @@ class NasApiClient {
 
   bool get hasAccessToken => _accessToken != null;
 
+  /// Current in-memory bearer token for sibling feature clients. The value is
+  /// never persisted here; refresh and clearing remain owned by the auth
+  /// service.
+  String? get accessToken => _accessToken;
+
+  void close() => _client.close();
+
   void setAccessToken(String? accessToken) {
     final normalized = accessToken?.trim();
     _accessToken = normalized == null || normalized.isEmpty ? null : normalized;

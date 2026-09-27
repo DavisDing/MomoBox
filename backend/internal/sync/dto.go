@@ -98,11 +98,35 @@ type ReplayedChange struct {
 	Rejected       *RejectedChange `json:"rejected,omitempty"`
 }
 
+type ConflictStatus string
+
+const (
+	ConflictStatusOpen     ConflictStatus = "open"
+	ConflictStatusResolved ConflictStatus = "resolved"
+	ConflictStatusRejected ConflictStatus = "rejected"
+)
+
+type ConflictAction string
+
+const (
+	ConflictActionKeepLocal  ConflictAction = "keep_local"
+	ConflictActionKeepRemote ConflictAction = "keep_remote"
+	ConflictActionManualMerge ConflictAction = "manual_merge"
+	ConflictActionDefer      ConflictAction = "defer"
+)
+
 type SyncConflict struct {
-	ChangeID      string         `json:"change_id"`
+	ConflictID    string         `json:"conflict_id"`
+	ChangeID      string         `json:"change_id,omitempty"`
+	Operation     Operation      `json:"operation,omitempty"`
+	DeviceID      string         `json:"device_id,omitempty"`
 	Entity        string         `json:"entity"`
 	EntityID      string         `json:"entity_id,omitempty"`
 	Reason        string         `json:"reason"`
+	Status        ConflictStatus `json:"status"`
+	Resolution    map[string]any `json:"resolution,omitempty"`
+	CreatedAt     string         `json:"created_at,omitempty"`
+	ResolvedAt    string         `json:"resolved_at,omitempty"`
 	ServerVersion int64          `json:"server_version,omitempty"`
 	ServerPayload map[string]any `json:"server_payload,omitempty"`
 	ClientPayload map[string]any `json:"client_payload,omitempty"`
@@ -148,6 +172,8 @@ type BootstrapResponse struct {
 	SyncProtocolVersion int             `json:"sync_protocol_version"`
 	ServerCursor        int64           `json:"server_cursor"`
 	MergeRequired       bool            `json:"merge_required"`
+	BootstrapState      string          `json:"bootstrap_state"`
+	Checkpoint          string          `json:"checkpoint,omitempty"`
 	AvailableModes      []BootstrapMode `json:"available_modes"`
 	Family              map[string]any  `json:"family,omitempty"`
 	Snapshot            map[string]any  `json:"snapshot,omitempty"`
@@ -157,12 +183,16 @@ type BootstrapConfirmRequest struct {
 	Mode             BootstrapMode `json:"mode"`
 	DeviceID         string        `json:"device_id"`
 	LocalWorkspaceID string        `json:"local_workspace_id,omitempty"`
+	SnapshotCursor   int64         `json:"snapshot_cursor,omitempty"`
+	Checkpoint       string        `json:"checkpoint,omitempty"`
 }
 
 type BootstrapConfirmResponse struct {
-	Accepted     bool   `json:"accepted"`
-	NextAction   string `json:"next_action"`
-	ServerCursor int64  `json:"server_cursor"`
+	Accepted       bool   `json:"accepted"`
+	NextAction     string `json:"next_action"`
+	ServerCursor   int64  `json:"server_cursor"`
+	Checkpoint     string `json:"checkpoint,omitempty"`
+	BootstrapState string `json:"bootstrap_state"`
 }
 
 // DeviceScope is resolved by the repository from an authenticated device id.
@@ -170,10 +200,14 @@ type BootstrapConfirmResponse struct {
 type DeviceScope struct {
 	DeviceID string
 	FamilyID string
+	UserID   string
+	Role     string
 	Revoked  bool
 }
 
 type BootstrapSnapshot struct {
+	BootstrapState      string
+	Checkpoint          string
 	SchemaVersion       int
 	SyncProtocolVersion int
 	ServerCursor        int64
@@ -184,8 +218,10 @@ type BootstrapSnapshot struct {
 }
 
 type BootstrapConfirmation struct {
-	Accepted     bool
-	ServerCursor int64
+	Accepted       bool
+	ServerCursor   int64
+	Checkpoint     string
+	BootstrapState string
 }
 
 type EntityRecord struct {
@@ -207,13 +243,51 @@ type EntityMutation struct {
 }
 
 type InventoryCommandResult struct {
-	EntityID string
-	Version  int64
-	Payload  map[string]any
+	EntityID    string
+	Version     int64
+	OperationID string
+	Allocations []InventoryAllocationResult
+	Payload     map[string]any
+}
+
+type InventoryAllocationResult struct {
+	BatchID        string `json:"batch_id"`
+	Quantity       int64  `json:"quantity"`
+	BeforeQuantity int64  `json:"before_quantity"`
+	FinalQuantity  int64  `json:"final_quantity"`
+	BeforeVersion  int64  `json:"before_version"`
+	AfterVersion   int64  `json:"after_version"`
 }
 
 type HomeAssistantCommandResult struct {
 	Payload map[string]any
+}
+
+type ConflictListRequest struct {
+	DeviceID string
+	Status   ConflictStatus
+	Limit    int
+	Offset   int
+}
+
+type ConflictResolveRequest struct {
+	DeviceID       string
+	ConflictID     string
+	Action         ConflictAction
+	ExpectedVersion int64
+	MergedPayload  map[string]any
+	IdempotencyKey string
+}
+
+type ConflictListResponse struct {
+	Conflicts []SyncConflict `json:"conflicts"`
+	HasMore   bool           `json:"has_more"`
+}
+
+type ConflictResolveResponse struct {
+	Conflict SyncConflict   `json:"conflict"`
+	Accepted bool           `json:"accepted"`
+	Result   *AcceptedChange `json:"result,omitempty"`
 }
 
 type IdempotencyRecord struct {

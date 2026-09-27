@@ -16,7 +16,7 @@ import (
 
 const (
 	findBatchesForUpdateSQL = `
-SELECT id::text, family_id::text, product_id::text, expiry_date, quantity, status
+SELECT id::text, family_id::text, product_id::text, expiry_date, quantity, version, status
 FROM product_batches
 WHERE family_id = $1::uuid
   AND product_id = $2::uuid
@@ -25,7 +25,7 @@ ORDER BY expiry_date ASC NULLS LAST, id ASC
 FOR UPDATE`
 
 	findBatchForUpdateSQL = `
-SELECT id::text, family_id::text, product_id::text, expiry_date, quantity, status
+SELECT id::text, family_id::text, product_id::text, expiry_date, quantity, version, status
 FROM product_batches
 WHERE family_id = $1::uuid
   AND id = $2::uuid
@@ -179,7 +179,7 @@ func (r *txRepository) FindBatchesForUpdate(ctx context.Context, familyID, produ
 	for rows.Next() {
 		var batch inventory.Batch
 		var status string
-		if err := rows.Scan(&batch.ID, &batch.FamilyID, &batch.ProductID, &batch.ExpiresOn, &batch.Quantity, &status); err != nil {
+		if err := rows.Scan(&batch.ID, &batch.FamilyID, &batch.ProductID, &batch.ExpiresOn, &batch.Quantity, &batch.Version, &status); err != nil {
 			return nil, fmt.Errorf("scan product batch: %w", err)
 		}
 		batch.Status = domainBatchStatus(status)
@@ -199,7 +199,7 @@ func (r *txRepository) FindBatchForUpdate(ctx context.Context, familyID, batchID
 	var batch inventory.Batch
 	var status string
 	err := r.tx.QueryRowContext(ctx, findBatchForUpdateSQL, familyID, batchID).Scan(
-		&batch.ID, &batch.FamilyID, &batch.ProductID, &batch.ExpiresOn, &batch.Quantity, &status,
+		&batch.ID, &batch.FamilyID, &batch.ProductID, &batch.ExpiresOn, &batch.Quantity, &batch.Version, &status,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return inventory.Batch{}, inventory.ErrBatchUnavailable

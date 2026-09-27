@@ -137,6 +137,9 @@ class NasHaEntity {
     required this.isControllable,
     this.areaName,
     this.capabilities = const <String>[],
+    this.hvacModes = const <String>[],
+    this.temperatureMin,
+    this.temperatureMax,
     this.currentState,
     this.lastStateAt,
   });
@@ -148,6 +151,9 @@ class NasHaEntity {
   final String name;
   final String? areaName;
   final List<String> capabilities;
+  final List<String> hvacModes;
+  final double? temperatureMin;
+  final double? temperatureMax;
   final String? currentState;
   final bool isVisible;
   final bool isControllable;
@@ -163,6 +169,9 @@ class NasHaEntity {
       name: _requiredString(json, 'name'),
       areaName: _nullableString(json['area_name']),
       capabilities: _stringList(json['capabilities']),
+      hvacModes: _stringList(json['hvac_modes']),
+      temperatureMin: _nullableNum(json['temperature_min']),
+      temperatureMax: _nullableNum(json['temperature_max']),
       currentState: _nullableString(json['current_state']),
       isVisible: _requiredBool(json, 'is_visible'),
       isControllable: _requiredBool(json, 'is_controllable'),
@@ -453,6 +462,12 @@ String _requiredString(Map<String, dynamic> json, String key) =>
 
 String? _nullableString(Object? value) => value == null ? null : _requiredStringFromValue(value, 'string');
 
+double? _nullableNum(Object? value) {
+  if (value == null) return null;
+  if (value is num && value.isFinite) return value.toDouble();
+  throw const FormatException('Invalid number');
+}
+
 int _requiredInt(Map<String, dynamic> json, String key) {
   final value = json[key];
   if (value is! int || value < 0) throw FormatException('Invalid $key');
@@ -473,3 +488,411 @@ List<String> _stringList(Object? value) {
   return List<String>.unmodifiable(value.cast<String>());
 }
 
+
+/// Integer-count units supported by the first Home Assistant consumable
+/// linkage release. Volume and weight conversion is intentionally not done on
+/// the client; the NAS service remains authoritative for the inventory result.
+enum NasHaConsumableUnit {
+  piece,
+  capsule,
+  tablet,
+  load,
+  cycle,
+}
+
+NasHaConsumableUnit _parseConsumableUnit(Object? value) {
+  switch (value) {
+    case 'piece':
+      return NasHaConsumableUnit.piece;
+    case 'capsule':
+      return NasHaConsumableUnit.capsule;
+    case 'tablet':
+      return NasHaConsumableUnit.tablet;
+    case 'load':
+      return NasHaConsumableUnit.load;
+    case 'cycle':
+      return NasHaConsumableUnit.cycle;
+    default:
+      throw FormatException('Invalid consumable unit: $value');
+  }
+}
+
+String nasHaConsumableUnitValue(NasHaConsumableUnit value) {
+  switch (value) {
+    case NasHaConsumableUnit.piece:
+      return 'piece';
+    case NasHaConsumableUnit.capsule:
+      return 'capsule';
+    case NasHaConsumableUnit.tablet:
+      return 'tablet';
+    case NasHaConsumableUnit.load:
+      return 'load';
+    case NasHaConsumableUnit.cycle:
+      return 'cycle';
+  }
+}
+
+class NasHaConsumableGroupItem {
+  const NasHaConsumableGroupItem({
+    required this.id,
+    required this.groupId,
+    required this.productId,
+    required this.quantity,
+    required this.unit,
+  });
+
+  final String id;
+  final String groupId;
+  final String productId;
+  final int quantity;
+  final NasHaConsumableUnit unit;
+
+  factory NasHaConsumableGroupItem.fromJson(Object? value) {
+    final json = _asObject(value, 'consumable group item');
+    return NasHaConsumableGroupItem(
+      id: _nullableString(json['id']) ?? '',
+      groupId: _nullableString(json['group_id']) ?? '',
+      productId: _requiredString(json, 'product_id'),
+      quantity: _positiveInt(json['quantity'], 'quantity'),
+      unit: _parseConsumableUnit(json['unit']),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        if (id.isNotEmpty) 'id': id,
+        if (groupId.isNotEmpty) 'group_id': groupId,
+        'product_id': productId,
+        'quantity': quantity,
+        'unit': nasHaConsumableUnitValue(unit),
+      };
+}
+
+class NasHaConsumableGroup {
+  const NasHaConsumableGroup({
+    required this.id,
+    required this.familyId,
+    required this.name,
+    required this.description,
+    required this.items,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  final String id;
+  final String familyId;
+  final String name;
+  final String description;
+  final List<NasHaConsumableGroupItem> items;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  factory NasHaConsumableGroup.fromJson(Object? value) {
+    final json = _asObject(value, 'consumable group');
+    return NasHaConsumableGroup(
+      id: _requiredString(json, 'id'),
+      familyId: _nullableString(json['family_id']) ?? '',
+      name: _requiredString(json, 'name'),
+      description: _nullableString(json['description']) ?? '',
+      items: _objectList(json['items'], NasHaConsumableGroupItem.fromJson),
+      createdAt: _optionalDateTime(json, 'created_at'),
+      updatedAt: _optionalDateTime(json, 'updated_at'),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        if (id.isNotEmpty) 'id': id,
+        'name': name,
+        'description': description,
+        'items': items.map((item) => item.toJson()).toList(growable: false),
+      };
+}
+
+class NasHaConsumableRecipeGroup {
+  const NasHaConsumableRecipeGroup({
+    required this.id,
+    required this.recipeId,
+    required this.groupId,
+    required this.quantity,
+    required this.unit,
+  });
+
+  final String id;
+  final String recipeId;
+  final String groupId;
+  final int quantity;
+  final NasHaConsumableUnit unit;
+
+  factory NasHaConsumableRecipeGroup.fromJson(Object? value) {
+    final json = _asObject(value, 'consumable recipe group');
+    return NasHaConsumableRecipeGroup(
+      id: _nullableString(json['id']) ?? '',
+      recipeId: _nullableString(json['recipe_id']) ?? '',
+      groupId: _requiredString(json, 'group_id'),
+      quantity: _positiveInt(json['quantity'], 'quantity'),
+      unit: _parseConsumableUnit(json['unit']),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        if (id.isNotEmpty) 'id': id,
+        if (recipeId.isNotEmpty) 'recipe_id': recipeId,
+        'group_id': groupId,
+        'quantity': quantity,
+        'unit': nasHaConsumableUnitValue(unit),
+      };
+}
+
+class NasHaConsumableRecipe {
+  const NasHaConsumableRecipe({
+    required this.id,
+    required this.familyId,
+    required this.name,
+    required this.description,
+    required this.groups,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  final String id;
+  final String familyId;
+  final String name;
+  final String description;
+  final List<NasHaConsumableRecipeGroup> groups;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  factory NasHaConsumableRecipe.fromJson(Object? value) {
+    final json = _asObject(value, 'consumable recipe');
+    return NasHaConsumableRecipe(
+      id: _requiredString(json, 'id'),
+      familyId: _nullableString(json['family_id']) ?? '',
+      name: _requiredString(json, 'name'),
+      description: _nullableString(json['description']) ?? '',
+      groups: _objectList(json['groups'], NasHaConsumableRecipeGroup.fromJson),
+      createdAt: _optionalDateTime(json, 'created_at'),
+      updatedAt: _optionalDateTime(json, 'updated_at'),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        if (id.isNotEmpty) 'id': id,
+        'name': name,
+        'description': description,
+        'groups': groups.map((group) => group.toJson()).toList(growable: false),
+      };
+}
+
+class NasHaLinkageRule {
+  const NasHaLinkageRule({
+    required this.id,
+    required this.familyId,
+    required this.name,
+    required this.integrationId,
+    required this.entityId,
+    required this.applianceDomain,
+    required this.startState,
+    required this.completeState,
+    required this.recipeId,
+    required this.enabled,
+    required this.requiresConfirmation,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  final String id;
+  final String familyId;
+  final String name;
+  final String integrationId;
+  final String entityId;
+  final String applianceDomain;
+  final String startState;
+  final String completeState;
+  final String recipeId;
+  final bool enabled;
+  final bool requiresConfirmation;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  factory NasHaLinkageRule.fromJson(Object? value) {
+    final json = _asObject(value, 'linkage rule');
+    return NasHaLinkageRule(
+      id: _requiredString(json, 'id'),
+      familyId: _nullableString(json['family_id']) ?? '',
+      name: _requiredString(json, 'name'),
+      integrationId: _requiredString(json, 'integration_id'),
+      entityId: _requiredString(json, 'entity_id'),
+      applianceDomain: _requiredString(json, 'appliance_domain'),
+      startState: _requiredString(json, 'start_state'),
+      completeState: _requiredString(json, 'complete_state'),
+      recipeId: _requiredString(json, 'recipe_id'),
+      enabled: _requiredBool(json, 'enabled'),
+      requiresConfirmation: _requiredBool(json, 'requires_confirmation'),
+      createdAt: _optionalDateTime(json, 'created_at'),
+      updatedAt: _optionalDateTime(json, 'updated_at'),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        if (id.isNotEmpty) 'id': id,
+        'name': name,
+        'integration_id': integrationId,
+        'entity_id': entityId,
+        'appliance_domain': applianceDomain,
+        'start_state': startState,
+        'complete_state': completeState,
+        'recipe_id': recipeId,
+        'enabled': enabled,
+        // The first release deliberately never permits automatic deduction.
+        'requires_confirmation': true,
+      };
+}
+
+class NasHaPurchaseSuggestion {
+  const NasHaPurchaseSuggestion({
+    required this.productId,
+    required this.productName,
+    required this.quantity,
+    required this.unit,
+  });
+
+  final String productId;
+  final String productName;
+  final int quantity;
+  final NasHaConsumableUnit unit;
+
+  factory NasHaPurchaseSuggestion.fromJson(Object? value) {
+    final json = _asObject(value, 'purchase suggestion');
+    return NasHaPurchaseSuggestion(
+      productId: _requiredString(json, 'product_id'),
+      productName: _nullableString(json['product_name']) ?? _requiredString(json, 'product_id'),
+      quantity: _positiveInt(json['quantity'], 'quantity'),
+      unit: _parseConsumableUnit(json['unit']),
+    );
+  }
+}
+
+enum NasHaLinkageSuggestionStatus {
+  pending,
+  deducted,
+  ignored,
+  insufficientStock,
+  unknown,
+}
+
+NasHaLinkageSuggestionStatus _parseLinkageSuggestionStatus(Object? value) {
+  switch (value) {
+    case 'pending':
+      return NasHaLinkageSuggestionStatus.pending;
+    case 'deducted':
+      return NasHaLinkageSuggestionStatus.deducted;
+    case 'ignored':
+      return NasHaLinkageSuggestionStatus.ignored;
+    case 'insufficient_stock':
+      return NasHaLinkageSuggestionStatus.insufficientStock;
+    default:
+      return NasHaLinkageSuggestionStatus.unknown;
+  }
+}
+
+class NasHaLinkageSuggestion {
+  const NasHaLinkageSuggestion({
+    required this.id,
+    required this.familyId,
+    required this.ruleId,
+    required this.recipeId,
+    required this.applianceRunId,
+    required this.status,
+    required this.requiresConfirmation,
+    required this.purchaseSuggestions,
+    required this.createdAt,
+    this.resolvedAt,
+    this.resolvedBy,
+    this.ruleName,
+    this.deviceName,
+    this.eventSummary,
+    this.consumableName,
+    this.quantity,
+    this.unit,
+  });
+
+  final String id;
+  final String familyId;
+  final String ruleId;
+  final String recipeId;
+  final String applianceRunId;
+  final NasHaLinkageSuggestionStatus status;
+  final bool requiresConfirmation;
+  final List<NasHaPurchaseSuggestion> purchaseSuggestions;
+  final DateTime createdAt;
+  final DateTime? resolvedAt;
+  final String? resolvedBy;
+  final String? ruleName;
+  final String? deviceName;
+  final String? eventSummary;
+  final String? consumableName;
+  final int? quantity;
+  final NasHaConsumableUnit? unit;
+
+  factory NasHaLinkageSuggestion.fromJson(Object? value) {
+    final json = _asObject(value, 'linkage suggestion');
+    final createdAt = _optionalDateTime(json, 'created_at');
+    if (createdAt == null) throw const FormatException('Missing created_at');
+    final quantity = _nullablePositiveInt(json['quantity'], 'quantity');
+    final rawUnit = json['unit'];
+    return NasHaLinkageSuggestion(
+      id: _requiredString(json, 'id'),
+      familyId: _nullableString(json['family_id']) ?? '',
+      ruleId: _requiredString(json, 'rule_id'),
+      recipeId: _requiredString(json, 'recipe_id'),
+      applianceRunId: _requiredString(json, 'appliance_run_id'),
+      status: _parseLinkageSuggestionStatus(json['status']),
+      requiresConfirmation: json['requires_confirmation'] is bool
+          ? json['requires_confirmation'] as bool
+          : true,
+      purchaseSuggestions: _objectList(
+        json['purchase_suggestions'],
+        NasHaPurchaseSuggestion.fromJson,
+      ),
+      createdAt: createdAt,
+      resolvedAt: _optionalDateTime(json, 'resolved_at'),
+      resolvedBy: _nullableString(json['resolved_by']),
+      ruleName: _nullableString(json['rule_name']),
+      deviceName: _nullableString(json['device_name']),
+      eventSummary: _nullableString(json['event_summary']),
+      consumableName: _nullableString(json['consumable_name']),
+      quantity: quantity,
+      unit: rawUnit == null ? null : _parseConsumableUnit(rawUnit),
+    );
+  }
+}
+
+int _positiveInt(Object? value, String label) {
+  final parsed = value is num ? value.toInt() : int.tryParse('$value');
+  if (parsed == null || parsed < 1 || (value is num && value != parsed)) {
+    throw FormatException('Invalid $label');
+  }
+  return parsed;
+}
+
+int? _nullablePositiveInt(Object? value, String label) =>
+    value == null ? null : _positiveInt(value, label);
+
+List<T> _objectList<T>(Object? value, T Function(Object?) parser) {
+  if (value == null) return <T>[];
+  if (value is! List) throw const FormatException('Invalid object list');
+  return List<T>.unmodifiable(value.map(parser));
+}
+
+enum NasHaSuggestionDecision {
+  confirm,
+  ignore,
+}
+
+String nasHaSuggestionDecisionValue(NasHaSuggestionDecision value) {
+  switch (value) {
+    case NasHaSuggestionDecision.confirm:
+      return 'confirm';
+    case NasHaSuggestionDecision.ignore:
+      return 'ignore';
+  }
+}

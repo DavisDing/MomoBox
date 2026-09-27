@@ -243,11 +243,14 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
-        onCreate: (migrator) async => migrator.createAll(),
+        onCreate: (migrator) async {
+          await migrator.createAll();
+          await _createOcrSearchIndex();
+        },
         onUpgrade: (migrator, from, to) async {
           if (from < 2) {
             await migrator.createTable(reminderAcknowledgments);
@@ -271,11 +274,41 @@ class AppDatabase extends _$AppDatabase {
             await migrator.createTable(syncConflicts);
             await migrator.createTable(syncAppliedChanges);
           }
+          if (from < 5) {
+            await _createOcrSearchIndex();
+            await _rebuildOcrSearchIndex();
+          }
         },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = ON');
+          // Keep the local OCR index available even if a previous installation
+          // was interrupted while upgrading. This only creates SQLite schema;
+          // media bytes remain local and are never uploaded here.
+          await _createOcrSearchIndex();
         },
       );
+
+  Future<void> _createOcrSearchIndex() async {
+    await customStatement('''
+      CREATE VIRTUAL TABLE IF NOT EXISTS media_ocr_fts USING fts5(
+        asset_id UNINDEXED,
+        entity_type UNINDEXED,
+        entity_id UNINDEXED,
+        ocr_text,
+        tokenize = 'unicode61'
+      )
+    ''');
+  }
+
+  Future<void> _rebuildOcrSearchIndex() async {
+    await customStatement('DELETE FROM media_ocr_fts');
+    await customStatement('''
+      INSERT INTO media_ocr_fts(asset_id, entity_type, entity_id, ocr_text)
+      SELECT id, entity_type, entity_id, ocr_text
+      FROM media_assets
+      WHERE deleted_at IS NULL AND ocr_text IS NOT NULL AND trim(ocr_text) <> ''
+    ''');
+  }
 }
 
 LazyDatabase _openConnection() {

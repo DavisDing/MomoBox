@@ -1,7 +1,7 @@
 # MomoBox NAS Docker 部署契约
 
-- 文档版本：v0.2
-- 更新时间：2026-09-21
+- 文档版本：v0.3
+- 更新时间：2026-09-26
 - 适用范围：Go NAS 后端和 PostgreSQL
 
 ## 1. 仓库目录隔离
@@ -26,6 +26,11 @@ MomoBox/
 │       ├── .env.example
 │       ├── README.md
 │       └── scripts/
+│           ├── deployment-lock.sh     # update/backup/restore 共享互斥锁
+│           ├── update.sh
+│           ├── backup.sh
+│           ├── restore.sh
+│           └── self-test.sh
 ├── lib/                     # Flutter 客户端
 ├── test/                    # Flutter 测试
 ├── android/
@@ -52,10 +57,10 @@ Compose 位于：
 ```yaml
 services:
   momo-backend:
-    image: ${MOMO_BACKEND_IMAGE:-ghcr.io/davisding/momobox-backend:latest}
+    image: ${MOMO_BACKEND_IMAGE:?set MOMO_BACKEND_IMAGE to a pinned GHCR tag or digest in .env}
 ```
 
-`MOMO_BACKEND_IMAGE` 默认指向公开的多架构 `latest`。版本化发布另有 `vX.Y.Z` 标签，供排障和回退。开发机如需本地构建，显式叠加 `compose.local-build.yaml`；该 override 的构建上下文固定为 `../../backend`。这样 Flutter、Android、iOS、`.dart_tool` 和本地资源不会进入后端镜像。
+`MOMO_BACKEND_IMAGE` 和 `APP_VERSION` 必须由 `.env` 显式提供，生产不得依赖可变的 `latest`。推荐使用 `vX.Y.Z`、`sha-<commit>` 或 digest；版本标签供排障和回退。开发机如需本地构建，显式叠加 `compose.local-build.yaml`；该 override 的构建上下文固定为 `../../backend`。这样 Flutter、Android、iOS、`.dart_tool` 和本地资源不会进入后端镜像。
 
 ## 2. 服务拓扑
 
@@ -123,8 +128,8 @@ postgres_data:/var/lib/postgresql/data
 
 ```text
 APP_ENV=production
-MOMO_BACKEND_IMAGE=ghcr.io/davisding/momobox-backend:latest
-APP_VERSION=latest
+MOMO_BACKEND_IMAGE=ghcr.io/davisding/momobox-backend:v0.1.0
+APP_VERSION=v0.1.0
 MOMO_BACKEND_PORT=8080
 DATABASE_URL=postgres://momo:change-me@postgres:5432/momo?sslmode=disable
 JWT_SECRET=replace-with-long-random-secret
@@ -146,7 +151,7 @@ LOG_LEVEL=info
 
 推荐使用 `openssl rand -hex 32` 生成 JWT Secret 和 Refresh Token Pepper，使用 `openssl rand -hex 16` 生成 HA Token 加密密钥。后者输出恰好 32 个 ASCII 字符，满足后端“32 bytes”校验；不要把换行或引号计入变量值。`POSTGRES_PASSWORD` 与 `DATABASE_URL` 中的密码必须一致，特殊字符必须进行 URL 编码。Compose 内服务固定监听 `0.0.0.0:8080`，宿主机映射端口只通过 `MOMO_BACKEND_PORT` 调整，避免端口映射与健康检查失配。
 
-`MOMO_BACKEND_IMAGE` 默认使用 GHCR 的 `latest`，每次后端 CI 成功后更新。正常升级必须使用 `scripts/update.sh`，它会先备份、拉取镜像、运行 migration，再启动业务服务。若要回退应用镜像，将此变量改为 `ghcr.io/davisding/momobox-backend:vX.Y.Z`；镜像回退不会自动回退数据库 schema。
+生产 Compose 不设置 `MOMO_BACKEND_IMAGE` 默认值。每次升级前应把 `MOMO_BACKEND_IMAGE` 与 `APP_VERSION` 一起固定到目标版本，然后使用 `scripts/update.sh`；脚本会获取部署互斥锁、先备份、拉取镜像、运行 migration、启动服务并等待后端 healthcheck。若要回退应用镜像，将这两个变量改为 `ghcr.io/davisding/momobox-backend:vX.Y.Z` 与对应版本；镜像回退不会自动回退数据库 schema。
 
 不提供以下后端变量：
 
@@ -171,11 +176,12 @@ AI_PROXY_URL
 - 不使用 `latest` 作为生产基础镜像标签；
 - 使用 `backend/.dockerignore` 排除测试缓存和本地构建产物；
 - 由 GitHub Actions 构建并推送至 `ghcr.io/davisding/momobox-backend`；
-- 每次默认分支的后端变更通过 `go test ./...`、`go vet ./...` 和 Buildx 构建后更新 `latest` 与 `sha-<commit>` 标签；
+- 每次默认分支的后端变更通过 CI 后发布不可变的 `sha-<commit>` 标签；可选地同步更新 `latest` 便利别名；
 - 正式产品 Release 额外发布不可变的 `vX.Y.Z` 标签；
+- 工作流按 Git ref 串行执行且不取消进行中的发布，避免首次发布或连续 push 竞争同一版本；
 - 首次发布后必须在 GitHub Packages 将镜像包显式设为 Public，公开 NAS 才能匿名拉取。
 
-`latest` 是 NAS 的部署标签，不得作为 Dockerfile 的基础镜像标签。Compose 中的 `momo-backend` 使用只读根文件系统，删除全部 Linux capabilities，启用 `no-new-privileges`，并只提供受限的 `/tmp` tmpfs。
+`latest` 只能作为显式选择的便利别名，不是 NAS 的默认部署标签，也不得作为 Dockerfile 的基础镜像标签。Compose 中的 `momo-backend` 使用只读根文件系统，删除全部 Linux capabilities，启用 `no-new-privileges`，并只提供受限的 `/tmp` tmpfs。
 
 ## 6. 启动与迁移
 
@@ -189,17 +195,17 @@ momo-backend serve
 首次启动流程：
 
 ```text
-docker compose pull momo-backend
-docker compose up -d postgres
-docker compose run --rm momo-backend migrate
-docker compose up -d momo-backend
+# 先在 .env 固定 MOMO_BACKEND_IMAGE 与 APP_VERSION
+scripts/update.sh
 ```
+
+更新脚本会完成拉取、PostgreSQL 就绪等待、migration、启动和后端 healthcheck 等步骤；不要绕过脚本并发执行备份、恢复或更新。
 
 日常升级流程固定为：
 
 ```text
 scripts/update.sh
-# backup → pull MOMO_BACKEND_IMAGE → stop backend → migrate → start backend
+# lock → backup → pull pinned MOMO_BACKEND_IMAGE → stop backend → migrate → start → wait healthy
 ```
 
 不得使用自动重启型镜像更新器绕过 migration。迁移执行必须：
@@ -259,6 +265,8 @@ HA_ACCESS_TOKEN
 ```
 
 恢复默认要求交互确认，自动化环境必须显式传入 `--yes`；恢复期间停止后端，完成后只在其原本运行时重新启动。备份使用临时文件并在成功后原子重命名，失败时不能留下看似成功的 dump。
+
+更新、备份和恢复脚本共享同一个基于 `mkdir` 的部署互斥锁；锁目录为 `deploy/nas/.momobox-deployment.lock`。锁存在时脚本会拒绝并发执行，避免更新、备份和恢复交叉修改同一数据库。
 
 备份脚本位于：
 

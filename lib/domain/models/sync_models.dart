@@ -60,8 +60,15 @@ enum SyncOutboxStatus {
   }
 }
 
+enum SyncRemoteApplyStatus {
+  applied,
+  ignoredStale,
+  alreadyApplied,
+}
+
 enum SyncConflictStatus {
   open('open'),
+  deferred('deferred'),
   resolved('resolved'),
   rejected('rejected');
 
@@ -236,6 +243,70 @@ class SyncOutboxEntry {
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? completedAt;
+
+  SyncOutboxEntry copyWith({
+    String? changeId,
+    String? scopeId,
+    SyncOperation? operation,
+    String? entity,
+    String? entityId,
+    int? baseVersion,
+    String? operationId,
+    String? integrationId,
+    String? command,
+    String? idempotencyKey,
+    String? requestJson,
+    SyncOutboxStatus? status,
+    int? attemptCount,
+    DateTime? nextAttemptAt,
+    String? lastErrorCode,
+    String? lastErrorMessage,
+    int? serverCursor,
+    int? serverVersion,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    DateTime? completedAt,
+  }) => SyncOutboxEntry(
+    changeId: changeId ?? this.changeId,
+    scopeId: scopeId ?? this.scopeId,
+    operation: operation ?? this.operation,
+    entity: entity ?? this.entity,
+    entityId: entityId ?? this.entityId,
+    baseVersion: baseVersion ?? this.baseVersion,
+    operationId: operationId ?? this.operationId,
+    integrationId: integrationId ?? this.integrationId,
+    command: command ?? this.command,
+    idempotencyKey: idempotencyKey ?? this.idempotencyKey,
+    requestJson: requestJson ?? this.requestJson,
+    status: status ?? this.status,
+    attemptCount: attemptCount ?? this.attemptCount,
+    nextAttemptAt: nextAttemptAt ?? this.nextAttemptAt,
+    lastErrorCode: lastErrorCode ?? this.lastErrorCode,
+    lastErrorMessage: lastErrorMessage ?? this.lastErrorMessage,
+    serverCursor: serverCursor ?? this.serverCursor,
+    serverVersion: serverVersion ?? this.serverVersion,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    completedAt: completedAt ?? this.completedAt,
+  );
+}
+
+enum SyncConflictResolution {
+  keepLocal('keep_local'),
+  keepRemote('keep_remote'),
+  manualMerge('manual_merge'),
+  defer('defer');
+
+  const SyncConflictResolution(this.wireValue);
+
+  final String wireValue;
+
+  static SyncConflictResolution fromWire(String value) {
+    for (final resolution in values) {
+      if (resolution.wireValue == value) return resolution;
+    }
+    throw FormatException('Unsupported conflict resolution: $value');
+  }
 }
 
 class SyncConflictDraft {
@@ -296,6 +367,18 @@ class SyncConflictEntry {
   final String? resolution;
   final DateTime createdAt;
   final DateTime? resolvedAt;
+}
+
+class SyncConflictResolutionRequest {
+  const SyncConflictResolutionRequest({
+    required this.conflictId,
+    required this.resolution,
+    this.mergedPayload,
+  });
+
+  final int conflictId;
+  final SyncConflictResolution resolution;
+  final String? mergedPayload;
 }
 
 class SyncAppliedChange {

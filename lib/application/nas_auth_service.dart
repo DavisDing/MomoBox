@@ -6,6 +6,8 @@ import '../services/nas_credentials_service.dart';
 enum NasAuthStatus {
   signedOut,
   restoring,
+  signingIn,
+  signingOut,
   authenticated,
   error,
 }
@@ -123,6 +125,26 @@ class NasAuthService {
       }
       rethrow;
     }
+  }
+
+  /// Clears local session state without making a remote request.
+  ///
+  /// This is used when an authenticated API request has already received a
+  /// definitive 401 after the client's refresh path was exhausted.
+  Future<NasAuthSnapshot> invalidateSession() async {
+    Object? failure;
+    try {
+      await _credentials.clear();
+    } catch (error) {
+      failure = error;
+    } finally {
+      // Always drop the in-memory bearer token, even if secure-storage cleanup
+      // fails. A failed delete must not leave the client usable as if signed in.
+      _apiClient.setAccessToken(null);
+      _setSnapshot(const NasAuthSnapshot.signedOut());
+    }
+    if (failure != null) throw failure!;
+    return _snapshot;
   }
 
   Future<void> logout() async {

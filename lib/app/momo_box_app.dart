@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../application/sync_engine.dart';
+import '../application/sync_scheduler.dart';
 import '../domain/models/inventory_models.dart';
 import '../presentation/controllers/providers.dart';
 import '../presentation/screens/alerts_screen.dart';
@@ -12,6 +14,7 @@ import '../presentation/screens/product_detail_screen.dart';
 import '../presentation/screens/settings_screen.dart';
 import '../presentation/screens/shopping_screen.dart';
 import '../presentation/screens/smart_home_screen.dart';
+import '../presentation/screens/statistics_screen.dart';
 import '../presentation/widgets/app_scaffold.dart';
 import '../presentation/widgets/app_back_guard.dart';
 import 'momo_theme.dart';
@@ -43,6 +46,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(path: '/shopping', builder: (context, state) => const ShoppingScreen()),
+      GoRoute(path: '/statistics', builder: (context, state) => const StatisticsScreen()),
       GoRoute(
         path: '/inventory/:productId',
         builder: (context, state) => ProductDetailScreen(
@@ -67,9 +71,21 @@ class MomoBoxApp extends ConsumerStatefulWidget {
 }
 
 class _MomoBoxAppState extends ConsumerState<MomoBoxApp> {
+  late final SyncScheduler _syncScheduler;
+
   @override
   void initState() {
     super.initState();
+    _syncScheduler = SyncScheduler(
+      engineReader: () => ref.read(syncEngineProvider),
+    );
+    ref.listenManual<SyncEngine?>(
+      syncEngineProvider,
+      (_, next) {
+        if (next != null) _syncScheduler.requestRun();
+      },
+      fireImmediately: true,
+    );
     ref.listenManual<AsyncValue<List<InventoryItem>>>(
       inventoryProvider,
       (_, next) => next.whenData(_reconcileInventoryAndSync),
@@ -83,6 +99,13 @@ class _MomoBoxAppState extends ConsumerState<MomoBoxApp> {
     if (widget.enableMediaReconciliation) {
       Future<void>.microtask(_reconcileMedia);
     }
+    _syncScheduler.start();
+  }
+
+  @override
+  void dispose() {
+    _syncScheduler.dispose();
+    super.dispose();
   }
 
   Future<void> _reconcileMedia() async {

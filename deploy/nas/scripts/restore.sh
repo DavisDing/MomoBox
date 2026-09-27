@@ -6,6 +6,7 @@ PROGRAM=${0##*/}
 SCRIPT_DIR=$(CDPATH= cd -P "$(dirname "$0")" && pwd)
 NAS_DIR=$(CDPATH= cd -P "$SCRIPT_DIR/.." && pwd)
 COMPOSE_FILE=$NAS_DIR/compose.yaml
+LOCK_HELPER=$SCRIPT_DIR/deployment-lock.sh
 ASSUME_YES=0
 DUMP_FILE=
 BACKEND_WAS_RUNNING=0
@@ -72,6 +73,7 @@ done
     fail "a dump file is required"
 }
 [ -f "$COMPOSE_FILE" ] || fail "compose file not found: $COMPOSE_FILE"
+[ -f "$LOCK_HELPER" ] || fail "deployment lock helper not found: $LOCK_HELPER"
 [ -f "$DUMP_FILE" ] || fail "dump file not found: $DUMP_FILE"
 [ -r "$DUMP_FILE" ] || fail "dump file is not readable: $DUMP_FILE"
 [ -s "$DUMP_FILE" ] || fail "dump file is empty: $DUMP_FILE"
@@ -79,6 +81,23 @@ done
 # Resolve before changing services, and before a caller can change cwd context.
 DUMP_DIR=$(CDPATH= cd -P "$(dirname "$DUMP_FILE")" && pwd) || fail "cannot resolve dump directory"
 DUMP_FILE=$DUMP_DIR/$(basename "$DUMP_FILE")
+
+# Acquire the same lock used by update.sh and backup.sh before touching the
+# Compose project or database. A restore never runs concurrently with backup
+# or update.
+# shellcheck disable=SC1090
+. "$LOCK_HELPER"
+momo_deployment_lock_acquire || exit 1
+cleanup_lock() {
+    status=$?
+    momo_deployment_lock_release
+    trap - 0 HUP INT TERM
+    exit "$status"
+}
+trap cleanup_lock 0
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
     COMPOSE_KIND=docker
@@ -138,8 +157,10 @@ restart_backend() {
             [ "$status" -ne 0 ] || status=1
         fi
     fi
+    momo_deployment_lock_release
     exit "$status"
 }
+# Restore needs one EXIT handler to restart the backend and release the lock.
 trap restart_backend 0
 trap 'exit 129' HUP
 trap 'exit 130' INT

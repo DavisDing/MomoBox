@@ -9,7 +9,7 @@
 - 生产环境应通过 Go migration runner 执行迁移。runner 在 PostgreSQL 事务中获取 advisory transaction lock，维护 `schema_migrations`，按数字版本顺序只执行未应用文件，并校验 `version/name/checksum`。并发启动的后端不会同时执行迁移；失败会回滚并以非零退出码结束。
 - runner 负责事务边界，因此会去除迁移文件最外层的 `BEGIN;`/`COMMIT;`，避免嵌套事务。迁移文件中的 advisory lock 仍可保留，以兼容直接 bootstrap。
 - 已应用的版本必须视为不可变。后续结构变化新增 `0002_*.sql`，不要改写已经记录的 SQL。发现同版本 name 或 checksum 不一致时，runner 拒绝启动。checksum 使用迁移文件原始字节的 `sha256:<hex>`。
-- 该 SQL 文件包含历史 SQL-only bootstrap 的版本记录。runner 会在首次接管这个 legacy marker 时将其原子升级为文件实际 checksum；之后修改已应用文件会被拒绝。生产环境不要再直接用 `psql` 绕过 runner 执行迁移。
+- `0001` 包含历史 SQL-only bootstrap 的版本记录；runner 仅为这个已知文件提供一次性 legacy checksum 升级。`0002` 及以后不在 SQL 内写版本记录，交由 runner 记录文件实际 checksum。生产环境不要直接用 `psql` 绕过 runner 执行迁移。
 
 生产执行示例（在已启动的 PostgreSQL 上）：
 
@@ -17,7 +17,7 @@
 momo-backend migrate
 ```
 
-仅用于 SQL bootstrap/故障排查时，才直接执行迁移文件；直接执行会保留 SQL 文件中的 legacy checksum，首次由 runner 接管时会完成 checksum 标准化。
+仅历史 `0001` 的 SQL bootstrap 场景允许直接执行；`0002` 及以后必须由 runner 执行，否则不会写入 `schema_migrations`，也无法保证变更只执行一次。
 
 验证版本记录：
 

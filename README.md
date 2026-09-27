@@ -4,11 +4,11 @@
 
 ## 当前范围
 
-已实现并进入测试的单机能力：商品/批次入库、多批次库存、到期/临期/低库存提醒计划、FEFO 消耗、批次补充与报废、变动历史、采购清单、主题设置、日期计算、JSON 备份导入导出和本地通知调度；实时相机、拍照和相册条码识别；可选外部条码查询及本地缓存；商品/说明书图片、本地 OCR；以及用户自行配置兼容 OpenAI 服务后的 OCR 文本入库草稿与库存问答。
+已实现、验证待执行的单机能力：商品/批次入库、多批次库存、到期/临期/低库存提醒计划、FEFO 消耗、批次补充与报废、变动历史、采购清单、主题设置、日期计算、JSON 备份导入导出和本地通知调度；实时相机、拍照和相册条码识别；可选外部条码查询及本地缓存；商品/说明书图片、本地 OCR；以及用户自行配置兼容 OpenAI 服务后的 OCR 文本入库草稿与库存问答。
 
 条码查询和 AI 均不是本地核心流程的前置条件：外部查询失败、AI 未配置或请求失败时，仍可继续手动录入和管理库存。AI 草稿只会在用户确认后填入表单，正式入库仍需用户确认；OCR 文本发送前会再次征得确认，原图不会发送。发起库存问答时，问题、近期对话和当前本地库存/批次快照会发送至用户自己配置的 AI 服务，不包含原图。
 
-尚未实现：Flutter 客户端的 NAS/家庭账号同步接入、说明书外部链接/检索式问答、统计图表和社区共享数据。Go NAS 后端、PostgreSQL migration、Docker Compose、备份恢复和 GHCR 镜像发布流程已落地；真实 NAS/HA/Flutter 端到端联调仍按部署文档单独验收。
+已完成本轮前四阶段的代码接入：本地业务写入与同步 outbox 原子组合、应用启动/前台恢复/引擎可用和网络恢复时的 best-effort 调度、稳定 local workspace ID、bootstrap/snapshot、增量 push/pull、延迟冲突游标、远端冲突最小解决 UI，以及 NAS API/认证/家庭设备/同步网络层、Flutter NAS 账号状态、同步业务适配/Provider 组装、HA 客户端 Repository 与 HA 页面真实接入。说明书外部搜索、本地 OCR 片段问答、7/30/90 天统计图表、采购建议基础和 Home Assistant 耗材联动基础也已接入；社区共享数据仍未实现。测试、构建、验收、Docker、PostgreSQL、NAS/HA 实机及 Flutter 端到端联调按本轮要求跳过。
 
 ## 开发与验证
 
@@ -31,7 +31,7 @@
 当前自动发布范围包含 **Android APK/AAB** 与 NAS 后端 Docker 镜像。iOS 发布仍为后续工作：
 
 - **iOS**：CI 保留无签名构建验证；待确定 Bundle ID，并配置 Apple 证书、Provisioning Profile 和 App Store Connect 凭据后，再增加签名 IPA / TestFlight 发布。
-- **后端 Docker**：`backend/` 已提供实际 Go 后端与 Dockerfile。默认分支后端变更在通过 Go 测试、vet 与双架构 Buildx 构建后发布公开 GHCR 镜像 `ghcr.io/davisding/momobox-backend:latest`；正式产品 Release 同时发布 `vX.Y.Z` 标签。NAS 使用 `deploy/nas/scripts/update.sh` 按“备份 → 拉取 → migration → 启动”流程更新。
+- **后端 Docker**：`backend/` 已提供实际 Go 后端与 Dockerfile。默认分支后端变更在通过 Go 测试、vet 与双架构 Buildx 构建后发布公开 GHCR 的 `latest`/`sha-*` 镜像；正式产品 Release 同时发布 `vX.Y.Z` 标签。NAS 生产部署使用 `deploy/nas/scripts/update.sh` 按“备份 → 拉取 → migration → 启动”流程更新，并应在 `.env` 中固定到 `vX.Y.Z`、`sha-*` 或 digest，不使用 `latest` 作为默认值。
 
 ### 发布版本规则
 

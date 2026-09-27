@@ -3,7 +3,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../application/manual_qa_service.dart';
 import '../../domain/inventory/expiry_rules.dart';
 import '../../domain/models/inventory_models.dart';
 import '../../domain/models/recognition_models.dart';
@@ -74,6 +76,8 @@ class _ProductDetailBody extends ConsumerWidget {
         _ProductOverview(item: item),
         const SizedBox(height: 16),
         _ProductMediaSection(item: item),
+        const SizedBox(height: 12),
+        _ManualQaSection(item: item),
         const SizedBox(height: 16),
         FilledButton.icon(
           onPressed: fefoAvailableQuantity == 0
@@ -426,6 +430,274 @@ _BatchState _batchStatus(InventoryBatch batch) {
   };
 }
 
+class _ManualQaSection extends ConsumerStatefulWidget {
+  const _ManualQaSection({required this.item});
+
+  final InventoryItem item;
+
+  @override
+  ConsumerState<_ManualQaSection> createState() => _ManualQaSectionState();
+}
+
+class _ManualQaSectionState extends ConsumerState<_ManualQaSection> {
+  Future<void> _openQuestionDialog() async {
+    final controller = TextEditingController();
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => _ManualQaDialog(
+          productId: widget.item.id,
+          productName: widget.item.name,
+          questionController: controller,
+          service: ref.read(manualQaServiceProvider),
+        ),
+      );
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.menu_book_outlined, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('本地说明书问答', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 4),
+                  const Text('先在本机检索 OCR 文字；如确认使用 AI，只发送相关文字片段，不上传原图。'),
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: FilledButton.tonalIcon(
+                      onPressed: _openQuestionDialog,
+                      icon: const Icon(Icons.question_answer_outlined),
+                      label: const Text('询问说明书'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ManualQaDialog extends StatefulWidget {
+  const _ManualQaDialog({
+    required this.productId,
+    required this.productName,
+    required this.questionController,
+    required this.service,
+  });
+
+  final String productId;
+  final String productName;
+  final TextEditingController questionController;
+  final ManualQaService service;
+
+  @override
+  State<_ManualQaDialog> createState() => _ManualQaDialogState();
+}
+
+class _ManualQaDialogState extends State<_ManualQaDialog> {
+  ManualQaAnswer? _answer;
+  List<ManualQaSource> _sources = const [];
+  String? _error;
+  bool _loading = false;
+  bool _searched = false;
+
+  Future<void> _searchLocally() async {
+    final question = widget.questionController.text.trim();
+    if (question.isEmpty) {
+      setState(() => _error = '请输入想查询的说明书问题。');
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _error = null;
+      _searched = false;
+      _answer = null;
+    });
+    try {
+      final sources = await widget.service.search(productId: widget.productId, query: question);
+      if (!mounted) return;
+      setState(() {
+        _sources = sources;
+        _searched = true;
+        _loading = false;
+        _answer = sources.isEmpty
+            ? const ManualQaAnswer(
+                answer: '说明书中未提及：本地 OCR 文字中没有找到相关片段。建议打开原图或使用外部搜索核对。',
+                sources: [],
+              )
+            : null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = '本地检索失败：$error';
+      });
+    }
+  }
+
+  Future<void> _askConfiguredAi() async {
+    if (_sources.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('确认发送 OCR 片段？'),
+            content: const Text('将仅发送问题和本地检索到的 OCR 文字片段给你自行配置的 AI 服务，不会上传原图。是否继续？'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+              FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('继续询问')),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final answer = await widget.service.ask(
+        productId: widget.productId,
+        question: widget.questionController.text.trim(),
+      );
+      if (!mounted) return;
+      setState(() {
+        _answer = answer;
+        _sources = answer.sources;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = 'AI 问答未完成：$error。仍可查看下方本地来源。';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: Text('询问 ${widget.productName} 的说明书'),
+      content: SizedBox(
+        width: 520,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: widget.questionController,
+                maxLines: 3,
+                maxLength: 500,
+                decoration: const InputDecoration(
+                  labelText: '问题',
+                  hintText: '例如：这件商品如何清洁？',
+                  border: OutlineInputBorder(),
+                ),
+                onSubmitted: (_) => _searchLocally(),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  FilledButton.icon(
+                    onPressed: _loading ? null : _searchLocally,
+                    icon: const Icon(Icons.search),
+                    label: const Text('先查本地 OCR'),
+                  ),
+                  if (_sources.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: _loading ? null : _askConfiguredAi,
+                      icon: const Icon(Icons.auto_awesome_outlined),
+                      label: const Text('让已配置 AI 回答'),
+                    ),
+                  ],
+                ],
+              ),
+              if (_loading) ...[
+                const SizedBox(height: 14),
+                const LinearProgressIndicator(),
+              ],
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
+              ],
+              if (_searched && _sources.isEmpty && !_loading) ...[
+                const SizedBox(height: 12),
+                _QaAnswerBox(answer: _answer?.answer ?? '说明书中未提及。'),
+              ],
+              if (_answer != null && _answer!.answer.isNotEmpty && _sources.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _QaAnswerBox(answer: _answer!.answer),
+              ],
+              if (_sources.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                Text('来源（本地 OCR）', style: theme.textTheme.titleSmall),
+                const SizedBox(height: 4),
+                ..._sources.map((source) => _QaSourceTile(source: source)),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('关闭')),
+      ],
+    );
+  }
+}
+
+class _QaAnswerBox extends StatelessWidget {
+  const _QaAnswerBox({required this.answer});
+
+  final String answer;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: SelectableText(answer),
+        ),
+      );
+}
+
+class _QaSourceTile extends StatelessWidget {
+  const _QaSourceTile({required this.source});
+
+  final ManualQaSource source;
+
+  @override
+  Widget build(BuildContext context) => ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(bottom: 8),
+        title: Text(source.label),
+        subtitle: Text('来源 ID：${source.assetId}'),
+        children: [Align(alignment: Alignment.centerLeft, child: SelectableText(source.snippet))],
+      );
+}
+
 class _MovementHistory extends ConsumerWidget {
   const _MovementHistory({required this.productId});
 
@@ -588,6 +860,26 @@ String _dateText(DateTime date) =>
 String _dateTimeText(DateTime value) =>
     '${_dateText(value)} ${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
 
+
+Uri _manualSearchUri(InventoryItem item) {
+  final terms = <String>[
+    if (item.barcode?.trim().isNotEmpty == true) item.barcode!.trim(),
+    item.name.trim(),
+    if (item.brand?.trim().isNotEmpty == true) item.brand!.trim(),
+    if (item.specification?.trim().isNotEmpty == true) item.specification!.trim(),
+    '说明书',
+  ];
+  return Uri.https('duckduckgo.com', '/', {'q': terms.join(' ')});
+}
+
+Future<void> _openManualSearch(BuildContext context, InventoryItem item) async {
+  final uri = _manualSearchUri(item);
+  final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+  if (!opened && context.mounted) {
+    _showMessage(context, '未找到可用的系统浏览器，无法打开说明书搜索。');
+  }
+}
+
 void _showMessage(BuildContext context, String message) {
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
@@ -722,6 +1014,7 @@ class _ProductMediaSectionState extends ConsumerState<_ProductMediaSection> {
               children: [
                 OutlinedButton.icon(onPressed: _addInstructionImage, icon: const Icon(Icons.description_outlined), label: const Text('添加说明书图片')),
                 FilledButton.tonalIcon(onPressed: _ocrRunning ? null : () => _ocr(assets), icon: _ocrRunning ? const SizedBox.square(dimension: 14, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.document_scanner_outlined), label: Text(_ocrRunning ? '识别中…' : '本地 OCR')),
+                OutlinedButton.icon(onPressed: () => _openManualSearch(context, widget.item), icon: const Icon(Icons.open_in_browser_outlined), label: const Text('外部搜索说明书')),
               ],
             ),
             for (final asset in assets.where((asset) => asset.hasOcrText)) ...[

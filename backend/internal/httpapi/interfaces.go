@@ -57,6 +57,9 @@ type SyncService interface {
 	ConfirmBootstrap(context.Context, syncservice.BootstrapConfirmRequest) (syncservice.BootstrapConfirmResponse, error)
 	Pull(context.Context, syncservice.PullRequest) (syncservice.PullResponse, error)
 	Push(context.Context, syncservice.PushRequest) (syncservice.PushResponse, error)
+	ListConflicts(context.Context, syncservice.ConflictListRequest) (syncservice.ConflictListResponse, error)
+	GetConflict(context.Context, string, string) (syncservice.SyncConflict, error)
+	ResolveConflict(context.Context, syncservice.ConflictResolveRequest) (syncservice.ConflictResolveResponse, error)
 }
 
 type HomeAssistantService interface {
@@ -71,6 +74,15 @@ type HomeAssistantService interface {
 	ExecuteCommand(context.Context, homeassistant.Actor, string, string, homeassistant.CommandRequest) (homeassistant.CommandDTO, error)
 	ListPermissions(context.Context, homeassistant.Actor) ([]homeassistant.PermissionDTO, error)
 	UpdatePermission(context.Context, homeassistant.Actor, homeassistant.PermissionRequest) (homeassistant.PermissionDTO, error)
+	ListConsumableGroups(context.Context, homeassistant.Actor) ([]homeassistant.ConsumableGroup, error)
+	SaveConsumableGroup(context.Context, homeassistant.Actor, homeassistant.ConsumableGroup) (homeassistant.ConsumableGroup, error)
+	ListConsumableRecipes(context.Context, homeassistant.Actor) ([]homeassistant.ConsumableRecipe, error)
+	SaveConsumableRecipe(context.Context, homeassistant.Actor, homeassistant.ConsumableRecipe) (homeassistant.ConsumableRecipe, error)
+	ListLinkageRules(context.Context, homeassistant.Actor) ([]homeassistant.LinkageRule, error)
+	SaveLinkageRule(context.Context, homeassistant.Actor, homeassistant.LinkageRule) (homeassistant.LinkageRule, error)
+	ListLinkageSuggestions(context.Context, homeassistant.Actor, homeassistant.LinkageSuggestionStatus) ([]homeassistant.LinkageSuggestion, error)
+	ProcessHAEvent(context.Context, homeassistant.Actor, homeassistant.HAEvent) (homeassistant.EventProcessResult, error)
+	ResolveLinkageSuggestion(context.Context, homeassistant.Actor, string, homeassistant.SuggestionDecision) (homeassistant.LinkageSuggestion, error)
 }
 
 // Config contains adapter-only limits and clock behavior. It intentionally does

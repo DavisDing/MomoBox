@@ -6,6 +6,7 @@ PROGRAM=${0##*/}
 SCRIPT_DIR=$(CDPATH= cd -P "$(dirname "$0")" && pwd)
 NAS_DIR=$(CDPATH= cd -P "$SCRIPT_DIR/.." && pwd)
 COMPOSE_FILE=$NAS_DIR/compose.yaml
+LOCK_HELPER=$SCRIPT_DIR/deployment-lock.sh
 DEFAULT_OUTPUT_DIR=$NAS_DIR/backups
 OUTPUT_DIR=$DEFAULT_OUTPUT_DIR
 
@@ -56,6 +57,22 @@ while [ "$#" -gt 0 ]; do
 done
 
 [ -f "$COMPOSE_FILE" ] || fail "compose file not found: $COMPOSE_FILE"
+[ -f "$LOCK_HELPER" ] || fail "deployment lock helper not found: $LOCK_HELPER"
+# shellcheck disable=SC1090
+. "$LOCK_HELPER"
+
+momo_deployment_lock_acquire || exit 1
+cleanup_lock() {
+    status=$?
+    momo_deployment_lock_release
+    trap - 0 HUP INT TERM
+    exit "$status"
+}
+trap cleanup_lock 0
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 command -v mktemp >/dev/null 2>&1 || fail "mktemp is required"
 command -v date >/dev/null 2>&1 || fail "date is required"
 
@@ -101,10 +118,19 @@ chmod 600 "$TEMP_PATH" || {
     fail "cannot secure temporary backup file"
 }
 
-cleanup() {
+cleanup_temp() {
     rm -f "$TEMP_PATH"
 }
-trap cleanup 0
+# The EXIT trap installed above releases the shared deployment lock. Keep the
+# temporary dump cleanup in the same handler so both paths run exactly once.
+cleanup_lock_and_temp() {
+    status=$?
+    cleanup_temp
+    momo_deployment_lock_release
+    trap - 0 HUP INT TERM
+    exit "$status"
+}
+trap cleanup_lock_and_temp 0
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
@@ -129,6 +155,5 @@ fi
 # mv is atomic because the temporary and final files are in the same directory.
 [ ! -e "$FINAL_PATH" ] || fail "refusing to overwrite existing file: $FINAL_PATH"
 mv "$TEMP_PATH" "$FINAL_PATH" || fail "cannot finalize backup"
-trap - 0 HUP INT TERM
 
 printf '%s\n' "$FINAL_PATH"

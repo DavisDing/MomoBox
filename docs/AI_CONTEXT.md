@@ -10,7 +10,7 @@
 
 - Frontend：Flutter / Dart
 - NAS backend：Go 1.22 + PostgreSQL 16；独立 Go module 位于 `backend/`
-- NAS deployment：生产 Compose 从公开 GHCR 拉取 `ghcr.io/davisding/momobox-backend:latest`；本地开发可通过 override 以 `backend/` 为独立 Docker build context；Compose 仅包含 `momo-backend` 与 `postgres`
+- NAS deployment：生产 Compose 从公开 GHCR 拉取 `.env` 明确指定的固定版本标签或 digest；本地开发可通过 override 以 `backend/` 为独立 Docker build context；Compose 仅包含 `momo-backend` 与 `postgres`
 - State：flutter_riverpod
 - Routing：go_router
 - Local database：Drift + SQLite
@@ -74,13 +74,13 @@ Repositories & External Connectors
 
 ## 6. 当前实现状态
 
-已实现并进入测试：商品/批次、库存列表和筛选、默认 FEFO 与指定批次消耗、自定义数量补充、报废二次确认、采购清单、历史、日期计算、主题、JSON 备份、本地提醒调度计划、提醒单条/批量确认及其备份恢复；实时相机/拍照/相册条码识别、可选外部条码查询与缓存、商品和说明书图片、本地 OCR、用户自配 AI 的 OCR 草稿解析、库存问答和本地用量记录。
+已实现、验证待执行：商品/批次、库存列表和筛选、默认 FEFO 与指定批次消耗、自定义数量补充、报废二次确认、采购清单、历史、日期计算、主题、JSON 备份、本地提醒调度计划、提醒单条/批量确认及其备份恢复；实时相机/拍照/相册条码识别、可选外部条码查询与缓存、商品和说明书图片、本地 OCR、用户自配 AI 的 OCR 草稿解析、库存问答和本地用量记录。
 
 交互与维护规则：Android 系统返回优先关闭弹窗/返回子页，其他一级页回首页；首页首次返回提示“再按一次退出软件”，2 秒内再次返回才退出。一键清理须确认，仅清理条码缓存、AI 用量日志和无用图片；保留业务数据、服务配置、备份、在用图片及 1 天内的临时入库图片。统一工作流的发布包节点将相同的版本/构建号同时注入原生包和“关于”页；默认分支每次推送递增 patch 版本，并发推送使用运行序号避免标签冲突，重跑同一提交复用已有标签；本地自定义版本的编译参数见 README。
 
-NAS 阶段已实现 Go 后端基础能力：家庭账号与成员、同步设备、增量同步、库存命令、PostgreSQL migration、Home Assistant 外部连接/发现/实体权限/typed control，以及独立 Dockerfile、双服务 Compose、PostgreSQL 备份恢复与安全更新脚本。GitHub Actions 会在默认分支后端变更通过 Go 测试、vet 和双架构 Buildx 构建后发布公开 GHCR `latest`/`sha-<commit>` 镜像，并在正式产品 Release 发布 `vX.Y.Z` 镜像；首次发布后仍需在 GitHub Packages 将该包设为 Public。当前环境已通过 Go 测试、vet、Linux 二进制构建和静态契约检查；因本机无 Docker/PostgreSQL 客户端，镜像构建、Compose 启动、真实 migration/备份恢复、HA 实机联调及 Flutter 端到端联调仍为 `NOT_EXECUTED`。
+NAS 阶段已实现 Go 后端基础能力：家庭账号与成员、同步设备、增量同步、库存命令、PostgreSQL migration、Home Assistant 外部连接/发现/实体权限/typed control，以及独立 Dockerfile、双服务 Compose、PostgreSQL 备份恢复与安全更新脚本。GitHub Actions 会在默认分支后端变更通过 Go 测试、vet 和双架构 Buildx 构建后发布公开 GHCR `latest`/`sha-<commit>` 镜像，并在正式产品 Release 发布 `vX.Y.Z` 镜像；NAS 生产部署必须在 `.env` 中固定到版本标签、`sha-<commit>` 或 digest，不使用 `latest` 作为默认部署值；首次发布后仍需在 GitHub Packages 将该包设为 Public。当前环境已通过 Go 测试、vet、Linux 二进制构建和静态契约检查；因本机无 Docker/PostgreSQL 客户端，镜像构建、Compose 启动、真实 migration/备份恢复、HA 实机联调及 Flutter 端到端联调仍为 `NOT_EXECUTED`。
 
-仍未实现：说明书外部链接或检索式问答、统计图表、社区共享数据。
+说明书外部搜索和基于本地 OCR 片段的问答已接入商品详情页；7/30/90 天统计服务与图表页面、采购建议基础、远端冲突 API 与最小解决 UI 已落地。社区共享数据仍未实现；snapshot 跨实体非全事务，部分实体同步与真实 NAS/HA/端到端联调仍需后续验证。
 
 ## 7. 开发规则
 
@@ -113,4 +113,12 @@ GitHub Actions 使用单一 `.github/workflows/pipeline.yml` 链路，并执行�
 
 2026-09-22 更新：GitHub Actions 已合并为单一链路 `prepare → Flutter/iOS/后端验证 → 发布包构建 → publish`；默认分支每次推送都会创建或更新 GitHub Release，PR/其他分支只验证；验证或打包失败会阻止发布。
 
-2026-09-22 更新：AI 会话改为应用级状态并持久化至现有设置表，支持关闭弹窗后记录在途回复及重启恢复。AI 库存建议默认只读，可在模型配置页授权消耗/补充/报废，逐次确认后复用真实库存服务；不支持任意模型工具或自动执行。默认 AI 超时为 60 秒；配置新增独立可用性测试；用量明细支持分页（日志仍最多 500 条）。首页已合并为一个入库入口和右侧三行服务状态。Flutter NAS/HA 仍是未接入的预览页，后端已有实现不代表移动端可控制设备；开放设备权限前需确认并实现真实认证与实体控制链路。
+2026-09-25 更新：AI 会话改为应用级状态并持久化至现有设置表，支持关闭弹窗后记录在途回复及重启恢复。AI 库存建议默认只读，可在模型配置页授权消耗/补充/报废，逐次确认后复用真实库存服务；不支持任意模型工具或自动执行。默认 AI 超时为 60 秒；配置新增独立可用性测试；用量明细支持分页（日志仍最多 500 条）。首页已合并为一个入库入口和右侧三行服务状态。NAS 认证、家庭/设备、同步网络层、Flutter 账号状态、同步业务适配/Provider 组装、HA 客户端 Repository 和 HA 页面真实接入已实现；本地业务写入与 outbox 原子组合、自动同步调度、同步设置/冲突最小 UI 已落地，网络状态监听、恢复 debounce 与自动重试调度已接入；远端冲突解决闭环及真实环境联调仍未完成。在真实请求联调前不得把页面显示为在线或把命令显示为已执行。
+
+2026-09-26 更新：同步相关 Flutter 最小真实入口已落地，但仍处于未验证状态。`localWorkspaceIdProvider` 使用现有本地设置表中的 `sync_local_workspace_id` 持久化稳定的 local workspace ID；首次缺失时生成一次，后续启动复用，并由 `syncEngineProvider` 传入同步引擎，不能在每次同步时临时生成。同步状态、bootstrap 状态、outbox 与 open conflict 记录由现有本地数据库/repository 保存，冲突记录写入包含去重保护。
+
+同步设置入口已从设置页打开 `SyncSettingsScreen`，可展示同步范围、本地 workspace ID、bootstrap/同步状态、最近成功与错误，并提供手动同步。首次连接区会读取服务端返回的 bootstrap 结果和可选模式（加入并合并、创建新的家庭数据、仅保留本地数据等），用户明确选择后才推进对应状态；bootstrap snapshot 会暂存并在后续同步前应用，确认本身不伪装成已完成的数据合并。冲突区同时读取本地 open conflicts 和远端 open conflicts；“保留远端”以及普通实体的“保留本地”先调用远端 resolution API，只有服务端接受后才更新本地记录。库存与 Home Assistant 冲突不伪造普通 `manual_merge`/`keep_local`。远端失败时本地冲突保持不变。此段描述的是 2026-09-26 的基线，当前状态以 2026-09-27 更新为准。
+
+2026-09-27 更新：按确认范围完成前四阶段主要代码接入。远端冲突最小解决 UI 已接入 NAS resolution API；普通实体支持 keep_local，库存与 Home Assistant 冲突不伪造普通 manual_merge/keep_local；bootstrap snapshot 暂存、延迟冲突游标、outbox 依赖变体、7/30/90 天统计图表、采购建议基础和 Home Assistant 耗材联动基础已补齐。社区共享数据仍未实现；本轮测试、构建、验收、Docker、PostgreSQL、NAS/HA 实机及端到端联调均跳过。
+
+自动调度目前覆盖 App 启动、回到前台、同步引擎/provider 可用以及网络恢复时的 best-effort 触发，并合并并发请求；网络恢复使用开源 `connectivity_plus` 监听、去重和 debounce，`onNetworkAvailable()` 保留为手动/兼容触发入口。当前工作区未运行 Flutter 测试、`flutter analyze`、构建或真实 NAS/HA/端到端联调，因此不得把同步、bootstrap、冲突处理或在线状态标记为已验证成功。

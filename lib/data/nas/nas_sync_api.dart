@@ -62,10 +62,16 @@ class NasSyncApi {
     required String mode,
     required String deviceId,
     String? localWorkspaceId,
+    int? snapshotCursor,
+    String? checkpoint,
   }) async {
     final body = <String, dynamic>{'mode': mode, 'device_id': deviceId};
     if (localWorkspaceId != null && localWorkspaceId.trim().isNotEmpty) {
       body['local_workspace_id'] = localWorkspaceId;
+    }
+    if (snapshotCursor != null) body['snapshot_cursor'] = snapshotCursor;
+    if (checkpoint != null && checkpoint.trim().isNotEmpty) {
+      body['checkpoint'] = checkpoint;
     }
     final json = await _sendJson(
       method: 'POST',
@@ -127,6 +133,71 @@ class NasSyncApi {
       },
     );
     return _parse(json, NasSyncPullResponse.fromJson);
+  }
+
+  Future<NasSyncConflictListResponse> listConflicts({
+    required String deviceId,
+    String? status,
+    int? limit,
+    int offset = 0,
+  }) async {
+    _requireNonEmpty(deviceId, 'device_id');
+    if (limit != null && (limit < 1 || limit > 200)) {
+      throw NasApiError.invalidResponse(
+        const FormatException('limit must be between 1 and 200'),
+      );
+    }
+    if (offset < 0) {
+      throw NasApiError.invalidResponse(
+        const FormatException('offset must be non-negative'),
+      );
+    }
+    final queryParameters = <String, String>{'device_id': deviceId};
+    final normalizedStatus = status?.trim();
+    if (normalizedStatus != null && normalizedStatus.isNotEmpty) {
+      queryParameters['status'] = normalizedStatus;
+    }
+    if (limit != null) queryParameters['limit'] = '$limit';
+    if (offset != 0) queryParameters['offset'] = '$offset';
+    final json = await _sendJson(
+      method: 'GET',
+      path: '/sync/conflicts',
+      queryParameters: queryParameters,
+    );
+    return _parse(json, NasSyncConflictListResponse.fromJson);
+  }
+
+  Future<NasSyncConflictDetail> getConflict({
+    required String deviceId,
+    required String conflictId,
+  }) async {
+    _requireNonEmpty(deviceId, 'device_id');
+    _requireNonEmpty(conflictId, 'conflict_id');
+    final json = await _sendJson(
+      method: 'GET',
+      path: '/sync/conflicts/${Uri.encodeComponent(conflictId)}',
+      queryParameters: {'device_id': deviceId},
+    );
+    return _parse(json, NasSyncConflictDetail.fromJson);
+  }
+
+  Future<NasSyncConflictResolveResponse> resolveConflict(
+    NasSyncConflictResolveRequest request,
+  ) async {
+    _requireNonEmpty(request.deviceId, 'device_id');
+    _requireNonEmpty(request.conflictId, 'conflict_id');
+    if (request.expectedVersion < 0) {
+      throw NasApiError.invalidResponse(
+        const FormatException('expected_version must be non-negative'),
+      );
+    }
+    final json = await _sendJson(
+      method: 'POST',
+      path:
+          '/sync/conflicts/${Uri.encodeComponent(request.conflictId)}/resolve',
+      body: request.toJson(),
+    );
+    return _parse(json, NasSyncConflictResolveResponse.fromJson);
   }
 
   Future<Map<String, dynamic>> _sendJson({
@@ -230,6 +301,14 @@ class NasSyncApi {
     } on TypeError catch (error) {
       throw NasApiError.invalidResponse(error);
     }
+  }
+}
+
+void _requireNonEmpty(String value, String field) {
+  if (value.trim().isEmpty) {
+    throw NasApiError.invalidResponse(
+      FormatException('$field must be a non-empty string'),
+    );
   }
 }
 

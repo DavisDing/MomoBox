@@ -107,6 +107,98 @@ class NasHomeAssistantApi {
     return NasHaCommandResult.fromJson(json);
   }
 
+
+
+  Future<List<NasHaConsumableGroup>> listConsumableGroups() async {
+    final json = await _client.requestJson(
+      method: 'GET',
+      path: '/home-assistant/consumable-groups',
+    );
+    return _parseEnvelopeList(json, 'groups', NasHaConsumableGroup.fromJson);
+  }
+
+  Future<NasHaConsumableGroup> saveConsumableGroup(
+    NasHaConsumableGroup group,
+  ) async {
+    final json = await _client.requestJson(
+      method: group.id.isEmpty ? 'POST' : 'PUT',
+      path: group.id.isEmpty
+          ? '/home-assistant/consumable-groups'
+          : '/home-assistant/consumable-groups/${_pathSegment(group.id)}',
+      body: group.toJson(),
+    );
+    return NasHaConsumableGroup.fromJson(json['group'] ?? json);
+  }
+
+  Future<List<NasHaConsumableRecipe>> listConsumableRecipes() async {
+    final json = await _client.requestJson(
+      method: 'GET',
+      path: '/home-assistant/consumable-recipes',
+    );
+    return _parseEnvelopeList(json, 'recipes', NasHaConsumableRecipe.fromJson);
+  }
+
+  Future<NasHaConsumableRecipe> saveConsumableRecipe(
+    NasHaConsumableRecipe recipe,
+  ) async {
+    final json = await _client.requestJson(
+      method: recipe.id.isEmpty ? 'POST' : 'PUT',
+      path: recipe.id.isEmpty
+          ? '/home-assistant/consumable-recipes'
+          : '/home-assistant/consumable-recipes/${_pathSegment(recipe.id)}',
+      body: recipe.toJson(),
+    );
+    return NasHaConsumableRecipe.fromJson(json['recipe'] ?? json);
+  }
+
+  Future<List<NasHaLinkageRule>> listLinkageRules() async {
+    final json = await _client.requestJson(
+      method: 'GET',
+      path: '/home-assistant/linkage-rules',
+    );
+    return _parseEnvelopeList(json, 'rules', NasHaLinkageRule.fromJson);
+  }
+
+  Future<NasHaLinkageRule> saveLinkageRule(NasHaLinkageRule rule) async {
+    final json = await _client.requestJson(
+      method: rule.id.isEmpty ? 'POST' : 'PUT',
+      path: rule.id.isEmpty
+          ? '/home-assistant/linkage-rules'
+          : '/home-assistant/linkage-rules/${_pathSegment(rule.id)}',
+      body: rule.toJson(),
+    );
+    return NasHaLinkageRule.fromJson(json['rule'] ?? json);
+  }
+
+  Future<List<NasHaLinkageSuggestion>> listLinkageSuggestions({
+    NasHaLinkageSuggestionStatus? status,
+  }) async {
+    final json = await _client.requestJson(
+      method: 'GET',
+      path: '/home-assistant/linkage-suggestions',
+      queryParameters: {
+        if (status != null) 'status': _linkageSuggestionStatusValue(status),
+      },
+    );
+    return _parseEnvelopeList(
+      json,
+      'suggestions',
+      NasHaLinkageSuggestion.fromJson,
+    );
+  }
+
+  Future<NasHaLinkageSuggestion> resolveLinkageSuggestion({
+    required String suggestionId,
+    required NasHaSuggestionDecision decision,
+  }) async {
+    final json = await _client.requestJson(
+      method: 'POST',
+      path: '/home-assistant/linkage-suggestions/${_pathSegment(suggestionId)}/resolve',
+      body: {'decision': nasHaSuggestionDecisionValue(decision)},
+    );
+    return NasHaLinkageSuggestion.fromJson(json['suggestion'] ?? json);
+  }
+
   Future<List<NasHaEntityPermission>> listPermissions() async {
     final json = await _client.requestJson(
       method: 'GET',
@@ -130,6 +222,31 @@ class NasHomeAssistantApi {
 List<T> _parseList<T>(Object? value, T Function(Object?) parser) {
   if (value is! List) throw const FormatException('Expected a JSON array');
   return List<T>.unmodifiable(value.map(parser));
+}
+
+List<T> _parseEnvelopeList<T>(
+  Map<String, dynamic> json,
+  String key,
+  T Function(Object?) parser,
+) {
+  final nested = json['data'];
+  final value = json[key] ?? (nested is Map ? nested[key] : null);
+  return _parseList(value, parser);
+}
+
+String _linkageSuggestionStatusValue(NasHaLinkageSuggestionStatus value) {
+  switch (value) {
+    case NasHaLinkageSuggestionStatus.pending:
+      return 'pending';
+    case NasHaLinkageSuggestionStatus.deducted:
+      return 'deducted';
+    case NasHaLinkageSuggestionStatus.ignored:
+      return 'ignored';
+    case NasHaLinkageSuggestionStatus.insufficientStock:
+      return 'insufficient_stock';
+    case NasHaLinkageSuggestionStatus.unknown:
+      return 'unknown';
+  }
 }
 
 String _pathSegment(String value) => Uri.encodeComponent(value);

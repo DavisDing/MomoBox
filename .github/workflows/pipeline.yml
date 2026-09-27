@@ -9,6 +9,14 @@ on:
 permissions:
   contents: read
 
+# Serialize runs for the same ref. In particular, this keeps two pushes to
+# the default branch from calculating the same first release before the first
+# workflow has created its tag and GitHub Release. Do not cancel an in-flight
+# release: it may already have published an image or package asset.
+concurrency:
+  group: momobox-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   prepare:
     name: Prepare pipeline
@@ -103,7 +111,7 @@ jobs:
 
           echo "Release required: $release_required"
           echo "Backend changed: $backend_changed"
-          echo "Publish backend latest: $backend_latest_required"
+          echo "Publish mutable backend alias: $backend_latest_required"
 
   flutter-verify:
     name: Flutter analyze, test and Android debug build

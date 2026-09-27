@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import '../widgets/app_feedback.dart';
 
 import '../../app/momo_theme.dart';
-import '../../domain/models/inventory_models.dart';
 import '../../domain/models/smart_home_models.dart';
 import '../controllers/providers.dart';
 import '../controllers/smart_home_controller.dart';
@@ -55,6 +54,8 @@ class SmartHomeScreen extends ConsumerWidget {
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  if (homeState.message != null || homeState.commandError != null || homeState.linkageError != null)
+                    _buildStateNotice(context, homeState),
                   // 1. 场景快捷区
                   _buildSectionHeader(
                     context,
@@ -96,11 +97,34 @@ class SmartHomeScreen extends ConsumerWidget {
     );
   }
 
+  Widget _buildStateNotice(BuildContext context, SmartHomeState state) {
+    final error = state.commandError ?? state.linkageError;
+    final text = error ?? state.message!;
+    final isError = error != null || state.haStatus == HaConnectionStatus.offline;
+    final color = isError ? Colors.red : Colors.amber.shade800;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      color: color.withValues(alpha: 0.08),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(isError ? Icons.error_outline : Icons.info_outline, size: 20, color: color),
+            const SizedBox(width: 8),
+            Expanded(child: Text(text, style: TextStyle(fontSize: 12, color: color))),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildHaBadge(BuildContext context, HaConnectionStatus status) {
     final (label, color) = switch (status) {
       HaConnectionStatus.online => ('HA 已连接', Colors.green),
       HaConnectionStatus.syncing => ('同步中', Colors.blue),
       HaConnectionStatus.offline => ('HA 离线', Colors.orange),
+      HaConnectionStatus.stale => ('HA 状态过期', Colors.amber.shade800),
       HaConnectionStatus.unconfigured => ('未配置', Colors.grey),
     };
 
@@ -135,10 +159,10 @@ class SmartHomeScreen extends ConsumerWidget {
           children: [
             const Icon(Icons.hub_outlined, size: 64, color: Colors.grey),
             const SizedBox(height: 16),
-            const Text('Home Assistant 尚未支持', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text('Home Assistant 尚未配置', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             const Text(
-              '当前为单机版本，尚未实现 NAS 和 Home Assistant 接入。配置页面仅为规划预览，不会连接设备或扣减耗材。',
+              '当前没有可用的 NAS/ Home Assistant 集成。请先完成真实连接配置；未连接时不会展示虚假设备或执行控制。',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, color: Colors.grey),
             ),
@@ -146,7 +170,7 @@ class SmartHomeScreen extends ConsumerWidget {
             FilledButton.icon(
               onPressed: () => context.push('/settings'),
               icon: const Icon(Icons.settings),
-              label: const Text('查看规划配置'),
+              label: const Text('打开连接配置'),
             ),
           ],
         ),
@@ -276,12 +300,15 @@ class SmartHomeScreen extends ConsumerWidget {
   ) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-
+    final controller = ref.read(smartHomeControllerProvider.notifier);
     if (logs.isEmpty) {
       return Card(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Text('暂无耗材联动事件', style: theme.textTheme.bodySmall),
+          child: Text(
+            '暂无耗材联动建议。建议、库存扣减和采购提示均由 NAS 服务端返回。',
+            style: theme.textTheme.bodySmall,
+          ),
         ),
       );
     }
@@ -293,17 +320,27 @@ class SmartHomeScreen extends ConsumerWidget {
           children: logs.map((log) {
             final isPending = log.status == ConsumableActionStatus.pending;
             final isDeducted = log.status == ConsumableActionStatus.deducted;
+            final isInsufficient = log.status == ConsumableActionStatus.insufficientStock;
+            final isActing = ref.read(smartHomeControllerProvider).linkageActionId == log.id;
+            final statusColor = isPending
+                ? Colors.amber.shade800
+                : (isDeducted ? Colors.green : (isInsufficient ? Colors.orange : Colors.grey));
+            final statusLabel = isPending
+                ? '待确认'
+                : (isDeducted
+                    ? '已扣减'
+                    : (isInsufficient ? '库存不足' : '已忽略'));
 
             return Container(
               margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: isPending
-                    ? (isDark ? Colors.amber.withValues(alpha: 0.1) : Colors.amber.withValues(alpha: 0.08))
+                color: isPending || isInsufficient
+                    ? (isDark ? statusColor.withValues(alpha: 0.1) : statusColor.withValues(alpha: 0.08))
                     : (isDark ? Colors.white.withValues(alpha: 0.02) : Colors.grey.withValues(alpha: 0.05)),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: isPending ? Colors.amber.withValues(alpha: 0.3) : Colors.transparent,
+                  color: isPending || isInsufficient ? statusColor.withValues(alpha: 0.3) : Colors.transparent,
                 ),
               ),
               child: Column(
@@ -312,8 +349,10 @@ class SmartHomeScreen extends ConsumerWidget {
                   Row(
                     children: [
                       Icon(
-                        isPending ? Icons.pending_actions_rounded : Icons.check_circle_outline,
-                        color: isPending ? Colors.amber.shade800 : Colors.green,
+                        isInsufficient
+                            ? Icons.inventory_2_outlined
+                            : (isPending ? Icons.pending_actions_rounded : Icons.check_circle_outline),
+                        color: statusColor,
                         size: 18,
                       ),
                       const SizedBox(width: 8),
@@ -326,16 +365,12 @@ class SmartHomeScreen extends ConsumerWidget {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: (isPending ? Colors.amber : (isDeducted ? Colors.green : Colors.grey)).withValues(alpha: 0.15),
+                          color: statusColor.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
-                          isPending ? '待确认' : (isDeducted ? '已自动扣减' : '已忽略'),
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: isPending ? Colors.amber.shade900 : (isDeducted ? Colors.green : Colors.grey),
-                          ),
+                          statusLabel,
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: statusColor),
                         ),
                       ),
                     ],
@@ -346,27 +381,47 @@ class SmartHomeScreen extends ConsumerWidget {
                     style: const TextStyle(fontSize: 11, color: Colors.grey),
                   ),
                   const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Text(
-                        '耗材建议：${log.consumableName} × ${log.quantity} ${log.unit}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: palette.primary,
+                  Text(
+                    '耗材建议：${log.consumableName} × ${log.quantity} ${log.unit}',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: palette.primary),
+                  ),
+                  if (isInsufficient && log.purchaseSuggestions.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text('库存不足，NAS 已生成采购建议：', style: TextStyle(fontSize: 11, color: statusColor)),
+                    const SizedBox(height: 4),
+                    ...log.purchaseSuggestions.map(
+                      (item) => Padding(
+                        padding: const EdgeInsets.only(bottom: 2),
+                        child: Text(
+                          '• ${item.productName} × ${item.quantity} ${item.unit}',
+                          style: const TextStyle(fontSize: 11),
                         ),
                       ),
-                      const Spacer(),
-                      if (isPending) ...[
+                    ),
+                  ],
+                  if (isPending) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
                         OutlinedButton(
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                             minimumSize: Size.zero,
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
-                          onPressed: () {
-                            ref.read(smartHomeControllerProvider.notifier).ignoreConsumableLog(log.id);
-                          },
+                          onPressed: isActing
+                              ? null
+                              : () async {
+                                  await controller.ignoreConsumableLog(log.id);
+                                  if (context.mounted) {
+                                    final current = ref.read(smartHomeControllerProvider);
+                                    showAppSnackBar(
+                                      context,
+                                      SnackBar(content: Text(current.commandError ?? '已忽略该耗材建议。')),
+                                    );
+                                  }
+                                },
                           child: const Text('忽略', style: TextStyle(fontSize: 11)),
                         ),
                         const SizedBox(width: 8),
@@ -376,14 +431,25 @@ class SmartHomeScreen extends ConsumerWidget {
                             minimumSize: Size.zero,
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
-                          onPressed: () async {
-                            await _handleConfirmConsumableWithValidation(context, ref, log);
-                          },
-                          child: const Text('确认扣减', style: TextStyle(fontSize: 11)),
+                          onPressed: isActing
+                              ? null
+                              : () async {
+                                  await controller.confirmConsumableLog(log.id);
+                                  if (context.mounted) {
+                                    final current = ref.read(smartHomeControllerProvider);
+                                    showAppSnackBar(
+                                      context,
+                                      SnackBar(content: Text(current.commandError ?? '已提交 NAS 服务端处理。')),
+                                    );
+                                  }
+                                },
+                          child: isActing
+                              ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Text('确认扣减', style: TextStyle(fontSize: 11)),
                         ),
                       ],
-                    ],
-                  ),
+                    ),
+                  ],
                 ],
               ),
             );
@@ -391,102 +457,6 @@ class SmartHomeScreen extends ConsumerWidget {
         ),
       ),
     );
-  }
-
-  /// 严格校验真实库存扣减
-  Future<void> _handleConfirmConsumableWithValidation(
-    BuildContext context,
-    WidgetRef ref,
-    ConsumableLinkageLog log,
-  ) async {
-    final inventoryRepo = ref.read(inventoryRepositoryProvider);
-    final shoppingService = ref.read(shoppingServiceProvider);
-
-    // 查询所有库存物品
-    final allItems = await inventoryRepo.loadInventory();
-
-    // 匹配名称包含消耗品关键词的有效物品（如 浓缩洗衣液 -> 洗衣液）
-    final cleanTarget = log.consumableName.replaceAll(RegExp(r'^(浓缩|特级|强效|天然|家用)'), '').trim();
-
-    InventoryItem? matchedItem;
-    for (final item in allItems) {
-      if (item.name == log.consumableName ||
-          item.name.contains(cleanTarget) ||
-          cleanTarget.contains(item.name)) {
-        matchedItem = item;
-        break;
-      }
-    }
-
-    final availableQty = matchedItem?.availableQuantity ?? 0;
-
-    if (matchedItem == null || availableQty < log.quantity) {
-      // 库存中不存在或可用数量不足，拒绝假扣减，弹出提示并可直接加入采买清单
-      if (!context.mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (dialogCtx) => AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.warning_amber_rounded, color: Colors.orange),
-              SizedBox(width: 8),
-              Text('库存不足或物资未建档', style: TextStyle(fontSize: 16)),
-            ],
-          ),
-          content: Text(
-            matchedItem == null
-                ? '在当前库存中未找到【${log.consumableName}】。\n\n是否需要将其一键添加到待采买清单？'
-                : '【${matchedItem.name}】当前可用库存为 $availableQty ${matchedItem.unit}，不足以扣减 ${log.quantity} ${log.unit}。\n\n是否添加到待采买清单？',
-            style: const TextStyle(fontSize: 13, height: 1.4),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogCtx).pop(),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                Navigator.of(dialogCtx).pop();
-                await shoppingService.addOrMerge(
-                  itemName: log.consumableName,
-                  targetQuantity: log.quantity > 1 ? log.quantity : 2,
-                  reason: '智能家居设备耗材联动补货提醒',
-                  productId: matchedItem?.id,
-                );
-                if (context.mounted) {
-                  showAppSnackBar(context,
-                    SnackBar(
-                      content: Text('已将【${log.consumableName}】加入采买清单'),
-                    ),
-                  );
-                }
-              },
-              child: const Text('加入采买清单'),
-            ),
-          ],
-        ),
-      );
-      return;
-    }
-
-    // 库存真实充足，执行 FEFO 扣减
-    try {
-      await inventoryRepo.consumeByFefo(matchedItem.id, log.quantity);
-      ref.read(smartHomeControllerProvider.notifier).confirmConsumableLog(log.id);
-      if (context.mounted) {
-        showAppSnackBar(context,
-          SnackBar(
-            content: Text('已成功核销【${matchedItem.name}】× ${log.quantity} ${matchedItem.unit}，剩余可用：${availableQty - log.quantity}'),
-          ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        showAppSnackBar(context,
-          SnackBar(content: Text('库存扣减失败: $e')),
-        );
-      }
-    }
   }
 
   Widget _buildRoomsAndDevices(

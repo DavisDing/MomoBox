@@ -1,6 +1,7 @@
 import '../../application/ai_fallback_executor.dart';
 import 'nas_settings_screen.dart';
 import 'home_assistant_settings_screen.dart';
+import 'sync_settings_screen.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -93,6 +94,14 @@ class SettingsScreen extends ConsumerWidget {
                 const Divider(height: 1, indent: 56),
                 _buildSettingsListTile(
                   context,
+                  icon: Icons.insert_chart_outlined,
+                  title: '库存统计',
+                  subtitle: '查看消耗、入库/调整与报废趋势',
+                  onTap: () => context.push('/statistics'),
+                ),
+                const Divider(height: 1, indent: 56),
+                _buildSettingsListTile(
+                  context,
                   icon: Icons.analytics_outlined,
                   title: 'AI 用量与日志汇总',
                   subtitle: '当日/7天/30天/全部 Token 与明细统计',
@@ -137,6 +146,16 @@ class SettingsScreen extends ConsumerWidget {
                   subtitle: 'HA 地址、Token 授权状态与设备白名单',
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const HomeAssistantSettingsScreen()),
+                  ),
+                ),
+                const Divider(height: 1, indent: 56),
+                _buildSettingsListTile(
+                  context,
+                  icon: Icons.sync_outlined,
+                  title: '同步状态与冲突处理',
+                  subtitle: '首次同步选择、手动同步与本地冲突记录',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const SyncSettingsScreen()),
                   ),
                 ),
               ],

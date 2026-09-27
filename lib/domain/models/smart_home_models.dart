@@ -6,6 +6,7 @@ library;
 enum HaConnectionStatus {
   online,
   offline,
+  stale,
   syncing,
   unconfigured,
 }
@@ -101,8 +102,23 @@ class SmartScene {
 
 enum ConsumableActionStatus {
   pending, // 待确认
-  deducted, // 已自动扣减
+  deducted, // 已由 NAS 服务端扣减
   ignored, // 已忽略
+  insufficientStock, // 服务端库存不足，等待补货
+}
+
+class ConsumablePurchaseSuggestion {
+  const ConsumablePurchaseSuggestion({
+    required this.productId,
+    required this.productName,
+    required this.quantity,
+    required this.unit,
+  });
+
+  final String productId;
+  final String productName;
+  final int quantity;
+  final String unit;
 }
 
 class ConsumableLinkageLog {
@@ -115,7 +131,8 @@ class ConsumableLinkageLog {
     required this.unit,
     required this.status,
     required this.timestamp,
-    this.ruleDescription = '洗涤程序完成触发耗材建议',
+    this.purchaseSuggestions = const <ConsumablePurchaseSuggestion>[],
+    this.ruleDescription = '设备事件触发耗材建议',
   });
 
   final String id;
@@ -126,6 +143,7 @@ class ConsumableLinkageLog {
   final String unit;
   final ConsumableActionStatus status;
   final DateTime timestamp;
+  final List<ConsumablePurchaseSuggestion> purchaseSuggestions;
   final String ruleDescription;
 
   ConsumableLinkageLog copyWith({
@@ -140,6 +158,7 @@ class ConsumableLinkageLog {
       unit: unit,
       status: status ?? this.status,
       timestamp: timestamp,
+      purchaseSuggestions: purchaseSuggestions,
       ruleDescription: ruleDescription,
     );
   }

@@ -64,7 +64,12 @@ func (s *Service) Bootstrap(ctx context.Context, request BootstrapRequest) (Boot
 	if scope.Revoked {
 		return BootstrapResponse{}, ErrDeviceNotFound
 	}
-	snapshot, err := s.repository.ReadBootstrap(ctx, scope.FamilyID)
+	var snapshot BootstrapSnapshot
+	if deviceRepository, ok := s.repository.(DeviceBootstrapRepository); ok {
+		snapshot, err = deviceRepository.ReadBootstrapForDevice(ctx, scope.FamilyID, scope.DeviceID)
+	} else {
+		snapshot, err = s.repository.ReadBootstrap(ctx, scope.FamilyID)
+	}
 	if err != nil {
 		return BootstrapResponse{}, err
 	}
@@ -77,6 +82,8 @@ func (s *Service) Bootstrap(ctx context.Context, request BootstrapRequest) (Boot
 		SyncProtocolVersion: valueOrDefault(snapshot.SyncProtocolVersion, DefaultSyncProtocolVersion),
 		ServerCursor:        snapshot.ServerCursor,
 		MergeRequired:       snapshot.MergeRequired,
+		BootstrapState:      snapshot.BootstrapState,
+		Checkpoint:          snapshot.Checkpoint,
 		AvailableModes:      modes,
 		Family:              cloneMap(snapshot.Family),
 		Snapshot:            cloneMap(snapshot.Snapshot),
@@ -99,10 +106,48 @@ func (s *Service) ConfirmBootstrap(ctx context.Context, request BootstrapConfirm
 		return BootstrapConfirmResponse{}, err
 	}
 	return BootstrapConfirmResponse{
-		Accepted:     confirmation.Accepted,
-		NextAction:   bootstrapNextAction(request.Mode),
-		ServerCursor: confirmation.ServerCursor,
+		Accepted:       confirmation.Accepted,
+		NextAction:     bootstrapNextAction(request.Mode),
+		ServerCursor:   confirmation.ServerCursor,
+		Checkpoint:     confirmation.Checkpoint,
+		BootstrapState: confirmation.BootstrapState,
 	}, nil
+}
+
+func (s *Service) ListConflicts(ctx context.Context, request ConflictListRequest) (ConflictListResponse, error) {
+	if err := validateDeviceID(request.DeviceID); err != nil { return ConflictListResponse{}, err }
+	scope, err := s.repository.ResolveDevice(ctx, request.DeviceID)
+	if err != nil { return ConflictListResponse{}, err }
+	if scope.Revoked { return ConflictListResponse{}, ErrDeviceNotFound }
+	query, ok := s.repository.(ConflictQueryRepository)
+	if !ok { return ConflictListResponse{}, errors.New("sync conflict repository is not configured") }
+	request.Limit = minConflictLimit(request.Limit)
+	if request.Status != "" && request.Status != ConflictStatusOpen && request.Status != ConflictStatusResolved && request.Status != ConflictStatusRejected { return ConflictListResponse{}, fmt.Errorf("%w: unsupported conflict status", ErrInvalidRequest) }
+	if scoped, ok := s.repository.(ScopedConflictQueryRepository); ok {
+		return scoped.ListConflictsForScope(ctx, request, scope)
+	}
+	return query.ListConflicts(ctx, request)
+}
+
+func (s *Service) GetConflict(ctx context.Context, deviceID, conflictID string) (SyncConflict, error) {
+	if err := validateDeviceID(deviceID); err != nil { return SyncConflict{}, err }
+	if strings.TrimSpace(conflictID) == "" { return SyncConflict{}, fmt.Errorf("%w: conflict_id is required", ErrInvalidRequest) }
+	scope, err := s.repository.ResolveDevice(ctx, deviceID); if err != nil { return SyncConflict{}, err }
+	if scope.Revoked { return SyncConflict{}, ErrDeviceNotFound }
+	query, ok := s.repository.(ConflictQueryRepository); if !ok { return SyncConflict{}, errors.New("sync conflict repository is not configured") }
+	if scoped, ok := s.repository.(ScopedConflictQueryRepository); ok {
+		return scoped.GetConflictForScope(ctx, conflictID, scope)
+	}
+	return query.GetConflict(ctx, conflictID)
+}
+
+func (s *Service) ResolveConflict(ctx context.Context, request ConflictResolveRequest) (ConflictResolveResponse, error) {
+	if err := validateConflictResolve(request); err != nil { return ConflictResolveResponse{}, err }
+	scope, err := s.repository.ResolveDevice(ctx, request.DeviceID); if err != nil { return ConflictResolveResponse{}, err }
+	if scope.Revoked { return ConflictResolveResponse{}, ErrDeviceNotFound }
+	if !canResolveConflict(scope.Role) { return ConflictResolveResponse{}, NewBusinessError("FORBIDDEN", "only family owner or admin can resolve sync conflicts", nil) }
+	query, ok := s.repository.(ConflictQueryRepository); if !ok { return ConflictResolveResponse{}, errors.New("sync conflict repository is not configured") }
+	return query.ResolveConflict(ctx, request, scope)
 }
 
 func (s *Service) Pull(ctx context.Context, request PullRequest) (PullResponse, error) {
@@ -240,14 +285,15 @@ func (s *Service) applyEntityChange(ctx context.Context, tx SyncTransaction, cha
 	if change.BaseVersion != current.Version {
 		conflict := SyncConflict{
 			ChangeID:      change.ChangeID,
+			Operation:     change.Operation,
 			Entity:        change.Entity,
 			EntityID:      change.EntityID,
 			Reason:        "VERSION_CONFLICT",
 			ServerVersion: current.Version,
 			ServerPayload: cloneMap(current.Payload),
-			ClientPayload: cloneMap(change.Payload),
+			ClientPayload: conflictClientPayload(change),
 		}
-		if err := tx.RecordConflict(ctx, conflict); err != nil {
+		if err := recordConflict(ctx, tx, &conflict); err != nil {
 			return StoredOutcome{}, err
 		}
 		return StoredOutcome{Status: PushStatusConflict, Conflict: &conflict, ServerCursor: baseCursor}, nil
@@ -352,6 +398,22 @@ func (s *Service) applyHomeAssistantChange(ctx context.Context, tx SyncTransacti
 	}, nil
 }
 
+func conflictClientPayload(change SyncChange) map[string]any {
+	payload := cloneMap(change.Payload)
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	payload["base_version"] = change.BaseVersion
+	return payload
+}
+
+func recordConflict(ctx context.Context, tx SyncTransaction, conflict *SyncConflict) error {
+	if writer, ok := tx.(ConflictRecordRepository); ok {
+		return writer.RecordConflictWithID(ctx, conflict)
+	}
+	return tx.RecordConflict(ctx, *conflict)
+}
+
 func (s *Service) businessOutcomeOrError(ctx context.Context, tx SyncTransaction, change SyncChange, err error, cursor int64) (StoredOutcome, error) {
 	code, message, details, ok := businessCode(err)
 	if !ok {
@@ -360,10 +422,11 @@ func (s *Service) businessOutcomeOrError(ctx context.Context, tx SyncTransaction
 	if code == "VERSION_CONFLICT" || code == "FAMILY_SCOPE_VIOLATION" {
 		conflict := SyncConflict{
 			ChangeID:      change.ChangeID,
+			Operation:     change.Operation,
 			Entity:        change.Entity,
 			EntityID:      change.EntityID,
 			Reason:        code,
-			ClientPayload: cloneMap(change.Payload),
+			ClientPayload: conflictClientPayload(change),
 		}
 		if details != nil {
 			if value, ok := details["server_version"].(int64); ok {
@@ -373,7 +436,7 @@ func (s *Service) businessOutcomeOrError(ctx context.Context, tx SyncTransaction
 				conflict.ServerPayload = cloneMap(payload)
 			}
 		}
-		if recordErr := tx.RecordConflict(ctx, conflict); recordErr != nil {
+		if recordErr := recordConflict(ctx, tx, &conflict); recordErr != nil {
 			return StoredOutcome{}, recordErr
 		}
 		return StoredOutcome{Status: PushStatusConflict, Conflict: &conflict, ServerCursor: cursor}, nil
@@ -500,6 +563,23 @@ func validatePullRequest(request PullRequest) error {
 	}
 	return nil
 }
+
+func validateConflictResolve(request ConflictResolveRequest) error {
+	if err := validateDeviceID(request.DeviceID); err != nil { return err }
+	if strings.TrimSpace(request.ConflictID) == "" { return fmt.Errorf("%w: conflict_id is required", ErrInvalidRequest) }
+	switch request.Action { case ConflictActionKeepLocal, ConflictActionKeepRemote, ConflictActionManualMerge, ConflictActionDefer: default: return fmt.Errorf("%w: unsupported conflict action", ErrInvalidRequest) }
+	if request.ExpectedVersion < 0 { return fmt.Errorf("%w: expected_version must be non-negative", ErrInvalidRequest) }
+	if request.Action == ConflictActionManualMerge && request.MergedPayload == nil { return fmt.Errorf("%w: merged_payload is required", ErrInvalidRequest) }
+	if request.IdempotencyKey != "" && (len(request.IdempotencyKey) < 16 || len(request.IdempotencyKey) > 255) { return fmt.Errorf("%w: idempotency_key must contain 16 to 255 characters", ErrInvalidRequest) }
+	return nil
+}
+
+func canResolveConflict(role string) bool {
+	role = strings.ToLower(strings.TrimSpace(role))
+	return role == "owner" || role == "admin"
+}
+
+func minConflictLimit(value int) int { if value <= 0 { return 50 }; if value > 200 { return 200 }; return value }
 
 func validateBootstrapConfirm(request BootstrapConfirmRequest) error {
 	if err := validateDeviceID(request.DeviceID); err != nil {

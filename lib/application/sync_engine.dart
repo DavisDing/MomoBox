@@ -2,11 +2,16 @@ import 'dart:convert';
 
 import '../data/nas/nas_api_error.dart';
 import '../data/nas/nas_sync_api.dart';
+import '../data/repositories/inventory_repository.dart';
+import '../data/repositories/shopping_repository.dart';
 import '../data/repositories/sync_outbox_repository.dart';
 import '../domain/models/nas_sync_models.dart';
 import '../domain/models/sync_models.dart';
+import 'sync_business_adapter.dart';
+import 'sync_change_control.dart';
 
 typedef ApplyNasSyncChange = Future<void> Function(NasSyncPullChange change);
+typedef ApplyNasSyncSnapshot = Future<void> Function(Map<String, dynamic> snapshot, int serverCursor);
 
 const _unset = Object();
 
@@ -16,12 +21,14 @@ class SyncRunReport {
     required this.pulled,
     required this.skipped,
     this.reason,
+    this.deferred = 0,
   });
 
   final int pushed;
   final int pulled;
   final bool skipped;
   final String? reason;
+  final int deferred;
 }
 
 /// Orchestrates the durable local sync substrate and the NAS sync protocol.
@@ -37,24 +44,112 @@ class SyncEngine {
     required String scopeId,
     required String deviceId,
     required ApplyNasSyncChange applyRemoteChange,
+    ApplyNasSyncSnapshot? applyRemoteSnapshot,
     this.familyId,
     this.localWorkspaceId,
   })  : _api = api,
         _repository = repository,
         _scopeId = scopeId,
         _deviceId = deviceId,
-        _applyRemoteChange = applyRemoteChange;
+        _applyRemoteChange = applyRemoteChange,
+        _applyRemoteSnapshot = applyRemoteSnapshot;
+
+  /// Builds the engine with the app's concrete inventory and shopping merge
+  /// adapter. Scheduling remains outside this class so callers can choose an
+  /// app-lifecycle, connectivity, or user-triggered policy.
+  SyncEngine.withBusinessAdapter({
+    required NasSyncApi api,
+    required SyncOutboxRepository repository,
+    required InventoryRepository inventoryRepository,
+    required ShoppingRepository shoppingRepository,
+    required String scopeId,
+    required String deviceId,
+    String? familyId,
+    String? localWorkspaceId,
+  }) : this._withBusinessAdapter(
+          api: api,
+          repository: repository,
+          inventoryRepository: inventoryRepository,
+          shoppingRepository: shoppingRepository,
+          scopeId: scopeId,
+          deviceId: deviceId,
+          familyId: familyId,
+          localWorkspaceId: localWorkspaceId,
+        );
+
+  SyncEngine._withBusinessAdapter({
+    required NasSyncApi api,
+    required SyncOutboxRepository repository,
+    required InventoryRepository inventoryRepository,
+    required ShoppingRepository shoppingRepository,
+    required String scopeId,
+    required String deviceId,
+    String? familyId,
+    String? localWorkspaceId,
+  }) : this._fromAdapter(
+          api: api,
+          repository: repository,
+          adapter: SyncBusinessAdapter(
+            inventoryRepository: inventoryRepository,
+            shoppingRepository: shoppingRepository,
+            outboxRepository: repository,
+            scopeId: scopeId,
+          ),
+          scopeId: scopeId,
+          deviceId: deviceId,
+          familyId: familyId,
+          localWorkspaceId: localWorkspaceId,
+        );
+
+  SyncEngine._fromAdapter({
+    required NasSyncApi api,
+    required SyncOutboxRepository repository,
+    required SyncBusinessAdapter adapter,
+    required String scopeId,
+    required String deviceId,
+    String? familyId,
+    String? localWorkspaceId,
+  }) : this(
+          api: api,
+          repository: repository,
+          scopeId: scopeId,
+          deviceId: deviceId,
+          familyId: familyId,
+          localWorkspaceId: localWorkspaceId,
+          applyRemoteChange: adapter.applyRemoteChange,
+          applyRemoteSnapshot: adapter.applyRemoteSnapshot,
+        );
 
   final NasSyncApi _api;
   final SyncOutboxRepository _repository;
   final String _scopeId;
   final String _deviceId;
   final ApplyNasSyncChange _applyRemoteChange;
+  final ApplyNasSyncSnapshot? _applyRemoteSnapshot;
   final String? familyId;
   final String? localWorkspaceId;
 
   Future<NasSyncBootstrap> bootstrap() async {
-    final response = await _api.bootstrap(deviceId: _deviceId);
+    late final NasSyncBootstrap response;
+    try {
+      response = await _api.bootstrap(deviceId: _deviceId);
+    } catch (error) {
+      await _recordFailureSafely(error);
+      rethrow;
+    }
+    if (response.snapshot != null) {
+      await _repository.savePendingBootstrap(
+        scopeId: _scopeId,
+        snapshot: response.snapshot!,
+        serverCursor: response.serverCursor,
+        checkpoint: response.checkpoint,
+        bootstrapState: response.bootstrapState,
+      );
+    } else {
+      // A fresh bootstrap response without a snapshot must not replay an
+      // older snapshot left by a previous interrupted bootstrap attempt.
+      await _repository.clearPendingBootstrap(_scopeId);
+    }
     final current = await _ensureState();
     await _repository.saveState(
       _replaceState(
@@ -80,26 +175,57 @@ class SyncEngine {
   Future<NasSyncConfirmResult> confirmBootstrap({
     required String mode,
   }) async {
-    final response = await _api.confirmBootstrap(
-      mode: mode,
-      deviceId: _deviceId,
-      localWorkspaceId: localWorkspaceId,
-    );
+    final pending = await _repository.getPendingBootstrap(_scopeId);
+    final pendingCursor = pending?['server_cursor'];
+    final snapshotCursor = pendingCursor is num &&
+            pendingCursor >= 0 &&
+            pendingCursor == pendingCursor.toInt()
+        ? pendingCursor.toInt()
+        : null;
+    final pendingCheckpoint = pending?['checkpoint'];
+    final checkpoint = pendingCheckpoint is String && pendingCheckpoint.trim().isNotEmpty
+        ? pendingCheckpoint.trim()
+        : null;
+    late final NasSyncConfirmResult response;
+    try {
+      response = await _api.confirmBootstrap(
+        mode: mode,
+        deviceId: _deviceId,
+        localWorkspaceId: localWorkspaceId,
+        snapshotCursor: snapshotCursor,
+        checkpoint: checkpoint,
+      );
+    } catch (error) {
+      await _recordFailureSafely(error);
+      rethrow;
+    }
     final current = await _ensureState();
     final status = switch (response.nextAction) {
+      'pull_snapshot' || 'push_local_changes' => SyncBootstrapStatus.ready,
       'keep_local_only' => SyncBootstrapStatus.keepLocalOnly,
-      _ => SyncBootstrapStatus.ready,
+      _ => SyncBootstrapStatus.blocked,
     };
+    final invalidNextAction = response.accepted && status == SyncBootstrapStatus.blocked;
     await _repository.saveState(
       _replaceState(
         current,
+        // Only the two documented remote-sync actions may enable runOnce().
+        // Unknown values fail closed instead of silently enabling sync.
         bootstrapStatus: response.accepted ? status : SyncBootstrapStatus.blocked,
         // Confirming a mode does not itself apply the snapshot/change log.
         pullCursor: current.pullCursor,
         pushAckCursor: response.serverCursor,
-        lastErrorCode: response.accepted ? null : 'bootstrap_rejected',
-        lastErrorMessage: response.accepted ? null : 'NAS rejected bootstrap confirmation',
-        consecutiveFailures: response.accepted ? 0 : current.consecutiveFailures + 1,
+        lastErrorCode: response.accepted
+            ? (invalidNextAction ? 'invalid_next_action' : null)
+            : 'bootstrap_rejected',
+        lastErrorMessage: response.accepted
+            ? (invalidNextAction
+                ? 'NAS returned an unsupported bootstrap next_action'
+                : null)
+            : 'NAS rejected bootstrap confirmation',
+        consecutiveFailures: response.accepted && !invalidNextAction
+            ? 0
+            : current.consecutiveFailures + 1,
         nextRetryAt: null,
       ),
     );
@@ -130,24 +256,48 @@ class SyncEngine {
     }
 
     try {
+      await _applyPendingBootstrapSnapshot();
       final pushed = await _pushPending(maxPush);
-      final pulled = await _pullChanges(pullLimit);
+      final pullResult = await _pullChanges(pullLimit);
       final latest = await _ensureState();
+      final hasDeferred = pullResult.deferred > 0;
       await _repository.saveState(
         _replaceState(
           latest,
-          lastSuccessAt: DateTime.now().toUtc(),
-          lastErrorCode: null,
-          lastErrorMessage: null,
-          consecutiveFailures: 0,
+          lastSuccessAt: hasDeferred ? latest.lastSuccessAt : DateTime.now().toUtc(),
+          lastErrorCode: hasDeferred ? 'sync_conflict_deferred' : null,
+          lastErrorMessage: hasDeferred ? '存在待处理同步冲突，已暂停推进远端游标。' : null,
+          consecutiveFailures: hasDeferred ? latest.consecutiveFailures : 0,
           nextRetryAt: null,
         ),
       );
-      return SyncRunReport(pushed: pushed, pulled: pulled, skipped: false);
+      return SyncRunReport(
+        pushed: pushed,
+        pulled: pullResult.applied,
+        deferred: pullResult.deferred,
+        skipped: false,
+      );
     } catch (error) {
-      await _recordFailure(error);
+      await _recordFailureSafely(error);
       rethrow;
     }
+  }
+
+  Future<void> _applyPendingBootstrapSnapshot() async {
+    final applySnapshot = _applyRemoteSnapshot;
+    if (applySnapshot == null) return;
+    final pending = await _repository.getPendingBootstrap(_scopeId);
+    if (pending == null) return;
+    final rawSnapshot = pending['snapshot'];
+    if (rawSnapshot is! Map) {
+      throw const FormatException('pending bootstrap snapshot must be an object');
+    }
+    final cursor = pending['server_cursor'];
+    if (cursor is! num || cursor < 0 || cursor != cursor.toInt()) {
+      throw const FormatException('pending bootstrap server_cursor must be a non-negative integer');
+    }
+    await applySnapshot(Map<String, dynamic>.from(rawSnapshot), cursor.toInt());
+    await _repository.clearPendingBootstrap(_scopeId);
   }
 
   Future<int> _pushPending(int maxPush) async {
@@ -318,13 +468,15 @@ class SyncEngine {
     }
   }
 
-  Future<int> _pullChanges(int limit) async {
+  Future<_PullResult> _pullChanges(int limit) async {
     if (limit < 1 || limit > 500) {
       throw ArgumentError.value(limit, 'limit', 'must be between 1 and 500');
     }
     var appliedCount = 0;
+    var deferredCount = 0;
     var pageCount = 0;
     while (true) {
+      var pageDeferred = false;
       final state = await _ensureState();
       final response = await _api.pull(
         deviceId: _deviceId,
@@ -338,13 +490,32 @@ class SyncEngine {
         )) {
           continue;
         }
-        await _applyRemoteChange(change);
+        var deferred = false;
+        try {
+          await _applyRemoteChange(change);
+          appliedCount++;
+        } on SyncRemoteChangeDeferred {
+          // A deferred change is a hard ordering barrier. Do not mark it as
+          // applied or advance the cursor past it: later changes can depend
+          // on the unresolved conflict and must be replayed after resolution.
+          deferredCount++;
+          deferred = true;
+          pageDeferred = true;
+        }
+        if (deferred) {
+          break;
+        }
         await _repository.recordAppliedChange(
           scopeId: _scopeId,
           changeId: change.changeId,
           cursor: change.cursor,
         );
-        appliedCount++;
+      }
+      if (pageDeferred) {
+        // A deferred change blocks the cursor. Leave the persisted pull cursor
+        // unchanged so the conflict and all later changes are replayed after
+        // the user resolves it.
+        break;
       }
       final latest = await _ensureState();
       await _repository.saveState(
@@ -357,7 +528,7 @@ class SyncEngine {
       pageCount++;
       if (!response.hasMore || pageCount >= 100) break;
     }
-    return appliedCount;
+    return _PullResult(applied: appliedCount, deferred: deferredCount);
   }
 
   Future<SyncStateModel> _ensureState() {
@@ -367,6 +538,15 @@ class SyncEngine {
       deviceId: _deviceId,
       localWorkspaceId: localWorkspaceId,
     );
+  }
+
+  Future<void> _recordFailureSafely(Object error) async {
+    try {
+      await _recordFailure(error);
+    } catch (_) {
+      // Preserve the original sync error if failure-state persistence itself
+      // is unavailable. The next invocation can retry persistence.
+    }
   }
 
   Future<void> _recordFailure(Object error) async {
@@ -436,4 +616,11 @@ DateTime? _nullableDateTime(Object? value, DateTime? fallback) {
 
 String? _nullableString(Object? value, String? fallback) {
   return identical(value, _unset) ? fallback : value as String?;
+}
+
+class _PullResult {
+  const _PullResult({required this.applied, required this.deferred});
+
+  final int applied;
+  final int deferred;
 }

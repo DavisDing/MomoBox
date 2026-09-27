@@ -16,6 +16,8 @@ class NasSyncBootstrap {
     required this.availableModes,
     this.family,
     this.snapshot,
+    this.bootstrapState,
+    this.checkpoint,
   });
 
   final int schemaVersion;
@@ -25,6 +27,8 @@ class NasSyncBootstrap {
   final List<String> availableModes;
   final Map<String, dynamic>? family;
   final Map<String, dynamic>? snapshot;
+  final String? bootstrapState;
+  final String? checkpoint;
 
   factory NasSyncBootstrap.fromJson(Map<String, dynamic> json) {
     return NasSyncBootstrap(
@@ -35,6 +39,8 @@ class NasSyncBootstrap {
       availableModes: _stringList(json['available_modes'], 'available_modes'),
       family: _optionalMap(json['family']),
       snapshot: _optionalMap(json['snapshot']),
+      bootstrapState: _optionalString(json['bootstrap_state']),
+      checkpoint: _optionalString(json['checkpoint']),
     );
   }
 }
@@ -44,17 +50,23 @@ class NasSyncConfirmResult {
     required this.accepted,
     required this.nextAction,
     required this.serverCursor,
+    this.checkpoint,
+    this.bootstrapState,
   });
 
   final bool accepted;
   final String nextAction;
   final int serverCursor;
+  final String? checkpoint;
+  final String? bootstrapState;
 
   factory NasSyncConfirmResult.fromJson(Map<String, dynamic> json) {
     return NasSyncConfirmResult(
       accepted: _requiredBool(json, 'accepted'),
       nextAction: _requiredString(json, 'next_action'),
       serverCursor: _requiredInt(json, 'server_cursor'),
+      checkpoint: _optionalString(json['checkpoint']),
+      bootstrapState: _optionalString(json['bootstrap_state']),
     );
   }
 }
@@ -214,10 +226,23 @@ class NasSyncChange {
 }
 
 class NasSyncInventoryAllocation {
-  const NasSyncInventoryAllocation({required this.batchId, required this.quantity});
+  const NasSyncInventoryAllocation({
+    required this.batchId,
+    required this.quantity,
+    this.beforeQuantity,
+    this.afterQuantity,
+    this.beforeVersion,
+    this.afterVersion,
+  });
 
   final String batchId;
+  /// Requested/allocated quantity. The server remains authoritative for the
+  /// resulting quantity and version fields below.
   final int quantity;
+  final int? beforeQuantity;
+  final int? afterQuantity;
+  final int? beforeVersion;
+  final int? afterVersion;
 
   factory NasSyncInventoryAllocation.fromJson(Object? value) {
     if (value is! Map) throw const FormatException('invalid inventory allocation');
@@ -225,10 +250,21 @@ class NasSyncInventoryAllocation {
     return NasSyncInventoryAllocation(
       batchId: _requiredString(json, 'batch_id'),
       quantity: _requiredInt(json, 'quantity'),
+      beforeQuantity: _optionalInt(json['before_quantity']),
+      afterQuantity: _optionalInt(json['after_quantity'] ?? json['final_quantity'] ?? json['remaining_quantity']),
+      beforeVersion: _optionalInt(json['before_version']),
+      afterVersion: _optionalInt(json['after_version'] ?? json['version']),
     );
   }
 
-  Map<String, dynamic> toJson() => {'batch_id': batchId, 'quantity': quantity};
+  Map<String, dynamic> toJson() => {
+        'batch_id': batchId,
+        'quantity': quantity,
+        if (beforeQuantity != null) 'before_quantity': beforeQuantity,
+        if (afterQuantity != null) 'after_quantity': afterQuantity,
+        if (beforeVersion != null) 'before_version': beforeVersion,
+        if (afterVersion != null) 'after_version': afterVersion,
+      };
 }
 
 class NasSyncAcceptedChange {
@@ -314,6 +350,156 @@ class NasSyncConflict {
       serverVersion: _optionalInt(json['server_version']),
       serverPayload: _optionalMap(json['server_payload']),
       clientPayload: _optionalMap(json['client_payload']),
+    );
+  }
+}
+
+class NasSyncConflictDetail {
+  const NasSyncConflictDetail({
+    required this.conflictId,
+    required this.entity,
+    required this.reason,
+    required this.status,
+    this.changeId,
+    this.operation,
+    this.deviceId,
+    this.entityId,
+    this.resolution,
+    this.createdAt,
+    this.resolvedAt,
+    this.serverVersion,
+    this.serverPayload,
+    this.clientPayload,
+  });
+
+  final String conflictId;
+  final String? changeId;
+  final String? operation;
+  final String? deviceId;
+  final String entity;
+  final String? entityId;
+  final String reason;
+  final String status;
+  final Map<String, dynamic>? resolution;
+  final String? createdAt;
+  final String? resolvedAt;
+  final int? serverVersion;
+  final Map<String, dynamic>? serverPayload;
+  final Map<String, dynamic>? clientPayload;
+
+  factory NasSyncConflictDetail.fromJson(Map<String, dynamic> json) {
+    return NasSyncConflictDetail(
+      conflictId: _requiredString(json, 'conflict_id'),
+      changeId: _optionalString(json['change_id']),
+      operation: _optionalString(json['operation']),
+      deviceId: _optionalString(json['device_id']),
+      entity: _requiredString(json, 'entity'),
+      entityId: _optionalString(json['entity_id']),
+      reason: _requiredString(json, 'reason'),
+      status: _requiredString(json, 'status'),
+      resolution: _optionalMap(json['resolution']),
+      createdAt: _optionalString(json['created_at']),
+      resolvedAt: _optionalString(json['resolved_at']),
+      serverVersion: _optionalInt(json['server_version']),
+      serverPayload: _optionalMap(json['server_payload']),
+      clientPayload: _optionalMap(json['client_payload']),
+    );
+  }
+}
+
+class NasSyncConflictListResponse {
+  const NasSyncConflictListResponse({
+    required this.conflicts,
+    required this.hasMore,
+  });
+
+  final List<NasSyncConflictDetail> conflicts;
+  final bool hasMore;
+
+  factory NasSyncConflictListResponse.fromJson(Map<String, dynamic> json) {
+    return NasSyncConflictListResponse(
+      conflicts: _objectList(
+        json['conflicts'],
+        NasSyncConflictDetail.fromJson,
+        'conflicts',
+      ),
+      hasMore: _requiredBool(json, 'has_more'),
+    );
+  }
+}
+
+class NasSyncConflictResolveRequest {
+  const NasSyncConflictResolveRequest({
+    required this.deviceId,
+    required this.conflictId,
+    required this.action,
+    this.expectedVersion = 0,
+    this.mergedPayload,
+    this.idempotencyKey,
+  });
+
+  final String deviceId;
+  final String conflictId;
+  final String action;
+  final int expectedVersion;
+  final Map<String, dynamic>? mergedPayload;
+  final String? idempotencyKey;
+
+  Map<String, dynamic> toJson() => {
+        'device_id': deviceId,
+        'action': action,
+        'expected_version': expectedVersion,
+        if (mergedPayload != null) 'merged_payload': mergedPayload,
+        if (idempotencyKey != null && idempotencyKey!.trim().isNotEmpty)
+          'idempotency_key': idempotencyKey,
+      };
+}
+
+class NasSyncConflictResolveResult {
+  const NasSyncConflictResolveResult({
+    this.changeId,
+    this.entityId,
+    this.serverVersion,
+    this.serverCursor,
+    this.result,
+    this.status,
+  });
+
+  final String? changeId;
+  final String? entityId;
+  final int? serverVersion;
+  final int? serverCursor;
+  final Map<String, dynamic>? result;
+  final String? status;
+
+  factory NasSyncConflictResolveResult.fromJson(Map<String, dynamic> json) {
+    return NasSyncConflictResolveResult(
+      changeId: _optionalString(json['change_id']),
+      entityId: _optionalString(json['entity_id']),
+      serverVersion: _optionalInt(json['server_version']),
+      serverCursor: _optionalInt(json['server_cursor']),
+      result: _optionalMap(json['result']),
+      status: _optionalString(json['status']),
+    );
+  }
+}
+
+class NasSyncConflictResolveResponse {
+  const NasSyncConflictResolveResponse({
+    required this.conflict,
+    required this.accepted,
+    this.result,
+  });
+
+  final NasSyncConflictDetail conflict;
+  final bool accepted;
+  final NasSyncConflictResolveResult? result;
+
+  factory NasSyncConflictResolveResponse.fromJson(Map<String, dynamic> json) {
+    return NasSyncConflictResolveResponse(
+      conflict: _requiredObject(json, 'conflict', NasSyncConflictDetail.fromJson),
+      accepted: _requiredBool(json, 'accepted'),
+      result: _optionalObject(json['result'], NasSyncConflictResolveResult.fromJson),
     );
   }
 }
@@ -533,6 +719,16 @@ List<NasSyncInventoryAllocation> _allocationList(Object? value) {
   if (value == null) return const <NasSyncInventoryAllocation>[];
   if (value is! List) throw const FormatException('allocations must be an array');
   return value.map(NasSyncInventoryAllocation.fromJson).toList(growable: false);
+}
+
+T _requiredObject<T>(
+  Map<String, dynamic> json,
+  String key,
+  T Function(Map<String, dynamic>) parser,
+) {
+  final value = json[key];
+  if (value is! Map) throw FormatException('$key must be an object');
+  return parser(Map<String, dynamic>.from(value));
 }
 
 T? _optionalObject<T>(Object? value, T Function(Map<String, dynamic>) parser) {

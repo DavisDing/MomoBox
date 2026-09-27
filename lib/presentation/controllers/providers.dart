@@ -2,6 +2,7 @@ import '../../application/ai_inventory_action_service.dart';
 import '../../application/ai_fallback_executor.dart';
 import '../../application/ai_conversation_store.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../application/ai_assistant_service.dart';
 import '../../application/ai_draft_service.dart';
@@ -9,11 +10,16 @@ import '../../application/ai_usage_service.dart';
 import '../../application/backup_service.dart';
 import '../../application/barcode_lookup_service.dart';
 import '../../application/inventory_service.dart';
+import '../../application/inventory_statistics_service.dart';
+import '../../application/manual_qa_service.dart';
 import '../../application/media_service.dart';
 import '../../application/nas_connection_service.dart';
+import '../../presentation/controllers/nas_account_controller.dart';
+import '../../services/nas_credentials_service.dart';
 import '../../application/reminder_service.dart';
 import '../../application/settings_service.dart';
 import '../../application/storage_management_service.dart';
+import '../../application/sync_engine.dart';
 import '../../application/shopping_service.dart';
 import '../../core/database/app_database.dart';
 import '../../data/repositories/backup_repository.dart';
@@ -23,10 +29,13 @@ import '../../data/repositories/media_repository.dart';
 import '../../data/repositories/reminder_repository.dart';
 import '../../data/repositories/settings_repository.dart';
 import '../../data/repositories/shopping_repository.dart';
+import '../../data/repositories/sync_outbox_repository.dart';
+import '../../data/nas/nas_sync_api.dart';
 import '../../domain/inventory/reminder_rules.dart';
 import '../../domain/models/ai_usage_models.dart';
 import '../../domain/models/inventory_models.dart';
 import '../../domain/models/recognition_models.dart';
+import '../../domain/models/sync_models.dart';
 import '../../services/local_notification_service.dart';
 import '../../services/local_ocr_service.dart';
 import '../../services/media_storage_service.dart';
@@ -40,9 +49,15 @@ final databaseProvider = Provider<AppDatabase>((ref) {
   return database;
 });
 
-final inventoryRepositoryProvider = Provider<InventoryRepository>(
-  (ref) => InventoryRepository(ref.watch(databaseProvider)),
-);
+final inventoryRepositoryProvider = Provider<InventoryRepository>((ref) {
+  final database = ref.watch(databaseProvider);
+  final familyId = ref.watch(nasAccountProvider).family.familyId;
+  return InventoryRepository(
+    database,
+    outbox: SyncOutboxRepository(database),
+    syncScopeId: familyId,
+  );
+});
 
 final inventoryServiceProvider = Provider<InventoryService>(
   (ref) => InventoryService(ref.watch(inventoryRepositoryProvider)),
@@ -52,9 +67,15 @@ final inventoryProvider = StreamProvider<List<InventoryItem>>(
   (ref) => ref.watch(inventoryServiceProvider).watchInventory(),
 );
 
-final shoppingRepositoryProvider = Provider<ShoppingRepository>(
-  (ref) => ShoppingRepository(ref.watch(databaseProvider)),
-);
+final shoppingRepositoryProvider = Provider<ShoppingRepository>((ref) {
+  final database = ref.watch(databaseProvider);
+  final familyId = ref.watch(nasAccountProvider).family.familyId;
+  return ShoppingRepository(
+    database,
+    outbox: SyncOutboxRepository(database),
+    syncScopeId: familyId,
+  );
+});
 
 final shoppingServiceProvider = Provider<ShoppingService>(
   (ref) => ShoppingService(ref.watch(shoppingRepositoryProvider)),
@@ -71,6 +92,30 @@ final settingsRepositoryProvider = Provider<SettingsRepository>(
 final settingsServiceProvider = Provider<SettingsService>(
   (ref) => SettingsService(ref.watch(settingsRepositoryProvider)),
 );
+
+/// Stable identifier for this local installation. It is intentionally kept in
+/// the ordinary local settings table (not in the NAS account) so the same
+/// device can be identified across app restarts while remaining usable in
+/// offline-only mode.
+const syncLocalWorkspaceIdKey = 'sync_local_workspace_id';
+
+final localWorkspaceIdProvider = FutureProvider<String>((ref) async {
+  final settings = ref.watch(settingsServiceProvider);
+  final stored = (await settings.getValue(syncLocalWorkspaceIdKey))?.trim();
+  if (stored != null && stored.isNotEmpty) return stored;
+
+  final generated = const Uuid().v4();
+  await settings.setValue(syncLocalWorkspaceIdKey, generated);
+  return generated;
+});
+
+final syncStateProvider = StreamProvider.family<SyncStateModel?, String>((ref, scopeId) {
+  return SyncOutboxRepository(ref.watch(databaseProvider)).watchState(scopeId);
+});
+
+final syncConflictsProvider = FutureProvider.family<List<SyncConflictEntry>, String>((ref, scopeId) {
+  return SyncOutboxRepository(ref.watch(databaseProvider)).listOpenConflicts(scopeId: scopeId);
+});
 
 final themeNameProvider = StreamProvider<String?>(
   (ref) => ref.watch(settingsServiceProvider).watchValue('theme'),
@@ -181,6 +226,24 @@ final barcodeLookupServiceProvider = Provider<BarcodeLookupService>(
 
 final mediaRepositoryProvider = Provider<MediaRepository>(
   (ref) => MediaRepository(ref.watch(databaseProvider)),
+);
+
+final manualQaServiceProvider = Provider<ManualQaService>((ref) {
+  final service = ManualQaService(
+    ref.watch(mediaRepositoryProvider),
+    ref.watch(settingsRepositoryProvider),
+    ref.watch(secureSettingsServiceProvider),
+  );
+  ref.onDispose(service.close);
+  return service;
+});
+
+final inventoryStatisticsServiceProvider = Provider<InventoryStatisticsService>(
+  (ref) => InventoryStatisticsService(ref.watch(databaseProvider)),
+);
+
+final inventoryStatisticsProvider = FutureProvider.autoDispose.family<InventoryStatistics, int>(
+  (ref, days) => ref.watch(inventoryStatisticsServiceProvider).load(days: days),
 );
 
 final mediaStorageServiceProvider = Provider<MediaStorageService>(
@@ -333,4 +396,97 @@ final nasConnectionServiceProvider = Provider<NasConnectionService>((ref) {
 
 final nasConnectionProvider = StateNotifierProvider<NasConnectionController, NasConnectionState>((ref) {
   return NasConnectionController(ref.watch(nasConnectionServiceProvider));
+});
+
+
+final nasCredentialsServiceProvider = Provider<NasCredentialsService>((ref) {
+  return NasCredentialsService();
+});
+
+final nasAccountProvider = StateNotifierProvider<NasAccountController, NasAccountState>((ref) {
+  final controller = NasAccountController(
+    settings: ref.watch(settingsServiceProvider),
+    connection: ref.watch(nasConnectionServiceProvider),
+    credentials: ref.watch(nasCredentialsServiceProvider),
+  );
+  controller.restore();
+  return controller;
+});
+
+/// A transport assembled only while the authenticated account has a live
+/// NAS session. The provider owns the sibling client's HTTP lifecycle.
+final nasSyncApiProvider = Provider<NasSyncApi?>((ref) {
+  ref.watch(nasAccountProvider);
+  final api = ref.read(nasAccountProvider.notifier).createSyncApi();
+  if (api != null) ref.onDispose(api.close);
+  return api;
+});
+
+/// Concrete sync engine wiring. No background scheduler is started here; a
+/// caller can trigger [SyncEngine.runOnce] using app lifecycle or connectivity
+/// policy without making the provider claim that synchronization is running.
+final syncEngineProvider = Provider<SyncEngine?>((ref) {
+  final account = ref.watch(nasAccountProvider);
+  final api = ref.watch(nasSyncApiProvider);
+  final localWorkspaceId = ref.watch(localWorkspaceIdProvider).valueOrNull;
+  final familyId = account.family.familyId;
+  final deviceId = account.devices.currentDeviceId;
+  if (api == null ||
+      !account.isAuthenticated ||
+      familyId == null ||
+      deviceId == null ||
+      localWorkspaceId == null) {
+    return null;
+  }
+  return SyncEngine.withBusinessAdapter(
+    api: api,
+    repository: SyncOutboxRepository(ref.watch(databaseProvider)),
+    inventoryRepository: ref.watch(inventoryRepositoryProvider),
+    shoppingRepository: ref.watch(shoppingRepositoryProvider),
+    scopeId: familyId,
+    deviceId: deviceId,
+    familyId: familyId,
+    localWorkspaceId: localWorkspaceId,
+  );
+});
+
+final nasAccountStatusProvider = Provider<NasAccountStatus>((ref) {
+  return ref.watch(nasAccountProvider).status;
+});
+
+final nasAuthStateProvider = Provider<NasAuthSnapshot>((ref) {
+  return ref.watch(nasAccountProvider).auth;
+});
+
+final nasFamilyStateProvider = Provider<NasFamilyState>((ref) {
+  return ref.watch(nasAccountProvider).family;
+});
+
+final nasFamilyStatusProvider = Provider<NasFamilyStatus>((ref) {
+  return ref.watch(nasFamilyStateProvider).status;
+});
+
+final nasDeviceStateProvider = Provider<NasDeviceState>((ref) {
+  return ref.watch(nasAccountProvider).devices;
+});
+
+final nasDeviceStatusProvider = Provider<NasDeviceStatus>((ref) {
+  return ref.watch(nasDeviceStateProvider).status;
+});
+
+final nasAccountLoadingProvider = Provider<bool>((ref) {
+  return ref.watch(nasAccountProvider).isLoading;
+});
+
+final nasAccountErrorProvider = Provider<String?>((ref) {
+  return ref.watch(nasAccountProvider).errorMessage;
+});
+
+final nasFamilyErrorProvider = Provider<String?>((ref) {
+  final family = ref.watch(nasFamilyStateProvider);
+  return family.errorMessage ?? family.membersErrorMessage;
+});
+
+final nasDeviceErrorProvider = Provider<String?>((ref) {
+  return ref.watch(nasDeviceStateProvider).errorMessage;
 });

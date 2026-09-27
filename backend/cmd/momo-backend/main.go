@@ -34,6 +34,34 @@ type systemClock struct{}
 
 func (systemClock) Now() time.Time { return time.Now().UTC() }
 
+// homeAssistantIntegrationRepository keeps the existing integration adapter
+// while exposing the phase-four automation repository through the domain
+// service's optional provider hook. This is composition-root wiring only; the
+// HA repository and domain packages remain unchanged.
+type homeAssistantIntegrationRepository struct {
+	base       *hapostgres.IntegrationRepository
+	automation *hapostgres.AutomationRepository
+}
+
+func (r *homeAssistantIntegrationRepository) Create(ctx context.Context, value homeassistant.Integration) error {
+	return r.base.Create(ctx, value)
+}
+func (r *homeAssistantIntegrationRepository) Get(ctx context.Context, familyID, integrationID string) (homeassistant.Integration, error) {
+	return r.base.Get(ctx, familyID, integrationID)
+}
+func (r *homeAssistantIntegrationRepository) List(ctx context.Context, familyID string) ([]homeassistant.Integration, error) {
+	return r.base.List(ctx, familyID)
+}
+func (r *homeAssistantIntegrationRepository) Update(ctx context.Context, familyID string, value homeassistant.Integration) error {
+	return r.base.Update(ctx, familyID, value)
+}
+func (r *homeAssistantIntegrationRepository) Delete(ctx context.Context, familyID, integrationID string) error {
+	return r.base.Delete(ctx, familyID, integrationID)
+}
+func (r *homeAssistantIntegrationRepository) AutomationRepository() homeassistant.AutomationRepository {
+	return r.automation
+}
+
 type homeAssistantActorContextKey struct{}
 
 func contextWithHomeAssistantActor(ctx context.Context, actor homeassistant.Actor) context.Context {
@@ -60,6 +88,15 @@ type homeAssistantApplication interface {
 	ExecuteCommand(context.Context, homeassistant.Actor, string, string, homeassistant.CommandRequest) (homeassistant.CommandDTO, error)
 	ListPermissions(context.Context, homeassistant.Actor) ([]homeassistant.PermissionDTO, error)
 	UpdatePermission(context.Context, homeassistant.Actor, homeassistant.PermissionRequest) (homeassistant.PermissionDTO, error)
+	ListConsumableGroups(context.Context, homeassistant.Actor) ([]homeassistant.ConsumableGroup, error)
+	SaveConsumableGroup(context.Context, homeassistant.Actor, homeassistant.ConsumableGroup) (homeassistant.ConsumableGroup, error)
+	ListConsumableRecipes(context.Context, homeassistant.Actor) ([]homeassistant.ConsumableRecipe, error)
+	SaveConsumableRecipe(context.Context, homeassistant.Actor, homeassistant.ConsumableRecipe) (homeassistant.ConsumableRecipe, error)
+	ListLinkageRules(context.Context, homeassistant.Actor) ([]homeassistant.LinkageRule, error)
+	SaveLinkageRule(context.Context, homeassistant.Actor, homeassistant.LinkageRule) (homeassistant.LinkageRule, error)
+	ListLinkageSuggestions(context.Context, homeassistant.Actor, homeassistant.LinkageSuggestionStatus) ([]homeassistant.LinkageSuggestion, error)
+	ProcessHAEvent(context.Context, homeassistant.Actor, homeassistant.HAEvent) (homeassistant.EventProcessResult, error)
+	ResolveLinkageSuggestion(context.Context, homeassistant.Actor, string, homeassistant.SuggestionDecision) (homeassistant.LinkageSuggestion, error)
 }
 
 // attributedHomeAssistantService is the only Home Assistant service exposed by
@@ -112,6 +149,42 @@ func (s *attributedHomeAssistantService) ListPermissions(ctx context.Context, ac
 
 func (s *attributedHomeAssistantService) UpdatePermission(ctx context.Context, actor homeassistant.Actor, request homeassistant.PermissionRequest) (homeassistant.PermissionDTO, error) {
 	return s.service.UpdatePermission(contextWithHomeAssistantActor(ctx, actor), actor, request)
+}
+
+func (s *attributedHomeAssistantService) ListConsumableGroups(ctx context.Context, actor homeassistant.Actor) ([]homeassistant.ConsumableGroup, error) {
+	return s.service.ListConsumableGroups(contextWithHomeAssistantActor(ctx, actor), actor)
+}
+
+func (s *attributedHomeAssistantService) SaveConsumableGroup(ctx context.Context, actor homeassistant.Actor, value homeassistant.ConsumableGroup) (homeassistant.ConsumableGroup, error) {
+	return s.service.SaveConsumableGroup(contextWithHomeAssistantActor(ctx, actor), actor, value)
+}
+
+func (s *attributedHomeAssistantService) ListConsumableRecipes(ctx context.Context, actor homeassistant.Actor) ([]homeassistant.ConsumableRecipe, error) {
+	return s.service.ListConsumableRecipes(contextWithHomeAssistantActor(ctx, actor), actor)
+}
+
+func (s *attributedHomeAssistantService) SaveConsumableRecipe(ctx context.Context, actor homeassistant.Actor, value homeassistant.ConsumableRecipe) (homeassistant.ConsumableRecipe, error) {
+	return s.service.SaveConsumableRecipe(contextWithHomeAssistantActor(ctx, actor), actor, value)
+}
+
+func (s *attributedHomeAssistantService) ListLinkageRules(ctx context.Context, actor homeassistant.Actor) ([]homeassistant.LinkageRule, error) {
+	return s.service.ListLinkageRules(contextWithHomeAssistantActor(ctx, actor), actor)
+}
+
+func (s *attributedHomeAssistantService) SaveLinkageRule(ctx context.Context, actor homeassistant.Actor, value homeassistant.LinkageRule) (homeassistant.LinkageRule, error) {
+	return s.service.SaveLinkageRule(contextWithHomeAssistantActor(ctx, actor), actor, value)
+}
+
+func (s *attributedHomeAssistantService) ListLinkageSuggestions(ctx context.Context, actor homeassistant.Actor, status homeassistant.LinkageSuggestionStatus) ([]homeassistant.LinkageSuggestion, error) {
+	return s.service.ListLinkageSuggestions(contextWithHomeAssistantActor(ctx, actor), actor, status)
+}
+
+func (s *attributedHomeAssistantService) ProcessHAEvent(ctx context.Context, actor homeassistant.Actor, event homeassistant.HAEvent) (homeassistant.EventProcessResult, error) {
+	return s.service.ProcessHAEvent(contextWithHomeAssistantActor(ctx, actor), actor, event)
+}
+
+func (s *attributedHomeAssistantService) ResolveLinkageSuggestion(ctx context.Context, actor homeassistant.Actor, suggestionID string, decision homeassistant.SuggestionDecision) (homeassistant.LinkageSuggestion, error) {
+	return s.service.ResolveLinkageSuggestion(contextWithHomeAssistantActor(ctx, actor), actor, suggestionID, decision)
 }
 
 type familyMembershipFinder interface {
@@ -252,8 +325,12 @@ func serve(ctx context.Context) error {
 		return fmt.Errorf("compose Home Assistant token cipher: %w", err)
 	}
 	haRepositories := hapostgres.NewRepositories(db, homeAssistantActorResolver)
+	haIntegrationRepository := &homeAssistantIntegrationRepository{
+		base:       haRepositories.Integrations,
+		automation: hapostgres.NewAutomationRepository(db),
+	}
 	haDomainService := homeassistant.NewService(
-		haRepositories.Integrations,
+		haIntegrationRepository,
 		haRepositories.Devices,
 		haRepositories.Entities,
 		haRepositories.Permissions,
