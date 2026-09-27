@@ -34,6 +34,14 @@ func (*contractHAHTTPService) GetState(context.Context, homeassistant.Actor, str
 func (s *contractHAHTTPService) ExecuteCommand(_ context.Context, _ homeassistant.Actor, _ string, _ string, request homeassistant.CommandRequest) (homeassistant.CommandDTO, error) { s.commandCalls++; s.lastCommand = request; return homeassistant.CommandDTO{}, nil }
 func (*contractHAHTTPService) ListPermissions(context.Context, homeassistant.Actor) ([]homeassistant.PermissionDTO, error) { return nil, nil }
 func (*contractHAHTTPService) ListConsumableGroups(context.Context, homeassistant.Actor) ([]homeassistant.ConsumableGroup, error) { return nil, nil }
+func (*contractHAHTTPService) ListConsumableRecipes(context.Context, homeassistant.Actor) ([]homeassistant.ConsumableRecipe, error) { return nil, nil }
+func (*contractHAHTTPService) SaveConsumableGroup(context.Context, homeassistant.Actor, homeassistant.ConsumableGroup) (homeassistant.ConsumableGroup, error) { return homeassistant.ConsumableGroup{}, nil }
+func (*contractHAHTTPService) SaveConsumableRecipe(context.Context, homeassistant.Actor, homeassistant.ConsumableRecipe) (homeassistant.ConsumableRecipe, error) { return homeassistant.ConsumableRecipe{}, nil }
+func (*contractHAHTTPService) ListLinkageRules(context.Context, homeassistant.Actor) ([]homeassistant.LinkageRule, error) { return nil, nil }
+func (*contractHAHTTPService) SaveLinkageRule(context.Context, homeassistant.Actor, homeassistant.LinkageRule) (homeassistant.LinkageRule, error) { return homeassistant.LinkageRule{}, nil }
+func (*contractHAHTTPService) ListLinkageSuggestions(context.Context, homeassistant.Actor, homeassistant.LinkageSuggestionStatus) ([]homeassistant.LinkageSuggestion, error) { return nil, nil }
+func (*contractHAHTTPService) ProcessHAEvent(context.Context, homeassistant.Actor, homeassistant.HAEvent) (homeassistant.EventProcessResult, error) { return homeassistant.EventProcessResult{}, nil }
+func (*contractHAHTTPService) ResolveLinkageSuggestion(context.Context, homeassistant.Actor, string, homeassistant.SuggestionDecision) (homeassistant.LinkageSuggestion, error) { return homeassistant.LinkageSuggestion{}, nil }
 func (*contractHAHTTPService) UpdatePermission(context.Context, homeassistant.Actor, homeassistant.PermissionRequest) (homeassistant.PermissionDTO, error) { return homeassistant.PermissionDTO{}, nil }
 
 func contractHAClaims() auth.AccessTokenClaims { return auth.AccessTokenClaims{UserID: "user-1", FamilyID: "family-1", Role: string(homeassistant.RoleMember), ExpiresAt: time.Now().Add(time.Hour)} }
