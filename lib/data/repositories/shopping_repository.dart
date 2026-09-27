@@ -331,17 +331,6 @@ class ShoppingRepository {
     return null;
   }
 
-  DateTime? _dateValue(Map<String, dynamic> payload, List<String> keys) {
-    for (final key in keys) {
-      if (!payload.containsKey(key)) continue;
-      final value = payload[key];
-      if (value == null) return null;
-      if (value is String) return DateTime.parse(value).toUtc();
-      throw FormatException('$key must be an RFC3339 date or null');
-    }
-    return null;
-  }
-
   Future<void> delete(String id) async {
     final now = DateTime.now();
     await _database.transaction(() async {

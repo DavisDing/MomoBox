@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/momo_theme.dart';
 import '../../application/nas_connection_service.dart';
+import '../../application/nas_auth_service.dart';
 import '../../domain/models/nas_family_device_models.dart';
 import '../../domain/models/nas_models.dart';
 import '../controllers/nas_account_controller.dart';
@@ -48,9 +49,6 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
       NasConnectionStatus.unavailable || NasConnectionStatus.failed => Colors.orange,
     };
   }
-
-  bool get _hasServerUrl =>
-      NasConnectionService.normalizeServerUrl(_serverUrlController.text) != null;
 
   Future<void> _testConnection() async {
     FocusManager.instance.primaryFocus?.unfocus();

@@ -118,7 +118,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
             ],
             const SizedBox(height: 12),
             FilledButton.icon(
-              onPressed: !enabled || _working ? null : () => _runSync(engine!),
+              onPressed: !enabled || _working ? null : () => _runSync(engine),
               icon: _working
                   ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.sync),
@@ -145,7 +145,11 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
             ),
             const SizedBox(height: 12),
             if (awaitingChoice && _availableModes.isNotEmpty)
-              ..._availableModes.map(_buildModeTile),
+              RadioGroup<String>(
+                groupValue: _selectedMode,
+                onChanged: (value) => setState(() => _selectedMode = value),
+                child: Column(children: _availableModes.map(_buildModeTile).toList()),
+              ),
             if (awaitingChoice && _availableModes.isNotEmpty) const SizedBox(height: 8),
             OutlinedButton.icon(
               onPressed: engine == null || _working ? null : () => _bootstrap(engine),
@@ -183,8 +187,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     };
     return RadioListTile<String>(
       value: mode,
-      groupValue: _selectedMode,
-      onChanged: _working ? null : (value) => setState(() => _selectedMode = value),
+      enabled: !_working,
       title: Text(title),
       subtitle: Text(description),
       contentPadding: EdgeInsets.zero,
@@ -450,8 +453,8 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                 onPressed: !canResolveRemotely || resolving
                     ? null
                     : () => _resolveRemoteConflict(
-                          conflict: remote!,
-                          deviceId: deviceId!,
+                          conflict: remote,
+                          deviceId: deviceId,
                           localConflicts: <SyncConflictEntry>[conflict],
                           action: 'keep_remote',
                         ),
@@ -461,8 +464,8 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                 onPressed: !canResolveRemotely || resolving || unsupportedLocal
                     ? null
                     : () => _resolveRemoteConflict(
-                          conflict: remote!,
-                          deviceId: deviceId!,
+                          conflict: remote,
+                          deviceId: deviceId,
                           localConflicts: <SyncConflictEntry>[conflict],
                           action: 'keep_local',
                         ),
@@ -734,11 +737,9 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           .toList(growable: false);
       _remoteConflictsFuture = null;
       _resolvingRemoteConflictId = null;
-      if (_message == null) {
-        _message = local == null || !localUpdated
+      _message ??= local == null || !localUpdated
             ? '远端已解决；未找到匹配的本地冲突记录。'
             : '远端已解决，并已更新本地冲突记录。';
-      }
     });
   }
 

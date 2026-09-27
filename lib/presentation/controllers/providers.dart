@@ -14,6 +14,7 @@ import '../../application/inventory_statistics_service.dart';
 import '../../application/manual_qa_service.dart';
 import '../../application/media_service.dart';
 import '../../application/nas_connection_service.dart';
+import '../../application/nas_auth_service.dart';
 import '../../presentation/controllers/nas_account_controller.dart';
 import '../../services/nas_credentials_service.dart';
 import '../../application/reminder_service.dart';

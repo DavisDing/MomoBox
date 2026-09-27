@@ -98,12 +98,12 @@ class NasAuthService {
 
   Future<NasAuthSnapshot> register(NasRegisterRequest request) async {
     final response = await _apiClient.register(request);
-    return _accept(response);
+    return await _accept(response);
   }
 
   Future<NasAuthSnapshot> login(NasLoginRequest request) async {
     final response = await _apiClient.login(request);
-    return _accept(response);
+    return await _accept(response);
   }
 
   Future<NasAuthSnapshot> refresh() async {
@@ -116,7 +116,7 @@ class NasAuthService {
       final response = await _apiClient.refresh(
         NasRefreshRequest(stored.refreshToken),
       );
-      return _accept(response);
+      return await _accept(response);
     } on NasApiError catch (error) {
       if (error.isUnauthorized) {
         await _credentials.clear();
@@ -143,7 +143,7 @@ class NasAuthService {
       _apiClient.setAccessToken(null);
       _setSnapshot(const NasAuthSnapshot.signedOut());
     }
-    if (failure != null) throw failure!;
+    if (failure != null) throw failure;
     return _snapshot;
   }
 
@@ -162,7 +162,7 @@ class NasAuthService {
       await _credentials.clear();
       _snapshot = const NasAuthSnapshot.signedOut();
     }
-    if (failure != null) throw failure!;
+    if (failure != null) throw failure;
   }
 
   Future<String?> _refreshAccessTokenForClient() async {

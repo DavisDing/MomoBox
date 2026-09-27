@@ -223,8 +223,8 @@ class _StatisticsChartPainter extends CustomPainter {
       max,
       math.max(point.consumed, math.max(point.intake, point.discarded)),
     ).toInt())).toDouble();
-    final gridPaint = Paint()..color = Colors.grey.withOpacity(0.22)..strokeWidth = 1;
-    final axisPaint = Paint()..color = Colors.grey.withOpacity(0.55)..strokeWidth = 1;
+    final gridPaint = Paint()..color = Colors.grey.withValues(alpha: 0.22)..strokeWidth = 1;
+    final axisPaint = Paint()..color = Colors.grey.withValues(alpha: 0.55)..strokeWidth = 1;
     final labelStyle = const TextStyle(fontSize: 10, color: Colors.grey);
 
     for (var index = 0; index <= 4; index++) {

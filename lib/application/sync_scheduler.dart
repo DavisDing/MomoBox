@@ -101,7 +101,7 @@ class SyncScheduler with WidgetsBindingObserver {
 
   Future<void> _initializeNetworkStatus() async {
     try {
-      await _handleNetworkAvailability(await _networkStatusSource.current);
+      _handleNetworkAvailability(await _networkStatusSource.current);
     } catch (_) {
       // Keep the initial state unknown. A first run is still allowed, and a
       // later stream/lifecycle event can establish the actual state.

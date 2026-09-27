@@ -9,7 +9,7 @@ typedef NasFamilyDeviceRequest = Future<Map<String, dynamic>> Function({
   required String method,
   required String path,
   Map<String, dynamic>? body,
-  bool expectBody = true,
+  required bool expectBody,
 });
 
 class NasFamilyDeviceApi {
@@ -17,7 +17,7 @@ class NasFamilyDeviceApi {
     required NasApiClient apiClient,
     NasFamilyDeviceRequest? request,
   }) : _request = request ??
-            ({
+            (({
               required String method,
               required String path,
               Map<String, dynamic>? body,
@@ -28,7 +28,7 @@ class NasFamilyDeviceApi {
                   path: path,
                   body: body,
                   expectBody: expectBody,
-                );
+                ));
 
   final NasFamilyDeviceRequest _request;
 
@@ -43,14 +43,14 @@ class NasFamilyDeviceApi {
 
   Future<NasFamilyResponseDto> currentFamily() async {
     return _decode(
-      await _send('GET', '/families/current'),
+      await _send('GET', '/families/current', null),
       NasFamilyResponseDto.fromJson,
     );
   }
 
   Future<List<NasFamilyMemberDto>> listMembers() async {
     return _decodeList(
-      await _send('GET', '/families/members'),
+      await _send('GET', '/families/members', null),
       parseNasFamilyMembers,
     );
   }
