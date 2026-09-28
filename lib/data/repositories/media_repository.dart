@@ -126,7 +126,7 @@ class MediaRepository {
     final normalizedQuery = query.trim();
     if (normalizedQuery.isEmpty) return const [];
     final safeLimit = limit.clamp(1, 20);
-    final rows = <TypedResult>[];
+    final rows = <QueryRow>[];
     final ftsQuery = _ftsQuery(normalizedQuery);
     if (ftsQuery.isNotEmpty) {
       try {
@@ -252,7 +252,7 @@ class MediaRepository {
     return tokens;
   }
 
-  MediaOcrSearchResult _toSearchResult(TypedResult row) {
+  MediaOcrSearchResult _toSearchResult(QueryRow row) {
     final asset = MediaAsset(
       id: row.read<String>('id'),
       entityType: row.read<String>('entity_type'),

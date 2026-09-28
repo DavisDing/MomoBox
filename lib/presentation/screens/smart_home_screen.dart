@@ -225,7 +225,7 @@ class SmartHomeScreen extends ConsumerWidget {
             onTap: () {
               showAppSnackBar(context,
                 SnackBar(
-                  content: Text('已触发场景：【${scene.name}】执行指令已下发'),
+                  content: Text('场景快捷执行尚未接入，未执行【${scene.name}】。'),
                 ),
               );
             },

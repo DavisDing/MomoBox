@@ -175,7 +175,7 @@ func contractService(integration Integration, entity HAEntity, permissions ...En
 	cipher := &contractCipher{encrypted: []byte("ciphertext"), version: "v1", plaintext: "secret-token-123456"}
 	client := &contractHAClient{}
 	service := NewService(integrations, contractDeviceRepo{}, entities, permissionRepo, audit, cipher, client)
-	service.Now = func() time.Time { return time.Date(2026, 9, 25, 0, 0, 0, time.UTC) }
+	service.Now = func() time.Time { return time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC) }
 	return service, integrations, entities, permissionRepo, audit, cipher, client
 }
 
@@ -229,7 +229,9 @@ func TestPermissionManagementAndEntityFiltering(t *testing.T) {
 	member := Actor{UserID: "member", FamilyID: "family-a", Role: RoleMember}
 	values, err := service.ListEntities(context.Background(), member, integration.ID, false)
 	if err != nil { t.Fatalf("ListEntities() error = %v", err) }
-	if len(values) != 1 || values[0].EntityID != visible.EntityID { t.Fatalf("visible entities = %#v", values) }
+	entityIDs := map[string]bool{}
+	for _, value := range values { entityIDs[value.EntityID] = true }
+	if len(values) != 2 || !entityIDs[visible.EntityID] || !entityIDs[notControllable.EntityID] { t.Fatalf("visible entities = %#v", values) }
 	values, err = service.ListEntities(context.Background(), member, integration.ID, true)
 	if err != nil { t.Fatalf("ListEntities(controllableOnly) error = %v", err) }
 	if len(values) != 1 || values[0].EntityID != visible.EntityID { t.Fatalf("controllable entities = %#v", values) }

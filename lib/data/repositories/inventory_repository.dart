@@ -689,8 +689,8 @@ class InventoryRepository {
             batchNo: _firstNullableValue(payload, const ['batch_no', 'batchNo']),
             productionDate: _dateCompanion(payload, const ['produced_date', 'production_date', 'productionDate']),
             expiryDate: _dateCompanion(payload, const ['expiry_date', 'expiryDate']),
-            dateSource: _firstNullableValue(payload, const ['date_source', 'dateSource']),
-            datePrecision: _firstNullableValue(payload, const ['date_precision', 'datePrecision']),
+            dateSource: _firstRequiredValue(payload, const ['date_source', 'dateSource']),
+            datePrecision: _firstRequiredValue(payload, const ['date_precision', 'datePrecision']),
             remainingQuantity: commandQuantity == null ? const Value.absent() : Value(commandQuantity),
             initialQuantity: restockAmount > 0
                 ? Value(existing.initialQuantity + restockAmount)
@@ -790,6 +790,13 @@ class InventoryRepository {
     final value = _stringValue(payload, key);
     if (value == null) throw FormatException('$key must be a non-empty string');
     return Value(value);
+  }
+
+  Value<String> _firstRequiredValue(Map<String, dynamic> payload, List<String> keys) {
+    for (final key in keys) {
+      if (payload.containsKey(key)) return _requiredValue(payload, key);
+    }
+    return const Value.absent();
   }
 
   Value<String?> _firstNullableValue(Map<String, dynamic> payload, List<String> keys) {

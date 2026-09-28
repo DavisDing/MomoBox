@@ -142,10 +142,19 @@ jobs:
         run: flutter analyze
 
       - name: Unit tests
+        timeout-minutes: 10
         run: flutter test --reporter expanded
 
       - name: Android debug build
         run: flutter build apk --debug
+
+      - name: Upload Android debug package
+        uses: actions/upload-artifact@v4
+        with:
+          name: momobox-debug-${{ github.sha }}
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
 
   ios-verify:
     name: iOS unsigned build (Xcode 27)
@@ -190,8 +199,15 @@ jobs:
       - name: Generate Drift sources
         run: dart run build_runner build --delete-conflicting-outputs
 
-      - name: iOS no-codesign build
-        run: flutter build ios --no-codesign
+      - name: Generate iOS build configuration
+        run: flutter build ios --config-only --no-codesign
+
+      - name: iOS unsigned build
+        run: >-
+          xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner
+          -configuration Release -sdk iphoneos -destination 'generic/platform=iOS'
+          CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=''
+          DEVELOPMENT_TEAM='' build
 
   backend-verify:
     name: Backend test and vet

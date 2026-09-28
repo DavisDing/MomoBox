@@ -470,7 +470,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
               title: const Text('允许查看状态', style: TextStyle(fontSize: 12)),
               subtitle: Text('角色：${permission.role}', style: const TextStyle(fontSize: 11)),
               value: permission.canView,
-              activeColor: palette.primary,
+              activeThumbColor: palette.primary,
               onChanged: state.isLoading ? null : (value) => _updatePermission(permission, canView: value),
             ),
             SwitchListTile.adaptive(
@@ -484,7 +484,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
                 style: const TextStyle(fontSize: 11),
               ),
               value: permission.canControl,
-              activeColor: palette.primary,
+              activeThumbColor: palette.primary,
               onChanged: state.isLoading || !permission.canView
                   ? null
                   : (value) => _updatePermission(permission, canControl: value),

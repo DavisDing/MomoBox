@@ -355,7 +355,7 @@ class SyncOutboxRepository {
               entry.updatedAt.isSmallerThanValue(cutoff)))
         .write(
       SyncOutboxCompanion(
-        status: const Value(SyncOutboxStatus.pending.wireValue),
+        status: Value(SyncOutboxStatus.pending.wireValue),
         nextAttemptAt: const Value(null),
         lastErrorCode: const Value('stale_in_flight_reclaimed'),
         lastErrorMessage: const Value('本地同步租约已过期，已回收并准备重试。'),
@@ -380,7 +380,7 @@ class SyncOutboxRepository {
                 entry.updatedAt.isSmallerThanValue(cutoff)))
           .write(
         SyncOutboxCompanion(
-          status: const Value(SyncOutboxStatus.pending.wireValue),
+          status: Value(SyncOutboxStatus.pending.wireValue),
           nextAttemptAt: const Value(null),
           lastErrorCode: const Value('stale_in_flight_reclaimed'),
           lastErrorMessage: const Value('本地同步租约已过期，已回收并准备重试。'),
@@ -406,7 +406,7 @@ class SyncOutboxRepository {
             ..where((entry) => entry.changeId.equals(selected.changeId)))
           .write(
         SyncOutboxCompanion(
-          status: const Value(SyncOutboxStatus.inFlight.wireValue),
+          status: Value(SyncOutboxStatus.inFlight.wireValue),
           attemptCount: Value(selected.attemptCount + 1),
           updatedAt: Value(claimedAt),
         ),
@@ -469,7 +469,7 @@ class SyncOutboxRepository {
               ..where((row) => row.changeId.equals(entry.changeId)))
             .write(
           SyncOutboxCompanion(
-            status: const Value(SyncOutboxStatus.blocked.wireValue),
+            status: Value(SyncOutboxStatus.blocked.wireValue),
             lastErrorCode: const Value('dependency_blocked'),
             lastErrorMessage: Value('等待依赖变化完成：$blockedBy'),
             updatedAt: Value(now),
@@ -480,7 +480,7 @@ class SyncOutboxRepository {
               ..where((row) => row.changeId.equals(entry.changeId)))
             .write(
           SyncOutboxCompanion(
-            status: const Value(SyncOutboxStatus.pending.wireValue),
+            status: Value(SyncOutboxStatus.pending.wireValue),
             nextAttemptAt: const Value(null),
             lastErrorCode: const Value(null),
             lastErrorMessage: const Value(null),
@@ -742,7 +742,7 @@ class SyncOutboxRepository {
           ..where((entry) => entry.changeId.equals(changeId)))
         .write(
       SyncOutboxCompanion(
-        status: const Value(SyncOutboxStatus.pending.wireValue),
+        status: Value(SyncOutboxStatus.pending.wireValue),
         nextAttemptAt: Value(nextAttemptAt),
         lastErrorCode: Value(errorCode),
         lastErrorMessage: Value(errorMessage),
@@ -761,7 +761,7 @@ class SyncOutboxRepository {
             ..where((entry) => entry.changeId.equals(changeId)))
           .write(
         SyncOutboxCompanion(
-          status: const Value(SyncOutboxStatus.conflict.wireValue),
+          status: Value(SyncOutboxStatus.conflict.wireValue),
           updatedAt: Value(now),
           completedAt: Value(now),
         ),

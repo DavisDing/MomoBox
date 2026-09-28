@@ -743,7 +743,7 @@ List<T> _objectList<T>(
   String key, {
   bool optional = false,
 }) {
-  if (value == null && optional) return const <T>[];
+  if (value == null && optional) return <T>[];
   if (value is! List) throw FormatException('$key must be an array');
   return value.map((item) {
     if (item is! Map) throw FormatException('$key must contain objects');

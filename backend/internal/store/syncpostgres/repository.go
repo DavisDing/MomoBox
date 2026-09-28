@@ -1011,9 +1011,18 @@ ON CONFLICT (family_id, entity, entity_id, version) DO NOTHING`, r.familyID, ent
 func (r *transactionRepository) validateEntityDependencies(ctx context.Context, entity string, payload map[string]any) error {
 	check := func(field, table, code string, required bool) error {
 		raw, exists := payload[field]
+		if !exists || raw == nil {
+			if required {
+				return syncdomain.NewBusinessError("DEPENDENCY_REQUIRED", field+" is required", map[string]any{"field": field})
+			}
+			return nil
+		}
 		value, ok := raw.(string)
+		if !ok {
+			return syncdomain.NewBusinessError(code, field+" must be a UUID", map[string]any{"field": field})
+		}
 		value = strings.TrimSpace(value)
-		if !exists || value == "" {
+		if value == "" {
 			if required {
 				return syncdomain.NewBusinessError("DEPENDENCY_REQUIRED", field+" is required", map[string]any{"field": field})
 			}
@@ -1082,6 +1091,17 @@ func (r *transactionRepository) validateInventoryDependencies(ctx context.Contex
 		}
 	}
 	return nil
+}
+
+func cloneMap(value map[string]any) map[string]any {
+	if value == nil {
+		return nil
+	}
+	result := make(map[string]any, len(value))
+	for key, item := range value {
+		result[key] = item
+	}
+	return result
 }
 
 func isUUID(value string) bool {
