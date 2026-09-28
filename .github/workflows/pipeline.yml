@@ -142,10 +142,19 @@ jobs:
         run: flutter analyze
 
       - name: Unit tests
+        timeout-minutes: 10
         run: flutter test --reporter expanded
 
       - name: Android debug build
         run: flutter build apk --debug
+
+      - name: Upload Android debug package
+        uses: actions/upload-artifact@v4
+        with:
+          name: momobox-debug-${{ github.sha }}
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
 
   ios-verify:
     name: iOS unsigned build (Xcode 27)

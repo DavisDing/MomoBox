@@ -175,7 +175,10 @@ void main() {
     expect(items.single.totalStock, 5);
     expect(items.single.batches, hasLength(2));
     // Sync deletion preserves a tombstone, but removes the item from the list.
-    expect(await ShoppingRepository(database).watchEntries().first, isEmpty);
+    expect(
+      await tester.runAsync(() => ShoppingRepository(database).watchEntries().first),
+      isEmpty,
+    );
     final deletedEntry = await database.select(database.shoppingEntries).getSingle();
     expect(deletedEntry.deletedAt, isNotNull);
     expect(deletedEntry.productId, productId);
