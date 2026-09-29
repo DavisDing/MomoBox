@@ -279,6 +279,11 @@ jobs:
           mkdir -p dist
           cp build/app/outputs/flutter-apk/app-release.apk "dist/MomoBox-v${VERSION}.apk"
           cp build/app/outputs/bundle/release/app-release.aab "dist/MomoBox-v${VERSION}.aab"
+          cp deploy/nas/docker-compose.yaml "dist/MomoBox-v${VERSION}-docker-compose.yaml"
+          sed \
+            -e "s#^MOMO_BACKEND_IMAGE=.*#MOMO_BACKEND_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/momobox-backend:v${VERSION}#" \
+            -e "s#^APP_VERSION=.*#APP_VERSION=v${VERSION}#" \
+            deploy/nas/.env.example > "dist/MomoBox-v${VERSION}-nas.env.example"
           sha256sum dist/* > dist/SHA256SUMS.txt
 
       - name: Upload release packages for publication
@@ -369,6 +374,8 @@ jobs:
           assets=(
             "dist/MomoBox-v${VERSION}.apk"
             "dist/MomoBox-v${VERSION}.aab"
+            "dist/MomoBox-v${VERSION}-docker-compose.yaml"
+            "dist/MomoBox-v${VERSION}-nas.env.example"
             'dist/SHA256SUMS.txt'
           )
 

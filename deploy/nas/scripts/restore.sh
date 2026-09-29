@@ -5,7 +5,7 @@ set -eu
 PROGRAM=${0##*/}
 SCRIPT_DIR=$(CDPATH= cd -P "$(dirname "$0")" && pwd)
 NAS_DIR=$(CDPATH= cd -P "$SCRIPT_DIR/.." && pwd)
-COMPOSE_FILE=$NAS_DIR/compose.yaml
+COMPOSE_FILE=$NAS_DIR/docker-compose.yaml
 LOCK_HELPER=$SCRIPT_DIR/deployment-lock.sh
 ASSUME_YES=0
 DUMP_FILE=
