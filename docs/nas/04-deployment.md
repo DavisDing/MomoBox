@@ -21,8 +21,8 @@ MomoBox/
 │   └── tests/
 ├── deploy/
 │   └── nas/
-│       ├── compose.yaml              # 生产环境：拉取 GHCR 镜像
-│       ├── compose.local-build.yaml  # 开发环境：本地构建 override
+│       ├── docker-compose.yaml              # 生产环境：拉取 GHCR 镜像
+│       ├── docker-compose.local-build.yaml  # 开发环境：本地构建 override
 │       ├── .env.example
 │       ├── README.md
 │       └── scripts/
@@ -49,7 +49,7 @@ MomoBox/
 Compose 位于：
 
 ```text
-/Users/dinghao/Downloads/MomoBox/deploy/nas/compose.yaml
+/Users/dinghao/Downloads/MomoBox/deploy/nas/docker-compose.yaml
 ```
 
 生产 NAS 的 Compose 使用 GHCR 镜像，而非在 NAS 从源码构建：
@@ -60,7 +60,7 @@ services:
     image: ${MOMO_BACKEND_IMAGE:?set MOMO_BACKEND_IMAGE to a pinned GHCR tag or digest in .env}
 ```
 
-`MOMO_BACKEND_IMAGE` 和 `APP_VERSION` 必须由 `.env` 显式提供，生产不得依赖可变的 `latest`。推荐使用 `vX.Y.Z`、`sha-<commit>` 或 digest；版本标签供排障和回退。开发机如需本地构建，显式叠加 `compose.local-build.yaml`；该 override 的构建上下文固定为 `../../backend`。这样 Flutter、Android、iOS、`.dart_tool` 和本地资源不会进入后端镜像。
+`MOMO_BACKEND_IMAGE` 和 `APP_VERSION` 必须由 `.env` 显式提供，生产不得依赖可变的 `latest`。推荐使用 `vX.Y.Z`、`sha-<commit>` 或 digest；版本标签供排障和回退。开发机如需本地构建，显式叠加 `docker-compose.local-build.yaml`；该 override 的构建上下文固定为 `../../backend`。这样 Flutter、Android、iOS、`.dart_tool` 和本地资源不会进入后端镜像。
 
 ## 2. 服务拓扑
 
@@ -296,7 +296,7 @@ go test ./...
 go vet ./...
 docker build --platform linux/amd64 -t momo-backend:test backend/
 docker build --platform linux/arm64 -t momo-backend:test-arm64 backend/
-docker compose -f deploy/nas/compose.yaml config
+docker compose -f deploy/nas/docker-compose.yaml config
 ./deploy/nas/scripts/self-test.sh
 ```
 
