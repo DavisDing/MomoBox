@@ -23,6 +23,26 @@ CI 仍可发布 `latest` 作为人工选择的便利别名，但生产部署必�
 
 正式发布会同时保留版本标签，例如 `ghcr.io/davisding/momobox-backend:v0.1.0`。遇到问题时，将 `.env` 中的 `MOMO_BACKEND_IMAGE` 和 `APP_VERSION` 一起改为已知版本，再运行更新脚本回退应用镜像。GHCR 包需要在首次发布后由仓库管理员在 GitHub Packages 中设为 **Public**，公开包允许 NAS 匿名拉取。
 
+## 绿联 NAS（UGOS）Docker Compose
+
+`docker-compose.yaml` 使用标准 Compose 规范，可直接在绿联 NAS 的 **Docker → 项目 → 创建项目** 中导入或粘贴。请将 `docker-compose.yaml` 与 `.env` 放在同一个项目目录；如果 UGOS 页面不自动读取 `.env`，就在项目的环境变量设置中逐项填写同名变量。不要把 `docker-compose.local-build.yaml` 导入 NAS，它只用于开发机本地构建。
+
+导入前必须设置以下变量：
+
+```dotenv
+MOMO_BACKEND_IMAGE=ghcr.io/davisding/momobox-backend:vX.Y.Z
+APP_VERSION=vX.Y.Z
+POSTGRES_PASSWORD=替换为随机密码
+DATABASE_URL=postgres://momo:替换为URL编码后的密码@postgres:5432/momo?sslmode=disable
+JWT_SECRET=至少32字节随机值
+REFRESH_TOKEN_PEPPER=至少32字节随机值
+HA_TOKEN_ENCRYPTION_KEY=恰好32个ASCII字符
+```
+
+其中 `MOMO_BACKEND_IMAGE` 和 `APP_VERSION` 必须对应同一个已发布版本；生产环境不要使用 `latest`。绿联 NAS 需要能够访问 GHCR，且 `momo-backend` 镜像必须支持 NAS 的 CPU 架构（当前发布镜像为 `linux/amd64` 和 `linux/arm64`）。
+
+创建项目后，先在 UGOS 的 Compose 编辑器中执行配置检查（或保存项目让 UGOS 校验），再启动项目。首次启动应等待 `postgres` 健康后再启动后端；后端健康检查通过后访问 `http://NAS地址:映射端口/api/v1/health`。
+
 ## 首次部署
 
 1. 将本目录复制到 NAS，例如 `/volume1/docker/momobox-nas`。生产 NAS 不需要克隆整个源码仓库，也不需要安装 Go 或 Flutter。
@@ -84,8 +104,8 @@ APP_VERSION=v0.1.0
 
 ```sh
 docker compose \
-  -f deploy/nas/compose.yaml \
-  -f deploy/nas/compose.local-build.yaml \
+  -f deploy/nas/docker-compose.yaml \
+  -f deploy/nas/docker-compose.local-build.yaml \
   up --build
 ```
 
