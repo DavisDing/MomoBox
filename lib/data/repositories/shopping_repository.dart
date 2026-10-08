@@ -23,6 +23,8 @@ class ShoppingRepository {
   final SyncOutboxRepository? _outbox;
   final String? _syncScopeId;
 
+  AppDatabase get database => _database;
+
   Stream<List<ShoppingEntry>> watchEntries() {
     return (_database.select(_database.shoppingEntries)
           ..where((entry) => entry.deletedAt.isNull())
@@ -171,6 +173,7 @@ class ShoppingRepository {
     required DateTime updatedAt,
     String? updatedByDevice,
     DateTime? deletedAt,
+    bool authoritativeSnapshot = false,
   }) async {
     final now = updatedAt.toUtc();
     return _database.transaction(() async {
@@ -180,7 +183,8 @@ class ShoppingRepository {
       if (_isStale(existing?.serverVersion, version)) {
         return SyncRemoteApplyStatus.ignoredStale;
       }
-      if (_isSameVersion(existing?.serverVersion, version)) {
+      if (!authoritativeSnapshot &&
+          _isSameVersion(existing?.serverVersion, version)) {
         return SyncRemoteApplyStatus.alreadyApplied;
       }
 
@@ -221,7 +225,12 @@ class ShoppingRepository {
               ..where((entry) => entry.id.equals(entryId)))
             .write(
           ShoppingEntriesCompanion(
-            productId: productId == null ? const Value.absent() : Value(productId),
+            productId: authoritativeSnapshot &&
+                    (payload.containsKey('product_id') || payload.containsKey('productId'))
+                ? Value(productId)
+                : productId == null
+                    ? const Value.absent()
+                    : Value(productId),
             itemName: name == null ? const Value.absent() : Value(name),
             category: _nullableCompanion(payload, 'category'),
             targetQuantity: quantity == null ? const Value.absent() : Value(quantity),
@@ -243,6 +252,7 @@ class ShoppingRepository {
     required int version,
     required DateTime deletedAt,
     String? updatedByDevice,
+    bool authoritativeSnapshot = false,
   }) async {
     return _database.transaction(() async {
       final existing = await (_database.select(_database.shoppingEntries)
@@ -252,7 +262,8 @@ class ShoppingRepository {
       if (_isStale(existing.serverVersion, version)) {
         return SyncRemoteApplyStatus.ignoredStale;
       }
-      if (_isSameVersion(existing.serverVersion, version)) {
+      if (!authoritativeSnapshot &&
+          _isSameVersion(existing.serverVersion, version)) {
         return SyncRemoteApplyStatus.alreadyApplied;
       }
       await (_database.update(_database.shoppingEntries)
@@ -327,17 +338,6 @@ class ShoppingRepository {
       final value = payload[key];
       if (value is bool) return value;
       throw FormatException('$key must be a boolean');
-    }
-    return null;
-  }
-
-  DateTime? _dateValue(Map<String, dynamic> payload, List<String> keys) {
-    for (final key in keys) {
-      if (!payload.containsKey(key)) continue;
-      final value = payload[key];
-      if (value == null) return null;
-      if (value is String) return DateTime.parse(value).toUtc();
-      throw FormatException('$key must be an RFC3339 date or null');
     }
     return null;
   }

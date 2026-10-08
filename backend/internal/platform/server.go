@@ -6,6 +6,9 @@ import (
 	"time"
 )
 
+// Bound database probes independently of HTTP write and container timeouts.
+const healthDatabaseTimeout = 2 * time.Second
+
 type Server struct {
 	HTTPServer *http.Server
 	DB         DB
@@ -57,8 +60,12 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 		WriteAPIError(w, r, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
 		return
 	}
+	// Inherit earlier deadlines and cancellation; release the timer even when
+	// PingContext succeeds. This checks connectivity, not schema readiness.
+	ctx, cancel := context.WithTimeout(r.Context(), healthDatabaseTimeout)
+	defer cancel()
 	status, database := "ok", "ok"
-	if s.DB == nil || s.DB.PingContext(r.Context()) != nil {
+	if s.DB == nil || s.DB.PingContext(ctx) != nil {
 		status, database = "degraded", "unavailable"
 	}
 	code := http.StatusOK

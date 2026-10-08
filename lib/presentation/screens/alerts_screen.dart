@@ -123,7 +123,7 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
 
               if (_currentFilter == 'all' || _currentFilter == 'expiring')
                 _AlertSection(
-                  title: '30 天内临期',
+                  title: '临期提醒',
                   color: Colors.orange,
                   items: summary.expiring,
                   type: ReminderType.expiring,

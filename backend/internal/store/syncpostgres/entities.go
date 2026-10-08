@@ -82,7 +82,7 @@ var entitySpecs = map[string]entitySpec{
 		columns: []entityColumn{
 			{name: "product_id", cast: "uuid"},
 			{name: "enabled", cast: "boolean", insertExpr: "COALESCE(($3::jsonb ->> 'enabled')::boolean, true)"},
-			{name: "expiry_warning_days", cast: "integer", insertExpr: "COALESCE(($3::jsonb ->> 'expiry_warning_days')::integer, 7)"},
+			{name: "expiry_warning_days", cast: "integer", insertExpr: "COALESCE(($3::jsonb ->> 'expiry_warning_days')::integer, 30)"},
 			{name: "low_stock_threshold", cast: "integer"},
 			{name: "opened_warning_days", cast: "integer"},
 		},

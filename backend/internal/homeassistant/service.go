@@ -363,11 +363,15 @@ func (s *Service) GetState(ctx context.Context, actor Actor, integrationID, enti
 	if err := validateEntityID(entityID); err != nil {
 		return StateDTO{}, err
 	}
+	integration, err := s.Integrations.Get(ctx, actor.FamilyID, integrationID)
+	if err != nil {
+		return StateDTO{}, err
+	}
 	entity, err := s.Entities.Get(ctx, actor.FamilyID, integrationID, entityID)
 	if err != nil {
 		return StateDTO{}, err
 	}
-	if entity.FamilyID != actor.FamilyID || entity.IntegrationID != integrationID {
+	if integration.FamilyID != actor.FamilyID || entity.FamilyID != actor.FamilyID || entity.IntegrationID != integrationID {
 		return StateDTO{}, businessError(CodeNotFound, "Home Assistant entity was not found", nil)
 	}
 	permission, err := s.Permissions.Get(ctx, actor.FamilyID, entity.IntegrationID, entity.EntityID, actor.Role)
@@ -404,11 +408,15 @@ func (s *Service) ExecuteCommand(ctx context.Context, actor Actor, integrationID
 	if err := validateCommandRequest(req); err != nil {
 		return CommandDTO{}, err
 	}
+	integration, err := s.Integrations.Get(ctx, actor.FamilyID, integrationID)
+	if err != nil {
+		return CommandDTO{}, err
+	}
 	entity, err := s.Entities.Get(ctx, actor.FamilyID, integrationID, entityID)
 	if err != nil {
 		return CommandDTO{}, err
 	}
-	if entity.FamilyID != actor.FamilyID || entity.IntegrationID != integrationID {
+	if integration.FamilyID != actor.FamilyID || entity.FamilyID != actor.FamilyID || entity.IntegrationID != integrationID {
 		return CommandDTO{}, businessError(CodeNotFound, "Home Assistant entity was not found", nil)
 	}
 	permission, permissionErr := s.Permissions.Get(ctx, actor.FamilyID, entity.IntegrationID, entity.EntityID, actor.Role)

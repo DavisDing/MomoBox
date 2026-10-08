@@ -28,19 +28,39 @@ class NasApiClient {
   String? _accessToken;
   NasAccessTokenRefresh? _refreshHandler;
   Future<String?>? _refreshInFlight;
+  int _sessionRevision = 0;
 
   bool get hasAccessToken => _accessToken != null;
+
+  /// Canonical API endpoint identity; includes a reverse-proxy path and treats
+  /// the scheme/port as part of the credential boundary.
+  String get serverIdentity => Uri(
+        scheme: _baseUri.scheme.toLowerCase(),
+        host: _baseUri.host.toLowerCase(),
+        port: _baseUri.port == (_baseUri.scheme == 'https' ? 443 : 80)
+            ? null
+            : _baseUri.port,
+        path: _baseUri.path,
+      ).toString();
 
   /// Current in-memory bearer token for sibling feature clients. The value is
   /// never persisted here; refresh and clearing remain owned by the auth
   /// service.
   String? get accessToken => _accessToken;
 
-  void close() => _client.close();
+  void close() {
+    setAccessToken(null);
+    setRefreshHandler(null);
+    _client.close();
+  }
 
   void setAccessToken(String? accessToken) {
     final normalized = accessToken?.trim();
     _accessToken = normalized == null || normalized.isEmpty ? null : normalized;
+    if (_accessToken == null) {
+      _sessionRevision++;
+      _refreshInFlight = null;
+    }
   }
 
   void setRefreshHandler(NasAccessTokenRefresh? handler) {
@@ -67,11 +87,12 @@ class NasApiClient {
     return _parseResponse(json, NasAuthResponse.fromJson);
   }
 
-  Future<void> logout(NasRefreshRequest request) async {
+  Future<void> logout(NasRefreshRequest request, {String? accessToken}) async {
     await _sendJson(
       method: 'POST',
       path: '/auth/logout',
       body: request.toJson(),
+      tokenOverride: accessToken,
       authenticated: true,
       retryOnUnauthorized: false,
       expectBody: false,
@@ -132,9 +153,22 @@ class NasApiClient {
     bool authenticated = true,
     bool retryOnUnauthorized = true,
     bool expectBody = true,
+    String? tokenOverride,
   }) async {
+    final sessionRevision = _sessionRevision;
     final relativePath = path.startsWith('/') ? path.substring(1) : path;
     final resolvedUri = _baseUri.resolve(relativePath);
+    // requestJson is a feature-client seam, not an arbitrary HTTP proxy.
+    // Never attach a NAS bearer outside the configured API endpoint boundary.
+    if (resolvedUri.scheme != _baseUri.scheme ||
+        resolvedUri.host != _baseUri.host ||
+        resolvedUri.port != _baseUri.port ||
+        resolvedUri.userInfo.isNotEmpty ||
+        resolvedUri.fragment.isNotEmpty ||
+        !resolvedUri.path.startsWith(_baseUri.path) ||
+        resolvedUri.pathSegments.any((segment) => segment == '.' || segment == '..')) {
+      throw NasApiError.invalidBaseUrl('NAS 请求地址必须位于已配置的 API 路径内。');
+    }
     final uri = queryParameters == null || queryParameters.isEmpty
         ? resolvedUri
         : resolvedUri.replace(queryParameters: {
@@ -148,7 +182,7 @@ class NasApiClient {
       headers['Content-Type'] = 'application/json; charset=utf-8';
     }
     if (authenticated) {
-      final accessToken = _accessToken;
+      final accessToken = tokenOverride ?? _accessToken;
       if (accessToken == null) {
         throw NasApiError(
           kind: NasApiErrorKind.unauthorized,
@@ -175,12 +209,19 @@ class NasApiClient {
       throw NasApiError.network(error);
     }
 
+    if (authenticated && sessionRevision != _sessionRevision) {
+      throw NasApiError(
+        kind: NasApiErrorKind.unauthorized,
+        message: 'NAS 登录会话已改变，请重新登录。',
+        statusCode: 401,
+      );
+    }
     if (response.statusCode == 401 &&
         authenticated &&
         retryOnUnauthorized &&
         _refreshHandler != null) {
       final refreshedToken = await _refreshOnce();
-      if (refreshedToken != null) {
+      if (refreshedToken != null && sessionRevision == _sessionRevision) {
         // The refresh callback may be supplied by a caller other than
         // NasAuthService. Do not rely on that callback to update this client;
         // the token returned here is the contract that makes the retry safe.
@@ -252,7 +293,7 @@ class NasApiClient {
     final future = handler();
     _refreshInFlight = future;
     return future.whenComplete(() {
-      _refreshInFlight = null;
+      if (identical(_refreshInFlight, future)) _refreshInFlight = null;
     });
   }
 

@@ -361,18 +361,8 @@ func serve(ctx context.Context) error {
 	})
 	server := platform.NewHTTPServerWithRoutes(cfg, db, businessRoutes)
 
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		_ = server.Shutdown(shutdownCtx)
-	}()
-
 	fmt.Printf("momo-backend %s listening on %s\n", cfg.AppVersion, cfg.HTTPAddr)
-	if err := server.HTTPServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("serve HTTP: %w", err)
-	}
-	return nil
+	return serveHTTP(ctx, server.HTTPServer, httpShutdownTimeout)
 }
 
 func migrate(ctx context.Context) error {

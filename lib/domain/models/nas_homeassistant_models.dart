@@ -28,21 +28,6 @@ NasHaIntegrationStatus _parseIntegrationStatus(Object? value) {
   }
 }
 
-String _integrationStatusValue(NasHaIntegrationStatus value) {
-  switch (value) {
-    case NasHaIntegrationStatus.unknown:
-      return 'unknown';
-    case NasHaIntegrationStatus.healthy:
-      return 'healthy';
-    case NasHaIntegrationStatus.unavailable:
-      return 'unavailable';
-    case NasHaIntegrationStatus.invalidCredentials:
-      return 'invalid_credentials';
-    case NasHaIntegrationStatus.disabled:
-      return 'disabled';
-  }
-}
-
 class NasHaIntegration {
   const NasHaIntegration({
     required this.id,

@@ -35,10 +35,14 @@ class ImportReport {
     required this.imported,
     required this.skipped,
     this.failures = const [],
+    this.excludedSettings = 0,
   });
 
   final int imported;
+
+  /// Includes duplicate records and settings excluded by migration policy.
   final int skipped;
+  final int excludedSettings;
   final List<ImportFailure> failures;
 
   bool get hasFailures => failures.isNotEmpty;
@@ -49,28 +53,35 @@ class BackupRepository {
 
   final AppDatabase _database;
 
-  Future<String> exportJson() async {
-    final products = await _database.select(_database.products).get();
-    final batches = await _database.select(_database.productBatches).get();
-    final movements = await _database.select(_database.stockMovements).get();
-    final shopping = await _database.select(_database.shoppingEntries).get();
-    final settings = await _database.select(_database.appSettings).get();
-    final acknowledgements = await _database.select(_database.reminderAcknowledgments).get();
-    final barcodeCache = await _database.select(_database.barcodeLookupCache).get();
+  Future<String> exportJson() => _database.transaction(() async {
+        final products = await _database.select(_database.products).get();
+        final batches = await _database.select(_database.productBatches).get();
+        final movements = await _database.select(_database.stockMovements).get();
+        final shopping = await _database.select(_database.shoppingEntries).get();
+        final settings = await _database.select(_database.appSettings).get();
+        final acknowledgements =
+            await _database.select(_database.reminderAcknowledgments).get();
+        final barcodeCache =
+            await _database.select(_database.barcodeLookupCache).get();
 
-    return const JsonEncoder.withIndent('  ').convert({
-      'format': BackupFormat.formatName,
-      'version': BackupFormat.supportedVersion,
-      'exported_at': DateTime.now().toIso8601String(),
-      'products': products.map(_productToJson).toList(),
-      'batches': batches.map(_batchToJson).toList(),
-      'stock_movements': movements.map(_movementToJson).toList(),
-      'shopping_entries': shopping.map(_shoppingToJson).toList(),
-      'settings': settings.map(_settingToJson).toList(),
-      'reminder_acknowledgements': acknowledgements.map(_acknowledgementToJson).toList(),
-      'barcode_lookup_cache': barcodeCache.map(_barcodeCacheToJson).toList(),
-    });
-  }
+        return const JsonEncoder.withIndent('  ').convert({
+          'format': BackupFormat.formatName,
+          'version': BackupFormat.supportedVersion,
+          'exported_at': DateTime.now().toIso8601String(),
+          'coverage': BackupFormat.coverage,
+          'products': products.map(_productToJson).toList(),
+          'batches': batches.map(_batchToJson).toList(),
+          'stock_movements': movements.map(_movementToJson).toList(),
+          'shopping_entries': shopping.map(_shoppingToJson).toList(),
+          'settings': settings
+              .where((row) => BackupFormat.isPortableSetting(row.key))
+              .map(_settingToJson)
+              .toList(),
+          'reminder_acknowledgements':
+              acknowledgements.map(_acknowledgementToJson).toList(),
+          'barcode_lookup_cache': barcodeCache.map(_barcodeCacheToJson).toList(),
+        });
+      });
 
   Future<ImportReport> importJson(String content) async {
     // Materialize and validate every section before opening the write
@@ -81,11 +92,13 @@ class BackupRepository {
     final batches = _records(document, 'batches');
     final movements = _records(document, 'stock_movements');
     final shopping = _records(document, 'shopping_entries');
-    final settings = _records(document, 'settings');
+    final rawSettings = _records(document, 'settings');
+    final settings = _portableSettings(rawSettings);
+    final excludedSettings = rawSettings.length - settings.length;
     final acknowledgements = _records(document, 'reminder_acknowledgements');
     final barcodeCache = _records(document, 'barcode_lookup_cache');
     var imported = 0;
-    var skipped = 0;
+    var skipped = excludedSettings;
 
     await _database.transaction(() async {
       final failures = await _validateReferences(
@@ -169,7 +182,11 @@ class BackupRepository {
         imported++;
       }
     });
-    return ImportReport(imported: imported, skipped: skipped);
+    return ImportReport(
+      imported: imported,
+      skipped: skipped,
+      excludedSettings: excludedSettings,
+    );
   }
 
   List<Map<String, dynamic>> _records(
@@ -183,6 +200,31 @@ class BackupRepository {
         ImportFailure(section: section, index: 0, message: error.message),
       ]);
     }
+  }
+
+  List<Map<String, dynamic>> _portableSettings(
+    List<Map<String, dynamic>> records,
+  ) {
+    final portable = <Map<String, dynamic>>[];
+    for (var index = 0; index < records.length; index++) {
+      final row = records[index];
+      try {
+        final value = BackupFormat.portableSettingValue(
+          row['key'] as String,
+          row['value'] as String,
+        );
+        if (value != null) portable.add({...row, 'value': value});
+      } on FormatException catch (error) {
+        throw BackupImportException([
+          ImportFailure(
+            section: 'settings',
+            index: index + 1,
+            message: error.message,
+          ),
+        ]);
+      }
+    }
+    return portable;
   }
 
   Future<List<ImportFailure>> _validateReferences({
@@ -321,6 +363,7 @@ class BackupRepository {
         'low_stock_threshold': row.lowStockThreshold,
         'created_at': row.createdAt.toIso8601String(),
         'updated_at': row.updatedAt.toIso8601String(),
+        if (row.deletedAt != null) 'deleted_at': row.deletedAt!.toIso8601String(),
       };
 
   Map<String, Object?> _batchToJson(BatchRecord row) => {
@@ -337,6 +380,7 @@ class BackupRepository {
         'is_discarded': row.isDiscarded,
         'created_at': row.createdAt.toIso8601String(),
         'updated_at': row.updatedAt.toIso8601String(),
+        if (row.deletedAt != null) 'deleted_at': row.deletedAt!.toIso8601String(),
       };
 
   Map<String, Object?> _movementToJson(StockMovementRecord row) => {
@@ -359,30 +403,14 @@ class BackupRepository {
         'is_completed': row.isCompleted,
         'created_at': row.createdAt.toIso8601String(),
         'updated_at': row.updatedAt.toIso8601String(),
+        if (row.deletedAt != null) 'deleted_at': row.deletedAt!.toIso8601String(),
       };
 
   Map<String, Object?> _settingToJson(AppSettingRecord row) => {
         'key': row.key,
-        'value': row.key == 'ai_api_profiles' ? _sanitizeAiProfiles(row.value) : row.value,
+        'value': BackupFormat.portableSettingValue(row.key, row.value),
         'updated_at': row.updatedAt.toIso8601String(),
       };
-
-  String _sanitizeAiProfiles(String value) {
-    try {
-      final decoded = jsonDecode(value);
-      if (decoded is! List) return value;
-      return jsonEncode(decoded.map((entry) {
-        if (entry is! Map) return entry;
-        final profile = Map<String, dynamic>.from(entry);
-        profile.remove('apiKey');
-        profile.remove('_apiKeyDraft');
-        profile.remove('hasApiKey');
-        return profile;
-      }).toList());
-    } on FormatException {
-      return value;
-    }
-  }
 
   Map<String, Object?> _acknowledgementToJson(ReminderAcknowledgmentRecord row) => {
         'reminder_key': row.reminderKey,
@@ -402,6 +430,7 @@ class BackupRepository {
         lowStockThreshold: Value(row['low_stock_threshold'] as int),
         createdAt: DateTime.parse(row['created_at'] as String),
         updatedAt: DateTime.parse(row['updated_at'] as String),
+        deletedAt: Value(_date(row['deleted_at'])),
       );
 
   ProductBatchesCompanion _batchFromJson(Map<String, dynamic> row) =>
@@ -419,6 +448,7 @@ class BackupRepository {
         isDiscarded: Value(row['is_discarded'] as bool),
         createdAt: DateTime.parse(row['created_at'] as String),
         updatedAt: DateTime.parse(row['updated_at'] as String),
+        deletedAt: Value(_date(row['deleted_at'])),
       );
 
   StockMovementsCompanion _movementFromJson(Map<String, dynamic> row) =>
@@ -443,6 +473,7 @@ class BackupRepository {
         isCompleted: Value(row['is_completed'] as bool),
         createdAt: DateTime.parse(row['created_at'] as String),
         updatedAt: DateTime.parse(row['updated_at'] as String),
+        deletedAt: Value(_date(row['deleted_at'])),
       );
 
   AppSettingsCompanion _settingFromJson(Map<String, dynamic> row) {
@@ -452,7 +483,8 @@ class BackupRepository {
       key: key,
       // API keys are intentionally never imported into the ordinary SQLite
       // settings table. Users can add them again from the secure key screen.
-      value: key == 'ai_api_profiles' ? _sanitizeAiProfiles(value) : value,
+      // Already filtered and sanitized before opening the transaction.
+      value: value,
       updatedAt: DateTime.parse(row['updated_at'] as String),
     );
   }

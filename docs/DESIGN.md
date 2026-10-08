@@ -815,9 +815,9 @@ App Shell (底部导航 / 大屏 NavigationRail)
 
 PRD 的产品方向清晰，核心闭环也成立：**录入 → 管理批次 → 提醒 → 消耗 → 补货**。当前最大问题不是功能缺失，而是范围过大，以及数据同步、日期规则、凭据安全、数据库部署四个基础决策尚未收敛。
 
-Flutter、NAS PostgreSQL、允许无到期日期商品入库、首次连接由用户选择家庭/新增家庭、整数件库存、按商品总量触发低库存、AI 始终由客户自行配置 Key，以及“default 默认启用、momo/doraemon 随包提供并在主题中心作为备选”均已确认。当前单机核心、条码扫描、图片/本地 OCR、说明书外部搜索/本地 OCR 问答、用户自配 AI 辅助能力、统计图表、采购建议基础、HA 耗材联动基础与 NAS 同步主要代码均已落地；社区共享数据、snapshot 跨实体全事务、部分实体同步覆盖和真实环境联调仍需后续完成或验证。当前主题仅限个人本地使用和私有设备验证，未来公开发布前仍需重新完成授权/合规审查。
+Flutter、NAS PostgreSQL、允许无到期日期商品入库、首次连接由用户选择家庭/新增家庭、整数件库存、按商品总量触发低库存、AI 始终由客户自行配置 Key，以及“default 默认启用、momo/doraemon 随包提供并在主题中心作为备选”均已确认。当前单机核心、条码扫描、图片/本地 OCR、说明书外部搜索/本地 OCR 问答、用户自配 AI 辅助能力、统计图表、采购建议基础、HA 耗材联动基础与 NAS 同步主要代码均已落地；社区共享数据、部分实体同步覆盖和真实环境联调仍需后续完成或验证。**superseded（snapshot 历史状态）**：当时跨实体全事务未完成，现已落盘事务应用/完成标记方案但尚未验收，不能认定完整同步完成。当前主题仅限个人本地使用和私有设备验证，未来公开发布前仍需重新完成授权/合规审查。
 
-状态：`implementation-complete-for-confirmed-scope`（本轮按要求跳过测试、构建、验收和真实环境联调）
+**历史状态（superseded）**：`implementation-complete-for-confirmed-scope`（当时按要求跳过测试、构建、验收和真实环境联调）。2026-10-07 工作区以文末“已批准，代码已落盘并完成源码复核，测试/验收未执行”为准，不能将该历史标记解读为当前完成或可发布。
 
 ## 14.1 CI 回归约束
 
@@ -844,3 +844,58 @@ Flutter、NAS PostgreSQL、允许无到期日期商品入库、首次连接由�
 - **冲突 UI 的能力边界**：页面同时读取本地和远端 open conflicts；“保留远端”以及普通实体的“保留本地”先调用远端 resolution API，服务端接受后才更新本地 `rejected`/`resolved` 记录。库存与 Home Assistant 冲突不伪造普通 `manual_merge`/`keep_local`。远端失败时不删除本地冲突。bootstrap 模式要求用户明确选择，不默认替用户选项。
 - **调度与网络**：`SyncScheduler` 已监听应用启动/恢复、provider/引擎可用和网络恢复事件，负责 best-effort、合并重入请求，并使用开源 `connectivity_plus` 做网络状态去重、恢复 debounce 与自动重试；`onNetworkAvailable()` 保留为手动/兼容触发入口。
 - **验证状态**：本轮按用户要求跳过 Flutter 测试、`flutter analyze`、构建、Go 检查、Docker、PostgreSQL、NAS/HA 实机和端到端联调。上述项目未执行前，不得把页面状态、bootstrap 结果、冲突本地标记或同步调度描述为在线、远端已成功或生产可用。
+
+
+## 2026-10-03：并行可靠性加强
+
+- Snapshot 改为固定依赖顺序预校验；business adapter 通过现有 Drift 全事务写入，pending bootstrap 清理在同一提交，冲突记录在回滚后仍可追踪。库存、采购、outbox repositories 必须共享数据库。
+- 分类绑定与提醒低库存策略复用 app_settings；不新增 schema。无法安全映射字段显式失败，不默默存元数据当成业务已生效。**历史说明（superseded，2026-10-07）**：当时默认七天与本地三十天规则冲突、已有批次数量收敛仍待决策；现已批准并进入未验收实现，见下节。消费历史和出站分类映射仍未完成。
+- 核心 JSON 备份过滤身份/同步状态并净化服务配置，coverage 为兼容的可选元数据。完整媒体归档未实现，页面不再标“全量备份”。
+- 首页及家居既有电源控件使用明确 turn_on/turn_off；当前成员角色授权、capability和新鲜状态共同预检，NAS仍是最终权限校验方。控制面板用自身 Consumer订阅真实回执；未支持音量/静音只提示未发送。没有重设计卡片/主题，也没有开放高风险控制或客户端保存HA管理Token。
+- 无新增依赖或数据库迁移。全部新Dart测试、构建、Go及真实环境验收均未执行；不能把历史CI成功当作本批次通过。详情见 `docs/IMPLEMENTATION_BATCH_2026-10-03.md`。
+
+
+## 2026-10-07：提醒策略与 NAS 权威库存实现修订
+
+两项业务决策均获用户批准，不再待确认。区分已批准目标、当前落盘代码和未运行验收；细节/部署与补偿回滚见 `docs/IMPLEMENTATION_DECISIONS_2026-10-07.md`，验收见 REQUIREMENT 的 AC-011～AC-014。
+
+### 提醒策略（不改变库存事实）
+
+- `ReminderRepository` 校验并将 NAS 设置保存为现有 app_settings 作用域覆盖；`InventoryRepository` 组合 `ReminderPolicy`：商品策略 → 家庭策略 → enabled=true/30 天默认，可空阈值 → 家庭阈值 → 本地商品阈值。旧 threshold-only 覆盖按 enabled/30 天兼容，显式 7 天不覆盖，tombstone 恢复继承。
+- `InventoryItem`、`ExpiryRules`、`ReminderRules` 和通知读取同一有效策略窗口。关闭策略停止该策略提醒候选/摘要/通知，不抹去 expiryDate、过期/低库存事实、不改数量或 FEFO。去重与确认指纹仍有效；策略窗口变化参与效期指纹。
+- 非空 `opened_warning_days` 一律显式拒绝（包括关闭策略），未知或非法输入不伪装成支持；重复有效商品/家庭策略和错误字段整批拒绝。
+- 提醒/库存补修只将首页和提醒详情标题改为“临期提醒”，通知正文显示实际天数；没有新增设置编辑 UI、依赖或本地 Drift schema。工作区其他 HA/UI 改动属于既有未提交工作，不借此重设计。
+
+### 权威 snapshot 与安全提交
+
+- `SyncOutboxRepository.hasSnapshotBlockingChanges` 按完整 scope 检查 pending/inFlight/blocked/conflict/rejected 与 open/deferred 冲突。引擎和业务适配器都使用该保护；事务外预检、事务内写入前与完成前复检，不能只保护快照涉及的 entityId。
+- `SyncBusinessAdapter.applyRemoteSnapshot` 先按依赖顺序预校验完整 snapshot，再在共享 Drift transaction 通过 `authoritativeSnapshot=true/applyQuantity=true` 应用批次数量及 version；同版本可纠偏，更低版本拒绝回退。业务写入与 pending 完成、安全 cursor 同事务，不用“只升 version、留旧数量”假装收敛。普通增量 entity upsert 不转化为库存增减，库存仍走幂等权威命令。
+- `SyncEngine` 推送前持久化 `refresh_required`，以原 outbox identity 发送/重试；只有 scope 静默才重新 bootstrap fetch 并确认当前 checkpoint，再应用快照。被 maxPush 截断、拒绝、冲突或未知结果时不消费旧 snapshot；崩溃恢复保留刷新要求。
+- 未知推送结果使用原 operationID/changeId/idempotency key，accepted/replayed 回执按原条目结算；receipt 与安全 cursor 保持原子/幂等约束。历史恢复和出站分类映射没有因此自动完成。
+
+### 批次状态与网络竞态保护（源码已复核，未验收）
+
+- `discarded` → `isDiscarded=true`；`active/used_up/expired` → false，避免已有本地报废标记错误保留。`used_up/discarded` 要求 quantity=0；`expired` 不生成虚假日期，真实 expiryDate 决定本地过期事实。未知状态、冲突状态/兼容字段或非法数量 fail closed，事务回滚。
+- refresh 请求前保留 pending/checkpoint/模式基线，网络返回后的本地事务再次比较；用户已重新选择或替换 pending 时，丢弃旧响应，不覆盖新 `keep_local_only`。确认回执同样不能写回不同的 pending；代码已落盘并完成源码复核，相关回归用例源码已补充，测试/验收未执行。
+
+- `_confirmBootstrap` 的远端同步模式回执要求 accepted、预期 nextAction、checkpoint 一致及 `response.serverCursor >= snapshotCursor`；只有有效确认才允许单调提升 pushAckCursor。invalid/rejected receipt 保留原 pushAckCursor，记录 blocked/error，不消费 pending snapshot。
+- 写入 `refresh_required` 前先在事务中比较原 pending 与已确认 mode/keepLocalOnly 状态；fetch 返回后再次比较 pending/checkpoint 与 mode，拒绝迟到覆盖。手动 `bootstrap()` 同样比较请求前后 pending/mode，保留已有 refresh_required；刷新必需但响应缺少 snapshot 时失败并保留 pending/刷新标记，不用缺失 snapshot 清除刷新要求。
+- 确认游标过旧、错误回执不抬 pushAckCursor、刷新标记写入/网络返回的选择竞态及手动 bootstrap 缺少 snapshot 的回归用例源码已加入。代码已落盘并完成源码复核，测试/验收未执行。
+
+### 后端一致快照、checkpoint 与 cursor 排序
+
+- `ReadBootstrap` / `ReadBootstrapForDevice` 在 repeatable-read transaction 内读取所有业务行和 cursor，设备锁/checkpoint 锁与确认协调，避免业务行与 cursor 分离读取。
+- checkpoint 最终口径为相同 cursor 复用有效 token；cursor 改变则生成新 token、state=pending、清空 confirmed_at 并重新确认。当前后端源码已见该实现分支但未验证；“每次 fetch 无条件旋转 token”是本轮中间方案，superseded。确认必须匹配保存的 token/cursor；keep_local_only 忽略客户端 snapshot token，并将请求副本的 snapshot cursor 归零用于保存/审计，不可信超前 cursor 不能阻止关闭同步；回执仍返回真实 server cursor，用户选择不能被迟到请求覆盖。
+- `0005` 将新提醒 SQL DEFAULT 和同步 insert 缺值默认统一为 30，不执行旧值 UPDATE，部分 update 保留旧值。该 NAS migration 是数据库结构/行为变更，不影响本地 schemaVersion。
+- `change_log` 全局 `BEFORE INSERT FOR EACH STATEMENT` trigger 在 identity 分配之前取得事务 advisory lock，持锁至 commit/rollback；identity sequence 强制 `CACHE 1`，防止跨连接缓存区间打乱 cursor 顺序。所有家庭共用序列，因此不能改成家庭级锁；直接库存写入和 sync 写入都走 change_log。不能推断该措施已修复部署前的历史漏读。
+- 部署前备份、暂停相关写入并排空/重建旧连接，避免旧事务与已缓存 sequence 值绕过新保证；按现有 migration runner/checksum 机制执行。全局串行化降低写吞吐并可能增加等待/死锁压力，必须在真实 PG16/NAS 测量。补偿回滚使用新的 migration，不删除历史或直接篡改 `0005`；禁用排序措施需暂停同步并评估完整重同步，不静默退回有漏读风险的旧行为。
+
+### 验证与边界
+
+后端 CI 已加入 PG16 service，配置 `MOMO_TEST_DATABASE_URL`，运行入口为 `go test -count=1 ./...`/`go vet ./...`；真实 PostgreSQL 测试是 opt-in（URL 缺失则 skip），源码契约和模拟 DB 测试不是真实并发测试。本机缺 Flutter/Dart/Go/gofmt/Docker/psql，本轮 Flutter/Go/PG/CI/设备验证尚未运行。当前状态：**已批准，代码已落盘并完成源码复核，测试/验收未执行，不可据此声称生产可用**。历史、分类与 HA 联动缺口保持原范围，已执行的脚本/YAML/空白与326条非package目标存在性结果已记入VALIDATION，代码/CI/实机结果仍待补充。
+
+
+## 2026-10-07 code review P1 实现补充（未运行验收）
+
+NAS 初始量定义为累计入库的安全下界：restock 在锁定旧行上增加 initial，consume/discard 不减少；0006 以保留历史的方式补修偏小下界并发布版本化完整日志，客户端保持 `quantity <= initial_quantity` 校验。
+冲突 resolution 回执不是原 outbox command 的 accepted 回执：保留旧失败记录，用 app_settings 匹配结算证据解除特定阻塞；同事务持久 scope 刷新 revision。原幂等命令不再发送。完成 bootstrap 后也须 fetch 新快照并确认，不能靠 keep_remote 后的空 pull 收敛乐观库存。完成业务事务比较精确 revision、checkpoint、mode 和 scope 静默，再原子提交 cursor 与清理标记。权威 snapshot 允许商品/采购与 tombstone 同版本纠正，普通增量不放宽。迁移、兼容、回滚与测试限制详见 `docs/IMPLEMENTATION_DECISIONS_2026-10-07.md` 第 8 节；保留现有 UI，只接原按钮与错误/待刷新反馈。

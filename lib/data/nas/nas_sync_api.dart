@@ -21,6 +21,7 @@ class NasSyncApi {
     String? accessToken,
     NasSyncAccessTokenProvider? accessTokenProvider,
     NasSyncTokenRefresh? refreshHandler,
+    bool Function()? isSessionCurrent,
     http.Client? client,
     Duration requestTimeout = const Duration(seconds: 15),
   })  : _client = client ?? http.Client(),
@@ -28,26 +29,50 @@ class NasSyncApi {
         _baseUri = _parseBaseUri(baseUrl),
         _accessToken = accessToken,
         _accessTokenProvider = accessTokenProvider,
-        _refreshHandler = refreshHandler;
+        _refreshHandler = refreshHandler,
+        _isSessionCurrent = isSessionCurrent;
 
   final http.Client _client;
   final Duration _requestTimeout;
   final Uri _baseUri;
   final NasSyncAccessTokenProvider? _accessTokenProvider;
+  final bool Function()? _isSessionCurrent;
   String? _accessToken;
   NasSyncTokenRefresh? _refreshHandler;
   Future<String?>? _refreshInFlight;
+  int _sessionRevision = 0;
+  bool _closed = false;
 
   void setAccessToken(String? token) {
+    if (_closed) return;
     final normalized = token?.trim();
     _accessToken = normalized == null || normalized.isEmpty ? null : normalized;
+    if (_accessToken == null) {
+      _sessionRevision++;
+      _refreshInFlight = null;
+    }
   }
 
   void setRefreshHandler(NasSyncTokenRefresh? handler) {
+    if (_closed) return;
     _refreshHandler = handler;
   }
 
-  void close() => _client.close();
+  void close() {
+    if (_closed) return;
+    _closed = true;
+    _sessionRevision++;
+    _accessToken = null;
+    _refreshHandler = null;
+    _refreshInFlight = null;
+    _client.close();
+  }
+
+  /// Reads wire-contract versions without creating or rotating a checkpoint.
+  Future<NasSyncVersions> capabilities() async {
+    final json = await _sendJson(method: 'GET', path: '/capabilities');
+    return _parse(json, NasSyncVersions.fromJson);
+  }
 
   Future<NasSyncBootstrap> bootstrap({required String deviceId}) async {
     final json = await _sendJson(
@@ -208,7 +233,10 @@ class NasSyncApi {
     bool retryOnUnauthorized = true,
     String? tokenOverride,
   }) async {
-    final token = tokenOverride ?? _accessTokenProvider?.call() ?? _accessToken;
+    final sessionRevision = _sessionRevision;
+    _requireCurrentSession(sessionRevision);
+    final token = tokenOverride ??
+        (_accessTokenProvider != null ? _accessTokenProvider() : _accessToken);
     if (token == null || token.trim().isEmpty) {
       throw NasApiError(
         kind: NasApiErrorKind.unauthorized,
@@ -251,8 +279,10 @@ class NasSyncApi {
       throw NasApiError.network(error);
     }
 
+    _requireCurrentSession(sessionRevision);
     if (response.statusCode == 401 && retryOnUnauthorized && _refreshHandler != null) {
       final refreshedToken = await _refreshOnce();
+      _requireCurrentSession(sessionRevision);
       if (refreshedToken != null && refreshedToken.trim().isNotEmpty) {
         setAccessToken(refreshedToken);
         return _sendJson(
@@ -281,6 +311,20 @@ class NasSyncApi {
     }
   }
 
+  void _requireCurrentSession(int revision) {
+    final provider = _accessTokenProvider;
+    if (_closed ||
+        revision != _sessionRevision ||
+        (_isSessionCurrent != null && !_isSessionCurrent()) ||
+        (provider != null && (provider()?.trim().isEmpty ?? true))) {
+      throw NasApiError(
+        kind: NasApiErrorKind.unauthorized,
+        message: 'NAS 登录会话已改变，请重新登录。',
+        statusCode: 401,
+      );
+    }
+  }
+
   Future<String?> _refreshOnce() {
     final existing = _refreshInFlight;
     if (existing != null) return existing;
@@ -288,7 +332,9 @@ class NasSyncApi {
     if (handler == null) return Future<String?>.value(null);
     final future = handler();
     _refreshInFlight = future;
-    return future.whenComplete(() => _refreshInFlight = null);
+    return future.whenComplete(() {
+      if (identical(_refreshInFlight, future)) _refreshInFlight = null;
+    });
   }
 
   T _parse<T>(Map<String, dynamic> json, T Function(Map<String, dynamic>) parser) {

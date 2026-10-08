@@ -7,6 +7,7 @@ import '../widgets/app_feedback.dart';
 
 import '../../app/momo_theme.dart';
 import '../../domain/models/inventory_models.dart';
+import '../../domain/models/smart_home_models.dart';
 import '../../application/nas_connection_service.dart';
 import '../controllers/providers.dart';
 import '../controllers/smart_home_controller.dart';
@@ -227,9 +228,21 @@ class HomeScreen extends ConsumerWidget {
     };
   }
 
+  String _haStatusLabel(SmartHomeState state) {
+    if (state.isLoading) return '连接中';
+    return switch (state.haStatus) {
+      HaConnectionStatus.online => state.nasOnline ? '已连接' : '服务不可用',
+      HaConnectionStatus.offline => '服务不可用',
+      HaConnectionStatus.stale => '状态过期',
+      HaConnectionStatus.syncing => '连接中',
+      HaConnectionStatus.unconfigured => '未接入',
+    };
+  }
+
   Widget _buildQuickIntakeBar(BuildContext context, WidgetRef ref, MomoPalette palette) {
     final aiConfigured = ref.watch(aiConfigurationStatusProvider).valueOrNull == true;
     final nasState = ref.watch(nasConnectionProvider);
+    final homeState = ref.watch(smartHomeControllerProvider);
     final aiStatus = aiConfigured ? '待验证' : '未配置';
 
     return Card(
@@ -282,8 +295,10 @@ class HomeScreen extends ConsumerWidget {
                       Expanded(
                         child: _buildStatusDot(
                           label: 'HA服务',
-                          isConnected: false,
-                          detail: '未接入',
+                          isConnected: homeState.nasOnline &&
+                              homeState.haStatus == HaConnectionStatus.online &&
+                              !homeState.isLoading,
+                          detail: _haStatusLabel(homeState),
                         ),
                       ),
                       Divider(height: 1, color: Theme.of(context).dividerColor.withValues(alpha: 0.35)),
@@ -415,7 +430,7 @@ class HomeScreen extends ConsumerWidget {
                   child: _buildSummaryGridItem(
                     context,
                     icon: Icons.access_time_rounded,
-                    label: '30天内临期',
+                    label: '临期提醒',
                     count: expiring30,
                     color: Colors.amber.shade800,
                     onTap: () => context.push('/alerts?filter=expiring'),
@@ -620,7 +635,17 @@ class HomeScreen extends ConsumerWidget {
 
     // 取前两个常用场景 + 前两个常用设备
     final quickScenes = homeState.scenes.take(2).toList();
-    final quickDevices = homeState.devices.take(2).toList();
+    // Scenes/scripts have no confirmed execution flow on the smart-home page;
+    // do not accidentally expose them as toggleable device switches here.
+    final sceneEntityIds = homeState.entities
+        .where((entity) => entity.domain == 'scene' || entity.domain == 'script')
+        .map((entity) => '${entity.integrationId}::${entity.entityId}')
+        .toSet();
+    final quickDevices = homeState.devices
+        .where((device) => !sceneEntityIds.contains(device.id))
+        .take(2)
+        .toList();
+    final controller = ref.read(smartHomeControllerProvider.notifier);
 
     return Card(
       child: Padding(
@@ -632,11 +657,14 @@ class HomeScreen extends ConsumerWidget {
               children: [
                 const Icon(Icons.home_outlined, size: 20),
                 const SizedBox(width: 8),
-                Text(
-                  '智能家居预览（未接入）',
-                  style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                Expanded(
+                  child: Text(
+                    '智能家居预览（${_haStatusLabel(homeState)}）',
+                    style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-                const Spacer(),
                 TextButton(
                   onPressed: () => context.go('/smart-home'),
                   child: const Text('进入家居页 >', style: TextStyle(fontSize: 12)),
@@ -657,16 +685,15 @@ class HomeScreen extends ConsumerWidget {
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         side: BorderSide(color: palette.primary.withValues(alpha: 0.3)),
                       ),
-                      onPressed: () {
-                        ScaffoldMessenger.of(context)
-                          ..removeCurrentSnackBar()
-                          ..showSnackBar(
-                            SnackBar(
-                              content: Text('当前版本尚未支持 Home Assistant，未执行【${scene.name}】。'),
-                              duration: const Duration(seconds: 2),
-                            ),
-                          );
-                      },
+                      onPressed: homeState.isLoading || homeState.isCommandLoading
+                          ? null
+                          : () {
+                              // Preserve the current smart-home page's explicit
+                              // unsupported semantics; never claim execution.
+                              showAppSnackBar(context, SnackBar(
+                                content: Text('场景快捷执行尚未接入，未执行【${scene.name}】。'),
+                              ));
+                            },
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -686,6 +713,11 @@ class HomeScreen extends ConsumerWidget {
             // 常用设备小开关
             Row(
               children: quickDevices.map((device) {
+                final unavailable = controller.powerUnavailableReason(
+                  device.id, turnOn: !device.isOn,
+                );
+                final isExecuting = homeState.isCommandLoading &&
+                    homeState.commandDeviceId == device.id;
                 return Expanded(
                   child: Container(
                     margin: const EdgeInsets.symmetric(horizontal: 4),
@@ -707,7 +739,8 @@ class HomeScreen extends ConsumerWidget {
                                 overflow: TextOverflow.ellipsis,
                               ),
                               Text(
-                                '示例设备，未连接',
+                                isExecuting ? '控制请求进行中' :
+                                    (unavailable ?? device.statusText),
                                 style: TextStyle(fontSize: 10, color: theme.textTheme.bodySmall?.color),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -715,19 +748,26 @@ class HomeScreen extends ConsumerWidget {
                             ],
                           ),
                         ),
-                        Switch.adaptive(
-                          value: device.isOn,
-                          activeTrackColor: palette.primary,
-                          onChanged: (val) {
-                            ScaffoldMessenger.of(context)
-                              ..removeCurrentSnackBar()
-                              ..showSnackBar(
-                                SnackBar(
-                                  content: Text('当前版本尚未支持设备控制，未操作【${device.name}】。'),
-                                  duration: const Duration(seconds: 1),
-                                ),
-                              );
-                          },
+                        Tooltip(
+                          message: unavailable ?? device.statusText,
+                          child: Switch.adaptive(
+                            key: ValueKey('home-ha-toggle-${device.id}'),
+                            value: device.isOn,
+                            activeTrackColor: palette.primary,
+                            onChanged: unavailable != null ? null : (turnOn) async {
+                              // The controller rechecks at submission time and
+                              // changes state only from a matching NAS response.
+                              await controller.setDevicePower(device.id, turnOn);
+                              if (!context.mounted || !controller.mounted) return;
+                              if (!identical(
+                                ref.read(smartHomeControllerProvider.notifier), controller,
+                              )) return;
+                              final error = ref.read(smartHomeControllerProvider).commandError;
+                              if (error != null) {
+                                showAppSnackBar(context, SnackBar(content: Text(error)));
+                              }
+                            },
+                          ),
                         ),
                       ],
                     ),
@@ -735,6 +775,16 @@ class HomeScreen extends ConsumerWidget {
                 );
               }).toList(),
             ),
+            if (homeState.isLoading) const LinearProgressIndicator(),
+            if (homeState.message != null || homeState.commandError != null ||
+                (quickDevices.isEmpty && quickScenes.isEmpty))
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  homeState.commandError ?? homeState.message ?? '暂无可用的家居快捷项。',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
           ],
         ),
       ),

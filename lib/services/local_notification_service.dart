@@ -203,7 +203,7 @@ class LocalNotificationService {
       };
 
   String _body(ReminderCandidate candidate) => switch (candidate.type) {
-        ReminderType.expiring => '${candidate.item.name} 将在 30 天内到期，请及时处理。',
+        ReminderType.expiring => '${candidate.item.name} 将在 ${candidate.item.reminderPolicy.expiryWarningDays} 天内到期，请及时处理。',
         ReminderType.expired => '${candidate.item.name} 有批次已过期，请检查并报废。',
         ReminderType.lowStock => '${candidate.item.name} 剩余 ${candidate.item.totalStock} ${candidate.item.unit}，低于阈值 ${candidate.item.lowStockThreshold}。',
       };

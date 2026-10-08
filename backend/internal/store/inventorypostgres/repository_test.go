@@ -59,3 +59,12 @@ func TestDatabaseStatusDoesNotExposeExpiredBatchAsAvailable(t *testing.T) {
 		}
 	}
 }
+
+// The SQL expression uses the locked pre-state. Positive restock increments the
+// total stocked amount; consume/discard never reduce it. GREATEST also repairs
+// a legacy lower bound before applying any new command.
+func TestBatchChangesMaintainInitialQuantity(t *testing.T) {
+	if !strings.Contains(applyBatchChangeSQL, "initial_quantity = GREATEST(initial_quantity, quantity) + GREATEST($3, 0)") {
+		t.Fatal("batch changes must maintain cumulative initial quantity and repair a legacy lower bound")
+	}
+}

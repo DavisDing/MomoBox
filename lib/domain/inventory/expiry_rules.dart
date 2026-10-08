@@ -20,7 +20,14 @@ class ExpiryRules {
     return expiry.difference(start).inDays;
   }
 
-  static ExpiryStatus statusFor(DateTime? expiryDate, {DateTime? today}) {
+  static ExpiryStatus statusFor(
+    DateTime? expiryDate, {
+    DateTime? today,
+    int expiringDays = ExpiryRules.expiringDays,
+  }) {
+    if (expiringDays < 0) {
+      throw ArgumentError.value(expiringDays, 'expiringDays', '不能为负数');
+    }
     final remaining = daysUntil(expiryDate, today: today);
     if (remaining == null) return ExpiryStatus.noExpiry;
     // 到期日当天仍有效，次日才归类为过期。

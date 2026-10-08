@@ -8,6 +8,7 @@ import 'package:momo_box/application/ai_assistant_service.dart';
 import 'package:momo_box/data/repositories/mock_smart_home_repository.dart';
 import 'package:momo_box/domain/models/smart_home_models.dart';
 import 'package:momo_box/presentation/controllers/providers.dart';
+import 'package:momo_box/presentation/controllers/smart_home_controller.dart';
 import 'package:momo_box/presentation/screens/home_assistant_settings_screen.dart';
 import 'package:momo_box/presentation/screens/nas_settings_screen.dart';
 import 'package:momo_box/presentation/widgets/ai_assistant_dialog.dart';
@@ -151,22 +152,39 @@ void main() {
     testWidgets('${nas ? 'NAS' : 'HA'}连接按钮不返回假成功', (tester) async {
       await tester.binding.setSurfaceSize(const Size(1000, 1100));
       addTearDown(() => tester.binding.setSurfaceSize(null));
+      final settings = MemorySettingsRepository();
+      addTearDown(settings.close);
       await tester.pumpWidget(ProviderScope(
-        overrides: [themeNameProvider.overrideWith((ref) => Stream.value('default'))],
+        overrides: [
+          settingsRepositoryProvider.overrideWithValue(settings),
+          themeNameProvider.overrideWith((ref) => Stream.value('default')),
+        ],
         child: MaterialApp(home: nas ? const NasSettingsScreen() : const HomeAssistantSettingsScreen()),
       ));
       await tester.pumpAndSettle();
-      final button = find.text(nas ? '测试并保存 NAS 连接' : '校验 Token 并保存');
+      if (!nas) {
+        // Exercise the real configuration form without a configured NAS.
+        await tester.enterText(find.byType(TextFormField).at(1), 'http://homeassistant.local:8123');
+        await tester.enterText(find.byType(TextFormField).at(2), 'test-token-not-a-real-secret');
+      }
+      final button = find.text(nas ? '测试并保存 NAS 连接' : '保存配置');
       await tester.ensureVisible(button);
       await tester.tap(button);
       await tester.pumpAndSettle();
       if (nas) {
         expect(find.textContaining('请输入有效的 NAS 地址'), findsWidgets);
       } else {
-        expect(find.textContaining('当前版本尚未支持'), findsWidgets);
+        expect(find.textContaining('请先配置并连接 NAS'), findsWidgets);
+        final container = ProviderScope.containerOf(tester.element(find.byType(HomeAssistantSettingsScreen)));
+        final state = container.read(smartHomeControllerProvider);
+        expect(state.integrations, isEmpty);
+        expect(state.haStatus, HaConnectionStatus.unconfigured);
+        expect(state.nasOnline, isFalse);
       }
       expect(find.textContaining('连接测试成功'), findsNothing);
       expect(find.textContaining('校验成功'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
     });
   }
 }

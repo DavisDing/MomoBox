@@ -14,12 +14,15 @@ import '../../application/inventory_statistics_service.dart';
 import '../../application/manual_qa_service.dart';
 import '../../application/media_service.dart';
 import '../../application/nas_connection_service.dart';
+import '../../application/nas_auth_service.dart';
 import '../../presentation/controllers/nas_account_controller.dart';
 import '../../services/nas_credentials_service.dart';
 import '../../application/reminder_service.dart';
 import '../../application/settings_service.dart';
 import '../../application/storage_management_service.dart';
 import '../../application/sync_engine.dart';
+import '../../application/sync_scheduler.dart';
+import '../../application/network_status_source.dart';
 import '../../application/shopping_service.dart';
 import '../../core/database/app_database.dart';
 import '../../data/repositories/backup_repository.dart';
@@ -422,9 +425,9 @@ final nasSyncApiProvider = Provider<NasSyncApi?>((ref) {
   return api;
 });
 
-/// Concrete sync engine wiring. No background scheduler is started here; a
-/// caller can trigger [SyncEngine.runOnce] using app lifecycle or connectivity
-/// policy without making the provider claim that synchronization is running.
+/// Concrete sync engine wiring. Construction alone never starts a sync run.
+/// Manual and App lifecycle requests share [syncSchedulerProvider]; execution,
+/// backoff and durable conflict protection still belong to [SyncEngine].
 final syncEngineProvider = Provider<SyncEngine?>((ref) {
   final account = ref.watch(nasAccountProvider);
   final api = ref.watch(nasSyncApiProvider);
@@ -448,6 +451,57 @@ final syncEngineProvider = Provider<SyncEngine?>((ref) {
     familyId: familyId,
     localWorkspaceId: localWorkspaceId,
   );
+});
+
+final syncNetworkStatusSourceProvider = Provider<NetworkStatusSource>((ref) {
+  final source = ConnectivityPlusNetworkStatusSource();
+  ref.onDispose(source.dispose);
+  return source;
+});
+
+/// Override before startup to tune/disable foreground polling, without UI changes.
+final syncForegroundPullIntervalProvider = Provider<Duration?>((ref) =>
+    const Duration(minutes: 1));
+
+/// Stable policy owner shared by App lifecycle and the manual sync entry.
+/// Listen rather than watch the engine/account: auth/provider rebuilds must not
+/// create independent schedulers with independent timers.
+final syncSchedulerProvider = Provider<SyncScheduler>((ref) {
+  final scheduler = SyncScheduler(
+    engineReader: () => ref.read(syncEngineProvider),
+    networkStatusSource: ref.read(syncNetworkStatusSourceProvider),
+    foregroundPullInterval: ref.read(syncForegroundPullIntervalProvider),
+  );
+  String? observedScope;
+  Object? observedDatabase;
+  void bindCurrentScope() {
+    final account = ref.read(nasAccountProvider);
+    final scopeId = account.isAuthenticated ? account.family.familyId : null;
+    final database = ref.read(databaseProvider);
+    if (observedScope == scopeId && identical(observedDatabase, database)) return;
+    observedScope = scopeId;
+    observedDatabase = database;
+    scheduler.bindPendingChanges(
+      scopeId != null
+          ? SyncOutboxRepository(database)
+              .watchPendingContentChanges(scopeId: scopeId)
+          : null,
+    );
+  }
+
+  ref.listen<SyncEngine?>(syncEngineProvider, (_, __) {
+    bindCurrentScope();
+    scheduler.onEngineChanged();
+  });
+  ref.listen<NasAccountState>(nasAccountProvider, (_, __) {
+    bindCurrentScope();
+  });
+  ref.listen<AppDatabase>(databaseProvider, (_, __) {
+    bindCurrentScope();
+  });
+  bindCurrentScope();
+  ref.onDispose(scheduler.dispose);
+  return scheduler;
 });
 
 final nasAccountStatusProvider = Provider<NasAccountStatus>((ref) {

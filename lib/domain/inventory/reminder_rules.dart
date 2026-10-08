@@ -30,7 +30,7 @@ class ReminderRules {
     List<InventoryItem> items,
     Iterable<ReminderAcknowledgement> acknowledgements, {
     DateTime? today,
-    int expiringDays = ExpiryRules.expiringDays,
+    int? expiringDays,
   }) {
     final reference = ExpiryRules.dateOnly(today ?? DateTime.now());
     final acknowledged = {
@@ -49,7 +49,7 @@ class ReminderRules {
     List<InventoryItem> items,
     Iterable<ReminderAcknowledgement> acknowledgements, {
     DateTime? today,
-    int expiringDays = ExpiryRules.expiringDays,
+    int? expiringDays,
   }) {
     final reference = ExpiryRules.dateOnly(today ?? DateTime.now());
     return unacknowledgedCandidates(
@@ -105,11 +105,17 @@ class ReminderRules {
   static List<ReminderCandidate> candidates(
     List<InventoryItem> items, {
     DateTime? today,
-    int expiringDays = ExpiryRules.expiringDays,
+    int? expiringDays,
   }) {
+    if (expiringDays != null && expiringDays < 0) {
+      throw ArgumentError.value(expiringDays, 'expiringDays', '不能为负数');
+    }
     final reference = ExpiryRules.dateOnly(today ?? DateTime.now());
     final result = <ReminderCandidate>[];
     for (final item in items) {
+      if (!item.reminderPolicy.enabled) continue;
+      // An explicit caller override remains supported for deterministic tests.
+      final warningDays = expiringDays ?? item.reminderPolicy.expiryWarningDays;
       if (item.isLowStock) {
         result.add(
           ReminderCandidate(
@@ -125,12 +131,16 @@ class ReminderRules {
       final expiry = item.nearestDatedBatch?.expiryDate;
       if (expiry == null) continue;
       final expiryDay = ExpiryRules.dateOnly(expiry);
-      final status = ExpiryRules.statusFor(expiryDay, today: reference);
+      final status = ExpiryRules.statusFor(
+        expiryDay,
+        today: reference,
+        expiringDays: warningDays,
+      );
       if (status == ExpiryStatus.expired) {
         result.add(
           ReminderCandidate(
             key: '${item.id}:expired',
-            fingerprint: _expiryFingerprint(item),
+            fingerprint: _expiryFingerprint(item, warningDays),
             type: ReminderType.expired,
             item: item,
             date: reference,
@@ -139,11 +149,11 @@ class ReminderRules {
         continue;
       }
 
-      final expiringDay = expiryDay.subtract(Duration(days: expiringDays));
+      final expiringDay = expiryDay.subtract(Duration(days: warningDays));
       result.add(
         ReminderCandidate(
           key: '${item.id}:expiring',
-          fingerprint: _expiryFingerprint(item),
+          fingerprint: _expiryFingerprint(item, warningDays),
           type: ReminderType.expiring,
           item: item,
           date: expiringDay.isBefore(reference) ? reference : expiringDay,
@@ -153,7 +163,7 @@ class ReminderRules {
       result.add(
         ReminderCandidate(
           key: '${item.id}:expired',
-          fingerprint: _expiryFingerprint(item),
+          fingerprint: _expiryFingerprint(item, warningDays),
           type: ReminderType.expired,
           item: item,
           date: expiryDay.add(const Duration(days: 1)),
@@ -163,8 +173,13 @@ class ReminderRules {
     return result;
   }
 
-  static String _expiryFingerprint(InventoryItem item) {
+  static String _expiryFingerprint(InventoryItem item, int warningDays) {
     final batch = item.nearestDatedBatch;
-    return '${batch?.id}:${batch?.expiryDate?.toIso8601String()}';
+    final base = '${batch?.id}:${batch?.expiryDate?.toIso8601String()}';
+    // Preserve existing acknowledgements at the default window, but reschedule
+    // when a different effective window replaces the acknowledged policy.
+    return warningDays == ExpiryRules.expiringDays
+        ? base
+        : '$base:warning-days:$warningDays';
   }
 }

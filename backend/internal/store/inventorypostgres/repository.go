@@ -35,6 +35,7 @@ FOR UPDATE`
 	applyBatchChangeSQL = `
 UPDATE product_batches
 SET quantity = quantity + $3,
+    initial_quantity = GREATEST(initial_quantity, quantity) + GREATEST($3, 0),
     status = CASE
         WHEN $4::text = 'discarded' THEN 'discarded'
         WHEN quantity + $3 = 0 THEN 'used_up'

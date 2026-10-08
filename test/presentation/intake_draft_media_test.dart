@@ -19,10 +19,10 @@ void main() {
     ));
     await tester.pumpAndSettle();
     final dropdownFinder = find.byType(DropdownButtonFormField<String>).first;
-    await tester.tap(dropdownFinder);
-    await tester.pumpAndSettle();
-    final categories = tester
-        .widgetList<DropdownMenuItem<String>>(find.byType(DropdownMenuItem<String>))
+    final dropdown = tester.widget<DropdownButton<String>>(
+      find.descendant(of: dropdownFinder, matching: find.byType(DropdownButton<String>)),
+    );
+    final categories = dropdown.items!
         .map((item) => item.value)
         .whereType<String>()
         .toList();

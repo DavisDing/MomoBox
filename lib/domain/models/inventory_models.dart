@@ -58,6 +58,21 @@ class ProductMatchCandidate {
   final String? barcode;
 }
 
+/// Effective policy shared by inventory presentation and notification rules.
+/// A null low-stock threshold falls back to the product's local threshold.
+class ReminderPolicy {
+  const ReminderPolicy({
+    this.enabled = true,
+    this.expiryWarningDays = ExpiryRules.expiringDays,
+    this.lowStockThreshold,
+  })  : assert(expiryWarningDays >= 0),
+        assert(lowStockThreshold == null || lowStockThreshold > 0);
+
+  final bool enabled;
+  final int expiryWarningDays;
+  final int? lowStockThreshold;
+}
+
 class InventoryBatch {
   const InventoryBatch({
     required this.id,
@@ -68,6 +83,7 @@ class InventoryBatch {
     required this.isDiscarded,
     required this.expiryDate,
     required this.productionDate,
+    this.reminderPolicy = const ReminderPolicy(),
   });
 
   final String id;
@@ -79,7 +95,13 @@ class InventoryBatch {
   final DateTime? expiryDate;
   final DateTime? productionDate;
 
-  ExpiryStatus get expiryStatus => ExpiryRules.statusFor(expiryDate);
+  final ReminderPolicy reminderPolicy;
+
+  // Disabling notifications never changes expiry facts or availability.
+  ExpiryStatus get expiryStatus => ExpiryRules.statusFor(
+        expiryDate,
+        expiringDays: reminderPolicy.expiryWarningDays,
+      );
   int? get daysUntilExpiry => ExpiryRules.daysUntil(expiryDate);
   bool get isAvailable => remainingQuantity > 0 && !isDiscarded;
 }
@@ -94,9 +116,10 @@ class InventoryItem {
     required this.barcode,
     required this.location,
     required this.unit,
-    required this.lowStockThreshold,
+    required int lowStockThreshold,
     required this.batches,
-  });
+    this.reminderPolicy = const ReminderPolicy(),
+  }) : _lowStockThreshold = lowStockThreshold;
 
   final String id;
   final String name;
@@ -106,8 +129,12 @@ class InventoryItem {
   final String? barcode;
   final String? location;
   final String unit;
-  final int lowStockThreshold;
+  final int _lowStockThreshold;
   final List<InventoryBatch> batches;
+  final ReminderPolicy reminderPolicy;
+
+  int get lowStockThreshold =>
+      reminderPolicy.lowStockThreshold ?? _lowStockThreshold;
 
   int get totalStock => batches
       .where((batch) => !batch.isDiscarded)
@@ -129,8 +156,10 @@ class InventoryItem {
     return dated.isEmpty ? null : dated.first;
   }
 
-  ExpiryStatus get overallExpiryStatus =>
-      nearestDatedBatch?.expiryStatus ?? ExpiryStatus.noExpiry;
+  ExpiryStatus get overallExpiryStatus => ExpiryRules.statusFor(
+        nearestDatedBatch?.expiryDate,
+        expiringDays: reminderPolicy.expiryWarningDays,
+      );
 }
 
 class StockMovement {

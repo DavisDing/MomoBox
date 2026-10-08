@@ -101,6 +101,20 @@ func (c Config) Validate() error {
 			return errors.New("DATABASE_URL must be a postgres:// or postgresql:// URL")
 		}
 	}
+	if strings.EqualFold(strings.TrimSpace(c.AppEnv), "production") {
+		for _, secret := range []struct {
+			name  string
+			value string
+		}{
+			{"JWT_SECRET", c.JWTSecret},
+			{"REFRESH_TOKEN_PEPPER", c.RefreshTokenPepper},
+			{"HA_TOKEN_ENCRYPTION_KEY", c.HATokenEncryptionKey},
+		} {
+			if isExampleSecret(secret.value) {
+				return fmt.Errorf("%s must not use a known .env.example placeholder in production", secret.name)
+			}
+		}
+	}
 	if c.JWTSecret == "" {
 		return errors.New("JWT_SECRET must not be empty")
 	}
@@ -135,6 +149,18 @@ func (c Config) Validate() error {
 		return errors.New("schema and sync protocol versions must be positive")
 	}
 	return nil
+}
+
+// Compare only known example values; do not trim or reinterpret actual keys.
+func isExampleSecret(value string) bool {
+	switch strings.TrimSpace(value) {
+	case "replace-with-at-least-32-random-bytes",
+		"replace-with-long-random-secret",
+		"change-this-key-to-exactly-32byt":
+		return true
+	default:
+		return false
+	}
 }
 
 func envOrDefault(name, fallback string) string {

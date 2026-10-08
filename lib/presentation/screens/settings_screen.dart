@@ -2,6 +2,7 @@ import '../../application/ai_fallback_executor.dart';
 import 'nas_settings_screen.dart';
 import 'home_assistant_settings_screen.dart';
 import 'sync_settings_screen.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -20,6 +21,7 @@ import '../../application/barcode_lookup_service.dart';
 import '../../application/storage_management_service.dart';
 import '../../application/update_service.dart';
 import '../../data/repositories/backup_repository.dart';
+import '../../domain/backup/backup_format.dart';
 import '../../services/local_notification_service.dart';
 import '../controllers/providers.dart';
 import 'ai_usage_screen.dart';
@@ -183,7 +185,7 @@ class SettingsScreen extends ConsumerWidget {
                   context,
                   icon: Icons.backup_outlined,
                   title: '数据备份与迁移',
-                  subtitle: '全量 JSON 备份导出、数据导入与快照管理',
+                  subtitle: '核心数据 JSON 导出与合并导入（不含图片/OCR）',
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const BackupSettingsScreen()),
                   ),
@@ -1211,10 +1213,28 @@ class BackupSettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
-  bool _busy = false;
+  Object? _operationOwner;
+
+  bool get _busy => _operationOwner != null;
+
+  Object? _beginOperation() {
+    // Guard before the first await, including callbacks from a stale build.
+    if (!mounted || _busy) return null;
+    final owner = Object();
+    setState(() => _operationOwner = owner);
+    return owner;
+  }
+
+  void _finishOperation(Object owner) {
+    // A rejected/reentrant invocation must never unlock another operation.
+    if (mounted && identical(_operationOwner, owner)) {
+      setState(() => _operationOwner = null);
+    }
+  }
 
   Future<void> _exportBackup() async {
-    setState(() => _busy = true);
+    final owner = _beginOperation();
+    if (owner == null) return;
     try {
       final json = await ref.read(backupServiceProvider).exportJson();
       final directory = await getTemporaryDirectory();
@@ -1225,18 +1245,20 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
       await Share.shareXFiles(
         [XFile(file.path, mimeType: 'application/json', name: p.basename(file.path))],
         subject: '嬷嬷的小箱子数据备份',
-        text: 'MomoBox 全量 JSON 数据备份',
+        text: 'MomoBox 核心数据 JSON 备份',
       );
     } catch (error) {
       if (mounted) {
         showAppSnackBar(context, SnackBar(content: Text('导出失败：$error')));
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      _finishOperation(owner);
     }
   }
 
   Future<void> _importBackup() async {
+    final owner = _beginOperation();
+    if (owner == null) return;
     try {
       final selection = await FilePicker.platform.pickFiles(
         type: FileType.custom,
@@ -1253,7 +1275,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: const Text('确认导入备份？'),
-          content: const Text('导入会合并到当前数据；相同 ID 的记录将跳过，当前数据不会被覆盖。'),
+          content: const Text('导入会合并到当前数据；相同 ID 的记录将跳过，当前数据不会被覆盖。图片/OCR 不会恢复，当前设备的登录和同步身份保持不变。'),
           actions: [
             TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('取消')),
             FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('开始导入')),
@@ -1262,7 +1284,6 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
       );
       if (approved != true || !mounted) return;
 
-      setState(() => _busy = true);
       final report = await ref.read(backupServiceProvider).importJson(content);
       if (!mounted) return;
       await _showImportReport(report);
@@ -1275,7 +1296,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
     } catch (error) {
       if (mounted) showAppSnackBar(context, SnackBar(content: Text('导入失败：$error')));
     } finally {
-      if (mounted) setState(() => _busy = false);
+      _finishOperation(owner);
     }
   }
 
@@ -1283,7 +1304,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: const Text('数据导入完成'),
-          content: Text('成功导入 ${report.imported} 条记录；跳过 ${report.skipped} 条重复记录。'),
+          content: Text('成功导入 ${report.imported} 条记录；跳过 ${report.skipped - report.excludedSettings} 条重复记录、${report.excludedSettings} 条设备身份或不可迁移设置。'),
           actions: [FilledButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('确定'))],
         ),
       );
@@ -1308,8 +1329,8 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
             Card(
               child: ListTile(
                 leading: const Icon(Icons.file_download_outlined),
-                title: const Text('导出全量数据备份 (JSON)'),
-                subtitle: const Text('生成备份文件后，可保存或发送到其他设备。API 密钥不会包含在备份中。'),
+                title: const Text('导出核心数据备份 (JSON)'),
+                subtitle: const Text(BackupFormat.scopeDescription),
                 trailing: _busy ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2)) : null,
                 onTap: _busy ? null : _exportBackup,
               ),
@@ -1324,7 +1345,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
             ),
             const Padding(
               padding: EdgeInsets.all(12),
-              child: Text('恢复到空白设备时，先安装 MomoBox，再选择此前导出的 JSON 文件即可。导入会先完整校验文件，校验失败不会写入部分数据。'),
+              child: Text('${BackupFormat.restoreDescription} 导入会先完整校验，失败不会写入部分数据。${BackupFormat.privacyDescription}'),
             ),
           ],
         ),
@@ -1442,30 +1463,89 @@ class NotificationSettingsScreen extends ConsumerStatefulWidget {
   ConsumerState<NotificationSettingsScreen> createState() => _NotificationSettingsScreenState();
 }
 
-class _NotificationSettingsScreenState extends ConsumerState<NotificationSettingsScreen> {
+class _NotificationSettingsScreenState extends ConsumerState<NotificationSettingsScreen>
+    with WidgetsBindingObserver {
   NotificationPermissionStatus _status = NotificationPermissionStatus.unavailable;
   bool _busy = true;
+  bool _refreshAfterResume = false;
 
   @override
   void initState() {
     super.initState();
-    _refreshStatus();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_refreshStatus());
   }
 
-  Future<void> _refreshStatus() async {
-    final status = await ref.read(localNotificationServiceProvider).permissionStatus();
-    if (mounted) {
-      setState(() {
-        _status = status;
-        _busy = false;
-      });
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !mounted) return;
+    if (_busy) {
+      // Permission dialogs can resume the app before their Future completes.
+      _refreshAfterResume = true;
+      return;
+    }
+    setState(() => _busy = true);
+    unawaited(_refreshStatus());
+  }
+
+  Future<void> _syncLatestNotifications() async {
+    // Do not turn a loading acknowledgement stream into an empty list: that
+    // would resurrect already handled reminders after granting permission.
+    await Future.wait([
+      ref.read(inventoryProvider.future),
+      ref.read(reminderAcknowledgementsProvider.future),
+    ], eagerError: true);
+    if (!mounted) return;
+    // Inventory may have changed while acknowledgements were loading.
+    final items = ref.read(inventoryProvider).asData?.value;
+    final acknowledgements = ref.read(reminderAcknowledgementsProvider).asData?.value;
+    if (items == null || acknowledgements == null) {
+      throw StateError('库存或提醒确认状态尚未就绪，请重试。');
+    }
+    await ref.read(localNotificationServiceProvider).sync(
+      items,
+      acknowledgements: acknowledgements,
+    );
+  }
+
+  Future<void> _refreshStatus({
+    bool permissionGranted = false,
+    bool reschedule = true,
+  }) async {
+    if (!mounted) return;
+    try {
+      final status = await ref.read(localNotificationServiceProvider).permissionStatus();
+      if (!mounted) return;
+      setState(() => _status = status);
+      if (reschedule && (permissionGranted || status == NotificationPermissionStatus.allowed)) {
+        await _syncLatestNotifications();
+      }
+    } catch (error) {
+      if (mounted) {
+        showAppSnackBar(context, SnackBar(content: Text('无法刷新通知状态或重排提醒：$error')));
+      }
+    } finally {
+      if (mounted) {
+        final refreshAgain = _refreshAfterResume;
+        _refreshAfterResume = false;
+        setState(() => _busy = refreshAgain);
+        if (refreshAgain) unawaited(_refreshStatus(reschedule: reschedule));
+      }
     }
   }
 
   Future<void> _requestPermission() async {
+    if (_busy || !mounted) return;
     setState(() => _busy = true);
+    var granted = false;
     try {
-      final granted = await ref.read(localNotificationServiceProvider).requestPermission();
+      granted = await ref.read(localNotificationServiceProvider).requestPermission();
       if (mounted) {
         showAppSnackBar(context,
           SnackBar(content: Text(granted ? '通知权限已开启。' : '通知权限未开启，请在系统设置中允许通知。')),
@@ -1474,11 +1554,12 @@ class _NotificationSettingsScreenState extends ConsumerState<NotificationSetting
     } catch (error) {
       if (mounted) showAppSnackBar(context, SnackBar(content: Text('无法请求通知权限：$error')));
     } finally {
-      await _refreshStatus();
+      if (mounted) await _refreshStatus(permissionGranted: granted);
     }
   }
 
   Future<void> _sendTest() async {
+    if (_busy || !mounted) return;
     setState(() => _busy = true);
     try {
       await ref.read(localNotificationServiceProvider).showTestNotification();
@@ -1486,7 +1567,8 @@ class _NotificationSettingsScreenState extends ConsumerState<NotificationSetting
     } catch (error) {
       if (mounted) showAppSnackBar(context, SnackBar(content: Text('$error')));
     } finally {
-      await _refreshStatus();
+      // Business sync cancels old schedules; do not cancel the test just sent.
+      if (mounted) await _refreshStatus(reschedule: false);
     }
   }
 

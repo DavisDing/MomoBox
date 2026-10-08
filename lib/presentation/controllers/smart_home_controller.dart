@@ -144,7 +144,9 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
   SmartHomeController(
     this._repository, {
     required String nasAddress,
+    String? role,
   })  : _nasAddress = nasAddress,
+        _role = role,
         super(
           SmartHomeState(
             devices: const <SmartDevice>[],
@@ -163,6 +165,8 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
 
   final NasSmartHomeRepository _repository;
   final String _nasAddress;
+  final String? _role;
+  bool get _canManageIntegration => _role == 'owner' || _role == 'admin';
   Future<void>? _refreshInFlight;
   final Map<String, NasHaEntity> _entitiesByKey = <String, NasHaEntity>{};
   final Map<String, NasHaEntityState> _statesByKey = <String, NasHaEntityState>{};
@@ -182,6 +186,8 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
   }
 
   Future<void> refresh() {
+    // Do not replace the entity/state maps while a command is in flight.
+    if (state.isCommandLoading) return Future<void>.value();
     final current = _refreshInFlight;
     if (current != null) return current;
     final next = _refreshInternal();
@@ -236,11 +242,26 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
       }
 
       final integration = _selectIntegration(integrations);
-      final connection = await _repository.testIntegration(integration.id);
-      if (!mounted) return;
-      if (!connection.connected) {
+      // The connection-test endpoint is an integration-management operation
+      // and is intentionally restricted to owner/admin on the NAS. Members
+      // must be able to read their already-authorized entities without
+      // borrowing that privilege. Except for explicitly disabled integrations,
+      // their authorized state reads below determine current availability;
+      // a persisted failed/unknown management test may already be out of date.
+      if (_canManageIntegration) {
+        final connection = await _repository.testIntegration(integration.id);
+        if (!mounted) return;
+        if (!connection.connected) {
+          _setOffline(
+            'Home Assistant 当前不可用${connection.errorCode == null ? '' : '（${connection.errorCode}）'}。',
+            integrations: integrations,
+            integration: integration,
+          );
+          return;
+        }
+      } else if (integration.status == NasHaIntegrationStatus.disabled) {
         _setOffline(
-          'Home Assistant 当前不可用${connection.errorCode == null ? '' : '（${connection.errorCode}）'}。',
+          'Home Assistant 集成已禁用。',
           integrations: integrations,
           integration: integration,
         );
@@ -251,6 +272,7 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
         _repository.listEntities(integrationId: integration.id),
         _repository.listPermissions(),
       ]);
+      if (!mounted) return;
       final entities = (results[0] as List<NasHaEntity>)
           .where((entity) => entity.isVisible)
           .toList(growable: false);
@@ -288,7 +310,7 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
       if (!mounted) return;
       state = state.copyWith(
         isLoading: false,
-        haStatus: staleEntityIds.isEmpty
+        haStatus: staleEntityIds.isEmpty && (entities.isNotEmpty || _canManageIntegration)
             ? HaConnectionStatus.online
             : HaConnectionStatus.stale,
         haAddress: integration.baseUrl.toString(),
@@ -300,9 +322,11 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
         staleEntityIds: Set<String>.unmodifiable(staleEntityIds),
         accessDeniedEntityIds: Set<String>.unmodifiable(accessDenied),
         devices: _mapDevices(entities, staleEntityIds),
-        message: accessDenied.isEmpty
-            ? (staleEntityIds.isEmpty ? null : '部分设备状态已过期，当前仅展示最近已知状态。')
-            : '部分设备当前没有控制权限，控制请求仍以 NAS 服务端授权为准。',
+        message: entities.isEmpty && !_canManageIntegration
+            ? '当前账号没有可查看的设备，无法确认 Home Assistant 实时状态。'
+            : accessDenied.isEmpty
+                ? (staleEntityIds.isEmpty ? null : '部分设备状态已过期，当前仅展示最近已知状态。')
+                : '部分设备当前没有控制权限，控制请求仍以 NAS 服务端授权为准。',
         lastRefreshedAt: DateTime.now().toUtc(),
       );
     } catch (error) {
@@ -426,8 +450,10 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
         integrationId: entity.integrationId,
         entityId: entity.entityId,
       );
+      if (!mounted || remoteState.entityId != entity.entityId) return;
       _statesByKey[key] = remoteState;
     } on NasApiError catch (error) {
+      if (!mounted) return;
       if (error.kind == NasApiErrorKind.forbidden ||
           error.kind == NasApiErrorKind.unauthorized) {
         _stateFetchDenied[key] = true;
@@ -509,7 +535,9 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
   bool _isOn(String domain, String? value) {
     if (value == null) return false;
     final normalized = value.toLowerCase();
-    if (domain == 'climate') return normalized != 'off' && normalized != 'unknown' && normalized != 'unavailable';
+    if (domain == 'climate' || domain == 'media_player') {
+      return normalized != 'off' && normalized != 'unknown' && normalized != 'unavailable';
+    }
     return normalized == 'on' || normalized == 'playing' || normalized == 'active' || normalized == 'running';
   }
 
@@ -599,6 +627,89 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
 
   NasHaEntity? _entityFor(String id) => _entitiesByKey[id];
 
+  /// Shared preflight for the home shortcuts and the remote command boundary.
+  /// A role whitelist never implies HA connectivity or fresh device state.
+  String? commandUnavailableReason(
+    String id, {
+    NasHaCommand command = NasHaCommand.toggle,
+  }) {
+    if (state.isCommandLoading) return '控制请求进行中，请勿重复提交。';
+    if (state.isLoading) return '正在读取 Home Assistant 状态，请稍后再试。';
+    if (!state.nasOnline || state.haStatus == HaConnectionStatus.unconfigured) {
+      return '请先连接 NAS 并配置 Home Assistant。';
+    }
+    if (state.haStatus == HaConnectionStatus.offline ||
+        state.haStatus == HaConnectionStatus.syncing) {
+      return 'Home Assistant 当前不可用，未发送控制请求。';
+    }
+    final entity = _entityFor(id);
+    if (entity == null || !entity.isVisible) return '未找到对应的远程实体。';
+    if (!entity.isControllable || state.accessDeniedEntityIds.contains(id)) {
+      return '当前账号没有该设备的控制权限。';
+    }
+    final permission = _permissionFor(entity);
+    if (permission == null || !permission.canView || !permission.canControl ||
+        !permission.allowedCommands.contains(nasHaCommandValue(command))) {
+      return '当前账号没有执行“${nasHaCommandValue(command)}”的权限。';
+    }
+    if (!_supportsCommand(entity, command)) {
+      return '该设备不支持此快捷控制（unsupported capability），未发送请求。';
+    }
+    final remoteState = state.entityStates[id];
+    if (remoteState == null || remoteState.entityId != entity.entityId ||
+        state.staleEntityIds.contains(id) || _isStale(remoteState.fetchedAt)) {
+      return '设备状态已过期，请进入家居页刷新后再试。';
+    }
+    if (remoteState.state == 'unknown' || remoteState.state == 'unavailable') {
+      return '设备当前离线或状态未知，未发送控制请求。';
+    }
+    return null;
+  }
+
+  bool _supportsCommand(NasHaEntity entity, NasHaCommand command) {
+    // Keep the existing low-risk device boundary. In particular, a scene or
+    // script must never be treated as a power switch (nor a lock/cover/etc.).
+    if (!const {'light', 'switch', 'climate', 'media_player'}.contains(entity.domain)) {
+      return false;
+    }
+    final caps = entity.capabilities.map((value) => value.trim().toLowerCase()).toSet();
+    bool has(List<String> values) => values.any(caps.contains);
+    switch (command) {
+      case NasHaCommand.turnOn:
+      case NasHaCommand.turnOff:
+      case NasHaCommand.toggle:
+        return has([nasHaCommandValue(command), 'on_off', 'power', 'switch']);
+      case NasHaCommand.setBrightness:
+        return entity.domain == 'light' && has(['brightness']);
+      case NasHaCommand.setTemperature:
+        return entity.domain == 'climate' && has(['temperature', 'temperature_control']);
+      case NasHaCommand.setHvacMode:
+        return entity.domain == 'climate' && has(['hvac_mode', 'hvac_modes']) &&
+            entity.hvacModes.isNotEmpty;
+      case NasHaCommand.play:
+      case NasHaCommand.pause:
+        return entity.domain == 'media_player' &&
+            has([nasHaCommandValue(command), 'media_playback', 'play_pause']);
+      case NasHaCommand.activateScene:
+      case NasHaCommand.runScript:
+        // The current smart-home page has no confirmed scene/script flow.
+        return false;
+    }
+  }
+
+  String? powerUnavailableReason(String id, {required bool turnOn}) =>
+      commandUnavailableReason(
+        id,
+        command: turnOn ? NasHaCommand.turnOn : NasHaCommand.turnOff,
+      );
+
+  /// Set an explicit target instead of assuming that every HA power entity
+  /// supports toggle. A stale UI callback cannot invert the device twice.
+  Future<void> setDevicePower(String id, bool turnOn) => _sendCommandForDevice(
+        id,
+        turnOn ? NasHaCommand.turnOn : NasHaCommand.turnOff,
+      );
+
   Future<void> toggleDevice(String id) => _sendCommandForDevice(
         id,
         NasHaCommand.toggle,
@@ -661,20 +772,14 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
     NasHaCommand command, {
     NasHaCommandParameters? parameters,
   }) async {
-    final entity = _entityFor(id);
-    if (entity == null) {
-      _commandFailure('未找到对应的远程实体。');
+    // A synchronous guard covers two taps before the next widget rebuild.
+    if (state.isCommandLoading) return;
+    final unavailable = commandUnavailableReason(id, command: command);
+    if (unavailable != null) {
+      _commandFailure(unavailable);
       return;
     }
-    if (state.isLoading || state.isCommandLoading) return;
-
-    final permission = _permissionFor(entity);
-    if (permission != null &&
-        (!permission.canControl ||
-            !permission.allowedCommands.contains(nasHaCommandValue(command)))) {
-      _commandFailure('当前账号没有执行“${nasHaCommandValue(command)}”的权限。');
-      return;
-    }
+    final entity = _entityFor(id)!;
 
     state = state.copyWith(
       isCommandLoading: true,
@@ -689,16 +794,27 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
         requestId: _uuid.v4(),
         parameters: parameters,
       );
+      if (!mounted) return;
       if (!result.accepted) {
         _commandFailure('NAS 未接受该控制请求。');
         return;
       }
 
+      if (result.entityId != entity.entityId ||
+          result.command != nasHaCommandValue(command)) {
+        _commandFailure('NAS 返回的控制回执不匹配，未确认成功。');
+        return;
+      }
       final remoteState = result.state ??
           await _repository.fetchEntityState(
             integrationId: entity.integrationId,
             entityId: entity.entityId,
           );
+      if (!mounted) return;
+      if (remoteState.entityId != entity.entityId) {
+        _commandFailure('NAS 返回的设备状态不匹配，未确认成功。');
+        return;
+      }
       _statesByKey[id] = remoteState;
       _stateFetchDenied.remove(id);
       final stale = _isStale(remoteState.fetchedAt);
@@ -736,17 +852,12 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
   }
 
   NasHaEntityPermission? _permissionFor(NasHaEntity entity) {
-    final matches = state.permissions.where((permission) =>
+    // /permissions includes other family roles too. Never borrow an owner's
+    // grant for a member; NAS still authorizes every submitted command.
+    return state.permissions.where((permission) =>
         permission.integrationId == entity.integrationId &&
-        permission.entityId == entity.entityId);
-    if (matches.isEmpty) return null;
-    // The API already authorizes the current actor. For client-side preflight,
-    // accept an explicit permission that grants the command; a server 403 is
-    // still authoritative and is retained in accessDeniedEntityIds.
-    return matches.firstWhere(
-      (permission) => permission.canControl,
-      orElse: () => matches.first,
-    );
+        permission.entityId == entity.entityId &&
+        permission.role == _role).firstOrNull;
   }
 
   String _remoteHvacMode(NasHaEntity entity, String displayMode) {
@@ -763,6 +874,10 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
   }
 
   String _friendlyCommandError(NasApiError error) {
+    if (error.code == 'HA_UNSUPPORTED_COMMAND' ||
+        error.code == 'unsupported_command') {
+      return 'NAS 拒绝了控制请求：设备不支持此命令，未确认成功。';
+    }
     switch (error.kind) {
       case NasApiErrorKind.forbidden:
         return 'NAS 拒绝了控制请求：当前账号没有权限。';
@@ -985,5 +1100,8 @@ final smartHomeControllerProvider =
   return SmartHomeController(
     ref.watch(nasSmartHomeRepositoryProvider),
     nasAddress: connection.serverUrl,
+    role: ref.watch(nasAccountProvider.select(
+      (account) => account.family.current?.membership.role,
+    )),
   );
 });

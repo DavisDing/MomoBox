@@ -123,12 +123,29 @@ func (r *Repository) ResolveDevice(ctx context.Context, deviceID string) (syncdo
 	return scope, nil
 }
 
+// ReadBootstrap returns business rows and their cursor from one MVCC snapshot.
 func (r *Repository) ReadBootstrap(ctx context.Context, familyID string) (syncdomain.BootstrapSnapshot, error) {
 	if r == nil || r.db == nil {
 		return syncdomain.BootstrapSnapshot{}, errors.New("sync postgres database is not configured")
 	}
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return syncdomain.BootstrapSnapshot{}, fmt.Errorf("begin bootstrap snapshot: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	snapshot, err := readBootstrapSnapshot(ctx, tx, familyID)
+	if err != nil {
+		return syncdomain.BootstrapSnapshot{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return syncdomain.BootstrapSnapshot{}, fmt.Errorf("commit bootstrap snapshot: %w", err)
+	}
+	return snapshot, nil
+}
+
+func readBootstrapSnapshot(ctx context.Context, tx *sql.Tx, familyID string) (syncdomain.BootstrapSnapshot, error) {
 	var familyRaw []byte
-	err := r.db.QueryRowContext(ctx, `
+	err := tx.QueryRowContext(ctx, `
 SELECT jsonb_build_object('id', id, 'name', name, 'created_at', created_at, 'updated_at', updated_at)
 FROM families
 WHERE id = $1::uuid AND deleted_at IS NULL`, familyID).Scan(&familyRaw)
@@ -148,7 +165,7 @@ WHERE id = $1::uuid AND deleted_at IS NULL`, familyID).Scan(&familyRaw)
 		spec := entitySpecs[entity]
 		query := fmt.Sprintf(`SELECT COALESCE(jsonb_agg(to_jsonb(t) - 'family_id' ORDER BY id), '[]'::jsonb) FROM %s AS t WHERE family_id = $1::uuid`, spec.table)
 		var raw []byte
-		if err := r.db.QueryRowContext(ctx, query, familyID).Scan(&raw); err != nil {
+		if err := tx.QueryRowContext(ctx, query, familyID).Scan(&raw); err != nil {
 			return syncdomain.BootstrapSnapshot{}, fmt.Errorf("read bootstrap %s: %w", entity, err)
 		}
 		var records []map[string]any
@@ -158,7 +175,7 @@ WHERE id = $1::uuid AND deleted_at IS NULL`, familyID).Scan(&familyRaw)
 		snapshot[entity] = records
 	}
 	var cursor int64
-	if err := r.db.QueryRowContext(ctx, currentCursorSQL, familyID).Scan(&cursor); err != nil {
+	if err := tx.QueryRowContext(ctx, currentCursorSQL, familyID).Scan(&cursor); err != nil {
 		return syncdomain.BootstrapSnapshot{}, fmt.Errorf("read bootstrap cursor: %w", err)
 	}
 	return syncdomain.BootstrapSnapshot{
@@ -176,28 +193,60 @@ WHERE id = $1::uuid AND deleted_at IS NULL`, familyID).Scan(&familyRaw)
 	}, nil
 }
 
+// ReadBootstrapForDevice binds the checkpoint to the same snapshot used for
+// all business rows and the cursor. An unchanged cursor reuses its valid token;
+// a new snapshot cursor requires confirmation again without losing the chosen mode.
 func (r *Repository) ReadBootstrapForDevice(ctx context.Context, familyID, deviceID string) (syncdomain.BootstrapSnapshot, error) {
 	if r == nil || r.db == nil {
 		return syncdomain.BootstrapSnapshot{}, errors.New("sync postgres database is not configured")
 	}
-	snapshot, err := r.ReadBootstrap(ctx, familyID)
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
+	if err != nil {
+		return syncdomain.BootstrapSnapshot{}, fmt.Errorf("begin device bootstrap snapshot: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var userID string
+	if err := tx.QueryRowContext(ctx, `
+SELECT user_id::text FROM sync_devices
+WHERE id = $1::uuid AND family_id = $2::uuid AND revoked_at IS NULL AND deleted_at IS NULL
+FOR UPDATE`, deviceID, familyID).Scan(&userID); errors.Is(err, sql.ErrNoRows) {
+		return syncdomain.BootstrapSnapshot{}, syncdomain.ErrDeviceNotFound
+	} else if err != nil {
+		return syncdomain.BootstrapSnapshot{}, fmt.Errorf("lock bootstrap device: %w", err)
+	}
+	snapshot, err := readBootstrapSnapshot(ctx, tx, familyID)
 	if err != nil {
 		return syncdomain.BootstrapSnapshot{}, err
 	}
 	var state, checkpoint string
 	var snapshotCursor int64
-	err = r.db.QueryRowContext(ctx, `
+	err = tx.QueryRowContext(ctx, `
+SELECT state, checkpoint::text, snapshot_cursor FROM sync_bootstrap_checkpoints
+WHERE family_id = $1::uuid AND device_id = $2::uuid
+FOR UPDATE`, familyID, deviceID).Scan(&state, &checkpoint, &snapshotCursor)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return syncdomain.BootstrapSnapshot{}, fmt.Errorf("read bootstrap checkpoint: %w", err)
+	}
+	if errors.Is(err, sql.ErrNoRows) || snapshotCursor != snapshot.ServerCursor || !isUUID(checkpoint) {
+		// The device lock serializes this refresh with confirmation. Only a
+		// changed/missing checkpoint is written; repeated GETs keep the token.
+		err = tx.QueryRowContext(ctx, `
 INSERT INTO sync_bootstrap_checkpoints (family_id, device_id, state, snapshot_cursor)
 VALUES ($1::uuid, $2::uuid, 'pending', $3)
-ON CONFLICT (family_id, device_id) DO UPDATE
-SET snapshot_cursor = EXCLUDED.snapshot_cursor, updated_at = CURRENT_TIMESTAMP
+ON CONFLICT (family_id, device_id) DO UPDATE SET
+    snapshot_cursor = EXCLUDED.snapshot_cursor,
+    checkpoint = gen_random_uuid(),
+    state = 'pending',
+    confirmed_at = NULL,
+    updated_at = CURRENT_TIMESTAMP
 RETURNING state, checkpoint::text, snapshot_cursor`, familyID, deviceID, snapshot.ServerCursor).
-		Scan(&state, &checkpoint, &snapshotCursor)
-	if errors.Is(err, sql.ErrNoRows) {
-		return syncdomain.BootstrapSnapshot{}, syncdomain.ErrDeviceNotFound
+			Scan(&state, &checkpoint, &snapshotCursor)
+		if err != nil {
+			return syncdomain.BootstrapSnapshot{}, fmt.Errorf("save bootstrap checkpoint: %w", err)
+		}
 	}
-	if err != nil {
-		return syncdomain.BootstrapSnapshot{}, fmt.Errorf("read bootstrap checkpoint: %w", err)
+	if err := tx.Commit(); err != nil {
+		return syncdomain.BootstrapSnapshot{}, fmt.Errorf("commit device bootstrap snapshot: %w", err)
 	}
 	snapshot.BootstrapState = state
 	snapshot.Checkpoint = checkpoint
@@ -208,6 +257,11 @@ RETURNING state, checkpoint::text, snapshot_cursor`, familyID, deviceID, snapsho
 func (r *Repository) ConfirmBootstrap(ctx context.Context, familyID string, request syncdomain.BootstrapConfirmRequest) (syncdomain.BootstrapConfirmation, error) {
 	if r == nil || r.db == nil {
 		return syncdomain.BootstrapConfirmation{}, errors.New("sync postgres database is not configured")
+	}
+	if request.Mode == syncdomain.BootstrapModeKeepLocalOnly {
+		// Local-only mode does not acknowledge a remote snapshot. Normalize
+		// the untrusted cursor before validation, persistence, and auditing.
+		request.SnapshotCursor = 0
 	}
 	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
@@ -223,6 +277,20 @@ FOR UPDATE`, request.DeviceID, familyID).Scan(&userID); errors.Is(err, sql.ErrNo
 	} else if err != nil {
 		return syncdomain.BootstrapConfirmation{}, fmt.Errorf("lock bootstrap device: %w", err)
 	}
+	if request.Mode != syncdomain.BootstrapModeKeepLocalOnly {
+		var savedCheckpoint string
+		var savedCursor int64
+		err := tx.QueryRowContext(ctx, `
+SELECT checkpoint::text, snapshot_cursor FROM sync_bootstrap_checkpoints
+WHERE family_id = $1::uuid AND device_id = $2::uuid
+FOR UPDATE`, familyID, request.DeviceID).Scan(&savedCheckpoint, &savedCursor)
+		if errors.Is(err, sql.ErrNoRows) || (err == nil && (request.Checkpoint == "" || request.Checkpoint != savedCheckpoint || request.SnapshotCursor != savedCursor)) {
+			return syncdomain.BootstrapConfirmation{}, syncdomain.NewBusinessError("BOOTSTRAP_CHECKPOINT_STALE", "fetch a fresh bootstrap snapshot before confirming", nil)
+		}
+		if err != nil {
+			return syncdomain.BootstrapConfirmation{}, fmt.Errorf("validate bootstrap checkpoint: %w", err)
+		}
+	}
 	var currentCursor int64
 	if err := tx.QueryRowContext(ctx, currentCursorSQL, familyID).Scan(&currentCursor); err != nil {
 		return syncdomain.BootstrapConfirmation{}, fmt.Errorf("read bootstrap confirmation cursor: %w", err)
@@ -232,7 +300,9 @@ FOR UPDATE`, request.DeviceID, familyID).Scan(&userID); errors.Is(err, sql.ErrNo
 	}
 	var state, checkpoint string
 	var checkpointArg any
-	if request.Checkpoint != "" {
+	// Local-only confirmation never consumes a client snapshot token, even
+	// when one was supplied. Keep it out of the SQL UUID cast entirely.
+	if request.Mode != syncdomain.BootstrapModeKeepLocalOnly && request.Checkpoint != "" {
 		checkpointArg = request.Checkpoint
 	}
 	row := tx.QueryRowContext(ctx, `
@@ -1011,9 +1081,18 @@ ON CONFLICT (family_id, entity, entity_id, version) DO NOTHING`, r.familyID, ent
 func (r *transactionRepository) validateEntityDependencies(ctx context.Context, entity string, payload map[string]any) error {
 	check := func(field, table, code string, required bool) error {
 		raw, exists := payload[field]
+		if !exists || raw == nil {
+			if required {
+				return syncdomain.NewBusinessError("DEPENDENCY_REQUIRED", field+" is required", map[string]any{"field": field})
+			}
+			return nil
+		}
 		value, ok := raw.(string)
+		if !ok {
+			return syncdomain.NewBusinessError(code, field+" must be a UUID", map[string]any{"field": field})
+		}
 		value = strings.TrimSpace(value)
-		if !exists || value == "" {
+		if value == "" {
 			if required {
 				return syncdomain.NewBusinessError("DEPENDENCY_REQUIRED", field+" is required", map[string]any{"field": field})
 			}
@@ -1082,6 +1161,17 @@ func (r *transactionRepository) validateInventoryDependencies(ctx context.Contex
 		}
 	}
 	return nil
+}
+
+func cloneMap(value map[string]any) map[string]any {
+	if value == nil {
+		return nil
+	}
+	result := make(map[string]any, len(value))
+	for key, item := range value {
+		result[key] = item
+	}
+	return result
 }
 
 func isUUID(value string) bool {

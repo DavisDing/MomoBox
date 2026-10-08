@@ -41,6 +41,11 @@ jobs:
       - name: Validate platform preparation script
         run: scripts/ci/test-prepare-flutter-platforms.sh
 
+      - name: Validate NAS deployment scripts
+        run: |
+          for script in deploy/nas/scripts/*.sh; do sh -n "$script"; done
+          sh deploy/nas/scripts/self-test.sh
+
       - name: Calculate release and backend publication plan
         id: plan
         env:
@@ -142,10 +147,19 @@ jobs:
         run: flutter analyze
 
       - name: Unit tests
+        timeout-minutes: 10
         run: flutter test --reporter expanded
 
       - name: Android debug build
         run: flutter build apk --debug
+
+      - name: Upload Android debug package
+        uses: actions/upload-artifact@v4
+        with:
+          name: momobox-debug-${{ github.sha }}
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
 
   ios-verify:
     name: iOS unsigned build (Xcode 27)
@@ -191,7 +205,7 @@ jobs:
         run: dart run build_runner build --delete-conflicting-outputs
 
       - name: Generate iOS build configuration
-        run: flutter build ios --config-only
+        run: flutter build ios --config-only --no-codesign
 
       - name: iOS unsigned build
         run: >-
@@ -201,9 +215,23 @@ jobs:
           DEVELOPMENT_TEAM='' build
 
   backend-verify:
-    name: Backend test and vet
+    name: Backend test, PostgreSQL regression and vet
     needs: prepare
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: momobox_test
+          POSTGRES_PASSWORD: ci_test_only
+          POSTGRES_DB: momobox_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U momobox_test -d momobox_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      MOMO_TEST_DATABASE_URL: postgres://momobox_test:ci_test_only@127.0.0.1:5432/momobox_test?sslmode=disable
     steps:
       - uses: actions/checkout@v4
 
@@ -213,9 +241,10 @@ jobs:
           go-version: '1.22.8'
           cache-dependency-path: backend/go.sum
 
-      - name: Test backend
+      - name: Test backend including PostgreSQL cursor ordering
         working-directory: backend
-        run: go test ./...
+        timeout-minutes: 5
+        run: go test -count=1 ./...
 
       - name: Vet backend
         working-directory: backend

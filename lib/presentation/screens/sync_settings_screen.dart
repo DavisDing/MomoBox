@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/sync_engine.dart';
 import '../../data/nas/nas_sync_api.dart';
+import '../../data/nas/nas_api_error.dart';
 import '../../data/repositories/sync_outbox_repository.dart';
 import '../../domain/models/nas_sync_models.dart';
 import '../../domain/models/sync_models.dart';
@@ -32,6 +33,8 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
   NasSyncApi? _remoteConflictsApi;
   String? _remoteConflictsDeviceId;
   List<NasSyncConflictDetail> _remoteConflicts = const <NasSyncConflictDetail>[];
+  List<SyncConflictEntry> _recoveryLocals = const <SyncConflictEntry>[];
+  String? _recoveryScopeId;
 
   @override
   Widget build(BuildContext context) {
@@ -43,7 +46,11 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     final state = scopeId == null ? null : ref.watch(syncStateProvider(scopeId)).valueOrNull;
     final conflicts = scopeId == null
         ? const AsyncValue<List<SyncConflictEntry>>.data(<SyncConflictEntry>[])
-        : ref.watch(syncConflictsProvider(scopeId));
+        : ref.watch(syncConflictsProvider(scopeId)).whenData((items) => [
+            ...items,
+            if (_recoveryScopeId == scopeId)
+              ..._recoveryLocals.where((local) => !items.any((item) => item.id == local.id)),
+          ]);
 
     return Scaffold(
       appBar: AppBar(title: const Text('同步设置')),
@@ -118,7 +125,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
             ],
             const SizedBox(height: 12),
             FilledButton.icon(
-              onPressed: !enabled || _working ? null : () => _runSync(engine!),
+              onPressed: !enabled || _working ? null : () => _runSync(engine),
               icon: _working
                   ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.sync),
@@ -145,7 +152,11 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
             ),
             const SizedBox(height: 12),
             if (awaitingChoice && _availableModes.isNotEmpty)
-              ..._availableModes.map(_buildModeTile),
+              RadioGroup<String>(
+                groupValue: _selectedMode,
+                onChanged: (value) => setState(() => _selectedMode = value),
+                child: Column(children: _availableModes.map(_buildModeTile).toList()),
+              ),
             if (awaitingChoice && _availableModes.isNotEmpty) const SizedBox(height: 8),
             OutlinedButton.icon(
               onPressed: engine == null || _working ? null : () => _bootstrap(engine),
@@ -183,8 +194,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     };
     return RadioListTile<String>(
       value: mode,
-      groupValue: _selectedMode,
-      onChanged: _working ? null : (value) => setState(() => _selectedMode = value),
+      enabled: !_working,
       title: Text(title),
       subtitle: Text(description),
       contentPadding: EdgeInsets.zero,
@@ -260,7 +270,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     String? deviceId,
     AsyncValue<List<SyncConflictEntry>> localConflicts,
   ) {
-    final title = Text('远端开放冲突', style: Theme.of(context).textTheme.titleSmall);
+    final title = Text('远端冲突与待恢复回执', style: Theme.of(context).textTheme.titleSmall);
     if (syncApi == null || deviceId == null || deviceId.trim().isEmpty) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -297,7 +307,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
             }
             final response = snapshot.data;
             if (response == null || response.conflicts.isEmpty) {
-              return const Text('当前没有开放的远端冲突。');
+              return const Text('当前没有开放的远端冲突或待恢复回执。');
             }
             return Column(
               children: [
@@ -314,7 +324,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                     alignment: Alignment.centerLeft,
                     child: Padding(
                       padding: EdgeInsets.only(top: 6),
-                      child: Text('远端冲突超过单次显示上限，当前仅显示前 200 条。'),
+                      child: Text('远端记录超过单次显示上限，开放冲突与已解决回执各读取最近 200 条；更早回执尚未匹配，本地未结算记录仍保留。'),
                     ),
                   ),
               ],
@@ -371,6 +381,12 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           child: Wrap(
             spacing: 8,
             children: [
+              if (conflict.status == 'resolved')
+                _buildSettlementRecoveryAction(
+                  conflict, deviceId,
+                  localConflicts.valueOrNull ?? const <SyncConflictEntry>[],
+                )
+              else ...[
               TextButton(
                 onPressed: resolving
                     ? null
@@ -399,6 +415,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                         ),
                 child: const Text('保留本地'),
               ),
+              ],
             ],
           ),
         ),
@@ -446,12 +463,15 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           child: Wrap(
             spacing: 8,
             children: [
+              if (canResolveRemotely && remote.status == 'resolved')
+                _buildSettlementRecoveryAction(remote, deviceId, [conflict])
+              else ...[
               TextButton(
                 onPressed: !canResolveRemotely || resolving
                     ? null
                     : () => _resolveRemoteConflict(
-                          conflict: remote!,
-                          deviceId: deviceId!,
+                          conflict: remote,
+                          deviceId: deviceId,
                           localConflicts: <SyncConflictEntry>[conflict],
                           action: 'keep_remote',
                         ),
@@ -461,8 +481,8 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                 onPressed: !canResolveRemotely || resolving || unsupportedLocal
                     ? null
                     : () => _resolveRemoteConflict(
-                          conflict: remote!,
-                          deviceId: deviceId!,
+                          conflict: remote,
+                          deviceId: deviceId,
                           localConflicts: <SyncConflictEntry>[conflict],
                           action: 'keep_local',
                         ),
@@ -474,8 +494,34 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                       )
                     : const Text('保留本地'),
               ),
+              ],
             ],
           ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSettlementRecoveryAction(
+    NasSyncConflictDetail remote,
+    String deviceId,
+    List<SyncConflictEntry> locals,
+  ) {
+    final action = remote.resolution?['action'];
+    final supported = action == 'keep_local' || action == 'keep_remote';
+    final working = _resolvingRemoteConflictId != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text(supported
+            ? 'NAS 已按“${action == 'keep_local' ? '保留本地' : '保留远端'}”解决；仅恢复本地结算，不再执行远端变更。'
+            : 'NAS 已解决，但原动作不支持恢复；本地冲突继续保留。'),
+        FilledButton.tonal(
+          onPressed: !supported || working ? null : () => _resolveRemoteConflict(
+            conflict: remote, deviceId: deviceId, localConflicts: locals,
+            action: action as String,
+          ),
+          child: const Text('按原动作恢复本地结算'),
         ),
       ],
     );
@@ -509,6 +555,9 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     );
   }
 
+  bool _isCurrentEngine(SyncEngine engine) =>
+      mounted && identical(ref.read(syncEngineProvider), engine);
+
   Future<void> _bootstrap(SyncEngine engine) async {
     setState(() {
       _working = true;
@@ -517,7 +566,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     });
     try {
       final response = await engine.bootstrap();
-      if (!mounted) return;
+      if (!_isCurrentEngine(engine)) return;
       setState(() {
         _availableModes = response.availableModes;
         // Do not silently choose a destructive or data-merging bootstrap mode.
@@ -526,7 +575,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
         _message = response.mergeRequired ? '服务端要求选择首次同步模式。' : '服务端已准备好同步，可以立即同步。';
       });
     } catch (error) {
-      if (mounted) setState(() => _message = '检查首次同步状态失败：$error');
+      if (_isCurrentEngine(engine)) setState(() => _message = '检查首次同步状态失败：$error');
     } finally {
       if (mounted) setState(() => _working = false);
     }
@@ -539,17 +588,17 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     });
     try {
       final result = await engine.confirmBootstrap(mode: mode);
-      if (!mounted) return;
+      if (!_isCurrentEngine(engine)) return;
       setState(() {
         _message = result.accepted
             ? '已接受模式“${_modeLabel(mode)}”。远端数据仍会通过后续同步逐步处理。'
             : '服务端拒绝了该同步模式。';
       });
       if (result.accepted && result.nextAction != 'keep_local_only') {
-        await engine.runOnce();
+        await ref.read(syncSchedulerProvider).runNow();
       }
     } catch (error) {
-      if (mounted) setState(() => _message = '确认同步模式失败：$error');
+      if (_isCurrentEngine(engine)) setState(() => _message = '确认同步模式失败：$error');
     } finally {
       if (mounted) setState(() => _working = false);
     }
@@ -561,14 +610,25 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
       _message = null;
     });
     try {
-      final report = await engine.runOnce();
+      final report = await ref.read(syncSchedulerProvider).runNow();
+      if (!_isCurrentEngine(engine)) return;
+      if (report == null) {
+        if (mounted) setState(() => _message = '本次未同步：当前没有可用的 NAS 同步会话。');
+        return;
+      }
       if (mounted) {
         setState(() => _message = report.skipped
             ? '本次未同步：${report.reason ?? '当前状态不允许同步'}'
-            : '同步完成：推送 ${report.pushed} 条，拉取 ${report.pulled} 条，待处理 ${report.deferred} 条。');
+            : report.hasMorePending
+                ? '本轮推送 ${report.pushed} 条；队列仍有操作，前台时将分批继续，尚未完成同步。'
+                : report.deferred > 0
+                    ? '同步暂停：推送 ${report.pushed} 条，拉取 ${report.pulled} 条，待处理 ${report.deferred} 条。'
+                    : report.hasMoreRemote
+                        ? '本轮拉取 ${report.pulled} 条；远端仍有数据，前台时将分批继续，尚未完成同步。'
+                        : '同步完成：推送 ${report.pushed} 条，拉取 ${report.pulled} 条，待处理 ${report.deferred} 条。');
       }
     } catch (error) {
-      if (mounted) setState(() => _message = '同步失败：$error');
+      if (_isCurrentEngine(engine)) setState(() => _message = '同步失败：$error');
     } finally {
       if (mounted) setState(() => _working = false);
     }
@@ -601,15 +661,43 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     NasSyncApi api,
     String deviceId,
   ) async {
+    final scopeId = ref.read(nasAccountProvider).family.familyId;
+    final repository = SyncOutboxRepository(ref.read(databaseProvider));
     final response = await api.listConflicts(
-      deviceId: deviceId,
-      status: 'open',
-      limit: 200,
+      deviceId: deviceId, status: 'open', limit: 200,
     );
-    if (mounted && identical(_remoteConflictsApi, api) && _remoteConflictsDeviceId == deviceId) {
-      setState(() => _remoteConflicts = response.conflicts);
+    final recovery = <NasSyncConflictDetail>[];
+    final locals = scopeId == null ? const <SyncConflictEntry>[] :
+        await repository.listUnsettledLinkedConflicts(scopeId: scopeId);
+    var recoveryHasMore = false;
+    if (scopeId != null && locals.isNotEmpty) {
+      final changeIds = <String>{
+        for (final local in locals) ...[local.changeId, if (local.outboxChangeId != null) local.outboxChangeId!],
+      };
+      // Keep the existing bounded list behavior; do not expand full history.
+      final resolved = await api.listConflicts(deviceId: deviceId, status: 'resolved', limit: 200);
+      recoveryHasMore = resolved.hasMore;
+      for (final remote in resolved.conflicts) {
+        if (remote.status == 'resolved' && changeIds.contains(remote.changeId) &&
+            locals.any((local) => local.entity == remote.entity && local.entityId == remote.entityId &&
+                (local.changeId == remote.changeId || local.outboxChangeId == remote.changeId))) {
+          recovery.add(remote);
+        }
+      }
     }
-    return response;
+    final combined = NasSyncConflictListResponse(
+      conflicts: [...response.conflicts, ...recovery], hasMore: response.hasMore || recoveryHasMore,
+    );
+    if (mounted && identical(_remoteConflictsApi, api) &&
+        _remoteConflictsDeviceId == deviceId &&
+        ref.read(nasAccountProvider).family.familyId == scopeId) {
+      setState(() {
+        _remoteConflicts = combined.conflicts;
+        _recoveryLocals = locals;
+        _recoveryScopeId = scopeId;
+      });
+    }
+    return combined;
   }
 
   void _refreshRemoteConflicts() {
@@ -622,8 +710,9 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
 
   NasSyncConflictDetail? _matchingRemoteConflict(SyncConflictEntry local) {
     for (final remote in _remoteConflicts) {
-      if (remote.changeId == local.changeId ||
-          (remote.changeId != null && remote.changeId == local.outboxChangeId)) {
+      if (remote.entity == local.entity && remote.entityId == local.entityId &&
+          (remote.changeId == local.changeId ||
+              (remote.changeId != null && remote.changeId == local.outboxChangeId))) {
         return remote;
       }
     }
@@ -635,12 +724,36 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     NasSyncConflictDetail remote,
   ) {
     for (final local in locals) {
-      if (remote.changeId == local.changeId ||
-          (remote.changeId != null && remote.changeId == local.outboxChangeId)) {
+      if (remote.entity == local.entity && remote.entityId == local.entityId &&
+          (remote.changeId == local.changeId ||
+              (remote.changeId != null && remote.changeId == local.outboxChangeId))) {
         return local;
       }
     }
     return null;
+  }
+
+  bool _matchesResolvedReceipt(
+    NasSyncConflictDetail requested,
+    NasSyncConflictDetail receipt,
+  ) => receipt.status == 'resolved' &&
+      receipt.conflictId == requested.conflictId && receipt.changeId == requested.changeId &&
+      receipt.entity == requested.entity && receipt.entityId == requested.entityId &&
+      (requested.operation == null || receipt.operation == requested.operation) &&
+      (receipt.resolution?['action'] == 'keep_local' || receipt.resolution?['action'] == 'keep_remote');
+
+  void _retainResolvedReceipt(NasSyncConflictDetail receipt) {
+    if (!mounted) return;
+    setState(() {
+      _remoteConflicts = [
+        for (final remote in _remoteConflicts)
+          if (remote.conflictId != receipt.conflictId) remote,
+        receipt,
+      ];
+      _remoteConflictsFuture = Future.value(NasSyncConflictListResponse(
+        conflicts: _remoteConflicts, hasMore: false,
+      ));
+    });
   }
 
   bool _isInventoryOrHomeAssistantConflict(NasSyncConflictDetail conflict) {
@@ -664,30 +777,78 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
       return;
     }
     final api = ref.read(nasSyncApiProvider);
-    if (api == null) {
+    final account = ref.read(nasAccountProvider);
+    final scopeId = account.family.familyId;
+    final changeId = conflict.changeId;
+    if (api == null || scopeId == null ||
+        account.devices.currentDeviceId != deviceId) {
       setState(() => _message = 'NAS 会话已失效，无法解决远端冲突。');
       return;
     }
+    if (changeId == null || changeId.trim().isEmpty ||
+        conflict.conflictId.trim().isEmpty ||
+        (action != 'keep_local' && action != 'keep_remote')) {
+      setState(() => _message = '冲突标识或解决动作无效，本地冲突仍保留。');
+      return;
+    }
+    // Capture the persistence boundary before network I/O. A disposed page
+    // must not lose a valid receipt; a switched family must not receive it.
+    final repository = SyncOutboxRepository(ref.read(databaseProvider));
     setState(() {
       _resolvingRemoteConflictId = conflict.conflictId;
       _message = null;
     });
     NasSyncConflictResolveResponse response;
     try {
-      response = await api.resolveConflict(
-        NasSyncConflictResolveRequest(
-          deviceId: deviceId,
-          conflictId: conflict.conflictId,
-          action: action,
-          expectedVersion: conflict.serverVersion ?? 0,
-        ),
-      );
-    } catch (error) {
-      if (mounted) {
-        setState(() => _message = '远端冲突解决失败，本地冲突仍保留：$error');
+      if (conflict.status == 'resolved') {
+        // Re-read via the existing GET endpoint; cached/list evidence must not
+        // permit switching the original action or executing another mutation.
+        final receipt = await api.getConflict(deviceId: deviceId, conflictId: conflict.conflictId);
+        if (!_matchesResolvedReceipt(conflict, receipt) || receipt.resolution?['action'] != action) {
+          throw StateError('NAS 已解决回执或原动作不匹配，本地冲突仍保留。');
+        }
+        response = NasSyncConflictResolveResponse(conflict: receipt, accepted: true);
+      } else {
+        response = await api.resolveConflict(
+          NasSyncConflictResolveRequest(
+            deviceId: deviceId, conflictId: conflict.conflictId,
+            action: action, expectedVersion: conflict.serverVersion ?? 0,
+          ),
+        );
       }
-      if (mounted) setState(() => _resolvingRemoteConflictId = null);
-      return;
+    } catch (error) {
+      if (error is NasApiError &&
+          (error.code == 'CONFLICT_ALREADY_RESOLVED' || error.isRetryable)) {
+        try {
+          final receipt = await api.getConflict(deviceId: deviceId, conflictId: conflict.conflictId);
+          if (!_matchesResolvedReceipt(conflict, receipt)) {
+            throw StateError('NAS 已解决回执不匹配，本地冲突仍保留。');
+          }
+          if (mounted && ref.read(nasAccountProvider).family.familyId == scopeId &&
+              ref.read(nasAccountProvider).devices.currentDeviceId == deviceId &&
+              identical(ref.read(nasSyncApiProvider), api)) _retainResolvedReceipt(receipt);
+          if (receipt.resolution?['action'] != action) {
+            throw StateError('NAS 原解决动作不同，请按回执原动作恢复本地结算。');
+          }
+          response = NasSyncConflictResolveResponse(conflict: receipt, accepted: true);
+        } catch (readError) {
+          if (mounted) {
+            setState(() {
+              _message = '读取已解决回执失败，本地冲突仍保留：$readError';
+              _resolvingRemoteConflictId = null;
+            });
+          }
+          return;
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _message = '远端冲突解决失败，本地冲突仍保留：$error';
+            _resolvingRemoteConflictId = null;
+          });
+        }
+        return;
+      }
     }
 
     if (!response.accepted) {
@@ -700,46 +861,93 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
       return;
     }
 
-    final local = _matchingLocalConflict(localConflicts, conflict);
-    var localUpdated = false;
-    if (local != null) {
-      try {
-        final repository = SyncOutboxRepository(ref.read(databaseProvider));
-        await repository.resolveConflict(
-          id: local.id,
-          status: action == 'keep_local'
-              ? SyncConflictStatus.resolved
-              : SyncConflictStatus.rejected,
-          resolution: action == 'keep_local' ? 'remote_keep_local' : 'remote_keep_remote',
-        );
-        localUpdated = true;
-      } catch (error) {
-        if (mounted) {
-          setState(() {
-            _message = '远端已解决，但本地冲突记录更新失败，仍保留待处理：$error';
-            _resolvingRemoteConflictId = null;
-          });
-        }
+    try {
+      if (response.conflict.conflictId != conflict.conflictId ||
+          response.conflict.changeId != changeId ||
+          response.conflict.entity != conflict.entity ||
+          response.conflict.entityId != conflict.entityId ||
+          response.conflict.status != 'resolved' ||
+          response.conflict.resolution?['action'] != action ||
+          (conflict.operation != null && response.conflict.operation != conflict.operation)) {
+        throw StateError('NAS 冲突解决回执与请求不匹配。');
       }
+      if (mounted && (ref.read(nasAccountProvider).family.familyId != scopeId ||
+          ref.read(nasAccountProvider).devices.currentDeviceId != deviceId ||
+          !identical(ref.read(nasSyncApiProvider), api))) {
+        throw StateError('NAS 会话或家庭已切换，请在原家庭重新确认结算。');
+      }
+      await repository.transaction(() async {
+        final local = _matchingLocalConflict(localConflicts, conflict) ??
+            await repository.getConflictByChangeId(scopeId: scopeId, changeId: changeId);
+        // Remote-only conflicts still need a durable receipt and fresh snapshot.
+        // This is an audit of a real NAS resolution, not a fake business apply.
+        final id = local?.id ?? await repository.recordConflict(SyncConflictDraft(
+          scopeId: scopeId,
+          changeId: changeId,
+          entity: conflict.entity,
+          entityId: conflict.entityId,
+          reason: conflict.reason,
+          serverVersion: conflict.serverVersion,
+          serverPayloadJson: conflict.serverPayload == null ? null : jsonEncode(conflict.serverPayload),
+          clientPayloadJson: conflict.clientPayload == null ? null : jsonEncode(conflict.clientPayload),
+        ));
+        await repository.settleOutboxConflict(
+          conflictId: id,
+          scopeId: scopeId,
+          changeId: changeId,
+          remoteConflictId: conflict.conflictId,
+          action: action,
+          response: response,
+        );
+      });
+    } catch (error) {
+      if (mounted && ref.read(nasAccountProvider).family.familyId == scopeId &&
+          ref.read(nasAccountProvider).devices.currentDeviceId == deviceId &&
+          identical(ref.read(nasSyncApiProvider), api) &&
+          _matchesResolvedReceipt(conflict, response.conflict)) {
+        _retainResolvedReceipt(response.conflict);
+      }
+      if (mounted) {
+        setState(() {
+          _message = '远端已解决，但本地结算未完成，本地冲突仍保留待处理：$error';
+          _resolvingRemoteConflictId = null;
+        });
+      }
+      return;
     }
 
-    if (!mounted) return;
-    final familyId = ref.read(nasAccountProvider).family.familyId;
-    if (familyId != null) {
-      ref.invalidate(syncConflictsProvider(familyId));
-    }
+    if (!mounted) return; // The durable refresh token survives leaving the page.
+    ref.invalidate(syncConflictsProvider(scopeId));
     setState(() {
       _remoteConflicts = _remoteConflicts
           .where((item) => item.conflictId != conflict.conflictId)
           .toList(growable: false);
       _remoteConflictsFuture = null;
-      _resolvingRemoteConflictId = null;
-      if (_message == null) {
-        _message = local == null || !localUpdated
-            ? '远端已解决；未找到匹配的本地冲突记录。'
-            : '远端已解决，并已更新本地冲突记录。';
-      }
+      _recoveryLocals = _recoveryLocals.where((local) =>
+          local.changeId != changeId && local.outboxChangeId != changeId).toList(growable: false);
+      _message = '远端已解决，本地结算已保存；等待获取 NAS 最新快照。';
     });
+    try {
+      // Do not bootstrap here: that would change the user's confirmed mode.
+      // Engine consumes the resolution refresh token even on an empty pull.
+      final current = ref.read(nasAccountProvider);
+      final engine = ref.read(syncEngineProvider);
+      if (engine != null && current.family.familyId == scopeId &&
+          current.devices.currentDeviceId == deviceId &&
+          identical(ref.read(nasSyncApiProvider), api)) {
+        await ref.read(syncSchedulerProvider).runNow();
+        final pendingRefresh = await repository.getConflictResolutionRefreshToken(scopeId);
+        if (mounted && pendingRefresh == null) {
+          setState(() => _message = '远端已解决，本地结算及最新快照同步已完成。');
+        }
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _message = '本地结算已保存，最新快照同步尚未完成，稍后可重试：$error');
+      }
+    } finally {
+      if (mounted) setState(() => _resolvingRemoteConflictId = null);
+    }
   }
 
   String _statusLabel(SyncBootstrapStatus? status) {

@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../core/database/app_database.dart';
+import '../../domain/models/nas_sync_models.dart';
 import '../../domain/models/sync_models.dart';
 
 /// Local persistence boundary for sync metadata and pending changes.
@@ -16,6 +19,30 @@ class SyncOutboxRepository {
   SyncOutboxRepository(this._database);
 
   final AppDatabase _database;
+
+  /// Opaque identity for same-isolate, database/scope coordination.
+  Object get coordinationKey => _database;
+
+  /// All business repositories passed to the sync adapter share this database.
+  AppDatabase get database => _database;
+
+  Future<T> transaction<T>(Future<T> Function() action) =>
+      _database.transaction(action);
+
+  Future<Map<String, dynamic>?> getRemoteAuxiliaryEntity({
+    required String scopeId,
+    required String entity,
+    required String entityId,
+  }) async {
+    final key = _auxiliaryKey(scopeId: scopeId, entity: entity, entityId: entityId);
+    final row = await (_database.select(_database.appSettings)
+          ..where((setting) => setting.key.equals(key)))
+        .getSingleOrNull();
+    if (row == null) return null;
+    final decoded = jsonDecode(row.value);
+    if (decoded is! Map) throw const FormatException('invalid auxiliary sync record');
+    return Map<String, dynamic>.from(decoded);
+  }
 
   Future<SyncStateModel?> getState(String scopeId) async {
     final row = await (_database.select(_database.syncStates)
@@ -88,6 +115,7 @@ class SyncOutboxRepository {
     required int version,
     required DateTime updatedAt,
     DateTime? deletedAt,
+    bool businessApplied = false,
   }) async {
     final key = _auxiliaryKey(scopeId: scopeId, entity: entity, entityId: entityId);
     final existing = await (_database.select(_database.appSettings)
@@ -103,7 +131,8 @@ class SyncOutboxRepository {
     if (localVersion != null && version > 0 && localVersion > version) {
       return SyncRemoteApplyStatus.ignoredStale;
     }
-    if (localVersion != null && version > 0 && localVersion == version) {
+    if (localVersion != null && version > 0 && localVersion == version &&
+        (!businessApplied || previous?['business_applied'] == true)) {
       return SyncRemoteApplyStatus.alreadyApplied;
     }
     final record = <String, dynamic>{
@@ -113,6 +142,7 @@ class SyncOutboxRepository {
       'updated_at': updatedAt.toUtc().toIso8601String(),
       'deleted_at': deletedAt?.toUtc().toIso8601String(),
       'payload': payload,
+      'business_applied': businessApplied,
     };
     await _database.into(_database.appSettings).insertOnConflictUpdate(
           AppSettingsCompanion.insert(
@@ -131,6 +161,7 @@ class SyncOutboxRepository {
     String? checkpoint,
     String? bootstrapState,
     String? mode,
+    bool refreshRequired = false,
   }) async {
     await _saveInternalSetting(
       'sync_bootstrap:$scopeId',
@@ -141,24 +172,85 @@ class SyncOutboxRepository {
         if (bootstrapState != null && bootstrapState.trim().isNotEmpty)
           'bootstrap_state': bootstrapState,
         if (mode != null && mode.trim().isNotEmpty) 'mode': mode,
+        if (refreshRequired) 'refresh_required': true,
         'saved_at': _now().toIso8601String(),
       }),
     );
   }
 
-  Future<Map<String, dynamic>?> getPendingBootstrap(String scopeId) async {
+  Future<Map<String, dynamic>?> _getBootstrapRecord(String scopeId) async {
     final row = await (_database.select(_database.appSettings)
           ..where((setting) => setting.key.equals('sync_bootstrap:$scopeId')))
         .getSingleOrNull();
     if (row == null) return null;
     final decoded = jsonDecode(row.value);
-    return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
+    if (decoded is! Map) throw const FormatException('invalid bootstrap record');
+    return Map<String, dynamic>.from(decoded);
+  }
+
+  Future<Map<String, dynamic>?> getPendingBootstrap(String scopeId) async {
+    final record = await _getBootstrapRecord(scopeId);
+    // A completed record retains only the confirmed mode, not a pending
+    // snapshot. Preserve that choice across restart without a schema change.
+    return record != null && record.containsKey('snapshot') ? record : null;
+  }
+
+  Future<String?> getConfirmedBootstrapMode(String scopeId) async {
+    final record = await _getBootstrapRecord(scopeId);
+    final mode = record?['mode'];
+    return mode is String && mode.isNotEmpty ? mode : null;
   }
 
   Future<void> clearPendingBootstrap(String scopeId) async {
+    final mode = await getConfirmedBootstrapMode(scopeId);
+    if (mode != null) {
+      await _saveInternalSetting('sync_bootstrap:$scopeId', jsonEncode({
+        'mode': mode,
+        'bootstrap_state': 'completed',
+      }));
+      return;
+    }
     await (_database.delete(_database.appSettings)
           ..where((setting) => setting.key.equals('sync_bootstrap:$scopeId')))
         .go();
+  }
+
+  /// A snapshot may replace quantities only when the whole scope is quiescent.
+  /// Include failed commands: a rejected stock operation is not permission to
+  /// discard the user's local edit. Resolution must be explicit.
+  Future<bool> hasSnapshotBlockingChanges({required String scopeId}) =>
+      _hasSnapshotBlockers(scopeId: scopeId, includePending: true);
+
+  /// Pending work alone may be a bounded maxPush continuation. Unsettled
+  /// failures/claims and open/deferred conflicts must still stop that drain.
+  /// Validly settled rejected/conflict audit rows are not permanent blockers.
+  Future<bool> hasNonPendingSnapshotBlockers({required String scopeId}) =>
+      _hasSnapshotBlockers(scopeId: scopeId, includePending: false);
+
+  Future<bool> _hasSnapshotBlockers({
+    required String scopeId,
+    required bool includePending,
+  }) async {
+    final outbox = await (_database.select(_database.syncOutbox)
+          ..where((row) => row.scopeId.equals(scopeId) & row.status.isIn([
+            if (includePending) SyncOutboxStatus.pending.wireValue,
+            SyncOutboxStatus.inFlight.wireValue,
+            SyncOutboxStatus.blocked.wireValue,
+            SyncOutboxStatus.conflict.wireValue,
+            SyncOutboxStatus.rejected.wireValue,
+          ])))
+        .get();
+    for (final row in outbox) {
+      if (!await _isSettledOutboxEntry(_outboxFromRecord(row))) return true;
+    }
+    final conflict = await (_database.select(_database.syncConflicts)
+          ..where((row) => row.scopeId.equals(scopeId) & row.status.isIn([
+            SyncConflictStatus.open.wireValue,
+            SyncConflictStatus.deferred.wireValue,
+          ]))
+          ..limit(1))
+        .getSingleOrNull();
+    return conflict != null;
   }
 
   Future<void> _saveInternalSetting(String key, String value) async {
@@ -318,6 +410,55 @@ class SyncOutboxRepository {
     return rows.map(_outboxFromRecord).toList(growable: false);
   }
 
+  /// Emits only new or changed pending request content after a committed write.
+  ///
+  /// Observe the scoped ledger, not just pending membership: claim/retry/status
+  /// transitions must not look like a newly submitted local request. Reads,
+  /// receipt metadata, and remote application without an outbox write never
+  /// trigger this stream. No lease reclamation or dependency writes occur here.
+  /// Each subscriber keeps its own baseline; the first snapshot emits any
+  /// existing pending work so restart/scope changes do not lose local intent.
+  Stream<List<SyncOutboxEntry>> watchPendingContentChanges({
+    required String scopeId,
+  }) {
+    // A baseline belongs to a subscription, not the stream object. A shared
+    // map would let the first listener consume changes intended for another
+    // listener (or hide existing work when the same stream is resubscribed).
+    return Stream<List<SyncOutboxEntry>>.multi((controller) {
+      var previous = <String, String>{};
+      final subscription = (_database.select(_database.syncOutbox)
+            ..where((entry) => entry.scopeId.equals(scopeId))
+            ..orderBy([(entry) => OrderingTerm.asc(entry.changeId)]))
+          .watch()
+          .map((rows) {
+        final next = <String, String>{};
+        final changed = <SyncOutboxEntry>[];
+        for (final row in rows) {
+          // Do not include scheduling/receipt fields (status, attempts,
+          // timestamps, errors, server versions) in the content identity.
+          final fingerprint = jsonEncode([
+            row.operation, row.entity, row.entityId, row.baseVersion,
+            row.operationId, row.integrationId, row.command,
+            row.idempotencyKey, row.requestJson,
+          ]);
+          next[row.changeId] = fingerprint;
+          if (row.status == SyncOutboxStatus.pending.wireValue &&
+              previous[row.changeId] != fingerprint) {
+            changed.add(_outboxFromRecord(row));
+          }
+        }
+        previous = next;
+        return changed;
+      })
+          .where((changed) => changed.isNotEmpty)
+          .listen(controller.add,
+              onError: controller.addError, onDone: controller.close);
+      controller.onCancel = subscription.cancel;
+      controller.onPause = subscription.pause;
+      controller.onResume = subscription.resume;
+    }, isBroadcast: true);
+  }
+
   Future<List<SyncOutboxEntry>> listPending({
     required String scopeId,
     int limit = 100,
@@ -355,7 +496,7 @@ class SyncOutboxRepository {
               entry.updatedAt.isSmallerThanValue(cutoff)))
         .write(
       SyncOutboxCompanion(
-        status: const Value(SyncOutboxStatus.pending.wireValue),
+        status: Value(SyncOutboxStatus.pending.wireValue),
         nextAttemptAt: const Value(null),
         lastErrorCode: const Value('stale_in_flight_reclaimed'),
         lastErrorMessage: const Value('本地同步租约已过期，已回收并准备重试。'),
@@ -380,7 +521,7 @@ class SyncOutboxRepository {
                 entry.updatedAt.isSmallerThanValue(cutoff)))
           .write(
         SyncOutboxCompanion(
-          status: const Value(SyncOutboxStatus.pending.wireValue),
+          status: Value(SyncOutboxStatus.pending.wireValue),
           nextAttemptAt: const Value(null),
           lastErrorCode: const Value('stale_in_flight_reclaimed'),
           lastErrorMessage: const Value('本地同步租约已过期，已回收并准备重试。'),
@@ -406,7 +547,7 @@ class SyncOutboxRepository {
             ..where((entry) => entry.changeId.equals(selected.changeId)))
           .write(
         SyncOutboxCompanion(
-          status: const Value(SyncOutboxStatus.inFlight.wireValue),
+          status: Value(SyncOutboxStatus.inFlight.wireValue),
           attemptCount: Value(selected.attemptCount + 1),
           updatedAt: Value(claimedAt),
         ),
@@ -435,7 +576,12 @@ class SyncOutboxRepository {
         .get();
     final entries = rows.map(_outboxFromRecord).toList(growable: false);
     final byEntity = <String, SyncOutboxEntry>{};
+    final settled = <String>{};
     for (final entry in entries) {
+      if (await _isSettledOutboxEntry(entry)) {
+        settled.add(entry.changeId);
+        continue;
+      }
       final request = _decodedRequest(entry);
       final entity = _entryEntity(entry, request ?? const <String, dynamic>{});
       final entityId = request == null ? entry.entityId : _entryEntityId(entry, request);
@@ -447,6 +593,7 @@ class SyncOutboxRepository {
       }
     }
     for (final entry in entries) {
+      if (settled.contains(entry.changeId)) continue;
       final dependencyKeys = _dependencyKeys(entry);
       if (dependencyKeys.isEmpty) continue;
       final blockedBy = dependencyKeys.firstWhere(
@@ -458,6 +605,7 @@ class SyncOutboxRepository {
                 SyncOutboxStatus.inFlight,
                 SyncOutboxStatus.blocked,
                 SyncOutboxStatus.conflict,
+                SyncOutboxStatus.rejected,
               }.contains(dependency.status);
         },
         orElse: () => '',
@@ -469,7 +617,7 @@ class SyncOutboxRepository {
               ..where((row) => row.changeId.equals(entry.changeId)))
             .write(
           SyncOutboxCompanion(
-            status: const Value(SyncOutboxStatus.blocked.wireValue),
+            status: Value(SyncOutboxStatus.blocked.wireValue),
             lastErrorCode: const Value('dependency_blocked'),
             lastErrorMessage: Value('等待依赖变化完成：$blockedBy'),
             updatedAt: Value(now),
@@ -480,7 +628,7 @@ class SyncOutboxRepository {
               ..where((row) => row.changeId.equals(entry.changeId)))
             .write(
           SyncOutboxCompanion(
-            status: const Value(SyncOutboxStatus.pending.wireValue),
+            status: Value(SyncOutboxStatus.pending.wireValue),
             nextAttemptAt: const Value(null),
             lastErrorCode: const Value(null),
             lastErrorMessage: const Value(null),
@@ -742,7 +890,7 @@ class SyncOutboxRepository {
           ..where((entry) => entry.changeId.equals(changeId)))
         .write(
       SyncOutboxCompanion(
-        status: const Value(SyncOutboxStatus.pending.wireValue),
+        status: Value(SyncOutboxStatus.pending.wireValue),
         nextAttemptAt: Value(nextAttemptAt),
         lastErrorCode: Value(errorCode),
         lastErrorMessage: Value(errorMessage),
@@ -761,7 +909,7 @@ class SyncOutboxRepository {
             ..where((entry) => entry.changeId.equals(changeId)))
           .write(
         SyncOutboxCompanion(
-          status: const Value(SyncOutboxStatus.conflict.wireValue),
+          status: Value(SyncOutboxStatus.conflict.wireValue),
           updatedAt: Value(now),
           completedAt: Value(now),
         ),
@@ -770,6 +918,207 @@ class SyncOutboxRepository {
             _conflictCompanion(conflict, createdAt: now),
           );
     });
+  }
+
+  /// Called only after NAS has accepted keep_local/keep_remote. NAS keep_local
+  /// already applies the entity mutation and emits a new change-log entry: the
+  /// original idempotency key must NEVER be requeued (including stock commands).
+  /// Keep the original conflict/rejected row and request as audit evidence;
+  /// explicit settlement, local resolution and fresh-snapshot intent commit
+  /// together. No push/pull cursor is advanced by a resolution receipt.
+  Future<void> settleOutboxConflict({
+    required int conflictId,
+    required String scopeId,
+    required String changeId,
+    required String remoteConflictId,
+    required String action,
+    required NasSyncConflictResolveResponse response,
+  }) async {
+    final remote = response.conflict;
+    if (scopeId.trim().isEmpty || changeId.trim().isEmpty ||
+        remoteConflictId.trim().isEmpty ||
+        (action != 'keep_local' && action != 'keep_remote') ||
+        !response.accepted || remote.status != 'resolved' ||
+        remote.conflictId != remoteConflictId || remote.changeId != changeId ||
+        remote.resolution?['action'] != action) {
+      throw StateError('Invalid NAS conflict resolution receipt.');
+    }
+    await _database.transaction(() async {
+      final local = await getConflict(conflictId);
+      if (local == null || local.scopeId != scopeId ||
+          (local.changeId != changeId && local.outboxChangeId != changeId) ||
+          local.entity != remote.entity || local.entityId != remote.entityId) {
+        throw StateError('Resolution does not match the local scope/change.');
+      }
+      final entry = await getByChangeId(local.outboxChangeId ?? local.changeId);
+      if (local.outboxChangeId != null && entry == null) {
+        throw StateError('The linked outbox change is missing.');
+      }
+      if (entry != null &&
+          (entry.scopeId != scopeId ||
+              (entry.status != SyncOutboxStatus.conflict &&
+                  entry.status != SyncOutboxStatus.rejected) ||
+              (entry.entity != null && entry.entity != local.entity) ||
+              (entry.entityId != null && entry.entityId != local.entityId) ||
+              (remote.operation != null && remote.operation != entry.operation.wireValue))) {
+        throw StateError('Resolution does not match a failed outbox change.');
+      }
+      final requestOperation = entry == null ? null : _decodedRequest(entry)?['operation'];
+      final remoteIsEntity = remote.operation == SyncOperation.entityUpsert.wireValue ||
+          remote.operation == SyncOperation.entityDelete.wireValue;
+      final localIsEntity = entry == null ||
+          entry.operation == SyncOperation.entityUpsert || entry.operation == SyncOperation.entityDelete;
+      if (action == 'keep_local' &&
+          (!remoteIsEntity || !localIsEntity ||
+              (entry != null &&
+                  (entry.operationId != null || entry.integrationId != null ||
+                      entry.command != null ||
+                      (requestOperation != null && requestOperation != entry.operation.wireValue))))) {
+        throw StateError('keep_local cannot settle an inventory or HA command.');
+      }
+      final status = action == 'keep_local'
+          ? SyncConflictStatus.resolved : SyncConflictStatus.rejected;
+      final resolution = 'remote_$action';
+      final key = _conflictSettlementKey(scopeId, conflictId);
+      final previous = await _readSettlement(key);
+      if (previous != null) {
+        if (previous['remote_conflict_id'] != remoteConflictId ||
+            previous['remote_change_id'] != changeId || previous['action'] != action ||
+            !_settlementMatchesConflict(previous, local) ||
+            (entry != null && !_settlementMatchesOutbox(previous, entry))) {
+          throw StateError('Conflict was settled with different evidence.');
+        }
+        // Idempotent retry: do not overwrite audit or re-arm a consumed refresh.
+        return;
+      }
+      if (local.status != SyncConflictStatus.open &&
+          local.status != SyncConflictStatus.deferred &&
+          (local.status != status || local.resolution != resolution)) {
+        throw StateError('Local conflict has a different resolution.');
+      }
+      final marker = <String, dynamic>{
+        'scope_id': scopeId,
+        'conflict_id': conflictId,
+        'local_change_id': local.changeId,
+        'outbox_change_id': entry?.changeId,
+        'remote_conflict_id': remoteConflictId,
+        'remote_change_id': changeId,
+        'action': action,
+        'remote_operation': remote.operation,
+        'remote_server_version': remote.serverVersion,
+        'remote_resolution': remote.resolution,
+        'result_change_id': response.result?.changeId,
+        'result_server_cursor': response.result?.serverCursor,
+        'result_server_version': response.result?.serverVersion,
+        'entity': local.entity,
+        'entity_id': local.entityId,
+        'settled_at': _now().toIso8601String(),
+        if (entry != null) ...{
+          'outbox_status': entry.status.wireValue,
+          'operation': entry.operation.wireValue,
+          'idempotency_key': entry.idempotencyKey,
+          'request_json': entry.requestJson,
+        },
+      };
+      await resolveConflict(id: conflictId, status: status, resolution: resolution);
+      await _saveInternalSetting(key, jsonEncode(marker));
+      if (entry != null) {
+        await _saveInternalSetting(
+          _outboxSettlementKey(scopeId, entry.changeId), jsonEncode(marker),
+        );
+      }
+      await _saveInternalSetting(_resolutionRefreshKey(scopeId), const Uuid().v4());
+      await _refreshDependencyBlocksInCurrentTransaction(scopeId: scopeId, now: _now());
+    });
+  }
+
+  /// Engine integration: capture this revision BEFORE fetching a fresh NAS
+  /// snapshot, even if bootstrap is completed and pull has no new change_log.
+  /// Keep it across offline/error/restart; an old cached snapshot is not enough.
+  Future<String?> getConflictResolutionRefreshToken(String scopeId) async {
+    final row = await (_database.select(_database.appSettings)
+          ..where((setting) => setting.key.equals(_resolutionRefreshKey(scopeId))))
+        .getSingleOrNull();
+    return row?.value;
+  }
+
+  /// Call from the fresh snapshot's onApplied transaction, with its captured
+  /// token. A resolution committed during the fetch must not be cleared by an
+  /// older snapshot. Never clear on mere runOnce/pull/network success.
+  Future<bool> clearConflictResolutionRefresh({
+    required String scopeId,
+    required String token,
+  }) => _database.transaction(() async {
+    if (await getConflictResolutionRefreshToken(scopeId) != token ||
+        await hasSnapshotBlockingChanges(scopeId: scopeId)) return false;
+    final deleted = await (_database.delete(_database.appSettings)
+          ..where((setting) => setting.key.equals(_resolutionRefreshKey(scopeId)) &
+              setting.value.equals(token)))
+        .go();
+    return deleted == 1;
+  });
+
+  String _resolutionRefreshKey(String scopeId) =>
+      'sync_resolution_refresh:${jsonEncode(scopeId)}';
+
+  String _conflictSettlementKey(String scopeId, int conflictId) =>
+      'sync_conflict_settlement:${jsonEncode([scopeId, conflictId])}';
+
+  String _outboxSettlementKey(String scopeId, String changeId) =>
+      'sync_outbox_settlement:${jsonEncode([scopeId, changeId])}';
+
+  Future<Map<String, dynamic>?> _readSettlement(String key) async {
+    final row = await (_database.select(_database.appSettings)
+          ..where((setting) => setting.key.equals(key)))
+        .getSingleOrNull();
+    if (row == null) return null;
+    try {
+      return _mapValue(jsonDecode(row.value));
+    } on FormatException {
+      return null; // Corrupt evidence never removes a blocker.
+    }
+  }
+
+  bool _settlementMatchesConflict(Map<String, dynamic> marker, SyncConflictEntry local) {
+    final action = marker['action'];
+    return (action == 'keep_local' || action == 'keep_remote') &&
+        marker['remote_conflict_id'] is String &&
+        (marker['remote_conflict_id'] as String).trim().isNotEmpty &&
+        marker['scope_id'] == local.scopeId && marker['conflict_id'] == local.id &&
+        marker['local_change_id'] == local.changeId &&
+        (marker['remote_change_id'] == local.changeId ||
+            marker['remote_change_id'] == local.outboxChangeId) &&
+        marker['entity'] == local.entity && marker['entity_id'] == local.entityId &&
+        local.status == (action == 'keep_local'
+            ? SyncConflictStatus.resolved : SyncConflictStatus.rejected) &&
+        local.resolution == 'remote_$action';
+  }
+
+  bool _settlementMatchesOutbox(Map<String, dynamic> marker, SyncOutboxEntry entry) =>
+      marker['scope_id'] == entry.scopeId && marker['outbox_change_id'] == entry.changeId &&
+      marker['outbox_status'] == entry.status.wireValue &&
+      marker['operation'] == entry.operation.wireValue &&
+      marker['idempotency_key'] == entry.idempotencyKey &&
+      marker['request_json'] == entry.requestJson;
+
+  Future<bool> _isSettledOutboxEntry(SyncOutboxEntry entry) async {
+    if (entry.status != SyncOutboxStatus.conflict &&
+        entry.status != SyncOutboxStatus.rejected) return false;
+    final marker = await _readSettlement(_outboxSettlementKey(entry.scopeId, entry.changeId));
+    if (marker == null || !_settlementMatchesOutbox(marker, entry)) return false;
+    final id = marker['conflict_id'];
+    if (id is! int) return false;
+    final local = await getConflict(id);
+    if (local == null ||
+        (local.outboxChangeId ?? local.changeId) != entry.changeId ||
+        !_settlementMatchesConflict(marker, local)) return false;
+    final unresolved = await (_database.select(_database.syncConflicts)
+          ..where((row) => row.scopeId.equals(entry.scopeId) &
+              (row.changeId.equals(entry.changeId) | row.outboxChangeId.equals(entry.changeId)) &
+              row.status.isIn([SyncConflictStatus.open.wireValue, SyncConflictStatus.deferred.wireValue]))
+          ..limit(1))
+        .getSingleOrNull();
+    return unresolved == null;
   }
 
   Future<List<SyncOutboxEntry>> listOutbox({
@@ -865,6 +1214,34 @@ class SyncOutboxRepository {
           ..limit(limit))
         .get();
     return rows.map(_conflictFromRecord).toList(growable: false);
+  }
+
+  /// Review candidates include legacy half-settlements: older UI closed the
+  /// local record but left its failed outbox permanently blocking snapshots.
+  /// Never expose already-settled audit rows as new conflicts.
+  Future<List<SyncConflictEntry>> listUnsettledLinkedConflicts({
+    required String scopeId,
+  }) async {
+    final rows = await (_database.select(_database.syncConflicts)
+          ..where((row) => row.scopeId.equals(scopeId))
+          ..orderBy([(row) => OrderingTerm.asc(row.createdAt)]))
+        .get();
+    final result = <SyncConflictEntry>[];
+    for (final row in rows) {
+      final local = _conflictFromRecord(row);
+      if (local.status == SyncConflictStatus.open || local.status == SyncConflictStatus.deferred) {
+        result.add(local);
+        continue;
+      }
+      final legacy = (local.status == SyncConflictStatus.resolved && local.resolution == 'remote_keep_local') ||
+          (local.status == SyncConflictStatus.rejected && local.resolution == 'remote_keep_remote');
+      if (!legacy) continue;
+      final entry = await getByChangeId(local.outboxChangeId ?? local.changeId);
+      if (entry != null && entry.scopeId == scopeId &&
+          (entry.status == SyncOutboxStatus.conflict || entry.status == SyncOutboxStatus.rejected) &&
+          !await _isSettledOutboxEntry(entry)) result.add(local);
+    }
+    return result;
   }
 
   Future<void> resolveConflict({

@@ -7,6 +7,20 @@ import 'sync_models.dart';
 /// These types intentionally stay separate from Drift/local-first models. The
 /// sync engine is the only layer that translates an outbox row into a wire
 /// change and persists the returned cursor.
+/// Versions advertised by the read-only capabilities endpoint. These are
+/// wire-contract versions, not the PostgreSQL migration sequence number.
+class NasSyncVersions {
+  const NasSyncVersions({required this.schemaVersion, required this.syncProtocolVersion});
+
+  final int schemaVersion;
+  final int syncProtocolVersion;
+
+  factory NasSyncVersions.fromJson(Map<String, dynamic> json) => NasSyncVersions(
+    schemaVersion: _requiredInt(json, 'schema_version'),
+    syncProtocolVersion: _requiredInt(json, 'sync_protocol_version'),
+  );
+}
+
 class NasSyncBootstrap {
   const NasSyncBootstrap({
     required this.schemaVersion,
@@ -743,7 +757,7 @@ List<T> _objectList<T>(
   String key, {
   bool optional = false,
 }) {
-  if (value == null && optional) return const <T>[];
+  if (value == null && optional) return <T>[];
   if (value is! List) throw FormatException('$key must be an array');
   return value.map((item) {
     if (item is! Map) throw FormatException('$key must contain objects');

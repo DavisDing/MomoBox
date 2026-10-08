@@ -225,7 +225,7 @@ class SmartHomeScreen extends ConsumerWidget {
             onTap: () {
               showAppSnackBar(context,
                 SnackBar(
-                  content: Text('已触发场景：【${scene.name}】执行指令已下发'),
+                  content: Text('场景快捷执行尚未接入，未执行【${scene.name}】。'),
                 ),
               );
             },
@@ -521,7 +521,7 @@ class SmartHomeScreen extends ConsumerWidget {
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => _showDeviceControlSheet(context, ref, device, palette),
+        onTap: () => _showDeviceControlSheet(context, device, palette),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Column(
@@ -568,9 +568,10 @@ class SmartHomeScreen extends ConsumerWidget {
                   Switch.adaptive(
                     value: device.isOn,
                     activeTrackColor: palette.primary,
-                    onChanged: (val) {
-                      controller.toggleDevice(device.id);
-                    },
+                    key: ValueKey('smart-home-power-${device.id}'),
+                    onChanged: controller.powerUnavailableReason(device.id, turnOn: !device.isOn) != null
+                        ? null
+                        : (val) => controller.setDevicePower(device.id, val),
                   ),
                 ],
               ),
@@ -651,13 +652,13 @@ class SmartHomeScreen extends ConsumerWidget {
   /// 弹出设备精细化操作弹窗 (BottomSheet)
   void _showDeviceControlSheet(
     BuildContext context,
-    WidgetRef ref,
     SmartDevice device,
     MomoPalette palette,
   ) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
+    var closeScheduled = false;
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -666,13 +667,26 @@ class SmartHomeScreen extends ConsumerWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (modalCtx) {
-        return StatefulBuilder(
-          builder: (sheetCtx, setState) {
-            final latestDevice = ref.watch(smartHomeControllerProvider).devices.firstWhere(
-                  (d) => d.id == device.id,
-                  orElse: () => device,
-                );
-            final controller = ref.read(smartHomeControllerProvider.notifier);
+        return Consumer(
+          builder: (sheetCtx, modalRef, _) {
+            final homeState = modalRef.watch(smartHomeControllerProvider);
+            final matchingDevices = homeState.devices.where((d) => d.id == device.id);
+            if (matchingDevices.isEmpty) {
+              // Do not keep presenting the snapshot captured when the sheet
+              // opened after a refresh, logout, or permission change removed
+              // this device. Pop only after the current build completes.
+              if (!closeScheduled) {
+                closeScheduled = true;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (sheetCtx.mounted && ModalRoute.of(sheetCtx)?.isCurrent == true) {
+                    Navigator.of(sheetCtx).pop();
+                  }
+                });
+              }
+              return const SizedBox.shrink();
+            }
+            final latestDevice = matchingDevices.first;
+            final controller = modalRef.read(smartHomeControllerProvider.notifier);
 
             return Padding(
               padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(sheetCtx).padding.bottom + 20),
@@ -720,12 +734,31 @@ class SmartHomeScreen extends ConsumerWidget {
                   // 电源开关
                   SwitchListTile(
                     title: const Text('设备电源', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                    subtitle: Text(latestDevice.isOn ? '已开启' : '已关闭', style: const TextStyle(fontSize: 12)),
+                    // A scaffold SnackBar can sit behind this modal. Keep the
+                    // actual failure visible in the existing power subtitle.
+                    subtitle: Text(
+                      '${latestDevice.isOn ? '已开启' : '已关闭'}'
+                      '${homeState.commandError == null ? '' : '\n${homeState.commandError}'}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    isThreeLine: homeState.commandError != null,
                     value: latestDevice.isOn,
                     activeTrackColor: palette.primary,
-                    onChanged: (val) {
-                      controller.toggleDevice(latestDevice.id);
-                    },
+                    key: ValueKey('smart-home-sheet-power-${latestDevice.id}'),
+                    onChanged: controller.powerUnavailableReason(latestDevice.id, turnOn: !latestDevice.isOn) != null
+                        ? null
+                        : (val) async {
+                            await controller.setDevicePower(latestDevice.id, val);
+                            if (!sheetCtx.mounted || !controller.mounted) return;
+                            if (!identical(
+                              modalRef.read(smartHomeControllerProvider.notifier),
+                              controller,
+                            )) return;
+                            final error = modalRef.read(smartHomeControllerProvider).commandError;
+                            if (error != null) {
+                              showAppSnackBar(sheetCtx, SnackBar(content: Text(error)));
+                            }
+                          },
                   ),
 
                   // 空调高级操作面板
@@ -802,7 +835,10 @@ class SmartHomeScreen extends ConsumerWidget {
                     const SizedBox(height: 12),
                     const Text('亮度调节', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                     Slider(
-                      value: latestDevice.brightness.toDouble(),
+                      // HA can legitimately report zero brightness while the
+                      // light is off; keep the real display value but satisfy
+                      // this existing 1..100 slider contract.
+                      value: latestDevice.brightness.clamp(1, 100).toDouble(),
                       min: 1,
                       max: 100,
                       activeColor: palette.primary,
@@ -829,7 +865,7 @@ class SmartHomeScreen extends ConsumerWidget {
                         OutlinedButton.icon(
                           onPressed: latestDevice.isOn
                               ? () => showAppSnackBar(context,
-                                    const SnackBar(content: Text('已发送音量 -5% 指令')),
+                                    const SnackBar(content: Text('当前 NAS 安全命令协议未开放音量控制，未发送请求。')),
                                   )
                               : null,
                           icon: const Icon(Icons.volume_down),
@@ -838,7 +874,7 @@ class SmartHomeScreen extends ConsumerWidget {
                         OutlinedButton.icon(
                           onPressed: latestDevice.isOn
                               ? () => showAppSnackBar(context,
-                                    const SnackBar(content: Text('已发送音量 +5% 指令')),
+                                    const SnackBar(content: Text('当前 NAS 安全命令协议未开放音量控制，未发送请求。')),
                                   )
                               : null,
                           icon: const Icon(Icons.volume_up),
@@ -847,7 +883,7 @@ class SmartHomeScreen extends ConsumerWidget {
                         OutlinedButton.icon(
                           onPressed: latestDevice.isOn
                               ? () => showAppSnackBar(context,
-                                    const SnackBar(content: Text('已发送静音指令')),
+                                    const SnackBar(content: Text('当前 NAS 安全命令协议未开放静音控制，未发送请求。')),
                                   )
                               : null,
                           icon: const Icon(Icons.volume_mute),

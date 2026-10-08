@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../application/sync_engine.dart';
 import '../application/sync_scheduler.dart';
 import '../domain/models/inventory_models.dart';
 import '../presentation/controllers/providers.dart';
@@ -71,21 +70,11 @@ class MomoBoxApp extends ConsumerStatefulWidget {
 }
 
 class _MomoBoxAppState extends ConsumerState<MomoBoxApp> {
-  late final SyncScheduler _syncScheduler;
+  late SyncScheduler _syncScheduler;
 
   @override
   void initState() {
     super.initState();
-    _syncScheduler = SyncScheduler(
-      engineReader: () => ref.read(syncEngineProvider),
-    );
-    ref.listenManual<SyncEngine?>(
-      syncEngineProvider,
-      (_, next) {
-        if (next != null) _syncScheduler.requestRun();
-      },
-      fireImmediately: true,
-    );
     ref.listenManual<AsyncValue<List<InventoryItem>>>(
       inventoryProvider,
       (_, next) => next.whenData(_reconcileInventoryAndSync),
@@ -99,12 +88,23 @@ class _MomoBoxAppState extends ConsumerState<MomoBoxApp> {
     if (widget.enableMediaReconciliation) {
       Future<void>.microtask(_reconcileMedia);
     }
-    _syncScheduler.start();
+    // App mount owns observation, while the provider owns the scheduler. Keep
+    // the mounted App attached if the provider is explicitly invalidated, so
+    // manual and automatic requests never diverge onto different instances.
+    ref.listenManual<SyncScheduler>(
+      syncSchedulerProvider,
+      (previous, next) {
+        previous?.stop();
+        _syncScheduler = next;
+        next.start();
+      },
+      fireImmediately: true,
+    );
   }
 
   @override
   void dispose() {
-    _syncScheduler.dispose();
+    _syncScheduler.stop();
     super.dispose();
   }
 

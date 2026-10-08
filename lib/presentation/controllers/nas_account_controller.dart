@@ -182,32 +182,33 @@ class NasAccountController extends StateNotifier<NasAccountState> {
     required SettingsService settings,
     required NasConnectionService connection,
     required NasCredentialsService credentials,
+    NasApiClient Function(String)? apiClientFactory,
   })  : _settings = settings,
         _connection = connection,
         _credentials = credentials,
+        _apiClientFactory = apiClientFactory ?? ((url) => NasApiClient(url)),
         super(const NasAccountState.initial());
 
   final SettingsService _settings;
   final NasConnectionService _connection;
   final NasCredentialsService _credentials;
+  final NasApiClient Function(String) _apiClientFactory;
 
   NasApiClient? _apiClient;
   NasAuthService? _authService;
   NasFamilyService? _familyService;
   String? _configuredServerUrl;
-  Future<void>? _restoreInFlight;
+  int _sessionRevision = 0;
 
-  Future<void> restore() {
-    final inFlight = _restoreInFlight;
-    if (inFlight != null) return inFlight;
-    final operation = _restoreInternal();
-    _restoreInFlight = operation;
-    return operation.whenComplete(() {
-      if (identical(_restoreInFlight, operation)) _restoreInFlight = null;
-    });
-  }
+  bool _isCurrentSession(int revision) => mounted && revision == _sessionRevision;
+
+  // Every explicit restore rereads the endpoint. Reusing an old in-flight
+  // restore could hide a server URL change; revisions discard stale results.
+  Future<void> restore() => _restoreInternal();
 
   Future<void> _restoreInternal() async {
+    final revision = ++_sessionRevision;
+    _authService?.cancelPending();
     state = state.copyWith(
       status: NasAccountStatus.restoring,
       auth: const NasAuthSnapshot(status: NasAuthStatus.restoring),
@@ -218,6 +219,7 @@ class NasAccountController extends StateNotifier<NasAccountState> {
 
     try {
       final connectionState = await _connection.loadState();
+      if (!_isCurrentSession(revision)) return;
       final serverUrl = connectionState.serverUrl.trim();
       if (serverUrl.isEmpty) {
         _clearRuntime();
@@ -227,9 +229,9 @@ class NasAccountController extends StateNotifier<NasAccountState> {
         return;
       }
 
-      await _configure(serverUrl);
+      _configure(serverUrl);
       final auth = await _authService!.restore();
-      if (!mounted) return;
+      if (!_isCurrentSession(revision)) return;
       if (!auth.isAuthenticated) {
         state = state.copyWith(
           status: _accountStatusFor(auth),
@@ -249,7 +251,7 @@ class NasAccountController extends StateNotifier<NasAccountState> {
       );
       await refreshFamilyAndDevices();
     } catch (error) {
-      await _handleFailure(error);
+      if (_isCurrentSession(revision)) await _handleFailure(error);
     }
   }
 
@@ -267,15 +269,20 @@ class NasAccountController extends StateNotifier<NasAccountState> {
   NasSyncApi? createSyncApi() {
     final baseUrl = _configuredServerUrl;
     final authService = _authService;
+    final apiClient = _apiClient;
+    final revision = _sessionRevision;
     if (baseUrl == null || authService == null || !state.isAuthenticated) {
       return null;
     }
     final api = NasSyncApi(
       baseUrl,
-      accessTokenProvider: () => _apiClient?.accessToken,
+      accessTokenProvider: () => _isCurrentSession(revision) ? apiClient?.accessToken : null,
+      isSessionCurrent: () => _isCurrentSession(revision),
     );
     api.setRefreshHandler(() async {
+      if (!_isCurrentSession(revision)) return null;
       final refreshed = await authService.refresh();
+      if (!_isCurrentSession(revision)) return null;
       if (!refreshed.isAuthenticated) {
         if (mounted) {
           _setSignedOut(refreshed.error?.message);
@@ -289,20 +296,24 @@ class NasAccountController extends StateNotifier<NasAccountState> {
           clearError: true,
         );
       }
-      return _apiClient?.accessToken;
+      return apiClient?.accessToken;
     });
     return api;
   }
 
   Future<void> refreshSession() async {
+    if (state.status == NasAccountStatus.restoring ||
+        state.status == NasAccountStatus.signingIn ||
+        state.status == NasAccountStatus.signingOut) return;
     final authService = _authService;
     if (authService == null) {
       await restore();
       return;
     }
+    final revision = _sessionRevision;
     try {
       final auth = await authService.refresh();
-      if (!mounted) return;
+      if (!_isCurrentSession(revision)) return;
       if (!auth.isAuthenticated) {
         _setSignedOut(auth.error?.message);
         return;
@@ -314,11 +325,12 @@ class NasAccountController extends StateNotifier<NasAccountState> {
       );
       await refreshFamilyAndDevices();
     } catch (error) {
-      await _handleFailure(error);
+      if (_isCurrentSession(revision)) await _handleFailure(error);
     }
   }
 
   Future<void> logout() async {
+    final revision = ++_sessionRevision;
     final authService = _authService;
     state = state.copyWith(
       status: NasAccountStatus.signingOut,
@@ -332,11 +344,11 @@ class NasAccountController extends StateNotifier<NasAccountState> {
 
     try {
       await authService.logout();
-      if (mounted) _setSignedOut();
+      if (_isCurrentSession(revision)) _setSignedOut();
     } catch (error) {
       // The auth service clears local credentials even when remote logout
       // fails. Keep the UI signed out while surfacing the safe error.
-      if (mounted) _setSignedOut(_messageFor(error));
+      if (_isCurrentSession(revision)) _setSignedOut(_messageFor(error));
     }
   }
 
@@ -344,6 +356,7 @@ class NasAccountController extends StateNotifier<NasAccountState> {
     final familyService = _familyService;
     if (!state.isAuthenticated || familyService == null) return;
 
+    final revision = _sessionRevision;
     state = state.copyWith(
       family: state.family.copyWith(
         status: NasFamilyStatus.loading,
@@ -356,7 +369,7 @@ class NasAccountController extends StateNotifier<NasAccountState> {
 
     try {
       final family = await familyService.currentFamily();
-      if (!mounted) return;
+      if (!_isCurrentSession(revision)) return;
       state = state.copyWith(
         family: NasFamilyState(
           status: NasFamilyStatus.available,
@@ -365,10 +378,10 @@ class NasAccountController extends StateNotifier<NasAccountState> {
         devices: const NasDeviceState(status: NasDeviceStatus.loading),
       );
       await _loadMembers(familyService);
-      if (!mounted || !state.isAuthenticated) return;
+      if (!_isCurrentSession(revision) || !state.isAuthenticated) return;
       await _loadDevices(familyService);
     } on NasApiError catch (error) {
-      if (!mounted) return;
+      if (!_isCurrentSession(revision)) return;
       if (error.isUnauthorized) {
         await _expireSession(error.message);
         return;
@@ -390,14 +403,15 @@ class NasAccountController extends StateNotifier<NasAccountState> {
         errorMessage: error.message,
       );
     } catch (error) {
-      await _handleFailure(error);
+      if (_isCurrentSession(revision)) await _handleFailure(error);
     }
   }
 
   Future<void> _loadMembers(NasFamilyService familyService) async {
+    final revision = _sessionRevision;
     try {
       final members = await familyService.listMembers();
-      if (!mounted || !state.isAuthenticated) return;
+      if (!_isCurrentSession(revision) || !state.isAuthenticated) return;
       state = state.copyWith(
         family: state.family.copyWith(
           members: members,
@@ -405,7 +419,7 @@ class NasAccountController extends StateNotifier<NasAccountState> {
         ),
       );
     } catch (error) {
-      if (!mounted) return;
+      if (!_isCurrentSession(revision)) return;
       state = state.copyWith(
         family: state.family.copyWith(membersErrorMessage: _messageFor(error)),
       );
@@ -416,7 +430,8 @@ class NasAccountController extends StateNotifier<NasAccountState> {
   }
 
   Future<void> _loadDevices(NasFamilyService familyService) async {
-    if (!mounted) return;
+    final revision = _sessionRevision;
+    if (!_isCurrentSession(revision)) return;
     state = state.copyWith(
       devices: state.devices.copyWith(
         status: NasDeviceStatus.loading,
@@ -426,7 +441,7 @@ class NasAccountController extends StateNotifier<NasAccountState> {
     try {
       final devices = await familyService.listDevices();
       final currentDeviceId = await _readDeviceId();
-      if (!mounted || !state.isAuthenticated) return;
+      if (!_isCurrentSession(revision) || !state.isAuthenticated) return;
       final matched = _currentDeviceId(devices, currentDeviceId);
       state = state.copyWith(
         devices: NasDeviceState(
@@ -438,7 +453,7 @@ class NasAccountController extends StateNotifier<NasAccountState> {
         ),
       );
     } catch (error) {
-      if (!mounted) return;
+      if (!_isCurrentSession(revision)) return;
       state = state.copyWith(
         devices: NasDeviceState(
           status: NasDeviceStatus.error,
@@ -485,6 +500,7 @@ class NasAccountController extends StateNotifier<NasAccountState> {
     int expiresInHours = 72,
     int maxUses = 1,
   }) async {
+    final revision = _sessionRevision;
     final familyService = _familyService;
     if (familyService == null) {
       _setFamilyError('请先配置并登录 NAS。');
@@ -495,12 +511,13 @@ class NasAccountController extends StateNotifier<NasAccountState> {
       return null;
     }
     try {
-      return await familyService.createInvite(
+      final invite = await familyService.createInvite(
         expiresInHours: expiresInHours,
         maxUses: maxUses,
       );
+      return _isCurrentSession(revision) ? invite : null;
     } catch (error) {
-      await _handleFailure(error);
+      if (_isCurrentSession(revision)) await _handleFailure(error);
       return null;
     }
   }
@@ -510,6 +527,7 @@ class NasAccountController extends StateNotifier<NasAccountState> {
     String? platform,
     String? appVersion,
   }) async {
+    final revision = _sessionRevision;
     final familyService = _familyService;
     if (familyService == null) {
       _setDeviceError('请先配置并登录 NAS。');
@@ -534,13 +552,14 @@ class NasAccountController extends StateNotifier<NasAccountState> {
     );
     try {
       final deviceId = await _ensureDeviceId();
+      if (!_isCurrentSession(revision)) return;
       final device = await familyService.registerDevice(
         deviceId: deviceId,
         deviceName: normalizedName,
         platform: platform ?? _platformName(),
         appVersion: appVersion,
       );
-      if (!mounted) return;
+      if (!_isCurrentSession(revision)) return;
       final devices = <NasDeviceDto>[
         ...state.devices.devices.where((item) => item.id != device.id),
         device,
@@ -554,11 +573,12 @@ class NasAccountController extends StateNotifier<NasAccountState> {
         clearError: true,
       );
     } catch (error) {
-      await _handleDeviceFailure(error);
+      if (_isCurrentSession(revision)) await _handleDeviceFailure(error);
     }
   }
 
   Future<void> revokeDevice(String deviceId) async {
+    final revision = _sessionRevision;
     final familyService = _familyService;
     if (familyService == null) {
       _setDeviceError('请先配置并登录 NAS。');
@@ -578,7 +598,7 @@ class NasAccountController extends StateNotifier<NasAccountState> {
     );
     try {
       await familyService.revokeDevice(normalized);
-      if (!mounted) return;
+      if (!_isCurrentSession(revision)) return;
       final remaining = state.devices.devices
           .where((device) => device.id != normalized)
           .toList(growable: false);
@@ -596,22 +616,29 @@ class NasAccountController extends StateNotifier<NasAccountState> {
         clearError: true,
       );
     } catch (error) {
-      await _handleDeviceFailure(error);
+      if (_isCurrentSession(revision)) await _handleDeviceFailure(error);
     }
   }
 
   Future<void> _runAuthOperation(
     Future<NasAuthSnapshot> Function() operation,
   ) async {
+    final revision = ++_sessionRevision;
+    _authService?.cancelPending();
+    // Hide the old account before the first await, including same-endpoint
+    // re-login where _configure reuses the existing auth/client objects.
+    state = state.copyWith(
+      status: NasAccountStatus.signingIn,
+      auth: const NasAuthSnapshot(status: NasAuthStatus.signingIn),
+      family: const NasFamilyState(),
+      devices: const NasDeviceState(),
+      clearError: true,
+    );
     try {
-      await _ensureConfigured();
-      state = state.copyWith(
-        status: NasAccountStatus.signingIn,
-        auth: const NasAuthSnapshot(status: NasAuthStatus.signingIn),
-        clearError: true,
-      );
+      await _ensureConfigured(revision);
+      if (!_isCurrentSession(revision)) return;
       final auth = await operation();
-      if (!mounted) return;
+      if (!_isCurrentSession(revision)) return;
       if (!auth.isAuthenticated) {
         state = state.copyWith(
           status: _accountStatusFor(auth),
@@ -632,7 +659,7 @@ class NasAccountController extends StateNotifier<NasAccountState> {
       );
       await refreshFamilyAndDevices();
     } catch (error) {
-      await _handleFailure(error);
+      if (_isCurrentSession(revision)) await _handleFailure(error);
     }
   }
 
@@ -643,6 +670,7 @@ class NasAccountController extends StateNotifier<NasAccountState> {
       _setFamilyError('请先登录 NAS 账号。');
       return;
     }
+    final revision = _sessionRevision;
     final familyService = _familyService;
     if (familyService == null) {
       _setFamilyError('请先配置并登录 NAS。');
@@ -659,7 +687,7 @@ class NasAccountController extends StateNotifier<NasAccountState> {
     );
     try {
       final family = await operation();
-      if (!mounted) return;
+      if (!_isCurrentSession(revision)) return;
       state = state.copyWith(
         family: NasFamilyState(
           status: NasFamilyStatus.available,
@@ -669,9 +697,10 @@ class NasAccountController extends StateNotifier<NasAccountState> {
         clearError: true,
       );
       await _loadMembers(familyService);
-      if (!mounted || !state.isAuthenticated) return;
+      if (!_isCurrentSession(revision) || !state.isAuthenticated) return;
       await _loadDevices(familyService);
     } catch (error) {
+      if (!_isCurrentSession(revision)) return;
       if (error is NasApiError && error.isUnauthorized) {
         await _expireSession(error.message);
       } else {
@@ -680,25 +709,26 @@ class NasAccountController extends StateNotifier<NasAccountState> {
     }
   }
 
-  Future<void> _ensureConfigured() async {
-    if (_authService != null && _familyService != null) return;
+  Future<void> _ensureConfigured(int revision) async {
     final connectionState = await _connection.loadState();
+    if (!_isCurrentSession(revision)) return;
     final serverUrl = connectionState.serverUrl.trim();
     if (serverUrl.isEmpty) {
       throw const _NasAccountException('请先在 NAS 设置中保存服务器地址。');
     }
-    await _configure(serverUrl);
+    _configure(serverUrl);
   }
 
-  Future<void> _configure(String serverUrl) async {
+  void _configure(String serverUrl) {
     final normalized = NasConnectionService.normalizeServerUrl(serverUrl);
     if (normalized == null) {
       throw const _NasAccountException('NAS 地址无效，请先检查连接配置。');
     }
     if (_configuredServerUrl == normalized && _authService != null) return;
 
+    _authService?.abandon();
     _apiClient?.close();
-    final apiClient = NasApiClient(normalized);
+    final apiClient = _apiClientFactory(normalized);
     _apiClient = apiClient;
     _authService = NasAuthService(
       apiClient: apiClient,
@@ -791,6 +821,7 @@ class NasAccountController extends StateNotifier<NasAccountState> {
   }
 
   Future<void> _expireSession(String message) async {
+    final revision = ++_sessionRevision;
     final authService = _authService;
     if (authService != null) {
       try {
@@ -800,7 +831,7 @@ class NasAccountController extends StateNotifier<NasAccountState> {
         // will report a storage failure on the next explicit restore.
       }
     }
-    if (mounted) _setSignedOut(message);
+    if (_isCurrentSession(revision)) _setSignedOut(message);
   }
 
   void _setSignedOut([String? message]) {
@@ -812,6 +843,8 @@ class NasAccountController extends StateNotifier<NasAccountState> {
   }
 
   void _clearRuntime() {
+    _sessionRevision++;
+    _authService?.abandon();
     _apiClient?.close();
     _apiClient = null;
     _authService = null;

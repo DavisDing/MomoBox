@@ -47,6 +47,57 @@ void main() {
     expect(plugin.pending.values.single, contains('剩余 2 件'));
   });
 
+  test('通知正文使用商品有效临期窗口而非写死三十天', () async {
+    final plugin = _RecordingPlugin();
+    final service = LocalNotificationService(
+      plugin: plugin,
+      permissionStatusReader: () async => NotificationPermissionStatus.allowed,
+    );
+    await service.initialize();
+    await service.sync([
+      _expiryItem(now.add(const Duration(days: 7))),
+    ], now: now);
+
+    // 库存等于阈值仍触发低库存，未过期批次还会预排程未来过期通知。
+    expect(plugin.pending, hasLength(3));
+    expect(plugin.pending.values, contains('酸奶 剩余 1 件，低于阈值 1。'));
+    expect(plugin.pending.values, contains('酸奶 有批次已过期，请检查并报废。'));
+    final expiringBodies = plugin.pending.values
+        .where((body) => body.startsWith('酸奶 将在 '))
+        .toList();
+    expect(expiringBodies, hasLength(1));
+    expect(expiringBodies.single, contains('将在 7 天内到期'));
+    expect(expiringBodies.single, isNot(contains('30 天')));
+  });
+
+  test('有效提醒策略关闭时取消此前全部排程且不新增通知', () async {
+    final plugin = _RecordingPlugin();
+    final service = LocalNotificationService(
+      plugin: plugin,
+      permissionStatusReader: () async => NotificationPermissionStatus.allowed,
+    );
+    await service.initialize();
+    final expiryDate = now.add(const Duration(days: 7));
+    await service.sync([_expiryItem(expiryDate)], now: now);
+
+    // 必须先真实走过服务排程，不能从空 pending 推断取消成功。
+    expect(plugin.cancelCalls, 1);
+    expect(plugin.scheduleCalls, 3);
+    expect(plugin.pending, hasLength(3));
+
+    // 商品、批次、库存、到期日和临期窗口不变，仅关闭有效策略。
+    await service.sync([
+      _expiryItem(
+        expiryDate,
+        policy: const ReminderPolicy(enabled: false, expiryWarningDays: 7),
+      ),
+    ], now: now);
+
+    expect(plugin.cancelCalls, 2);
+    expect(plugin.scheduleCalls, 3);
+    expect(plugin.pending, isEmpty);
+  });
+
   test('通知权限拒绝时跳过排程，不影响同步调用完成', () async {
     final plugin = _RecordingPlugin();
     final service = LocalNotificationService(
@@ -100,6 +151,25 @@ InventoryItem _lowStockItem(int quantity) => InventoryItem(
           id: 'batch', productId: 'item', batchNo: null,
           productionDate: null, expiryDate: null, initialQuantity: 3,
           remainingQuantity: quantity, isDiscarded: false,
+        ),
+      ],
+    );
+
+InventoryItem _expiryItem(
+  DateTime expiryDate, {
+  ReminderPolicy policy = const ReminderPolicy(expiryWarningDays: 7),
+}) =>
+    InventoryItem(
+      id: 'expiry-item', name: '酸奶', category: '食品', brand: null,
+      specification: null, barcode: null, location: null, unit: '件',
+      lowStockThreshold: 1,
+      reminderPolicy: policy,
+      batches: [
+        InventoryBatch(
+          id: 'expiry-batch', productId: 'expiry-item', batchNo: null,
+          productionDate: null, expiryDate: expiryDate,
+          initialQuantity: 1, remainingQuantity: 1, isDiscarded: false,
+          reminderPolicy: policy,
         ),
       ],
     );

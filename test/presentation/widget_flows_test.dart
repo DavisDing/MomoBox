@@ -63,20 +63,13 @@ void main() {
     await _pumpUntilFound(tester, find.text('智能家居预览（未接入）'));
     final container = ProviderScope.containerOf(tester.element(find.byType(MomoBoxApp)));
     final state = container.read(smartHomeControllerProvider);
-    final scene = find.text(state.scenes.first.name);
-    await tester.ensureVisible(scene);
-    await tester.tap(scene);
-    await tester.pump();
-    expect(find.textContaining('当前版本尚未支持 Home Assistant，未执行'), findsOneWidget);
+    // The NAS-backed controller must not populate the preview with mock data.
+    expect(state.scenes, isEmpty);
+    expect(state.devices, isEmpty);
+    expect(state.nasOnline, isFalse);
+    expect(find.byType(Switch), findsNothing);
     expect(find.textContaining('已向 Home Assistant 发送执行指令'), findsNothing);
-    await tester.pump(const Duration(seconds: 3));
-
-    final toggle = find.byType(Switch).first;
-    await tester.ensureVisible(toggle);
-    await tester.tap(toggle);
-    await tester.pump();
-    expect(find.textContaining('当前版本尚未支持设备控制'), findsOneWidget);
-    expect(container.read(smartHomeControllerProvider).devices.first.isOn, state.devices.first.isOn);
+    expect(find.textContaining('执行指令已下发'), findsNothing);
     await _disposeWidgetTree(tester);
   });
 
@@ -181,7 +174,15 @@ void main() {
     expect(items.single.id, productId);
     expect(items.single.totalStock, 5);
     expect(items.single.batches, hasLength(2));
-    expect(await database.select(database.shoppingEntries).get(), isEmpty);
+    // Sync deletion preserves a tombstone, but removes the item from the list.
+    expect(
+      await tester.runAsync(() => ShoppingRepository(database).watchEntries().first),
+      isEmpty,
+    );
+    final deletedEntry = await database.select(database.shoppingEntries).getSingle();
+    expect(deletedEntry.deletedAt, isNotNull);
+    expect(deletedEntry.productId, productId);
+    expect(deletedEntry.targetQuantity, 3);
     await _disposeWidgetTree(tester);
   });
 

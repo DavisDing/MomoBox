@@ -12,7 +12,7 @@
 2. 并行验证：
    - `flutter-verify` 使用 Flutter stable，安装 Android 17 SDK platform，生成平台壳和 Drift 文件，执行 `flutter analyze`、`flutter test` 与 Android debug build；
    - `ios-verify` 使用 `runs-on: xcode-27`，确认 iOS 27 SDK 可用，生成平台壳和 Drift 文件并执行 iOS unsigned build；
-   - `backend-verify` 使用 Go 1.22.8 执行 `go test ./...` 和 `go vet ./...`；
+   - `backend-verify` 使用 Go 1.22.8；2026-10-07 落盘配置新增 PostgreSQL 16 service 和 `MOMO_TEST_DATABASE_URL`，执行 `go test -count=1 ./...` 和 `go vet ./...`（本轮尚未执行，不能将配置视为通过）；
 3. `build-release-packages`：通过 `needs` 等待三项验证全部成功；默认分支每次推送都构建版本化 APK/AAB、生成 SHA256SUMS 并上传临时制品；
 4. `publish`：通过 `needs` 等待打包节点成功后，才允许推送 GHCR 镜像和创建/更新 GitHub Release。
 
@@ -67,3 +67,165 @@
 - `DEVICE_VALIDATION_PENDING`：Release APK 真机安装验收。
 
 首次推送后，应将 GitHub Actions run 链接和 APK 安装结果补充到本节，不能把未运行的 CI 或设备结果标记为通过。
+
+## 2026-10-03：并行加强批次验证说明
+
+详细范围和结果见 `docs/IMPLEMENTATION_BATCH_2026-10-03.md`。
+
+- 本批次本地 Shell 语法、平台生成回归、版本计算回归、NAS 脚本自测、Workflow YAML 解析和空白检查已执行通过。
+- 历史记录中的“GitHub Actions 首次运行尚未执行”不再描述仓库的当前历史：2026-09-29 的其他提交已有 Flutter/Android/iOS/Go 验证通过，但不能证明本次工作区改动通过。
+- 本批次新增 Flutter/Dart 回归、构建及 Go 检查仍为 `NOT_EXECUTED`；本机未发现对应工具链，未安装软件或依赖，也未推送新的 CI。
+- 真机与 NAS/HA、多设备真实环境验收仍未执行，不能标为可生产使用。
+
+## 2026-10-06：可靠性续修验证
+
+详见 `docs/RELIABILITY_REVIEW_2026-10-06.md`。本机再次通过逐文件 Shell 语法、平台壳回归、版本计算回归、NAS 脚本参数/help 自测、Workflow YAML 解析和空白检查。Dart 文件引用路径检查仅证明目标文件存在，不等于 analyze。
+
+本机仍无 Flutter/Dart/Go/Docker，新增和既有测试、Drift 生成、构建、真实 PostgreSQL/NAS/HA、多设备与真机验证为 `NOT_EXECUTED`；未推送新 CI，不能引用历史成功运行充当本批次通过。
+
+
+## 2026-10-07：已批准决策与未验收代码的验证交接
+
+提醒策略和 NAS 库存权威决策已批准（见 REQUIREMENT AC-011～AC-014 和 `docs/IMPLEMENTATION_DECISIONS_2026-10-07.md`），不再待确认。本节区分实际执行记录、源码/配置核对与未执行代码验收。2026-10-06 及以前的 PASSED 保留为历史记录，但作为当前工作区验收证据已 superseded；不能替代本轮结果。下列为 2026-10-07 已执行的轻量检查结果，不等同代码编译或验收。
+
+### 本轮状态
+
+| 验证项 | 状态 | 原因/交接 |
+| --- | --- | --- |
+| Flutter/Dart analyze、unit/widget/integration、Drift 生成、Android/iOS build | NOT_EXECUTED | 本机缺 Flutter/Dart，禁止用源码阅读或 import 存在性代替类型检查/构建 |
+| Go test/vet、gofmt 检查 | NOT_EXECUTED | 本机缺 Go/gofmt；新增 Go 测试尚未运行 |
+| `0005` 真实 migration、PG16 并发 cursor/事务回滚回归 | NOT_EXECUTED | 本机缺 Docker/psql；已添加 opt-in 真实测试但尚未运行 |
+| 本轮 GitHub Actions | NOT_EXECUTED | PG16 service 与测试 URL 已落盘，未提交/推送；历史 CI 成功无效于本工作区 |
+| NAS/HA、多设备、迁移部署/恢复/补偿回滚、吞吐与锁等待 | NOT_EXECUTED | 真实环境与部署窗口尚未验收 |
+| Android/iOS 通知、权限与设备回归 | DEVICE_VALIDATION_PENDING | 尚未真机验证 |
+
+以上不是失败/成功结果；当前代码不得称为验收完成或生产可用。下方轻量检查已执行，编译/测试/真实环境验收仍待执行。
+
+### 2026-10-07 实跑记录（轻量检查，非代码验收）
+
+| 命令/检查 | 结果 | 证据边界 |
+| --- | --- | --- |
+| `scripts/ci/*.sh`、`scripts/release/*.sh` 逐文件 `bash -n` | PASSED | Shell 语法，不是 Flutter/发布构建 |
+| `deploy/nas/scripts/*.sh` 逐文件 `sh -n` | PASSED | Shell 语法，不是 NAS 实机部署 |
+| `bash scripts/ci/test-prepare-flutter-platforms.sh` | PASSED | 平台壳补丁脚本回归，不是 Android/iOS 编译 |
+| `bash scripts/release/test-next-version.sh` | PASSED | 版本计算脚本回归，不是发布执行 |
+| `sh deploy/nas/scripts/self-test.sh` | PASSED | 脚本参数/help 自测，不是 Docker/PostgreSQL/NAS 验收 |
+| Ruby `YAML.load_file` 读取 `.github/workflows/pipeline.yml` | PASSED | YAML 可解析，不是 Actions run |
+| `git diff --check` | PASSED | 当时工作区空白检查，不是代码测试 |
+| Python 检查本地 Dart import/export/part 的非 `package:` 目标 | PASSED | **326 条目标全部存在**，只证明文件存在，不等于静态分析、编译或测试 |
+| `command -v flutter/dart/go/gofmt/docker/psql`（逐工具） | 工具缺失 | 六项均无输出；相关代码验证 NOT_EXECUTED |
+
+326 是本轮“非 package 本地目标”的统计口径。2026-10-06 的 508 保留为历史检查数字，其扫描/包映射口径可能不同，未重新核实；不将两者混称为同一统计、覆盖量变化或回归结果。两次检查均不能替代 Dart 类型检查。
+
+本轮未自动提交/推送，CI 待跑；未运行的新 Flutter/Go/PG16 回归不得因上述 PASSED 改记通过。后续代码或文档改变时，相关检查仍应针对最终版本重新执行并补记录。
+
+### 配置核实的验证入口（均未在本轮运行）
+
+- 唯一 workflow 为 `.github/workflows/pipeline.yml`：Flutter 先 `flutter pub get`、`dart run build_runner build --delete-conflicting-outputs`，再 `flutter analyze`、`flutter test --reporter expanded` 和既有 Android/iOS 构建。
+- 后端工作目录 `backend/`，CI 命令为 `go test -count=1 ./...`、`go vet ./...`；PG16 service 使用一次性测试库，将 URL 放入 `MOMO_TEST_DATABASE_URL`。不得将该 URL 指向生产库；真实测试会创建/清理隔离 schema。
+- `backend/internal/store/syncpostgres/cursor_postgres_test.go` 的 `TestPostgresCursorCommitOrderAndReminderMigration` 是 opt-in；未设置 URL 会 `t.Skip`，应记 NOT_EXECUTED，不能记真实 PG 测试通过。文本契约测试/模拟事务测试也不能代替 PG16 双连接并发结果。
+
+### 待验证矩阵（预期，不是通过断言）
+
+| 对应验收 | 正常/边界/异常与回归场景 | 已落盘入口或待补验收 |
+| --- | --- | --- |
+| AC-005 / AC-011 | 无策略默认30、家庭→商品覆盖、显式7/0保留、删除回退、scope隔离、旧threshold-only兼容；禁用只影响提醒不改变库存/过期/FEFO；窗口指纹与正文一致 | `test/domain/reminder_policy_test.dart`、`test/data/reminder_policy_repository_test.dart`、既有通知测试；真机调度/拒绝权限待验 |
+| AC-011 | 非空opened_warning_days（含禁用策略）、非法类型/阈值/天数、重复策略、替换顺序失败时整批回滚 | 提醒 Repository / adapter 测试及端到端待验 |
+| AC-012 | 同版本quantity纠偏、旧version不回退；不同实体pending/inFlight/blocked/rejected/conflict及open/deferred阻止scope快照；写入/receipt/cursor失败原子回滚 | `test/data/inventory_authoritative_snapshot_test.dart`、`test/application/sync_business_adapter_test.dart` |
+| AC-012 | push→fetch→confirm→apply；maxPush截断、未知结果用原operationID重试、刷新失败/崩溃恢复不消费旧snapshot、并发本地编辑重新阻塞 | `test/application/sync_engine_test.dart`、多设备真实NAS待验 |
+| AC-013 | discarded映射、active/used_up/expired非报废、终态quantity=0、expired不伪造expiryDate；未知状态与冲突字段fail closed | 代码与回归用例源码已落盘并完成源码复核，批次/adapter测试待执行 |
+| AC-013 | 相同cursor复用有效token并保留已有确认记录、变cursor新token并拒绝旧确认、缺失token、keep_local_only忽略乱token/超前cursor、repeatable-read一致快照；refresh/confirm迟到不得覆盖新pending或keep_local_only | `backend/internal/store/syncpostgres/bootstrap_snapshot_test.go`、引擎回归；真实并发与客户端竞态回归待验 |
+| AC-013 | 确认回执serverCursor>=snapshotCursor；invalid/rejected receipt不抬pushAckCursor；写refresh标记前及fetch返回均比较pending/mode；手动bootstrap缺snapshot不能清refresh要求 | `test/application/sync_engine_test.dart`已补回归用例源码并完成源码复核，测试/验收未执行 |
+| AC-014 | 0005保留旧7、新默认30；真实双连接持锁至commit/rollback、后写入不提前分配cursor、CACHE1、直接库存与sync路径均覆盖 | `cursor_migration_test.go`（仅契约）和`cursor_postgres_test.go`（真实PG16，未跑） |
+| AC-014 | 排空旧连接/缓存后的部署、备份恢复、补偿migration、历史漏读完整重同步、跨家庭吞吐与锁等待/死锁 | 实机专项验收尚未执行；CI隔离schema回归不能替代生产部署演练 |
+
+仍未实现的消费历史恢复、出站分类 UUID 映射/升级兼容与 HA scene/script/联动事件闭环不能被该矩阵勾为通过。本轮新增测试文件存在仅代表测试源码已加入。
+
+## 2026-10-07 — code review 两项 P1 续修验证记录
+
+本节只覆盖 initial_quantity 和 conflict settlement/fresh snapshot 续修，不替代之前未提交工作的验收。源码已改，不等于运行验证通过。
+
+### 已执行通过（轻量检查）
+
+- `for script in scripts/ci/*.sh scripts/release/*.sh; do bash -n "$script"; done`：脚本语法检查通过。
+- `for script in deploy/nas/scripts/*.sh; do sh -n "$script"; done`：部署脚本语法检查通过。
+- `bash scripts/ci/test-prepare-flutter-platforms.sh`：`PASS: platform preparation regression tests`。
+- `bash scripts/release/test-next-version.sh`：`PASS: next-version.sh release calculation tests`。
+- `sh deploy/nas/scripts/self-test.sh`：`All shell syntax and help/argument behavior checks passed.`。
+- Ruby 标准 YAML 解析 `.github/workflows/pipeline.yml` 通过；不能代替 GitHub Actions 的执行或语义验收。
+- Python 扫描 `lib/`、`test/`、`integration_test/` 的非 `package:`/`dart:` import、export、part：329 个目标全部存在；该口径不是历史 508，也不是 Dart 解析/编译。
+- `git diff --check`：通过；保留所有已有未提交改动，无 commit/push/deploy。
+
+### 新增/扩展回归源码（NOT_EXECUTED）
+
+- `backend/internal/store/inventorypostgres/initial_quantity_postgres_test.go`：实际 Service/Repository cumulative initial、restock/consume/discard、幂等延迟重放、history/change_log/receipt/commit 失败整体回滚。
+- `backend/internal/store/syncpostgres/initial_quantity_migration_test.go`：actual 0006 独立 schema、旧值/当前量/正 restock 下界、家庭隔离、软删除/已有大值保护、完整日志、二次迁移无增量、写入和 COMMIT 故障回滚。fixture 不覆盖完整生产 FK/权限/启动或部署锁等待验收。
+- `test/data/inventory_authoritative_snapshot_test.dart`：修复后完整 NAS 行通过严格 initial 校验；旧坏行依然拒绝且不推进版本。
+- `test/application/sync_outbox_repository_test.dart`、`test/presentation/sync_settings_screen_test.dart`：NAS 回执匹配、原 outbox/key 审计保留、显式结算、未解决保护、依赖释放、失败反馈与页面生命周期。
+- `test/data/conflict_authoritative_snapshot_test.dart`：scope 静默全快照同版本恢复商品/采购乐观值与 tombstone，旧版本/普通增量行为不放宽，失败回滚。
+- `test/application/sync_engine_test.dart`：已完成 bootstrap 无 pending/空 pull 仍 fresh fetch+confirm；不重发原命令；offline/restart、confirm 失败、fetch/confirm/application 期间新 revision、keep_local_only 和 legacy 缺 mode、其他未结算 rejected 保护。
+
+### 未执行及发布门槛
+
+`command -v flutter dart go gofmt docker psql` 无输出，本机缺对应工具；未安装新依赖或改变系统环境。Drift 生成、Flutter analyze/test/build、Go test/vet/gofmt、真实 PG16、NAS 双机/离线重连与迁移维护窗口验证均未执行；真实测试源码缺 `MOMO_TEST_DATABASE_URL` 时会 skip，本轮也没有执行这个 skip。CI 配置已有显式一次性 PostgreSQL URL，不代表当前未提交源码已跑 CI。
+
+在具备项目工具链且使用一次性测试数据库的环境，先执行现有 Flutter `build_runner` 生成入口、`flutter analyze`、`flutter test` 及 `backend/` 的 `go test -count=1 ./...`、`go vet ./...`，再验证真实 NAS 冲突解决→fresh checkpoint→数量/元数据收敛、进程退出后的恢复，以及 0006 备份/事务回滚与锁等待。部署及补偿约束见决策记录第 8 节；当前两项 P1 不标记为已验收或生产可用。
+
+续修源码复核补充：已接入 NAS `getConflict()` 回执恢复，覆盖 accepted 后本地写失败、丢回执/已解决错误、原动作不匹配、legacy 本地已关闭但 outbox 未结算。原页面新增“按原动作恢复本地结算”入口，不重设计布局。open/resolved 列表各最近 200 条的既有边界仍保留，更早 resolved 回执重启后可能无法自动匹配；未匹配条目继续阻塞，完整历史分页恢复不在本次范围。另补实际 0006 累计 integer 越界整体回滚、revision 清理失败同事务回滚和 ordinary pull 在途收到 resolution 回归源码，全部 NOT_EXECUTED。
+
+## 2026-10-07：App / Docker 第一批并行加强
+
+任务范围、兼容性与后续拆分见 `docs/APP_NAS_HARDENING_2026-10-07.md`。不覆盖本节以上历史记录或将其视作本批运行验收。
+
+- `PASSED`：本轮重新运行平台壳生成脚本回归、版本计算脚本回归、NAS help/参数脚本自测、逐文件 Shell 语法检查。
+- `PASSED`：workflow/Compose YAML 解析，后端 15 秒容器退出宽限与源码 10 秒退出预算静态核对，330 条本地 Dart 引用路径存在性，`git diff --check`。
+- `NOT_EXECUTED`：新增 NAS auth/controller 会话、媒体竞态、通知权限恢复、备份入口锁 Flutter 测试，以及 Go HTTP 生命周期/production 配置测试；既有测试/analyze/vet/格式化/构建同样未执行。本机无 Flutter/Dart/Go/gofmt，未安装工具。
+- `NOT_EXECUTED` / `DEVICE_VALIDATION_PENDING`：Docker SIGTERM 在途请求、真实 PostgreSQL/NAS/HA、原生通知权限/文件选择/分享及手机生命周期验收；本机无 Docker/PG 客户端，未推送新 CI。
+- 代码已落盘与轻量检查通过不等于验收或可生产使用。旧未绑定 NAS endpoint 的凭据需重新登录，业务数据保留；本批无业务 schema/migration、新增依赖或页面布局重设计。
+
+
+## 2026-10-07：App / Docker 第二批收尾
+
+实施范围见 `docs/APP_NAS_HARDENING_2026-10-07.md` 第二批；不覆盖历史验证记录，也不把此前 CI 当作当前未提交源码通过。
+
+### 实际执行
+
+- PASSED：`bash scripts/ci/test-prepare-flutter-platforms.sh` → `PASS: platform preparation regression tests`。
+- PASSED：`bash scripts/release/test-next-version.sh` → `PASS: next-version.sh release calculation tests`。
+- PASSED：`sh deploy/nas/scripts/self-test.sh` → `All shell syntax and help/argument behavior checks passed.`。
+- PASSED：`scripts/ci/*.sh`、`scripts/release/*.sh` 的 `bash -n` 与 `deploy/nas/scripts/*.sh` 的 `sh -n`。
+- PASSED：Ruby 标准 YAML 解析 workflow/Compose；`services.momo-backend.stop_grace_period == 15s`。初次检查误写服务名 `backend` 得到 KeyError，依据现有 Compose 修正检查命令后通过，没有修改被检查配置。
+- PASSED：本地 Dart 引用目标存在性及 `git diff --check`；共 333 条目标全部存在；前者不是 Dart 语法/analyzer/编译检查。
+- PASSED（文档检查，不是恢复验收）：灾备方案章节/源码引用与 NEEDS_CONFIRMATION 状态保留。
+
+### 新增或扩展测试源码（全部 NOT_EXECUTED）
+
+- scheduler/outbox/App wiring：committed 请求 debounce、status/remote apply 不反馈、每订阅独立基线、手动自动共用 flight、周期 pull、有界 drain、backoff、background/offline/dispose、provider/session 替换和迟到报告/错误。
+- engine：版本不兼容 pre-claim 保留操作/key/cursor、capability 失败、bootstrap response/记录版本兼容、post-push 不兼容保留已接受回执与旧快照、同/重建 engine 协调、不同 scope、失败释放、无效 batch limit、keep_local_only 中断 push/pull、未结算 rejected 不续跑。
+- sync API/通用 API：有效/畸形 capability、反代 path、401 单次 refresh、失效 session/clear token/close/provider、旧 refresh completion 与新会话隔离、拒绝配置 API 外的 bearer 目标。
+- 同步设置页：分批不显示完成、deferred 显示暂停、backoff 反馈；既有冲突回执/本地原子结算测试保留。
+
+### 未执行与剩余门槛
+
+本机 `command -v flutter dart go gofmt docker psql` 无输出；工具链缺失，未安装或修改环境。Flutter/Dart analyze/test/format/build、Go test/vet/gofmt/build、真实 PG/NAS/Docker/HA、设备与灾备演练均 NOT_EXECUTED。当前测试源码尚不能据此认定编译、运行通过。灾备仅完成方案文档；epoch、空库恢复/切换、加密恢复包与 App 意图审阅未实现。
+
+下一验证入口仍为既有 CI 配置的 Drift 生成 → Flutter analyze/test/build、`backend/` Go test/vet/build 与一次性 PG16；再进行 NAS 双机/离线/重连/keep_local_only 和容器 SIGTERM 场景。不得连接生产测试库、清本地数据/cursor 或削弱冲突保护以制造通过。本批无 commit/push/deploy。
+
+
+## 2026-10-07：App / Docker 第三批复查
+
+### PASSED（本轮实际执行）
+
+- `bash scripts/ci/test-prepare-flutter-platforms.sh`、`bash scripts/release/test-next-version.sh`、`sh deploy/nas/scripts/self-test.sh` 再次通过。
+- `scripts/ci/*.sh`、`scripts/release/*.sh` 的 `bash -n`，NAS scripts 的 `sh -n`；workflow/Compose YAML 解析；后端 grace 15s 和容器 health timeout 5s 核对通过。
+- 333 条本地 Dart 引用目标存在性；`git diff --check`；新增 health Go 测试空白检查通过。不是语法/编译/测试执行。
+
+### NOT_EXECUTED（新增回归源码）
+
+- engine：101 页跨两轮续拉、完整成功时间只在尾页更新、非前进/空继续页/越界/乱序/重复 ID 在本页写入前拒绝、后续坏页保留此前安全 cursor/receipt、deferred 不续跑。
+- scheduler/UI：远端页 remainder 复用有限续跑预算，conflict 不放行，页面不显示已全部完成。
+- health：DB nil/可达/失败、独立 2s deadline、更短 request deadline、请求前/中取消、非 GET 与敏感错误保护。
+
+工具链与设备检查仍未执行：PATH 与常见工具目录未找到 Flutter/Dart/Go/gofmt/Docker；没有安装、生成依赖或运行生产数据操作。Go 子任务尝试 test/vet 返回 `go: command not found`。当前健康检查仍只代表 DB connectivity，不能代表 schema readiness；升级脚本 migration 失败不启动与直接 `serve` 缺迁移预检的路径必须分开看。
+
+运维复查仅源码证据与方案，见 `docs/NAS_OPERATIONS_REVIEW_2026-10-07.md`；真实部署/备份/恢复/切换演练均 NOT_EXECUTED。没有 commit/push/deploy。

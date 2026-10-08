@@ -9,6 +9,7 @@ import '../../domain/inventory/fefo.dart';
 import '../../domain/models/inventory_models.dart';
 import '../../domain/models/sync_models.dart';
 import 'sync_outbox_repository.dart';
+import 'reminder_repository.dart';
 
 class InventoryRepository {
   InventoryRepository(
@@ -25,11 +26,57 @@ class InventoryRepository {
   final SyncOutboxRepository? _outbox;
   final String? _syncScopeId;
 
+  AppDatabase get database => _database;
+  String? get syncScopeId => _syncScopeId;
+
+  /// Category IDs remain bindings in settings, not user-visible categories.
+  Future<void> bindRemoteProductCategory({
+    required String scopeId,
+    required String productId,
+    required String? categoryId,
+    required DateTime updatedAt,
+  }) async {
+    final key = 'sync_category_binding:$scopeId:$productId';
+    if (categoryId == null) {
+      await (_database.delete(_database.appSettings)
+            ..where((row) => row.key.equals(key)))
+          .go();
+    } else {
+      await _database.into(_database.appSettings).insertOnConflictUpdate(
+            AppSettingsCompanion.insert(
+              key: key,
+              value: categoryId,
+              updatedAt: updatedAt.toUtc(),
+            ),
+          );
+    }
+  }
+
+  Future<void> applyRemoteCategoryName({
+    required String scopeId,
+    required String categoryId,
+    required String name,
+  }) async {
+    final prefix = 'sync_category_binding:$scopeId:';
+    final bindings = await (_database.select(_database.appSettings)
+          ..where((row) => row.value.equals(categoryId)))
+        .get();
+    final productIds = bindings
+        .where((row) => row.key.startsWith(prefix))
+        .map((row) => row.key.substring(prefix.length))
+        .toList();
+    if (productIds.isEmpty) return;
+    // A category rename does not change product versions or quantities.
+    await (_database.update(_database.products)
+          ..where((row) => row.id.isIn(productIds)))
+        .write(ProductsCompanion(category: Value(name)));
+  }
+
   Stream<List<InventoryItem>> watchInventory() {
     return _database
         .customSelect(
           'SELECT 1',
-          readsFrom: {_database.products, _database.productBatches},
+          readsFrom: {_database.products, _database.productBatches, _database.appSettings},
         )
         .watch()
         .asyncMap((_) => loadInventory());
@@ -40,7 +87,24 @@ class InventoryRepository {
         await (_database.select(_database.products)
               ..where((product) => product.deletedAt.isNull()))
             .get();
-    final items = await Future.wait(products.map(_toInventoryItem));
+    final scopeId = _syncScopeId;
+    final policies = scopeId == null
+        ? const <String, ReminderPolicy>{}
+        : await ReminderRepository(_database).remotePolicies(scopeId);
+    final items = await Future.wait(products.map((product) {
+      final familyPolicy = policies[''];
+      final productPolicy = policies[product.id];
+      final selected = productPolicy ?? familyPolicy ?? const ReminderPolicy();
+      // A nullable product threshold inherits the family threshold before
+      // falling back to the persisted local product setting.
+      final effectivePolicy = ReminderPolicy(
+        enabled: selected.enabled,
+        expiryWarningDays: selected.expiryWarningDays,
+        lowStockThreshold: productPolicy?.lowStockThreshold ??
+            familyPolicy?.lowStockThreshold ?? product.lowStockThreshold,
+      );
+      return _toInventoryItem(product, reminderPolicy: effectivePolicy);
+    }));
     items.sort((a, b) {
       final aDate = a.nearestDatedBatch?.expiryDate;
       final bDate = b.nearestDatedBatch?.expiryDate;
@@ -52,7 +116,10 @@ class InventoryRepository {
     return items;
   }
 
-  Future<InventoryItem> _toInventoryItem(ProductRecord product) async {
+  Future<InventoryItem> _toInventoryItem(
+    ProductRecord product, {
+    ReminderPolicy reminderPolicy = const ReminderPolicy(),
+  }) async {
     final batches = await (_database.select(_database.productBatches)
           ..where((batch) =>
               batch.productId.equals(product.id) & batch.deletedAt.isNull()))
@@ -67,6 +134,7 @@ class InventoryRepository {
       location: product.location,
       unit: product.unit,
       lowStockThreshold: product.lowStockThreshold,
+      reminderPolicy: reminderPolicy,
       batches: batches
           .map(
             (batch) => InventoryBatch(
@@ -78,6 +146,7 @@ class InventoryRepository {
               isDiscarded: batch.isDiscarded,
               expiryDate: batch.expiryDate,
               productionDate: batch.productionDate,
+              reminderPolicy: reminderPolicy,
             ),
           )
           .toList(growable: false),
@@ -502,6 +571,7 @@ class InventoryRepository {
     required DateTime updatedAt,
     String? updatedByDevice,
     DateTime? deletedAt,
+    bool authoritativeSnapshot = false,
   }) async {
     final now = updatedAt.toUtc();
     return _database.transaction(() async {
@@ -511,12 +581,13 @@ class InventoryRepository {
       if (_isStale(existing?.serverVersion, version)) {
         return SyncRemoteApplyStatus.ignoredStale;
       }
-      if (_isSameVersion(existing?.serverVersion, version)) {
+      if (!authoritativeSnapshot &&
+          _isSameVersion(existing?.serverVersion, version)) {
         return SyncRemoteApplyStatus.alreadyApplied;
       }
 
       final name = _stringValue(payload, 'name');
-      final category = _firstString(payload, const ['category', 'category_name', 'category_id']);
+      final category = _firstString(payload, const ['category', 'category_name']);
       final brand = _nullableStringValue(payload, 'brand');
       final specification = _nullableStringValue(payload, 'specification');
       final barcode = _nullableStringValue(payload, 'barcode');
@@ -582,6 +653,7 @@ class InventoryRepository {
     required int version,
     required DateTime deletedAt,
     String? updatedByDevice,
+    bool authoritativeSnapshot = false,
   }) async {
     return _database.transaction(() async {
       final existing = await (_database.select(_database.products)
@@ -591,7 +663,8 @@ class InventoryRepository {
       if (_isStale(existing.serverVersion, version)) {
         return SyncRemoteApplyStatus.ignoredStale;
       }
-      if (_isSameVersion(existing.serverVersion, version)) {
+      if (!authoritativeSnapshot &&
+          _isSameVersion(existing.serverVersion, version)) {
         return SyncRemoteApplyStatus.alreadyApplied;
       }
       await (_database.update(_database.products)
@@ -608,6 +681,9 @@ class InventoryRepository {
     });
   }
 
+  /// Bootstrap snapshots may repair quantities at the same server version.
+  /// Only their adapter may opt in, after protecting pending local operations.
+  /// A snapshot replaces state; it never accounts for a restock a second time.
   Future<SyncRemoteApplyStatus> applyRemoteProductBatch({
     required String batchId,
     required Map<String, dynamic> payload,
@@ -615,7 +691,11 @@ class InventoryRepository {
     required DateTime updatedAt,
     String? updatedByDevice,
     bool applyQuantity = false,
+    bool authoritativeSnapshot = false,
   }) async {
+    if (authoritativeSnapshot && !applyQuantity) {
+      throw ArgumentError('authoritativeSnapshot requires applyQuantity=true');
+    }
     final now = updatedAt.toUtc();
     return _database.transaction(() async {
       final existing = await (_database.select(_database.productBatches)
@@ -624,7 +704,8 @@ class InventoryRepository {
       if (_isStale(existing?.serverVersion, version)) {
         return SyncRemoteApplyStatus.ignoredStale;
       }
-      if (_isSameVersion(existing?.serverVersion, version)) {
+      if (!authoritativeSnapshot &&
+          _isSameVersion(existing?.serverVersion, version)) {
         return SyncRemoteApplyStatus.alreadyApplied;
       }
 
@@ -643,11 +724,39 @@ class InventoryRepository {
           'day';
       final isOpened = _boolValue(payload, const ['is_opened', 'opened']) ??
           (payload.containsKey('opened_date') || (existing?.isOpened ?? false));
-      final isDiscarded = _boolValue(payload, const ['is_discarded', 'discarded']) ??
-          existing?.isDiscarded ??
-          false;
+      final explicitDiscarded = _boolValue(payload, const ['is_discarded', 'discarded']);
+      final rawStatus = payload['status'];
+      if (authoritativeSnapshot && rawStatus != null &&
+          (rawStatus is! String ||
+              !const ['active', 'used_up', 'expired', 'discarded'].contains(rawStatus))) {
+        throw const FormatException('unsupported product_batches snapshot status');
+      }
+      final statusDiscarded = authoritativeSnapshot && rawStatus != null
+          ? rawStatus == 'discarded'
+          : null;
+      if (statusDiscarded != null && explicitDiscarded != null &&
+          statusDiscarded != explicitDiscarded) {
+        throw const FormatException('product_batches snapshot has conflicting discard status');
+      }
+      final isDiscarded = statusDiscarded ?? explicitDiscarded ?? existing?.isDiscarded ?? false;
       final quantity = _intValue(payload, const ['quantity', 'current_quantity', 'remaining_quantity']);
       final initialQuantity = _intValue(payload, const ['initial_quantity', 'initialQuantity']);
+      if (authoritativeSnapshot) {
+        if (quantity == null || quantity < 0) {
+          throw const FormatException(
+            'product_batches snapshot requires a non-negative quantity',
+          );
+        }
+        if ((rawStatus == 'used_up' || rawStatus == 'discarded') && quantity != 0) {
+          throw const FormatException('product_batches terminal snapshot status requires zero quantity');
+        }
+        if (initialQuantity != null &&
+            (initialQuantity < 0 || quantity > initialQuantity)) {
+          throw const FormatException(
+            'product_batches snapshot quantity must not exceed initial_quantity',
+          );
+        }
+      }
 
       if (existing == null) {
         if (quantity == null || quantity < 0) {
@@ -678,7 +787,15 @@ class InventoryRepository {
       } else {
         final commandQuantity = applyQuantity ? quantity : null;
         final command = _stringValue(payload, 'command');
-        final restockAmount = command == 'restock' ? _allocationTotal(payload) : 0;
+        final restockAmount = !authoritativeSnapshot && command == 'restock'
+            ? _allocationTotal(payload)
+            : 0;
+        final snapshotInitial = authoritativeSnapshot
+            ? initialQuantity ??
+                (existing.initialQuantity > quantity!
+                    ? existing.initialQuantity
+                    : quantity)
+            : null;
         await (_database.update(_database.productBatches)
               ..where((batch) => batch.id.equals(batchId)))
             .write(
@@ -689,18 +806,22 @@ class InventoryRepository {
             batchNo: _firstNullableValue(payload, const ['batch_no', 'batchNo']),
             productionDate: _dateCompanion(payload, const ['produced_date', 'production_date', 'productionDate']),
             expiryDate: _dateCompanion(payload, const ['expiry_date', 'expiryDate']),
-            dateSource: _firstNullableValue(payload, const ['date_source', 'dateSource']),
-            datePrecision: _firstNullableValue(payload, const ['date_precision', 'datePrecision']),
+            dateSource: _firstRequiredValue(payload, const ['date_source', 'dateSource']),
+            datePrecision: _firstRequiredValue(payload, const ['date_precision', 'datePrecision']),
             remainingQuantity: commandQuantity == null ? const Value.absent() : Value(commandQuantity),
-            initialQuantity: restockAmount > 0
-                ? Value(existing.initialQuantity + restockAmount)
-                : initialQuantity == null
-                    ? const Value.absent()
-                    : Value(initialQuantity),
+            initialQuantity: snapshotInitial != null
+                ? Value(snapshotInitial)
+                : restockAmount > 0
+                    ? Value(existing.initialQuantity + restockAmount)
+                    : initialQuantity == null
+                        ? const Value.absent()
+                        : Value(initialQuantity),
             isOpened: _boolCompanion(payload, const ['is_opened', 'opened']),
-            isDiscarded: applyQuantity && command == 'discard'
-                ? const Value(true)
-                : _boolCompanion(payload, const ['is_discarded', 'discarded']),
+            isDiscarded: statusDiscarded != null
+                ? Value(statusDiscarded)
+                : !authoritativeSnapshot && applyQuantity && command == 'discard'
+                    ? const Value(true)
+                    : _boolCompanion(payload, const ['is_discarded', 'discarded']),
             updatedAt: Value(now),
             serverVersion: Value(version),
             deletedAt: const Value(null),
@@ -717,6 +838,7 @@ class InventoryRepository {
     required int version,
     required DateTime deletedAt,
     String? updatedByDevice,
+    bool authoritativeSnapshot = false,
   }) async {
     return _database.transaction(() async {
       final existing = await (_database.select(_database.productBatches)
@@ -726,7 +848,8 @@ class InventoryRepository {
       if (_isStale(existing.serverVersion, version)) {
         return SyncRemoteApplyStatus.ignoredStale;
       }
-      if (_isSameVersion(existing.serverVersion, version)) {
+      if (!authoritativeSnapshot &&
+          _isSameVersion(existing.serverVersion, version)) {
         return SyncRemoteApplyStatus.alreadyApplied;
       }
       await (_database.update(_database.productBatches)
@@ -790,6 +913,13 @@ class InventoryRepository {
     final value = _stringValue(payload, key);
     if (value == null) throw FormatException('$key must be a non-empty string');
     return Value(value);
+  }
+
+  Value<String> _firstRequiredValue(Map<String, dynamic> payload, List<String> keys) {
+    for (final key in keys) {
+      if (payload.containsKey(key)) return _requiredValue(payload, key);
+    }
+    return const Value.absent();
   }
 
   Value<String?> _firstNullableValue(Map<String, dynamic> payload, List<String> keys) {
