@@ -10,7 +10,7 @@
 
 - Frontend：Flutter / Dart
 - NAS backend：Go 1.22 + PostgreSQL 16；独立 Go module 位于 `backend/`
-- NAS deployment：生产 Compose 从公开 GHCR 拉取 `.env` 明确指定的固定版本标签或 digest；本地开发可通过 override 以 `backend/` 为独立 Docker build context；Compose 仅包含 `momo-backend` 与 `postgres`
+- NAS deployment：生产 Compose 从公开 GHCR 拉取 `.env` 明确指定的固定版本标签或 digest；本地开发可通过 override 以 `backend/` 为独立 Docker build context；Compose 仅包含 `momo-backend` 与 `postgres`；生产入口为 `deploy/nas/docker-compose.yaml`，开发叠加文件为 `deploy/nas/docker-compose.local-build.yaml`
 - State：flutter_riverpod
 - Routing：go_router
 - Local database：Drift + SQLite

@@ -229,3 +229,14 @@
 工具链与设备检查仍未执行：PATH 与常见工具目录未找到 Flutter/Dart/Go/gofmt/Docker；没有安装、生成依赖或运行生产数据操作。Go 子任务尝试 test/vet 返回 `go: command not found`。当前健康检查仍只代表 DB connectivity，不能代表 schema readiness；升级脚本 migration 失败不启动与直接 `serve` 缺迁移预检的路径必须分开看。
 
 运维复查仅源码证据与方案，见 `docs/NAS_OPERATIONS_REVIEW_2026-10-07.md`；真实部署/备份/恢复/切换演练均 NOT_EXECUTED。没有 commit/push/deploy。
+
+
+## 2026-10-08：本地主线合并与旧分支清理
+
+- 本次起点：干净的本地 `main` 为 `1ad1cc8`，远端 `main` 为 `071a030`，双方各有独有提交。先获取主线/标签，并保留本地备份 `backup/main-before-merge-20261008`；不 reset、不 rebase、不强制推送。
+- 三个冲突位于 auth service、sync scheduler 和 sync settings。远端对应增量为旧 CI await/nullable promotion/RadioGroup 等修复，源码核对确认新版本地已包含；保留新版会话/调度/原子结算实现，不回退保护。
+- 接入绿联 NAS 的 `docker-compose.yaml` / `docker-compose.local-build.yaml` 改名、脚本入口、Release 附件及部署说明。保留本地 `stop_grace_period: 15s`，只更新相应现状/审查文档路径。
+- `codex/fix-ci-build` 的文件树与远端已并入主线的 `7028f6e` 完全相同（tree `31cb15d`），但历史不同；计划以不改变当前文件树的历史合并保留其提交，再安全删除旧本地功能分支。其余两个旧分支已是远端主线祖先。
+- PASSED（实际执行）：平台准备脚本回归、版本计算脚本回归、NAS shell 自测；全部相关 bash/sh 语法检查；workflow/两个 Compose YAML 解析及 15 秒退出宽限核对；333 条本地 Dart 引用路径；冲突文件新版内容保持；空白/残留冲突检查。
+- NOT_EXECUTED：Flutter/Dart analyze/test/format/build、Go test/vet/gofmt/build、容器/真实 PG/NAS/设备。PATH 无相关工具，不安装依赖。轻量检查不证明编译或运行通过。
+- 操作范围为本地 merge 和旧分支清理；不自动 push、不部署，不将本地新代码说成已经进入 GitHub 主线。GitHub 上旧功能分支此前已删除，本次以远端实际 refs 复核。

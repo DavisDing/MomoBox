@@ -10,7 +10,7 @@
 
 ### 不重复列为未修的问题
 
-- `/Users/dinghao/Downloads/MomoBox/deploy/nas/compose.yaml:19-20` 已设后端 `stop_grace_period: 15s`；`/Users/dinghao/Downloads/MomoBox/backend/cmd/momo-backend/http_lifecycle.go:11,35-45` 已使用独立上下文进行 10 秒 drain，超时有 Close fallback。不能再写为“尚未配置优雅退出”。这不等于已经有最终冻结备份或运维失败隔离。
+- `/Users/dinghao/Downloads/MomoBox/deploy/nas/docker-compose.yaml:19-20` 已设后端 `stop_grace_period: 15s`；`/Users/dinghao/Downloads/MomoBox/backend/cmd/momo-backend/http_lifecycle.go:11,35-45` 已使用独立上下文进行 10 秒 drain，超时有 Close fallback。不能再写为“尚未配置优雅退出”。这不等于已经有最终冻结备份或运维失败隔离。
 - `/Users/dinghao/Downloads/MomoBox/backend/internal/platform/config.go:104-115` 已在 production 拒绝已知模板 JWT / refresh pepper / HA key。不能再写为“模板 Secret 可直接上线”。这不等于已解决恢复后旧会话或 HTTP 传输暴露。
 - update 对**成功识别并停止的 running 后端**，migration 返回失败后不会主动重启，见 `/Users/dinghao/Downloads/MomoBox/deploy/nas/scripts/update.sh:154-167`。本文第 3 节只指出未纳入停机门禁的容器状态，不将该正常分支误报为自动回滚。
 
@@ -41,7 +41,7 @@
 **源码证据**
 
 - `/Users/dinghao/Downloads/MomoBox/deploy/nas/scripts/update.sh:154-167`：`ps --status running` 命中才 stop；未命中即继续 migration，失败直接 exit。
-- `/Users/dinghao/Downloads/MomoBox/deploy/nas/compose.yaml:18-22`：长期后端容器使用 `restart: unless-stopped`。
+- `/Users/dinghao/Downloads/MomoBox/deploy/nas/docker-compose.yaml:18-22`：长期后端容器使用 `restart: unless-stopped`。
 - `/Users/dinghao/Downloads/MomoBox/backend/internal/platform/migrate.go:126-130,191-198,264`：逐文件事务执行；后一个 migration 失败不撤销前面已提交的 migration。
 - `/Users/dinghao/Downloads/MomoBox/backend/cmd/momo-backend/main.go:254-278,362-365`：serve 做连接检查后启动 HTTP，不调用 migration runner 或验证全部已应用 schema 身份。
 
@@ -109,7 +109,7 @@
 
 **源码证据**
 
-- `/Users/dinghao/Downloads/MomoBox/deploy/nas/compose.yaml:33,38,46-47`：容器 HTTP 监听所有地址；端口映射仅指定端口，未限定宿主绑定地址；注册默认 first_setup。
+- `/Users/dinghao/Downloads/MomoBox/deploy/nas/docker-compose.yaml:33,38,46-47`：容器 HTTP 监听所有地址；端口映射仅指定端口，未限定宿主绑定地址；注册默认 first_setup。
 - `/Users/dinghao/Downloads/MomoBox/backend/cmd/momo-backend/http_lifecycle.go:14,24`：使用 `ListenAndServe` 而非内建 TLS。
 - `/Users/dinghao/Downloads/MomoBox/backend/internal/auth/service.go:48-59`：first_setup 在无用户时允许注册。
 - `/Users/dinghao/Downloads/MomoBox/docs/nas/04-deployment.md:280-286`：明确无内置公网证书，公网 HTTPS 反代/VPN 由用户提供；`/Users/dinghao/Downloads/MomoBox/docs/nas/03-security.md:179-182` 要求来源受控。

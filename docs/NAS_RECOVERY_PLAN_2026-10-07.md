@@ -17,7 +17,7 @@
 | 依据 | 当前事实 | 灾备边界 |
 | --- | --- | --- |
 | `docs/AI_CONTEXT.md`、`docs/REQUIREMENT.md`、`docs/DESIGN.md` | 本地优先；NAS 已确认库存为权威，但未解决的本地操作受保护 | 恢复不能以“服务端权威”为由覆盖离线意图 |
-| `deploy/nas/compose.yaml`、`.env.example` | 后端镜像由 `MOMO_BACKEND_IMAGE` 指定；当前 PostgreSQL 镜像为 `postgres:16.4-alpine`；数据在命名卷；密钥由环境配置传入 | 环境文件、镜像和数据必须配套；生产镜像建议进一步锁定 digest |
+| `deploy/nas/docker-compose.yaml`、`.env.example` | 后端镜像由 `MOMO_BACKEND_IMAGE` 指定；当前 PostgreSQL 镜像为 `postgres:16.4-alpine`；数据在命名卷；密钥由环境配置传入 | 环境文件、镜像和数据必须配套；生产镜像建议进一步锁定 digest |
 | `deploy/nas/scripts/backup.sh` | custom-format `pg_dump`；临时文件权限 600；`pg_restore --list` 检查后原子改名；共享部署锁 | dump 未由脚本加密；目录清单检查不等于完整恢复或业务正确性验证 |
 | `deploy/nas/scripts/restore.sh` | 停止此前运行的后端、终止目标库连接，在配置的原库执行 `--clean --if-exists --exit-on-error --single-transaction`；退出时尝试重启此前运行的后端 | 不是独立空库恢复；失败路径也可能尝试重启；没有候选库切换、epoch 或恢复验收门禁 |
 | `deploy/nas/scripts/update.sh` | 共享部署锁；默认先备份、拉取镜像，再停后端、执行 migration、启动并等待健康状态 | 拉取成功不证明 image/schema 兼容；停机前备份可能遗漏其后已接受的写入；没有本文的完整恢复预检 |

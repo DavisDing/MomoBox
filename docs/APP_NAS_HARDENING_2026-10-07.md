@@ -51,7 +51,7 @@
 - production 拒绝部署示例中已知 JWT/pepper/HA key 占位值，错误不返回密钥原文；合法密钥原字节及原长度规则不变。
 - Compose 后端设置 `stop_grace_period: 15s`，与 10 秒应用退出预算留出余量。不改端口绑定、共享权限或持久数据。
 
-主要文件：`backend/cmd/momo-backend/main.go`、新增 `http_lifecycle.go` / `http_lifecycle_test.go`、`backend/internal/platform/config.go`、新增 `config_test.go`、`deploy/nas/compose.yaml`。Go/容器测试未运行。
+主要文件：`backend/cmd/momo-backend/main.go`、新增 `http_lifecycle.go` / `http_lifecycle_test.go`、`backend/internal/platform/config.go`、新增 `config_test.go`、`deploy/nas/docker-compose.yaml`。Go/容器测试未运行。
 
 ## 后续任务与依赖（第二批前基线；当前进展见后文）
 
