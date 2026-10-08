@@ -1,8 +1,44 @@
 # DESIGN
 
 > Architecture Agent 维护。
-> 本文基于 `docs/产品需求文档（PRD）核心摘要.md` V3.0（2026-09-01）整理。
-> 单机 MVP 已落地在 `lib/`；Phase 2–4 已按本轮确认范围完成主要代码接入，本文仍需结合“当前实现状态”和未执行的验证项阅读。
+> 2026-10-08 完善版。需求与验收以 REQUIREMENT 为准，长期现状引用 AI_CONTEXT；本文记录技术方案、修改入口、限制与决策，不以代码落盘代替验收。
+> 最初基于 PRD V3.0（2026-09-01）整理。第0节为当前入口；日期补充保留历史证据，同主题已批准的新决策优先。历史Phase/提案不自动构成下一期发布范围。
+
+# 0. 当前设计基线与阅读入口
+
+## 0.1 本次目标与范围
+
+完善App与NAS/Docker的需求映射和技术边界，消除旧提案与已批准方案的矛盾，补齐已接入能力的异常/验收入口。不新增业务模块、依赖、表、API或UI，不执行migration、提交/推送、发布、恢复或部署。
+
+本轮以main `0d52280`源码及已读取CI #25为诊断基线；这是证据快照，不是持续监测的最新流水线承诺。App analyze/iOS构建失败，后端PG配置下测试及vet通过；具体错误及修复见同日诊断节，尚未实施。设备、NAS/HA和灾备演练没有因此完成。
+
+## 0.2 已批准选择、源码现状与提案
+
+| 主题 | 已批准目标/边界 | 源码现状与限制 |
+| --- | --- | --- |
+| 核心模式 | Flutter+Drift本地优先，NAS可选，整数件、FEFO、当天有效 | 本地schema 5；网络故障不应阻断单机业务 |
+| AI/HA | Flutter直连用户AI，HA凭据只在NAS；白名单/确认/真实回执 | 不内置Ollama、不提供AI/条码代理；手动电源接入，不是完整混合联动 |
+| 提醒 | 商品→家庭→默认30天，关闭不改库存事实 | app_settings作用域覆盖；非空opened_warning_days仍拒绝 |
+| 同步 | 幂等库存命令、不丢本地意图、scope静默才应用权威快照 | 队列/游标/checkpoint/冲突结算/有界前台调度有代码；首次基线、分类出站、完整历史未闭环 |
+| 媒体/备份 | 原图/OCR本地，核心JSON不迁移身份/密钥/同步现场 | 本地media_assets/FTS；无NAS附件上传及完整媒体归档 |
+| NAS部署 | Go+PG模块化单体，双服务、固定镜像、无AI服务容器 | docker-compose.yaml和local-build override；health只验证DB连接 |
+| 灾备/工作区/时区 | 不假定已解决 | REQUIREMENT D-02～D-07与DR-01～07待确认；epoch/readiness/fencing未实现 |
+
+本地Drift schema 5、PostgreSQL migration 0001～0006、wire schema/protocol 1/1分别版本化；capabilities版本不证明数据库migration完整或历史未回退。
+
+## 0.3 文档职责与索引
+
+| 文档 | 负责内容 | 使用方式 |
+| --- | --- | --- |
+| REQUIREMENT 第10～14节 | 当前范围、AC-015～022、门禁、D-01～08 | 未决项不能从代码反推批准 |
+| 本文第5～9、15节 | 模块/存储/API/UI、数据流与验收映射 | 复用现有入口，不复制完整协议字段表 |
+| AI_CONTEXT | 长期技术栈、业务与视觉保护 | 历史未验收按commit理解；更新建议见15.6 |
+| docs/nas/01-domain-sync-model.md、03-security.md、04-deployment.md | NAS领域、安全及部署契约 | 与源码有差异时记录，需求变化先确认 |
+| APP_NAS_HARDENING_2026-10-07.md、NAS_OPERATIONS_REVIEW_2026-10-07.md | 加强批次及剩余运维风险 | 源码检查不是事故复现或部署验收 |
+| NAS_RECOVERY_PLAN_2026-10-07.md | DR提案、恢复/回滚与epoch | 仅设计，不是现有可执行流程 |
+| VALIDATION、具体CI/设备记录 | 执行证据 | 按commit/run/环境记录PASS、FAIL、SKIPPED、NOT_EXECUTED |
+
+待决建议集中在REQUIREMENT第13节，本设计不另设相互矛盾的默认选择。
 
 ---
 
@@ -38,6 +74,8 @@
 8. 连接 NAS 后与家庭成员共享库存并同步多设备。
 
 ## 1.4 版本边界建议
+
+> 本节为历史里程碑划分，不重新缩减已接入能力。当前收尾与待确认正式范围见REQUIREMENT第10/13节。
 
 PRD 当前同时包含 P0、P1、P2 和多个平台/后端能力，范围偏大。建议将第一个可交付版本限定为：
 
@@ -95,7 +133,7 @@ Flutter 的 Android/iOS 原生壳和 Drift 生成文件不提交到仓库，由 
 
 # 3. 需求问题、矛盾与建议
 
-以下问题在正式编码前应解决。标记为 `NEEDS_CONFIRMATION` 的事项不能由实现人员自行猜测。
+本章保留早期问题与决策背景；已有实现以第0/7/8/15节及日期修订为准，不把“建议”全部当作本次拟新增。仍标为 `NEEDS_CONFIRMATION` 的事项不能由实施者猜测。
 
 ## 3.1 高优先级问题
 
@@ -119,11 +157,11 @@ PRD 说明断开后本地数据保留、重新连接后增量同步，但首次�
 
 默认展示“家庭/新增家庭”的选择入口；如果用户尚未加入任何家庭，默认推荐“新增家庭”，但不能代替用户确认。合并使用稳定 UUID、重复检测和冲突报告，禁止静默覆盖。
 
-### Q-003 同步模型不够具体
+### Q-003 同步模型（历史问题，当前已采用outbox/change log）
 
 `sync_meta(table_name, last_sync_at, last_sync_hash)` 不能可靠表达每条记录的新增、修改、删除，也无法解决同一条记录在多个设备上的并发更新。
 
-**建议**：改为基于 UUID 的离线优先同步：
+**当前方案**：采用基于UUID的离线优先同步；下述为目标契约，实际实体覆盖与首次迁移须按当前缺口核对：
 
 - 每条可同步记录包含 `id`、`created_at`、`updated_at`、`deleted_at`、`version`、`updated_by_device`；
 - 客户端维护 outbox 变更队列；
@@ -142,21 +180,21 @@ PRD 的“服务端为准”可以作为 MVP 默认策略，但应返回冲突�
 
 同时补充以下规则：
 
-- 日期使用用户本地时区的 date-only 值；
+- 本地业务日期按用户本地日历解释；NAS现有UTC传输与跨时区家庭规则尚需统一，见D-04，不因本条自动批准协议/旧数据转换；
 - “保质期 N 个月”使用日历加月，目标月份没有对应日期时取该月最后一天；
 - 到期日当天视为最后有效日，从本地日期的下一天开始视为过期；
 - 记录 `date_source`（manual / calculated / ai）和 `date_precision`（day / month / unknown），避免 AI 或包装只给月份时被强制伪造具体日期；
 - 只有明确存在到期日的批次才进入临期/过期状态计算。
 
-### Q-005 客户端凭据存储不安全
+### Q-005 凭据存储（历史问题，安全存储已接入，运行未验收）
 
 `backend_connection.password_hash` 不应存在于手机端；客户端不需要保存密码哈希。`api_configs.api_key` 和 `ai_configs.api_key` 也不应仅依赖 SQLite 明文存储。
 
 **建议**：
 
-- 登录后保存 access token/refresh token 到 iOS Keychain / Android Keystore；
+- NAS凭据和AI Key使用现有系统安全存储；NAS凭据绑定规范化endpoint、会话代次校验，旧无binding需重新登录；不保留客户端密码哈希；
 - API Key 使用系统安全存储，SQLite 只保留配置元数据和引用标识；
-- 后端只存 bcrypt/Argon2id 密码哈希；
+- 后端使用现有bcrypt实现保存密码哈希，不因历史备选Argon2id描述引入算法迁移；
 - HTTP 连接只允许用户明确配置的局域网场景并给出风险提示，正式远程使用要求 HTTPS 或反向代理。
 
 ## 3.2 中优先级问题
@@ -182,7 +220,7 @@ PRD 的“服务端为准”可以作为 MVP 默认策略，但应返回冲突�
 
 “每天 9:00 检查”在 iOS/Android 上不能简单依赖 App 进程常驻，NAS 模式也明确使用本地通知。
 
-**建议**：在批次新增/编辑、设置变更和 App 启动时计算未来提醒并注册本地通知；App 启动时再做一次 reconciliation。提醒需要去重键（批次 + 类型 + 目标日期），避免重复通知。后台能力受系统限制时，向用户说明并保证打开 App 可补检。
+**建议**：在批次新增/编辑、设置变更和 App 启动时计算未来提醒并注册本地通知；App 启动时再做一次 reconciliation。提醒使用现有商品+类型稳定key与状态fingerprint去重（不是另建批次key方案），避免重复通知。后台能力受系统限制时，向用户说明并保证打开 App 可补检。
 
 ### Q-009 服务端领域数据表缺失
 
@@ -190,11 +228,11 @@ NAS 数据库只列出 users、families、family_members、sync_devices、sync_l
 
 **建议**：服务端需要同样的领域表（或等价的统一资源表），并通过 `family_id` 做租户隔离；客户端表不能直接替代服务端持久化。
 
-### Q-010 图片字段和文件生命周期不明确
+### Q-010 图片与文件生命周期（本地media_assets已存在，NAS上传未实现）
 
 `image_url`、`manual_image` 不足以描述本地文件、NAS 文件和云端上传状态。
 
-**建议**：增加 `media_assets` 资源元数据表，文件内容使用 App 沙盒路径或 NAS 数据卷对象键保存，数据库只保存 MIME、尺寸、哈希、来源、上传状态和关联实体。删除商品时明确图片是否级联删除。
+**当前方案**：本地media_assets保存沙盒路径、MIME/尺寸/hash/关联与OCR，MediaService协调保存/清理；具体字段见第7节。NAS对象上传/上传状态未实现，不因历史建议新增。删除关联及文件清理按现有生命周期处理并回归验证。
 
 ### Q-011 AI 服务边界与安全约束不足
 
@@ -246,18 +284,18 @@ AI 解析输出可能格式错误、出现幻觉或包含说明书中的提示�
 
 AI 服务策略（已确认）：AI 始终由客户自行配置服务商、API 地址、模型和 API Key；产品不内置默认 AI 服务，也不代付模型费用。未配置或调用失败时必须退回本地 OCR/手动填写，不影响单机核心功能。
 
-建议组件（在工程初始化时确认具体版本）：
+已声明组件（具体依赖范围见 `pubspec.yaml`；声明不等于本次构建通过）：
 
 - 状态管理：Riverpod；
 - 路由：go_router；
 - 本地数据库：SQLite + Drift；
 - 扫码：mobile_scanner；
-- 相机/图片：camera 或 image_picker；
+- 相机/图片：mobile_scanner、image_picker；
 - OCR：Google ML Kit（平台能力可用时）；
 - 本地通知：flutter_local_notifications；
 - 安全存储：flutter_secure_storage。
 
-这些依赖是建议，不代表仓库已经安装。
+不为完善文档另加依赖。SDK约束、锁文件与CI实际解析版本须共同记录，不以文档版本猜测运行结果。
 
 ## 4.2 NAS 后端（已决策）
 
@@ -268,22 +306,22 @@ AI 服务策略（已确认）：AI 始终由客户自行配置服务商、API �
 - PostgreSQL 提供事务、并发和索引能力；
 - 数据访问使用参数化 SQL（可用 pgx/sqlc），不引入重型 ORM。
 
-后端模块建议：
+已存在目录入口（不补造media/importexport服务）：
 
 ```text
-cmd/server
-internal/
-├── auth          # 注册、登录、token、密码策略
-├── family        # 家庭组、邀请码、角色权限
-├── inventory     # 商品、批次、消耗、库存规则
-├── reminder      # 提醒查询和设置，不负责手机通知发送
-├── shopping      # 采购清单
-├── sync          # push/pull、cursor、冲突
-├── media         # 图片元数据和文件访问
-├── homeassistant # 外部 HA 连接、发现、实体权限和受控命令
-├── importexport  # JSON/CSV 备份与恢复
-└── platform      # 配置、数据库、日志、健康检查
+backend/cmd/momo-backend         # composition root、serve/migrate/healthcheck
+backend/internal/
+├── auth、family、syncdevice     # 认证、家庭与设备授权
+├── inventory、sync             # 库存命令、push/pull、checkpoint/冲突
+├── homeassistant、securetoken  # 外部HA及凭据加密
+├── httpapi                     # HTTP解析/认证/业务路由
+├── store                       # PostgreSQL repositories
+└── platform                    # 配置、DB、migration、错误/健康检查
 ```
+
+提醒/采购数据通过现有同步/持久化路径处理，不为形式完整拆新服务；客户端核心JSON不是后端全量备份接口。
+
+---
 
 ## 4.3 部署
 
@@ -366,7 +404,7 @@ Data
 | Date Rules | 日期双向计算、日期精度 | P0 |
 | Consumption | 消耗/补充/调整及审计记录 | P0 |
 | Category | 系统/个人/家庭二级分类 | P0 |
-| Reminder | 临期/过期/开封后/低库存 | P0 |
+| Reminder | 临期/过期/低库存；开封后规则当前不支持 | P0 |
 | Shopping | 采购清单和来源 | P0 |
 | History | 历史批次、常用商品 | P0 |
 | Media/OCR | 图片压缩、OCR、资源生命周期 | P1 |
@@ -374,7 +412,7 @@ Data
 | Sync/Family | 账号、家庭成员、同步 | NAS P0 |
 | Theme | 主题配置、文案和资源 | P0/P2 |
 | AI | 日期解析、视觉识别、自然语言、建议 | P0-P2 |
-| Import/Export | JSON/CSV 备份恢复 | P1 |
+| Import/Export | 核心JSON备份恢复；CSV为范围外 | P1 |
 
 ### 5.3 主题资源策略
 
@@ -408,8 +446,8 @@ Data
 - 家庭数据隔离和服务端参数校验；
 - 领域数据持久化、事务和同步 change log；
 - 同步幂等、游标、冲突记录、设备管理；
-- NAS 文件元数据及授权访问；
-- 可选的 Ollama/条码 API 代理；
+- 外部Home Assistant凭据、实体授权与typed control；
+- 不运行/代理AI、Ollama或条码服务；NAS媒体上传未实现，capabilities明确为false；
 - 健康检查、迁移、日志和备份说明。
 
 ## 6.3 必须由后端校验的内容
@@ -420,172 +458,94 @@ Data
 - 商品/批次关联存在；
 - 邀请码有效期、使用次数和成员上限；
 - 同步版本、幂等键和删除权限；
-- 上传文件类型、大小和访问授权。
+- 若未来批准文件上传，再设计类型/大小/授权；当前无上传接口，不能把预期校验当现有能力。
 
 ---
 
-# 7. 数据设计
+# 7. 数据设计：当前存储与未决迁移
 
-## 7.1 客户端核心实体
+## 7.1 本地已存在的存储
 
-保留 PRD 的 `products`、`product_batches`、`consumption_records`、`shopping_list`、`categories`、`reminder_settings`、`local_product_cache`、`ai_*` 等实体，但建议做以下调整：
+以 `lib/core/database/app_database.dart` 为结构来源，Drift schemaVersion为5；1→2提醒确认、→3媒体/条码缓存、→4同步字段及状态表、→5本地OCR FTS。实际升级需回归验证，不直接编辑生成的 `.g.dart`。
 
-### products
+| 存储 | 当前职责 | 约束/边界 |
+| --- | --- | --- |
+| products / product_batches | 商品与批次；初始/剩余数量、日期来源/精度、报废与服务端版本 | UUID稳定；无expiry仍可参与库存；不预设已存在workspace_id分库隔离 |
+| stock_movements | 本地入库/消耗/补充/报废历史 | NAS历史恢复未全覆盖，不能当成已完成的双向consumption_records |
+| shopping_entries | 采购目标、完成状态与同步元数据 | 确认购买打开草稿，不直接伪造入库 |
+| reminder_acknowledgments | key+fingerprint+确认时间 | 独立于库存动作，低库存新周期重新出现 |
+| app_settings | 普通配置、稳定local_workspace_id、AI会话、分类绑定/提醒覆盖、pending bootstrap/冲突结算与刷新revision | 密钥不写此处；家庭scope仅是特定设置隔离，不能声称整库已隔离 |
+| sync_states / sync_outbox | bootstrap、双cursor、版本/错误/退避；待发送内容、ID/key、状态与回执 | scope范围；业务写入+outbox、receipt+安全cursor应原子；失败审计不删除 |
+| sync_conflicts / sync_applied_changes | 冲突及本地结算、已应用change去重 | scope+change_id去重；resolved证据不冒充原命令accepted |
+| media_assets / media_ocr_fts | 本地文件位置/类型/hash、关联、OCR与本地检索 | 沙盒路径不是跨设备URL；无NAS upload_state/对象上传承诺 |
+| barcode_lookup_cache / AI用量设置 | 可清理缓存/日志 | 不用缓存命中冒充实时上游可用 |
+| 系统安全存储 | NASToken/来源binding、用户AI Key | 不导出至核心JSON；顺序写删与会话失效保护 |
 
-- `id`：客户端生成 UUID，NAS 模式下保持不变；
-- `barcode` 可空；
-- `name` 必填；
-- `brand`、`specification`、`category_id`、`notes`；
-- `identity_key`：用于无条码候选匹配，不作为绝对唯一约束；
-- `workspace_id`/`family_id`；
-- `created_by`、`updated_by_device`、时间戳；
-- `deleted_at`、`sync_state`、`version`。
+本轮不新增本地表或schema。未来工作区/灾备审阅/日期协议改动须独立提供迁移、旧版本兼容和回滚方案，获批后才实施。
 
-### product_batches
+## 7.2 NAS已存在的数据与版本
 
-- `product_id` 外键；
-- 日期字段允许按确认后的规则为空；
-- `date_source`、`date_precision`；
-- `quantity`、`initial_quantity`、`unit`；
-- `opened_date`、`expiry_after_opening`；
-- `status`：active / used_up / expired / discarded；
-- `storage_location`、`supplier`、`price`；
-- 同步字段同上。
+`backend/migrations/0001`～`0006`和 `backend/internal/store/` 定义账号/家庭/设备、商品/批次/采购/分类/提醒、库存历史、change_log、幂等/冲突、HA连接/实体权限及耗材联动基础；后端查写以服务端认证的familyID限定，不能信任客户端提供的家庭归属。
 
-### consumption_records
+- `0005`的新记录30天默认和全局change_log提交排序，`0006`的initial_quantity下界补修，遵守AC-014与后续决策记录；不改已应用checksum。
+- 客户端收到权威quantity/serverVersion并不自动证明历史、分类和全部HA实体已完整映射。无法安全映射时失败并保留cursor。
+- wire schema/protocol 1/1不是PG migration序号；capabilities配置和数据库已应用migration需分别验证，schema readiness尚未落地。
 
-- 作为追加记录；
-- `quantity_change` 允许正负，但通过 record_type 约束语义；
-- `idempotency_key` 防止重试重复记账；
-- `batch_id`、`created_by`、`device_id`。
+## 7.3 生命周期与备份范围
 
-### media_assets（建议新增）
+普通同步编辑/软删除保留稳定ID及版本；已接受/未知库存命令按原ID/key处理；冲突保存审计与精确结算证据，不清队列强行收敛。物理清理和跨设备保留期限未定，不新增默认删除任务。
 
-| 字段 | 说明 |
-|---|---|
-| id | UUID |
-| owner_scope | local / family |
-| entity_type/entity_id | 关联商品或说明书 |
-| local_path/object_key | 文件位置，不存大文件本体 |
-| mime_type/size_bytes/width/height | 文件元数据 |
-| sha256 | 去重与完整性校验 |
-| upload_state | local_only / pending / uploaded / failed |
-| created_at/deleted_at | 生命周期 |
+核心JSON采用现有 `BackupFormat` v3、兼容v1/v2，先整体验证再事务补缺；coverage可选，不能改变旧格式解析。业务文本/AI会话可能含个人信息；凭据、NAS/HA绑定、outbox/cursor、媒体/OCR均排除，目标身份保留。媒体清理与保存仅同isolate协调，不构成跨进程保证。
 
-### outbox_changes（建议新增）
-
-保存待上传的实体变更、操作类型、幂等键、重试次数和最后错误。与 `sync_meta` 配合或替代其职责，不能只依赖整表 hash。
-
-## 7.2 服务端实体
-
-除 PRD 已有的 users、families、family_members、sync_devices、sync_log 外，至少需要：
-
-- products；
-- product_batches；
-- consumption_records；
-- shopping_list；
-- categories；
-- reminder_settings；
-- media_assets；
-- change_log；
-- conflict_records（建议）。
-
-所有家庭级业务表必须有 `family_id` 和合适索引，服务端查询必须在 SQL 层带上家庭范围条件。
-
-## 7.3 数据生命周期
-
-- 普通编辑：更新版本和时间戳；
-- 删除：软删除并进入同步队列；
-- 同步确认：客户端标记已同步；
-- 冲突：保留服务端版本与客户端版本摘要；
-- 媒体删除：先删除元数据引用，文件异步清理；
-- AI 日志：用户可清除，默认不上传；
-- 数据库备份：NAS 必须说明 PostgreSQL dump/恢复和文件卷备份的配对关系。
+NAS在线dump及现有restore不等于完整应用灾备。配套密钥、manifest、异地副本、epoch和隔离恢复仅按DR提案推进；不拿核心JSON代替完整本地恢复现场。
 
 ---
 
-# 8. API 设计（建议）
+# 8. API契约与适配边界（已存在接口，非新增提案）
 
-API 为提案，后续需由后端实现时固定版本前缀，例如 `/api/v1`。
+接口前缀固定 `/api/v1`。路由依据 `backend/internal/httpapi/handler.go` 和 `platform/server.go`；字段依据领域DTO和 `lib/domain/models/nas_*`，详细NAS契约引用 `docs/nas/`，不以历史示例覆盖源码。下述“有路由”不代表App端全部闭环或真实联调通过。
 
-## 8.1 认证与家庭
+## 8.1 认证、家庭与设备
 
-### `POST /api/v1/auth/register`
+- `POST /auth/register`、`POST /auth/login`、`POST /auth/refresh`、`POST /auth/logout`；注册使用email/password/nickname，可携带device信息；Token只在安全存储按endpoint会话使用。
+- `GET /me`读取用户/家庭membership/设备；`POST /families`、`GET /families/current`、`POST /families/invites`、`POST /families/join`、`GET /families/members`。
+- `/devices`及`/devices/{device_id}`用于设备登记/列表/撤销，具体方法与角色按现有handler；不要因文档权限矩阵便假定已有成员删除/改名客户端入口。
+- family/device归属由认证及后端资源校验决定。Token来源绑定不实现业务数据搬迁；成员/家庭切换见D-02。
 
-Request：`{ "email": "...", "password": "...", "nickname": "..." }`
+## 8.2 同步操作与版本校验
 
-Response：用户摘要、access token、refresh token。
+| 方法与路径 | 关键契约 | 调用/落库边界 |
+| --- | --- | --- |
+| GET `/capabilities` | schema_version、sync_protocol_version；media_upload/ai_proxy/ollama_embedded为false | 不创建checkpoint；业务claim/push前验证1/1；非schema readiness |
+| GET `/sync/bootstrap?device_id=…` | snapshot、server_cursor、checkpoint、available_modes、版本 | 一致读；暂存不是已合并，不因无snapshot清刷新要求 |
+| POST `/sync/bootstrap/confirm` | mode/device_id/local_workspace_id/snapshot_cursor/checkpoint；accepted/next_action/回执cursor | 用户明确选择join_and_merge/create_new_family/keep_local_only；比较原checkpoint和模式 |
+| POST `/sync/push` | device_id/base_cursor、1～100 changes；四种operation，change_id/idempotency_key等 | accepted/replayed/conflict/rejected逐条匹配；pushAckCursor不是pullCursor |
+| GET `/sync/pull?device_id=…&cursor=…&limit=…` | 1～500 limit；changes/next_cursor/has_more | 先整页校验，再业务/receipt/安全cursor提交；失败变化之前停止 |
+| GET `/sync/conflicts`、GET `/sync/conflicts/{id}` | device范围、status/limit/offset、原resolution证据 | 最近记录不是完整历史归档；超出可恢复证据时保守阻塞 |
+| POST `/sync/conflicts/{id}/resolve` | action/device等、服务端版本/权限及真实回执 | 接受后才能本地结算；人工解决不重排原幂等命令，要求新快照 |
 
-### `POST /api/v1/auth/login`
+operation为entity_upsert、entity_delete、inventory_command、home_assistant_command，不使用通用entity_upsert伪装库存增减/HA物理动作。传输超时未知结果与业务rejected不同；未知重试原ID/key，失败不丢审计。当前协议没有server_instance_id/restore_epoch，不能检测同URL旧库恢复；D-07批准后需另做wire兼容方案。
 
-Request：邮箱和密码。Response：token 对。
+## 8.3 平台与Home Assistant
 
-### `POST /api/v1/auth/refresh`
+- `GET /health`：DB连通200/503、2秒probe；`GET /version`：app/api/schema版本；不泄漏配置/密钥，不宣称迁移或业务就绪。
+- `/home-assistant/integrations`及单integration的test/discover；entities列表、单实体state/commands；permissions。实体目标需integration_id+entity_id与家庭权限同时匹配，commands只接受typed白名单。
+- 耗材组、配方、联动规则/建议/事件已有后端路由；scene/script与App配置、HA事件来源/监听和库存闭环仍按缺口追踪，路由存在不证明全链路完成。
+- 当前无NAS `/barcode`、`/ai/chat`、`/ai/ollama/status`或media presign/complete；不实现代理，不把历史示例当待补接口。
 
-Request：refresh token。Response：新的 token 对。
+## 8.4 错误、重试及隐私
 
-### `GET /api/v1/me`
+现有错误包络使用error.code/message/details/request_id；App以 `NasApiError` 分辨网络、认证、权限、校验及非法响应。不展示上游原始Token/响应，request_id仅用于脱敏诊断；业务冲突可能是push回执的一部分，不能只以HTTP 2xx判断成功。
 
-返回当前用户、当前家庭和设备信息。
-
-### `POST /api/v1/families`
-
-创建家庭组并返回 owner 身份。
-
-### `POST /api/v1/families/join`
-
-Request：邀请码。后端校验有效期、使用次数、成员上限。
-
-### `GET /api/v1/families/members`
-
-需要家庭成员权限；增删改成员需要 owner/admin 权限。
-
-## 8.2 同步
-
-### `POST /api/v1/sync/push`
-
-Request：设备 ID、客户端 cursor、变更数组、每条变更的 idempotency key、entity、operation、version、payload。
-
-Response：接受结果、冲突数组、服务端 cursor。
-
-### `GET /api/v1/sync/pull?cursor=...&limit=...`
-
-Response：变更数组、新 cursor、是否还有下一页。客户端按 cursor 持久化，不能按时间戳猜测是否同步完成。
-
-### `GET /api/v1/sync/bootstrap`
-
-首次连接获取家庭数据快照、服务端 cursor、schema 版本和合并提示信息。
-
-不建议把 `/sync/conflict` 设计成客户端随意调用的独立接口；冲突应在 push 响应中返回，若需要人工选择，再提供带权限和版本校验的 resolution 接口。
-
-## 8.3 辅助接口
-
-- `GET /api/v1/health`：健康检查，不泄漏敏感信息；
-- `GET /api/v1/barcode/{barcode}`：可选后端条码代理；
-- `GET /api/v1/ai/ollama/status`：可选 Ollama 状态；
-- `POST /api/v1/ai/chat`：可选代理，必须有超时、大小限制和审计；
-- `POST /api/v1/media/presign` / `POST /api/v1/media/complete`：若 NAS 文件上传采用分步流程。
-
-## 8.4 统一错误格式
-
-```json
-{
-  "error": {
-    "code": "SYNC_CONFLICT",
-    "message": "数据版本冲突",
-    "details": {},
-    "request_id": "..."
-  }
-}
-```
-
-错误码至少覆盖：认证失败、无权限、参数校验失败、资源不存在、版本冲突、服务暂不可用、AI 未配置、外部 API 超时、导入部分失败。
+版本不兼容（SYNC_VERSION_INCOMPATIBLE）不自动claim/推送；无权限、业务拒绝、未支持字段/模式不应进入自动忙循环。可重试网络错误遵守引擎退避；认证刷新单飞、失效会话禁止回写。超时不能视为未执行，更不能给物理HA动作生成新key盲目重放。
 
 ---
 
 # 9. 前端页面与状态
 
 ## 9.1 页面关系
+
+> 本图包含后续产品方向；scene/script、混合联动等未闭环部分不表示已可操作。已接入操作的当前反馈与保护见15.3，不据本图重设计既有UI。
 
 移动端采用“4 个核心入口 + 中央突出 AI 助手”主导航体系：
 
@@ -643,7 +603,7 @@ App Shell (底部导航 / 大屏 NavigationRail)
 
 ### 提醒页
 
-- 分类：临期、过期、开封后临期、缺货；
+- 当前分类：临期、过期、库存偏低；开封后仅为后续方向，不提供虚假规则；
 - 排序：紧急程度、到期日期；
 - Empty：明确“当前无待处理提醒”；
 - 通知权限未开时提供设置引导。
@@ -670,9 +630,9 @@ App Shell (底部导航 / 大屏 NavigationRail)
 3. 批次数量不得小于 0；MVP 支持整数件，不支持小数单位；
 4. 消耗默认采用 FEFO（最早到期优先），允许用户改选；
 5. `used_up` 由数量为 0 触发；`expired` 由日期计算产生，但已用完/已丢弃状态优先保留；
-6. 提醒必须排除已用完、已丢弃和未设置效期的批次；用户标记已处理时写入独立确认记录，展示/通知过滤必须同时匹配提醒 key 和 fingerprint；
+6. 效期提醒排除已用完、已丢弃和未设置效期批次；无效期批次仍参与库存与低库存计算。确认只写独立记录，过滤匹配key和fingerprint；
 7. 低库存按商品维度汇总所有有效批次的总量触发，不按单个批次触发；
-8. 任何 AI 结果先进入草稿，用户确认后才落库；
+8. AI入库提取只能进入草稿；授权库存建议须显示真实计划逐次确认，复用业务服务，不执行模型任意工具；
 9. 本地模式所有核心功能不依赖网络；
 10. NAS 不可用时，本地写入继续成功，变更进入 outbox，恢复后自动重试；
 11. 家庭成员删除权限由后端强制执行，不能只靠前端隐藏按钮；
@@ -688,8 +648,8 @@ App Shell (底部导航 / 大屏 NavigationRail)
 - 生产日期 + 保质期、到期日期 + 保质期的双向计算；
 - 连续扫码/拍照录入；
 - 消耗、补充、用完状态转换；
-- 临期、过期、低库存和开封后提醒；
-- JSON/CSV 导入导出；
+- 临期、过期、低库存与策略继承/关闭；开封后输入按未支持拒绝；
+- 核心JSON v1～v3兼容、身份净化和SQL失败回滚；CSV为范围外；
 - NAS 注册、建家庭、邀请码加入、push/pull 同步。
 
 ## 11.2 边界与异常
@@ -728,20 +688,17 @@ App Shell (底部导航 / 大屏 NavigationRail)
 - API Key、商品图片和药品说明书的隐私风险；
 - AI 幻觉、提示注入和医疗安全风险；
 - 未来公开发布时，哆啦A梦/容嬷嬷等主题的版权/商标风险；
-- Ollama 在 DX4600 上的内存和推理速度限制。
+- 用户自建AI的可达性、费用和性能；NAS不托管Ollama，不将其资源指标作为NAS承诺。
 
 ## 12.2 NEEDS_CONFIRMATION
 
-以下事项仍需在对应功能进入编码前确认：
-
-1. 说明书外部链接站点和内容责任边界；
-2. 是否需要消耗统计图表和社区共享数据库。
+统一以REQUIREMENT第13节D-01～D-08及灾备DR表为准。说明书检索/统计已接入，不再笼统列为未开发；来源责任、社区共享与发布范围仍待确认。工作区/首次迁移/时区/网络/readiness/恢复方案不得从代码反推批准。
 
 嬷嬷/哆啦A梦主题在当前个人本地使用与私有设备验证边界内已确认；未来公开发布前仍须按 Q-012 重新审查。
 
 ---
 
-# 13. 推荐实施顺序
+# 13. 历史实施顺序与后续能力（当前入口见15.5）
 
 ## Phase 0：工程基线
 
@@ -778,7 +735,7 @@ App Shell (底部导航 / 大屏 NavigationRail)
 - 网络恢复 debounce、自动重试和依赖阻塞排序。
 
 
-### 4.1 AI 三级降级机制与容灾调度 (Fallback Pipeline)
+### 13.1 AI三级降级机制（历史方案，当前配置测试/超时规则优先）
 
 为保障 AI 能力（入库草稿提取与智能库存问答）在各种复杂网络与上游波动下的可用性，系统支持「主 API → 副 API → 兜底模型」三级自动降级机制：
 
@@ -788,7 +745,7 @@ App Shell (底部导航 / 大屏 NavigationRail)
    - 主、副均不可用时，自动降级到轻量/备用兜底模型（Fallback）；
    - 降级流程对业务上层调用方（如 `AiDraftService`、`AiAssistantService`）透明，统一交付标准响应。
 2. **失败判定标准**：
-   - 网络异常 / 连接超时（默认超时 > 5s 即判定为失败）；
+   - 网络异常/连接超时；当前默认单请求60秒（9月22日决策优先），不是整条降级链的固定总预算或5秒承诺；
    - HTTP 状态码非 2xx（如 429 限流、500/502/503 服务异常）；
    - 返回内容为空、格式解析失败或缺少必需字段；
    - 触发敏感/异常关键词校验。
@@ -796,7 +753,7 @@ App Shell (底部导航 / 大屏 NavigationRail)
    - 每次调用均在 `AiExecutionAttemptLog` 中记录：所用级别、生效模型、耗时（ms）与失败原因；
    - 若三级 API 均告失败，输出 error 级别日志并统一抛出 `AiFallbackException` 标准错误结构。
 
-### 4.2 通用外部服务降级
+### 13.2 通用外部服务降级
 
 - AI 与条码查询共用通用降级执行器，统一处理非空配置筛选、主 → 副 → 兜底的顺序、单次耗时及全链路失败；协议构造、响应解析和业务校验仍保留在各自服务内。
 - 条码查询预配免费的 Open Food Facts 第三方接口，但默认关闭；启用后才发送条码。副服务和兜底服务均为可选项；确认“查无此商品”不是故障，不再继续切换服务。
@@ -813,7 +770,7 @@ App Shell (底部导航 / 大屏 NavigationRail)
 
 # 14. 结论
 
-PRD 的产品方向清晰，核心闭环也成立：**录入 → 管理批次 → 提醒 → 消耗 → 补货**。当前最大问题不是功能缺失，而是范围过大，以及数据同步、日期规则、凭据安全、数据库部署四个基础决策尚未收敛。
+产品核心闭环为：**录入 → 管理批次 → 提醒 → 消耗 → 补货**。Flutter/PG、本地日期规则、整数件、用户自配AI和安全存储已有既定边界；当前阻塞是App编译/测试、同步覆盖与跨工作区/时区缺口、运维恢复门禁及真实验收，不能再笼统写为所有基础决策未收敛。
 
 Flutter、NAS PostgreSQL、允许无到期日期商品入库、首次连接由用户选择家庭/新增家庭、整数件库存、按商品总量触发低库存、AI 始终由客户自行配置 Key，以及“default 默认启用、momo/doraemon 随包提供并在主题中心作为备选”均已确认。当前单机核心、条码扫描、图片/本地 OCR、说明书外部搜索/本地 OCR 问答、用户自配 AI 辅助能力、统计图表、采购建议基础、HA 耗材联动基础与 NAS 同步主要代码均已落地；社区共享数据、部分实体同步覆盖和真实环境联调仍需后续完成或验证。**superseded（snapshot 历史状态）**：当时跨实体全事务未完成，现已落盘事务应用/完成标记方案但尚未验收，不能认定完整同步完成。当前主题仅限个人本地使用和私有设备验证，未来公开发布前仍需重新完成授权/合规审查。
 
@@ -899,3 +856,151 @@ Flutter、NAS PostgreSQL、允许无到期日期商品入库、首次连接由�
 
 NAS 初始量定义为累计入库的安全下界：restock 在锁定旧行上增加 initial，consume/discard 不减少；0006 以保留历史的方式补修偏小下界并发布版本化完整日志，客户端保持 `quantity <= initial_quantity` 校验。
 冲突 resolution 回执不是原 outbox command 的 accepted 回执：保留旧失败记录，用 app_settings 匹配结算证据解除特定阻塞；同事务持久 scope 刷新 revision。原幂等命令不再发送。完成 bootstrap 后也须 fetch 新快照并确认，不能靠 keep_remote 后的空 pull 收敛乐观库存。完成业务事务比较精确 revision、checkpoint、mode 和 scope 静默，再原子提交 cursor 与清理标记。权威 snapshot 允许商品/采购与 tombstone 同版本纠正，普通增量不放宽。迁移、兼容、回滚与测试限制详见 `docs/IMPLEMENTATION_DECISIONS_2026-10-07.md` 第 8 节；保留现有 UI，只接原按钮与错误/待刷新反馈。
+
+## 2026-10-08：打包失败诊断与最小修复设计（未实施）
+
+### 目标、证据与范围
+
+目标：恢复 AC-008 的分析、测试、Android/iOS 构建及后续发布链路，不撤销既有会话隔离、同步冲突和快照保护。本节为诊断及拟实施方案，不代表代码已修复。
+
+- 核实的失败运行：[GitHub Actions #25](https://github.com/DavisDing/MomoBox/actions/runs/37746191082)，2026-10-08 15:52:55（Asia/Shanghai）启动，attempt 1，main 提交 `0d52280c4f7d65af2c8c9077a9a57aec78be7cc9`；本地 HEAD 与其一致。
+- [Flutter job](https://github.com/DavisDing/MomoBox/actions/runs/37746191082/job/113208174224) 在 `flutter analyze` 失败：30 个 error、21 个 info，共 51 项。单元测试及 Android debug build 未执行。
+- [iOS job](https://github.com/DavisDing/MomoBox/actions/runs/37746191082/job/113208174092) 完成 SDK 选择、依赖解析、Drift 生成和 config-only；实际构建在 Dart kernel 编译阶段因下述两处业务源码错误失败，随后 Xcode 退出码 65。现有证据不支持将该错误归因于签名、CocoaPods 或 Xcode SDK。
+- [后端 job](https://github.com/DavisDing/MomoBox/actions/runs/37746191082/job/113208174102) 的 Go 测试（配置 PG16 测试 URL）及 vet 通过；Prepare pipeline 也通过。Release 包和镜像/Release 发布被前置失败阻断，均 skipped，不是 Docker 构建失败。
+- 两处编译错误在合并前的 `1ad1cc8` 已存在；这些文件与合并后的 HEAD 无内容差异。因此不能把本次失败认定为合并丢失修复。
+
+范围外：业务/UI 重设计、依赖升级、数据库迁移或清理、放宽权限/版本/cursor 校验、修改 CI 门禁、提交/推送或部署。当前仅更新本设计文档。
+
+### 拟拆分修复任务与入口
+
+1. **同步编译阻塞（P0；两个 App 平台共同根因）**
+   - `lib/application/sync_scheduler.dart:219`：`_execute` 的命名参数组关闭 `}` 后还有逗号，触发 `expected_token`。按正常多行形参格式保留 `automatic` 必填项和调用契约，逗号放在命名参数组内，不改调度行为。
+   - `lib/application/sync_engine.dart:395`：`mode` 为 `String?`，现有字符串白名单判定不足以令分析器在该调用点提升为 `String`。在既有拒绝分支显式检查 `mode == null`，然后保留 `join_and_merge/create_new_family` 白名单，非空后才推送/刷新。不得默认为某个同步模式，也不放宽 `_refreshSnapshotAfterPush(String mode)` 的接口。
+   - 保留 push 前刷新标记、事务内模式复核、网络返回后的 checkpoint/revision 比较、keep_local_only 的中断能力；不为通过编译移除竞态保护。
+2. **测试编译阻塞（P0；不涉及业务模型变更）**
+   - 27 个 `ambiguous_import` 来自 Drift 和 flutter_test 同时导出的 `isNull/isNotNull`。涉及 `test/application/media_service_test.dart`、`test/application/sync_outbox_repository_test.dart`、`test/data/backup_migration_boundary_test.dart`、`test/data/conflict_authoritative_snapshot_test.dart`、`test/data/inventory_authoritative_snapshot_test.dart`。
+   - 建议仅在这些测试的 Drift 导入使用 `hide isNull, isNotNull`，保留 matcher 断言；逐文件检查 SQL 表达式调用，必要时采用前缀，不能删断言或排除测试文件。
+   - `test/data/backup_migration_boundary_test.dart:523` 创建 `SyncStatesCompanion.insert` 缺少必填 `updatedAt`。使用固定 UTC 测试时间补齐 fixture；`SyncStates.updatedAt` 在现有表定义中无默认值，不修改 schema 或生成文件来适配测试。
+3. **现有 lint 清理（P1；随同修复，保持 analyze 门禁）**
+   - 13 个 `curly_braces_in_flow_control_structures`：为日志指定的 scheduler、outbox repository、NAS account controller、home/smart home/sync settings screen 分支补花括号，保持 early return 和回执保留条件完全不变，不改页面布局。
+   - 7 个 `use_super_parameters`：仅调整 media/sync business adapter/sync engine/home HA 测试子类的构造器转发，保留附加构造参数。
+   - 1 个 `unnecessary_import`：删除 `test/presentation/backup_operation_lock_test.dart` 已由 Flutter services 提供的重复 typed_data 导入。
+   - 不通过 `--no-fatal-infos`、ignore、排除目录或关闭测试门禁掩盖问题。
+
+任务 1、2、3 可按文件所有权拆分；任务 1 和任务 3 都涉及 scheduler，宜交同一实施者以免互相覆盖。不新增模块、依赖、数据契约或页面状态。
+
+### 验收与下一阶段入口
+
+实施后先执行平台壳生成、`flutter pub get`、`dart run build_runner build --delete-conflicting-outputs`，再执行以下顺序；SDK 缺失时须由 CI 验证，不能将源码复核当成功：
+
+1. 使用与本次 CI 对齐的 Flutter SDK（日志为 stable 3.47.6），检查变更文件格式并运行 `flutter analyze`：退出码 0，已知 51 项消除，不增加 ignore。
+2. 运行相关同步、outbox、快照、备份回滚、媒体、账号会话、HA 和备份锁回归，再运行 `flutter test --reporter expanded` 全套，保持原有测试断言。重点确保 null/非法模式不推送、不自动确认、不推进 cursor，合法模式仍能刷新；运行中 keep_local_only 不死锁。
+3. 运行 `flutter build apk --debug` 和现有 iOS unsigned xcodebuild（保留 Xcode 27/iOS 27 下限）；两者必须实际成功，不以 config-only 代替构建。iOS 无签名构建通过也不等于真机安装验收。
+4. 新提交须全套 CI 通过，再核实版本化 APK/AAB、NAS Compose/env、校验和及双架构镜像实际产出；当前后端 job 的成功不能替代新提交或发布验证。
+
+当前诊断与修复入口明确，无新增业务决策待确认；**进入业务代码实施仍需用户明确要求**。本轮未修改业务代码、未重跑 CI、未提交/推送。建议在新 CI 通过后为 AI_CONTEXT/VALIDATION 增补按 commit/run 标识的验证记录，不把历史“未验收”整段改成“全部通过”。
+
+# 15. 当前App/NAS收尾设计与验收映射（2026-10-08）
+
+## 15.1 模块责任与修改入口
+
+复用现有分层，不添加“恢复中心/通用任务总线”等架构层。下面是当前代码职责及后续修复入口，不表示这些入口已经通过编译和运行验收。
+
+| 模块/入口 | 责任 | 禁止承担的隐含责任 |
+| --- | --- | --- |
+| `lib/application/inventory_service.dart`、`data/repositories/inventory_repository.dart` | 校验数量/FEFO，提交业务及outbox，适配权威库存 | 不从UI或AI直接写数量，不以远端snapshot覆盖未解决本地意图 |
+| `lib/application/nas_auth_service.dart`、`services/nas_credentials_service.dart`、`data/nas/nas_api_client.dart`、`presentation/controllers/nas_account_controller.dart` | endpoint/session生命周期、刷新单飞、安全存储及账号反馈 | 不清业务库；不将Token来源绑定当业务工作区/灾备身份 |
+| `lib/presentation/controllers/providers.dart`、`lib/app/momo_box_app.dart` | 同数据库装配、被动构造scheduler、App start/stop与会话/队列重绑 | provider构造不偷偷发请求；测试独立override不能触发无意自动同步 |
+| `lib/application/sync_scheduler.dart`、`sync_execution_coordinator.dart` | 前台触发/合并/延迟与有界续跑；同DB实例/scope串行run/bootstrap | 不重新排队rejected，不以deferred自触发，不宣称跨进程锁/常驻后台 |
+| `lib/application/sync_engine.dart`、`sync_business_adapter.dart`、`data/repositories/sync_outbox_repository.dart` | 兼容、claim/push/pull、checkpoint、结算/快照及cursor安全 | 不绕过mode/冲突、不把resolved冒充原命令成功，不跨历史盲重放 |
+| `lib/data/nas/nas_sync_api.dart` | DTO/HTTP/超时与会话有效性检查 | 无调度/业务库写入；Token provider返回null不回退旧Token |
+| `lib/presentation/screens/sync_settings_screen.dart` | 手动同步、模式确认、冲突处理及真实进度/错误 | 不直接另起独立runOnce，不将partial报告标完成，不替用户选bootstrap |
+| `lib/application/media_service.dart`、`data/repositories/media_repository.dart`、`services/media_storage_service.dart` | 文件+元数据、OCR/重关联/清理序列化 | 不上传原图/搬迁附件，不把一天草稿保护当长期归档 |
+| `lib/presentation/screens/settings_screen.dart`、`application/backup_service.dart`、`data/repositories/backup_repository.dart` | 通知恢复、备份owner锁、验证/净化与事务导入 | 不在备份中携带身份/队列，不用测试通知状态刷新清业务通知 |
+| `backend/cmd/momo-backend/`、`internal/platform/` | 配置/组装、HTTP drain、DB/健康探测、migration | serve/health目前不证明schema readiness，不能按健康自动批准恢复开放 |
+| `deploy/nas/docker-compose.yaml`、`deploy/nas/scripts/` | 双服务/固定镜像、备份/恢复/更新和目录锁 | 目录锁不冻结业务写入，不提供跨主机fencing或无损恢复保证 |
+
+## 15.2 关键数据流与一致性边界
+
+### A. 本地操作 → 幂等推送 → 权威收敛
+
+1. 用户/已授权AI计划经业务服务校验，Drift业务写入与需要的outbox同事务提交；单机无NAS仍可完成库存，原有数据不会因连接失败消失。
+2. scoped已提交pending请求变化触发300ms debounce；启动/恢复、750ms网络恢复debounce及前台约1分钟检查复用scheduler。计时是当前源码参数，不是产品SLA。
+3. 同DB实例/scope的runOnce与bootstrap通过coordinator串行；同引擎重入合并。confirm保留中断能力，不能放进同一排队锁造成keep_local_only与悬挂bootstrap死锁。
+4. 引擎检查就绪/退避、capabilities 1/1、当前会话和已选mode后才claim/push；每批最多100，未知回执保留原operation/change ID和key。
+5. 需权威快照时先事务持久化refresh_required，再推送；scope静默后fetch一致快照并confirm当前checkpoint。事务内前/后复核mode、pending、冲突刷新revision，业务/数量/version/完成标记/cursor原子提交。
+6. maxPush截断、失败审计、未解决冲突保护scope；只有`hasMorePending`或无deferred且`hasMoreRemote`才250ms有界续跑（最多8轮），后台/offline/dispose停计时。达到边界保留队列，不伪造完成。
+
+### B. 增量拉取与页面错误
+
+先整页结构验证，确认排序、ID唯一与nextCursor进度后才调用业务适配；应用变化与相应receipt/安全cursor按既有事务边界提交。已安全应用的前序变化可保留，后续冲突/未支持变化必须停止在安全cursor，不跳过它，不声称整页/整轮成功。
+
+单run至多100页，剩余页返回hasMoreRemote并有界续跑；尾页前不更新整轮lastSuccessAt。scope未静默时不以普通pull规避snapshot保护；普通实体upsert不转成库存命令。epoch尚未实现，该流程只适用于既有同历史会话。
+
+### C. 登录/切服务器/退出
+
+规范化endpoint（scheme/host/port/path）匹配安全存储binding；凭据写入有序并以binding作为提交标记。请求与页面均绑定session generation，切换/登出立即失效；旧传输实例只读取原会话，不借新服务器Token执行旧请求。存储失败和晚到刷新也不重新启用旧会话。
+
+这只保护网络/凭据边界。当前商品/批次并非按workspaces分库，切家庭后如何处理已有业务是D-02；同URL旧dump恢复是D-07。两者不能靠清Token、清cursor或自动bootstrap替代设计。
+
+### D. 媒体、通知与核心JSON
+
+媒体操作在同isolate共享队列内完成保存、metadata/关联、OCR或删除/reconcile；异常按现有补偿处理，保留草稿与失败证据。通知授权/恢复读取最新真实库存和确认记录后重算，业务操作不依赖系统权限成功。
+
+JSON导入：owner锁覆盖picker→确认→校验→事务→报告/分享，退出仅由owner释放；先格式/数量/净化检查再整批事务补缺，SQL异常回滚并保留目标身份。导出不是媒体打包/灾备加密，聊天文本隐私提醒必须保留。
+
+## 15.3 UI操作与必要状态（不改既有视觉）
+
+本表定义状态语义，不要求新增页面或改变enum/布局；优先用既有状态栏、消息、按钮忙态和冲突入口呈现。
+
+| 场景 | 用户可做什么 | 必需反馈/保护 |
+| --- | --- | --- |
+| 未配置/未登录 | 配置、显式登录；继续单机 | 不宣称NAS在线；旧凭据无binding提示重新登录 |
+| bootstrap待选择 | 查看可选模式并确认；可保持本地 | 不默认选项；“确认成功”不等于“数据已合并” |
+| 同步执行中/有余量 | 手动尝试合并当前请求；看进度 | 防重复；partial、hasMore与deferred区别显示，旧会话报告丢弃 |
+| 不兼容/认证失败/退避 | 看原因、重新认证/换兼容版本/待退避后重试 | 不清队列，不以手动按钮绕过安全条件 |
+| 冲突/结算待刷新 | 服务端接受后本地结算/恢复原回执；拉新快照 | 保留失败审计；库存/HA不伪造通用manual_merge/keep_local |
+| 权限拒绝/恢复 | 打开系统设置，返回后补检 | 用最新数据重算；通知失败不妨碍库存 |
+| 备份忙/取消/失败 | 取消、看范围/隐私/结果；结束后重试 | owner互斥与mounted检查，取消不留锁，格式/SQL失败不部分导入 |
+| HA无权限/离线/不支持/在途 | 可用typed手动操作或明确未发送 | 不用Mock翻转设备，不让迟到旧controller结果覆盖新设备状态 |
+| NAS灾备恢复 | 当前只读保留现场并按独立处置计划操作 | epoch审阅UI未实现；不可用设计稿假称已有恢复功能 |
+
+原有导航、卡片、电源控件、主题受保护；scene/script/联动看板在第9节是方向结构，未接通部分只能说明不可用。任何灾备新UI需随D-07单独批准视觉例外。
+
+## 15.4 需求—设计—验证映射
+
+测试路径是源码入口，不是已通过证据；编译阻塞修复前不要将“有测试”记为PASS。
+
+| 验收 | 主要设计入口 | 回归入口/额外证据 |
+| --- | --- | --- |
+| AC-001～004、006、009～010 | Inventory/Intake、日期与本地辅助服务 | domain/application既有测试及Android16/17、iOS27首次/升级安装与断网回退 |
+| AC-005/011/018 | 提醒有效策略、确认指纹、settings授权恢复 | reminder_policy/repository/rules、notification_permission_recovery、local_notification_service测试；权限/时区实机 |
+| AC-007/020 | BackupFormat/Repository与owner锁 | backup_format、backup_migration_boundary、backup_operation_lock、backup_scope；真机picker/分享取消及SQL故障 |
+| AC-012～013 | SyncBusinessAdapter/Engine与精确revision提交 | sync_business_adapter/engine/outbox及快照专用回归；两个设备并发离线/冲突/迟到选择 |
+| AC-014 | PG 0005/0006与migration runner | backend store/platform测试，PG16配置执行；NAS存量库升级、连接缓存、锁等待/失败演练 |
+| AC-015 | NAS auth/credentials/transport/controller | nas_auth_service、nas_account_session、nas_api_client、nas_sync_api；换endpoint/登出晚到/安全存储失败 |
+| AC-016～017 | scheduler/coordinator/capabilities/pull | sync_scheduler、sync_engine、sync_scheduler_wiring及sync_settings_screen；连续余页、后台/断网、provider重建 |
+| AC-019 | MediaService同isolate序列化 | media_service、intake_draft_media；真实文件/元数据故障与清理重入 |
+| AC-021 | NAS typed control与当前controller/权限 | home_ha_quick_actions及backend HA契约；真实成员/实体、离线/超时，无高风险副作用 |
+| AC-022 | config/http_lifecycle/health与Compose | Go config/lifecycle/health测试；容器SIGTERM、长请求、慢DB及模板密钥拒绝 |
+| AC-008 / REQUIREMENT第12节 | pipeline与平台脚本 | 同commit全部CI、APK/AAB/镜像/附件校验和；安装签名/设备记录独立 |
+| D-02～D-07（未批准） | 独立工作区/首次导入/时区/运维/DR设计 | 先确认与细化迁移，再实施/故障注入；不列为现已通过AC |
+
+## 15.5 拆分与先后关系
+
+1. **编译修复包**：同步源码语法/nullable guard、测试导入/fixture、lint，按同日诊断拆分；共享scheduler由同一owner改。严格不改变mode/回滚保护，先恢复全量CI。
+2. **App验收包**：单机/媒体/通知/JSON/会话/调度回归与设备验收；测试故障不删用例，针对真实原因小修。
+3. **NAS验收包**：当前PG测试与多设备、权限/HAtyped control验收；首次基线/工作区/时区范围先确认D-02～04，不混入编译修复。
+4. **运维/灾备设计包**：D-05～07定案后才细化停写、readiness、恢复阶段和epoch协议。当前5项运维风险详见NAS_OPERATIONS_REVIEW，当前仅设计，不自行改脚本、secret或数据库。
+
+包2/3可按独立环境并行，但正式交付都依赖包1和D-01；D-07还依赖D-02/03及配套密钥/历史策略，不能先开放自动重初始化。建议优先单机与已接入窄增强，不以赶Release绕过未决隔离问题。
+
+## 15.6 重要风险、待决及AI_CONTEXT更新建议
+
+- **高价值阻塞**：未编译的源码无法进入设备验收；全库未按工作区隔离可能把原家庭数据带到新scope；首次基线/分类出站/历史缺口不能用清cursor“补齐”；UTC转换可能改变date-only含义。分别按诊断和D-02～04处理。
+- **运维边界**：在线dump后仍可有成功写入、restarting旧容器可能漏停、restore退出trap无条件重启、旧schema/会话/历史可能被恢复开放、HTTP原端口可能绕过代理。均是源码条件化风险，不是现场事故结论；最终备份/停写与失败隔离/候选库/epoch/TLS拓扑按D-05～07确认。
+- **性能与可用性**：全局cursor锁跨家庭竞争，health不等于migration readiness；连接池、请求体/日志/附件与实际备份容量预算应在目标NAS测量后定案（D-08），不编造吞吐、内存和RPO/RTO承诺。
+- **分发**：D-01需核对自动GitHub Release可见性及私有主题资源，构建通过不代表允许公开分发。本文不自动停/改流水线或批准授权资源替换。
+- **长期上下文建议**：AI_CONTEXT中“未验收”须按范围保留；可在实际确认后补“main 0d52280 / run #25 后端PG配置下测试+vet通过、App失败、发布skipped”的证据索引，并强调endpoint binding不隔离业务工作区、health不验证schema/epoch。该证据是临时进度，优先进VALIDATION，不大改长期事实。
+
+本次文档完成到“范围、职责、数据流、验收入口与建议明确”；D-01～08/DR方案尚未定案，不能称全部实施就绪。下一阶段仅在用户明确要求后开始对应实现，并在确认的数据/运维边界内工作。
