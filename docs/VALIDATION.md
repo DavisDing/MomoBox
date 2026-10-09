@@ -240,3 +240,30 @@
 - PASSED（实际执行）：平台准备脚本回归、版本计算脚本回归、NAS shell 自测；全部相关 bash/sh 语法检查；workflow/两个 Compose YAML 解析及 15 秒退出宽限核对；333 条本地 Dart 引用路径；冲突文件新版内容保持；空白/残留冲突检查。
 - NOT_EXECUTED：Flutter/Dart analyze/test/format/build、Go test/vet/gofmt/build、容器/真实 PG/NAS/设备。PATH 无相关工具，不安装依赖。轻量检查不证明编译或运行通过。
 - 操作范围为本地 merge 和旧分支清理；不自动 push、不部署，不将本地新代码说成已经进入 GitHub 主线。GitHub 上旧功能分支此前已删除，本次以远端实际 refs 复核。
+
+
+## 2026-10-09：run #26 App 编译阻塞最小修复（已改源码，运行待验证）
+
+### 起点与范围
+
+- 起点HEAD为 `02513dd6018aba9ab45b5d5ebda27f3437b2f3a1`，已有未提交修改仅为DESIGN中的run #26复核记录，已完整保留。
+- 历史CI run #26（2026-10-08，ID `37755341512`）的App静态分析/无签名iOS失败，后端/PG/vet通过，测试、Android及Release/镜像发布跳过。它不是本次修复后的验证。
+- 用户明确授权修复：修正scheduler参数语法和engine显式nullable guard，五个测试Drift导入的matcher歧义、一个必填时间fixture，以及日志中的13处花括号/7个super参数/1个重复导入。保留原测试断言、同步与冲突安全边界，不改依赖、schema、页面布局、后端、Compose或CI门禁。
+- 新增四组同步回归：空值/非法mode × 有/无待推送命令，覆盖无网络业务mutation/快照应用/游标前进以及原请求、幂等key、attempt count保留；测试源码落盘不等于执行通过。
+
+### PASSED（实际执行）
+
+- `bash scripts/ci/test-prepare-flutter-platforms.sh`：平台壳准备脚本回归通过。
+- `bash scripts/release/test-next-version.sh`：发布版本计算回归通过。
+- `sh deploy/nas/scripts/self-test.sh`：NAS脚本语法与help/参数行为自测通过；不是真实容器备份恢复验证。
+- `bash -n`：CI/Release脚本；`sh -n`：NAS全部脚本，通过。
+- Ruby YAML解析：workflow及两个Compose，通过；配置本身未改动。
+- 332条 `lib/`、`test/` 本地Dart引用目标存在性（排除URI及生成的 `.g.dart`）；针对性签名/guard和matcher导入源码检查通过。不是Dart编译/分析。
+- 所有修改测试中的原 `expect/expectLater` 断言行按原顺序保留；未删除测试或排除目录。
+- `git diff --check` 通过；diff确认后端、CI、依赖、数据库定义与部署文件未修改。
+
+### NOT_EXECUTED / 后续门禁
+
+- Flutter/Dart SDK在PATH及所检查常见位置不可用：Dart format、`flutter analyze`、新增/相关/全套 `flutter test`、Android debug/release与iOS unsigned构建均未运行。未安装工具或依赖。
+- Go/真实PG/容器/NAS/真机验证未在本机执行。历史后端CI通过不能替代新提交验证；本次未改后端也不能证明镜像发布成功。
+- 未commit/push、未触发或重跑CI、未生成或发布安装包/镜像。下一步在具备SDK的环境或提交后的同commit CI运行生成Drift、analyze、全套tests及Android/iOS构建，再核对Release/镜像实际产出；新增错误继续定位，不关闭检查。

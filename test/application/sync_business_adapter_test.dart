@@ -15,7 +15,7 @@ const scope = 'family-a';
 // Injects an actual pending row after preflight and before the write transaction,
 // rather than mocking a deferred exception or a successful business write.
 class RacingOutboxRepository extends SyncOutboxRepository {
-  RacingOutboxRepository(AppDatabase database) : super(database);
+  RacingOutboxRepository(super.database);
 
   bool injectPendingCommand = false;
 
@@ -34,7 +34,7 @@ class RacingOutboxRepository extends SyncOutboxRepository {
 }
 
 class LateSnapshotEditRepository extends SyncOutboxRepository {
-  LateSnapshotEditRepository(AppDatabase database) : super(database);
+  LateSnapshotEditRepository(super.database);
   int checks = 0;
 
   @override

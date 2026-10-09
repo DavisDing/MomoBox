@@ -761,7 +761,9 @@ class HomeScreen extends ConsumerWidget {
                               if (!context.mounted || !controller.mounted) return;
                               if (!identical(
                                 ref.read(smartHomeControllerProvider.notifier), controller,
-                              )) return;
+                              )) {
+                                return;
+                              }
                               final error = ref.read(smartHomeControllerProvider).commandError;
                               if (error != null) {
                                 showAppSnackBar(context, SnackBar(content: Text(error)));

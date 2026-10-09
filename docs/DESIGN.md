@@ -900,6 +900,38 @@ NAS 初始量定义为累计入库的安全下界：restock 在锁定旧行上�
 
 当前诊断与修复入口明确，无新增业务决策待确认；**进入业务代码实施仍需用户明确要求**。本轮未修改业务代码、未重跑 CI、未提交/推送。建议在新 CI 通过后为 AI_CONTEXT/VALIDATION 增补按 commit/run 标识的验证记录，不把历史“未验收”整段改成“全部通过”。
 
+
+### 2026-10-09 复核：run #26 仍失败，修复尚未实施
+
+- 证据：[GitHub Actions run #26](https://github.com/DavisDing/MomoBox/actions/runs/37755341512)，main commit `02513dd6018aba9ab45b5d5ebda27f3437b2f3a1`；运行发生于 **2026-10-08 17:15:04～17:22:47（Asia/Shanghai）**，不是10月9日新触发的构建。10月9日查询时仍为最新一轮。
+- 本地同一commit与上一轮 `0d52280` 的差异仅为 REQUIREMENT/DESIGN 文档；`lib/`、`test/`、`backend/`、CI和部署配置未变化。因此本轮不是文档改动引入了新编译错误，而是上述最小修复设计尚未实施。
+- iOS日志仍定位到 `lib/application/sync_scheduler.dart:219` 的命名参数组结束后多余逗号，以及 `lib/application/sync_engine.dart:395` 的 nullable mode 参数；静态分析仍报告51项。保留上述源码guard、测试导入/fixture及lint修复方案，不通过改SDK、放宽检查或删除用例绕过。
+
+| 当前证据范围 | run #26 状态 | 不能据此推断 |
+| --- | --- | --- |
+| Prepare pipeline | PASS | 不等于App可编译 |
+| Flutter static analysis | FAIL（51项） | 不等于单元测试已运行 |
+| iOS unsigned build | FAIL（Dart编译） | 不能认定为签名或SDK缺失问题 |
+| Backend test / PostgreSQL regression / vet | PASS | 不等于Docker镜像已构建或NAS部署验收通过 |
+| Flutter unit tests / Android debug build | SKIPPED | 不能记作通过或已打包 |
+| Build release packages / Publish image and GitHub Release | SKIPPED | 没有本轮成功发布证据 |
+
+本次只复核并记录诊断，未修改业务代码、未重跑CI、未提交或推送。下一阶段需用户明确要求实施最小修复包；本机SDK仍缺失，实施后的运行验证以同一修复commit的CI结果为准，发现后续错误需继续定位，不能承诺消除当前51项后全部构建必然通过。
+
+
+### 2026-10-09 实施补充：用户已授权最小修复，待运行验证
+
+用户本轮明确要求“修复”，现已从上述设计进入最小代码修复；此前“未实施”与run #26失败状态保留为历史证据，不代表修复后的运行结论。
+
+- `_execute` 使用合法的命名参数声明，消除结束参数组后的多余逗号；同步刷新分支明确拒绝 `mode == null`，仍仅接受 join/create。确认流程不进入执行队列，keep_local_only中断、checkpoint/revision、事务及cursor保护均保留。
+- 五个测试文件仅隐藏Drift的顶层 `isNull/isNotNull`，保留matcher断言；备份回滚fixture补固定UTC `updatedAt`，不改schema/生成文件。对13处多行控制语句补花括号、7个测试构造器使用super参数，移除一个重复导入，保持控制条件/回执判断不变。
+- `test/application/sync_engine_test.dart` 新增四组参数化回归：空值/非法mode × 有/无pending命令；断言不push/bootstrap-confirm/pull、不应用暂存快照、不推进cursor、不改变pending原请求/幂等key/尝试次数。原合法join/create、keep_local_only迟到快照及并发中断用例保留。
+- 本次未改页面布局、依赖、数据库定义、后端、部署配置或CI门禁，也未修改D-01～08/DR待决边界。
+
+已实际通过平台准备、发布版本计算及NAS脚本回归、相关shell语法、workflow/Compose YAML解析、332条非package/non-generated本地Dart引用路径与差异空白检查；原测试断言行保留及针对性源码检查通过。这些轻量检查不能证明Dart语法、类型、测试或打包通过。
+
+**NOT_EXECUTED**：Dart format/analyze、Flutter全套及新增四组测试、Android/iOS打包、Go/容器运行验证。本机PATH与所检查常见SDK位置未找到Flutter/Dart；未安装依赖、未提交/推送、未重跑CI。下一步按上述验收顺序验证同一修复commit，不能沿用旧run #26或后端PASS证明本次App修复已通过。详见 `docs/VALIDATION.md` 同日记录。
+
 # 15. 当前App/NAS收尾设计与验收映射（2026-10-08）
 
 ## 15.1 模块责任与修改入口

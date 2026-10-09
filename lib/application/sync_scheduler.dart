@@ -216,8 +216,11 @@ class SyncScheduler with WidgetsBindingObserver {
   }
 
   Future<SyncRunReport?> _execute(
-    SyncEngine engine, int revision, int engineRevision, {required bool automatic},
-  ) async {
+    SyncEngine engine,
+    int revision,
+    int engineRevision, {
+    required bool automatic,
+  }) async {
     try {
       if (_disposed ||
           (automatic && !_manualRequestedForFlight && !_canScheduleRun)) {
@@ -227,15 +230,21 @@ class SyncScheduler with WidgetsBindingObserver {
       // A manual caller can promote an automatic request past lifecycle/network
       // hints, but cannot promote it past an engine/account replacement.
       if (engineRevision != _engineRevision ||
-          !identical(engine, _engineReader())) return null;
+          !identical(engine, _engineReader())) {
+        return null;
+      }
       if (automatic && !_manualRequestedForFlight &&
-          revision != _contextRevision) return null;
+          revision != _contextRevision) {
+        return null;
+      }
       final report = await engine.runOnce();
       // A manual page must not display success from a replaced/logged-out
       // session. Lifecycle/network hint changes alone do not invalidate a
       // completed report for the same engine; they only suppress scheduling.
       if (_disposed || engineRevision != _engineRevision ||
-          !identical(engine, _engineReader())) return null;
+          !identical(engine, _engineReader())) {
+        return null;
+      }
       if (revision != _contextRevision) return report;
       if (report.skipped && report.reason == 'retry backoff is active') {
         _scheduleRetry();
@@ -252,7 +261,9 @@ class SyncScheduler with WidgetsBindingObserver {
     } catch (error) {
       // Likewise, an old session's failure is not the new session's error.
       if (_disposed || engineRevision != _engineRevision ||
-          !identical(engine, _engineReader())) return null;
+          !identical(engine, _engineReader())) {
+        return null;
+      }
       if (revision == _contextRevision && error is NasApiError && error.isRetryable) {
         _scheduleRetry();
       }
@@ -290,7 +301,9 @@ class SyncScheduler with WidgetsBindingObserver {
   void _ensurePeriodicPull() {
     final interval = foregroundPullInterval;
     if (!_canScheduleRun || interval == null || interval == Duration.zero ||
-        _periodicTimer != null) return;
+        _periodicTimer != null) {
+      return;
+    }
     _periodicTimer = Timer(interval, () {
       _periodicTimer = null;
       // Do not let a periodic read defeat an active retry/commit/drain delay,

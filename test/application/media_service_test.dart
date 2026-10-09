@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:drift/drift.dart';
+import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
@@ -469,7 +469,7 @@ class _Harness {
 }
 
 class _ControlledMediaRepository extends MediaRepository {
-  _ControlledMediaRepository(AppDatabase database) : super(database);
+  _ControlledMediaRepository(super.database);
 
   _Gate? createGate;
   _Gate? snapshotGate;

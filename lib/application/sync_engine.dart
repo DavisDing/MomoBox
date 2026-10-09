@@ -371,7 +371,8 @@ class SyncEngine {
         final needsRefresh = blocked || pending['refresh_required'] == true ||
             resolutionToken != null || mode == 'create_new_family';
         if (needsRefresh) {
-          if (mode != 'join_and_merge' && mode != 'create_new_family') {
+          if (mode == null ||
+              (mode != 'join_and_merge' && mode != 'create_new_family')) {
             throw const SyncRemoteChangeDeferred('snapshot refresh requires a confirmed remote-sync mode');
           }
           // Persist BEFORE network push. If the process dies after an accepted

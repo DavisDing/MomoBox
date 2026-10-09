@@ -114,7 +114,7 @@ class FakeSyncApi extends NasSyncApi {
 }
 
 class FailingCompletionRepository extends SyncOutboxRepository {
-  FailingCompletionRepository(AppDatabase database) : super(database);
+  FailingCompletionRepository(super.database);
 
   @override
   Future<void> clearPendingBootstrap(String scopeId) async {
@@ -124,7 +124,7 @@ class FailingCompletionRepository extends SyncOutboxRepository {
 }
 
 class FailingResolutionCompletionRepository extends SyncOutboxRepository {
-  FailingResolutionCompletionRepository(AppDatabase database) : super(database);
+  FailingResolutionCompletionRepository(super.database);
 
   @override
   Future<bool> clearConflictResolutionRefresh({
@@ -137,7 +137,7 @@ class FailingResolutionCompletionRepository extends SyncOutboxRepository {
 
 // A second receipt write would throw after the first real SQL commit.
 class SingleReceiptWriteRepository extends SyncOutboxRepository {
-  SingleReceiptWriteRepository(AppDatabase database) : super(database);
+  SingleReceiptWriteRepository(super.database);
 
   int receiptWrites = 0;
 
@@ -558,6 +558,52 @@ void main() {
     expect((await outbox.getState(scope))!.pullCursor, 2);
     expect((await outbox.listAppliedChanges(scopeId: scope)).single.cursor, 2);
   });
+
+  for (final mode in <String?>[null, 'unsupported_mode']) {
+    for (final hasPendingCommand in [false, true]) {
+      test('refresh 的空值/非法模式不推送、不确认、不覆盖快照：'
+          '$mode，pending=$hasPendingCommand', () async {
+        await ready(outbox);
+        await pendingSnapshot(mode: mode, refreshRequired: true);
+        if (hasPendingCommand) {
+          await enqueueStock();
+        }
+        final pendingBefore = await outbox.getPendingBootstrap(scope);
+        final stateBefore = (await outbox.getState(scope))!;
+        final entryBefore = await outbox.getByChangeId('local-stock');
+
+        final report = await engineWithBusinessAdapter(outbox).runOnce();
+
+        expect(report.pushed, 0);
+        expect(report.pulled, 0);
+        expect(report.deferred, 1);
+        expect(report.hasMorePending, isFalse);
+        expect(report.hasMoreRemote, isFalse);
+        expect(api.capabilityReads, 1);
+        expect(api.events, isEmpty);
+        expect(api.pushedChanges, isEmpty);
+        expect(api.confirmRequests, isEmpty);
+        expect(await outbox.getPendingBootstrap(scope), pendingBefore);
+        expect(await outbox.getConfirmedBootstrapMode(scope), mode);
+        expect(await inventory.getProductRecord('product'), isNull);
+        expect(await inventory.getBatchRecord('batch'), isNull);
+        final stateAfter = (await outbox.getState(scope))!;
+        expect(stateAfter.pullCursor, stateBefore.pullCursor);
+        expect(stateAfter.pushAckCursor, stateBefore.pushAckCursor);
+        expect(stateAfter.lastSuccessAt, stateBefore.lastSuccessAt);
+        if (hasPendingCommand) {
+          final entryAfter = (await outbox.getByChangeId('local-stock'))!;
+          final expectedEntry = entryBefore!;
+          expect(entryAfter.status, SyncOutboxStatus.pending);
+          expect(entryAfter.attemptCount, expectedEntry.attemptCount);
+          expect(entryAfter.idempotencyKey, expectedEntry.idempotencyKey);
+          expect(entryAfter.requestJson, expectedEntry.requestJson);
+        } else {
+          expect(await outbox.listOutbox(scopeId: scope), isEmpty);
+        }
+      });
+    }
+  }
 
   test('join 推送原幂等操作后 refresh/confirm 新 checkpoint，不能套旧快照', () async {
     await ready(outbox);

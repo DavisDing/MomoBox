@@ -1050,7 +1050,9 @@ class SyncOutboxRepository {
     required String token,
   }) => _database.transaction(() async {
     if (await getConflictResolutionRefreshToken(scopeId) != token ||
-        await hasSnapshotBlockingChanges(scopeId: scopeId)) return false;
+        await hasSnapshotBlockingChanges(scopeId: scopeId)) {
+      return false;
+    }
     final deleted = await (_database.delete(_database.appSettings)
           ..where((setting) => setting.key.equals(_resolutionRefreshKey(scopeId)) &
               setting.value.equals(token)))
@@ -1103,7 +1105,9 @@ class SyncOutboxRepository {
 
   Future<bool> _isSettledOutboxEntry(SyncOutboxEntry entry) async {
     if (entry.status != SyncOutboxStatus.conflict &&
-        entry.status != SyncOutboxStatus.rejected) return false;
+        entry.status != SyncOutboxStatus.rejected) {
+      return false;
+    }
     final marker = await _readSettlement(_outboxSettlementKey(entry.scopeId, entry.changeId));
     if (marker == null || !_settlementMatchesOutbox(marker, entry)) return false;
     final id = marker['conflict_id'];
@@ -1111,7 +1115,9 @@ class SyncOutboxRepository {
     final local = await getConflict(id);
     if (local == null ||
         (local.outboxChangeId ?? local.changeId) != entry.changeId ||
-        !_settlementMatchesConflict(marker, local)) return false;
+        !_settlementMatchesConflict(marker, local)) {
+      return false;
+    }
     final unresolved = await (_database.select(_database.syncConflicts)
           ..where((row) => row.scopeId.equals(entry.scopeId) &
               (row.changeId.equals(entry.changeId) | row.outboxChangeId.equals(entry.changeId)) &
@@ -1239,7 +1245,9 @@ class SyncOutboxRepository {
       final entry = await getByChangeId(local.outboxChangeId ?? local.changeId);
       if (entry != null && entry.scopeId == scopeId &&
           (entry.status == SyncOutboxStatus.conflict || entry.status == SyncOutboxStatus.rejected) &&
-          !await _isSettledOutboxEntry(entry)) result.add(local);
+          !await _isSettledOutboxEntry(entry)) {
+        result.add(local);
+      }
     }
     return result;
   }

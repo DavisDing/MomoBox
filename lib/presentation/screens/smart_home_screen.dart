@@ -753,7 +753,9 @@ class SmartHomeScreen extends ConsumerWidget {
                             if (!identical(
                               modalRef.read(smartHomeControllerProvider.notifier),
                               controller,
-                            )) return;
+                            )) {
+                              return;
+                            }
                             final error = modalRef.read(smartHomeControllerProvider).commandError;
                             if (error != null) {
                               showAppSnackBar(sheetCtx, SnackBar(content: Text(error)));

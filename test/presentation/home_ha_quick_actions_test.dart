@@ -1071,8 +1071,8 @@ class _FakeNasConnectionService extends NasConnectionService {
 }
 
 class _SceneTestController extends SmartHomeController {
-  _SceneTestController(NasSmartHomeRepository repository)
-      : super(repository, nasAddress: 'http://nas.local', role: 'member');
+  _SceneTestController(super.repository)
+      : super(nasAddress: 'http://nas.local', role: 'member');
   void seedScene() {
     state = state.copyWith(scenes: const [SmartScene(
       id: 'ha::scene.night', name: '晚安', icon: '🌙', description: '测试场景',

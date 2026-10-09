@@ -826,7 +826,9 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           }
           if (mounted && ref.read(nasAccountProvider).family.familyId == scopeId &&
               ref.read(nasAccountProvider).devices.currentDeviceId == deviceId &&
-              identical(ref.read(nasSyncApiProvider), api)) _retainResolvedReceipt(receipt);
+              identical(ref.read(nasSyncApiProvider), api)) {
+            _retainResolvedReceipt(receipt);
+          }
           if (receipt.resolution?['action'] != action) {
             throw StateError('NAS 原解决动作不同，请按回执原动作恢复本地结算。');
           }

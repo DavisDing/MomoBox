@@ -304,7 +304,9 @@ class NasAccountController extends StateNotifier<NasAccountState> {
   Future<void> refreshSession() async {
     if (state.status == NasAccountStatus.restoring ||
         state.status == NasAccountStatus.signingIn ||
-        state.status == NasAccountStatus.signingOut) return;
+        state.status == NasAccountStatus.signingOut) {
+      return;
+    }
     final authService = _authService;
     if (authService == null) {
       await restore();
