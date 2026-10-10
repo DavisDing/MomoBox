@@ -889,7 +889,7 @@ Future<void> _unmountHome(WidgetTester tester) async {
   await tester.pumpWidget(const SizedBox.shrink());
   // Drift schedules zero-duration cleanup when a provider cancels its query
   // stream. Flush that task after unmount, including assertion-failure paths.
-  await tester.pump();
+  await tester.pump(Duration.zero);
 }
 
 Future<void> _openControlSheet(WidgetTester tester, String deviceId) async {

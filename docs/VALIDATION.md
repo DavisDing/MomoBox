@@ -310,3 +310,33 @@
 - 经许可将官方Flutter tag 3.47.7下载/初始化至 `/private/tmp/momobox-actions-flutter`；实际version为Flutter3.47.7、Dart3.13.5，未改系统安装。临时PUB_CACHE仅用于验证。
 - `flutter pub get --enforce-lockfile` 实际FAIL：pubspec.lock缺少现有pubspec所需7项依赖（connectivity_plus及其platform interface、nm、url_launcher及android/ios/macos实现）。锁未改写、build_runner尚未执行。后续按CI流程普通pub get解析会修改锁文件，审批拒绝，停止该动作，待用户明确批准；不通过包配置或其他方式绕过。
 - PASS：Dart format --output=none语法解析（未写格式，缺失旧flutter_lints路径告警，非analyze证据）、原expect断言行保留、git diff --check。NOT_EXECUTED：本次代码Flutter analyze/test/build，未提交推送/重跑CI。
+
+
+## 2026-10-10：批准锁文件补齐、测试夹具续修与全套本地验证
+
+### 基线与远端边界
+- 修改基于本地HEAD `244174c5da2f2f56528592e9921615091880648c`。本轮结束查询main最新Actions仍为run #30 `38040706118`，2026-10-10 17:14:51～17:27:48（Asia/Shanghai），conclusion=failure；job查询确认unit tests失败、Android debug/release/publish跳过，analyze和iOS unsigned成功，后端job成功。这不是本次未提交修改的验证结果。
+- 用户“更新吧”明确批准普通pub get补缺项。临时官方Flutter3.47.7 / Dart3.13.5、独立PUB_CACHE继续用于本地验证；先前“无SDK/未执行”的记录仅属于先前阶段，不覆盖当前实跑证据。未修改系统安装。
+- pubspec.lock新增7条，其余原package完整条目和SDK约束逐项不变，pubspec.yaml不变；`flutter pub get --enforce-lockfile` PASS，日志 `/private/tmp/momobox-lock-enforced.log`。新增条目及职责见DESIGN16.7。
+
+### 实际修复与诊断记录
+- 9份测试修改；无生产源码、schema、UI、部署或CI改动。修复跨real/fake zone等待、Drift Timer.run清理、中文JSON编码、动态夹具类型和数据库timestamp时区断言；同步页恢复回执卡片重新展开后沿用原断言。
+- 首轮完整诊断日志 `/private/tmp/momobox-full-tests-20261010.log` 出现23项失败且不再推进，约3分38秒人工中断；不能当成完整结束或PASS，停机时sink错误为中断产物。中间逐组诊断也曾因初始化等待被人工停止；不隐藏失败，也不修改10分钟CI门限。
+- App wiring+备份锁：12项PASS，`/private/tmp/momobox-zone-regression.log`。
+- 通知恢复：15项PASS，`/private/tmp/momobox-notification-regression.log`；包含读取失败、迟到错误、卸载后回执和真实排程过滤。
+- 同步设置页：17项PASS，`/private/tmp/momobox-sync-ui-regression-final.log`；包含本地结算失败、原动作恢复、回执不匹配及退出页后的持久化。
+
+### 最终本地结果
+| 检查 | 结果 | 证据/边界 |
+|---|---|---|
+| Drift build_runner生成 | PASS | 287 outputs；生成文件忽略，无tracked生成差异 |
+| flutter analyze --no-pub | PASS | 零问题，10.5秒；`/private/tmp/momobox-analyze-final-20261010.log` |
+| flutter test --no-pub --reporter expanded | PASS | 全套687项，19秒；`/private/tmp/momobox-full-tests-final-20261010.log` |
+| TZ=UTC同一全套测试 | PASS | 全套687项，14秒；`/private/tmp/momobox-full-tests-utc-20261010.log` |
+| 严格锁文件解析/旧条目比较 | PASS | 新增恰好7项，已有package/SDK约束不变 |
+| 原测试名称与expect数量 | PASS | 原用例声明名称保留、断言数量不减少；两个异步辅助路径增加有界完成断言；未skip |
+| 平台准备/版本计算/NAS shell self-test | PASS | 实际运行；不代表原生构建或容器运行 |
+| git diff --check | PASS | 实际工作区检查 |
+| 本次修复Android/iOS构建、Go/PG、Docker/NAS/设备、正式发布 | NOT_EXECUTED | 本地测试不替代包含本次修改的新SHA的CI/原生/实机验收 |
+
+未提交、推送、重跑Actions或发布。下一入口：将修复提交后，在同一SHA核对完整测试、Android debug、iOS unsigned、后端及最终发布产物；不能重跑旧244174c就宣称新修改已验证。AI_CONTEXT更新建议：保留长期门禁，当前进度引用本记录即可，不把临时SDK或本地687项通过写成全平台发布验收。

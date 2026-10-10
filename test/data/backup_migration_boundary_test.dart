@@ -60,7 +60,7 @@ Map<String, Object?> _document(int version, Map<String, String> settings) => {
       'batches': [],
       'stock_movements': [],
       'shopping_entries': [],
-      'settings': [
+      'settings': <Map<String, Object?>>[
         for (final entry in settings.entries)
           {'key': entry.key, 'value': entry.value, 'updated_at': _timestamp},
       ],
@@ -272,14 +272,14 @@ void main() {
     final report = await BackupRepository(target).importJson(exported);
     expect(report.imported, 7);
     final products = await target.select(target.products).get();
-    expect(products.singleWhere((row) => row.id == 'deleted-product').deletedAt,
+    expect(products.singleWhere((row) => row.id == 'deleted-product').deletedAt?.toUtc(),
         deleted);
     expect(products.every((row) => row.serverVersion == 0), isTrue);
     final batches = await target.select(target.productBatches).get();
     expect(batches.where((row) => row.deletedAt != null), hasLength(2));
     expect(batches.every((row) => row.serverVersion == 0), isTrue);
     final shopping = await target.select(target.shoppingEntries).get();
-    expect(shopping.single.deletedAt, deleted);
+    expect(shopping.single.deletedAt?.toUtc(), deleted);
     expect(shopping.single.serverVersion, 0);
     final movement = (await target.select(target.stockMovements).get()).single;
     expect(movement.productId, 'deleted-product');
@@ -303,7 +303,7 @@ void main() {
       await BackupRepository(target).importJson(jsonEncode(document));
       final rows = await target.select(target.products).get();
       expect(rows.singleWhere((row) => row.id == 'product-new').deletedAt, isNull);
-      expect(rows.singleWhere((row) => row.id == 'deleted-legacy').deletedAt,
+      expect(rows.singleWhere((row) => row.id == 'deleted-legacy').deletedAt?.toUtc(),
           DateTime.parse(_timestamp));
     });
   }
@@ -319,7 +319,7 @@ void main() {
     expect(report.imported, 0);
     expect(report.skipped, 1);
     final product = (await target.select(target.products).get()).single;
-    expect(product.deletedAt, timestamp);
+    expect(product.deletedAt?.toUtc(), timestamp);
     expect(product.name, '目标已删除物品');
     expect(await InventoryRepository(target).loadInventory(), isEmpty);
   });

@@ -32,9 +32,6 @@ void main() {
     directoryToClean = null;
     originalPicker = null;
     originalPicker = FilePicker.platform;
-    picker = _ControlledPicker();
-    FilePicker.platform = picker;
-    service = _ControlledBackupService();
     temporaryDirectory = await Directory.systemTemp.createTemp('momobox-backup-lock-');
     directoryToClean = temporaryDirectory;
     shareGate = Completer<String>();
@@ -70,6 +67,10 @@ void main() {
   }
 
   Future<_Entries> mount(WidgetTester tester) async {
+    // Create controlled futures inside the Widget test's fake async zone.
+    picker = _ControlledPicker();
+    FilePicker.platform = picker;
+    service = _ControlledBackupService();
     await tester.binding.setSurfaceSize(const Size(400, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(ProviderScope(
@@ -109,6 +110,7 @@ void main() {
     expectLocked(tester, true);
     expect(picker.calls, 1);
     picker.result.complete(null);
+    await pumpTransitions(tester);
     await owner;
     await tester.pump();
     expectLocked(tester, false);
@@ -116,6 +118,7 @@ void main() {
     final retry = entries.startImport();
     expect(picker.calls, 2);
     picker.result.complete(null);
+    await pumpTransitions(tester);
     await retry;
     await tester.pump();
     expectLocked(tester, false);
@@ -134,6 +137,7 @@ void main() {
     expect(service.importCalls, 0);
     expect(service.exportCalls, 0);
     await tester.tap(find.text('取消'));
+    await pumpTransitions(tester);
     await owner;
     await pumpTransitions(tester);
     expectLocked(tester, false);
@@ -160,6 +164,7 @@ void main() {
     expect(service.importCalls, 1);
     expect(service.exportCalls, 0);
     await tester.tap(find.text('确定'));
+    await pumpTransitions(tester);
     await owner;
     await pumpTransitions(tester);
     expectLocked(tester, false);
@@ -170,18 +175,25 @@ void main() {
     final entries = await mount(tester);
     final failedPick = entries.startImport();
     picker.result.completeError(PlatformException(code: 'picker_failed'));
+    await pumpTransitions(tester);
     await failedPick;
     await pumpTransitions(tester);
     expectLocked(tester, false);
     picker.result = Completer<FilePickerResult?>();
     // File has no in-memory bytes, so the real filesystem read path is used.
-    await tester.runAsync(() async {
-      final failedRead = entries.startImport();
-      picker.result.complete(FilePickerResult([
-        PlatformFile(name: 'missing.json', size: 0, path: '${temporaryDirectory.path}/missing.json'),
-      ]));
-      await failedRead;
-    });
+    // Start UI continuations in the fake zone, yielding only filesystem IO to
+    // the real event loop. Snackbar dismissal must not outlive the Widget.
+    var readCompleted = false;
+    final failedRead = entries.startImport().whenComplete(() => readCompleted = true);
+    picker.result.complete(FilePickerResult([
+      PlatformFile(name: 'missing.json', size: 0, path: '${temporaryDirectory.path}/missing.json'),
+    ]));
+    for (var attempt = 0; attempt < 100 && !readCompleted; attempt++) {
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pump(Duration.zero);
+    }
+    expect(readCompleted, isTrue, reason: 'Missing-file import did not release its owner');
+    await failedRead;
     await pumpTransitions(tester);
     expectLocked(tester, false);
     expect(service.importCalls, 0);
@@ -194,6 +206,7 @@ void main() {
     picker.result.complete(FilePickerResult([
       PlatformFile(name: 'invalid.json', size: 1, bytes: Uint8List.fromList([0xff])),
     ]));
+    await pumpTransitions(tester);
     await owner;
     await pumpTransitions(tester);
     expect(find.text('文件不是有效的 UTF-8 JSON 备份。'), findsOneWidget);
@@ -219,6 +232,7 @@ void main() {
     expect(service.importCalls, 1);
     expect(picker.calls, 1);
     await tester.tap(find.text('确定'));
+    await pumpTransitions(tester);
     await owner;
     await pumpTransitions(tester);
     expectLocked(tester, false);
@@ -234,6 +248,7 @@ void main() {
     expect(service.exportCalls, 1);
     expect(picker.calls, 0);
     service.exportGate.completeError(StateError('export failed'));
+    await pumpTransitions(tester);
     await owner;
     await pumpTransitions(tester);
     expectLocked(tester, false);
@@ -241,6 +256,7 @@ void main() {
     final retry = entries.startImport();
     expect(picker.calls, 1);
     picker.result.complete(null);
+    await pumpTransitions(tester);
     await retry;
     await tester.pump();
     expectLocked(tester, false);
@@ -281,6 +297,7 @@ void main() {
     await tester.pump();
     await tester.pumpWidget(const SizedBox.shrink());
     picker.result.complete(_selection('{}'));
+    await pumpTransitions(tester);
     await owner;
     await pumpTransitions(tester);
     expect(service.importCalls, 0);

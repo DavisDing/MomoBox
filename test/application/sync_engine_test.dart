@@ -1214,13 +1214,13 @@ void main() {
       expect(first.deferred, 0);
       expect(api.pullCalls, 100);
       expect((await outbox.getState(scope))!.pullCursor, 100);
-      expect((await outbox.getState(scope))!.lastSuccessAt, previousSuccess);
+      expect((await outbox.getState(scope))!.lastSuccessAt?.toUtc(), previousSuccess);
       final last = await engine.runOnce();
       expect(last.pulled, 1);
       expect(last.hasMoreRemote, isFalse);
       expect(api.requestedCursors.last, 100);
       expect((await outbox.getState(scope))!.pullCursor, 101);
-      expect((await outbox.getState(scope))!.lastSuccessAt, isNot(previousSuccess));
+      expect((await outbox.getState(scope))!.lastSuccessAt?.toUtc(), isNot(previousSuccess));
     });
 
     for (final scenario in ['empty continuation', 'stationary continuation',

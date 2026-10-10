@@ -1099,3 +1099,17 @@ AI_CONTEXT 更新建议：长期验证门禁无需变化；本次按 SHA/run 的
 本地/远端 `d18f87d` 已包含16.5，但run #29测试仍失败。新增证据指向认证测试http.Response中文默认Latin1编码，以及slow-pull周期timer和App卸载的Drift清理timer；本轮仅修对应三份测试夹具并增加UTF-8往返回归，保留生产业务逻辑和CI门禁。认证gate超时先消除响应构造异常，未证明另有生产死锁；备份锁第一用例的停止位置尚需运行复现。
 
 临时官方Flutter3.47.7已可用，但enforce-lockfile失败，现有配置与锁文件缺少7项依赖。普通pub get会按现有约束解析缺项并写锁文件，必须先取得明确依赖变更许可；当前不通过间接配置修改绕过该限制。验证细节见VALIDATION，未达到全套Actions恢复条件。
+
+
+### 16.7 2026-10-10：授权补齐锁文件与测试异步边界修复
+
+用户明确回复“更新吧”后，仅补齐现有 pubspec 约束缺失的7个锁条目：connectivity_plus 6.1.5、connectivity_plus_platform_interface 2.1.0、nm 0.5.0、url_launcher 6.3.3、url_launcher_android 6.3.33、url_launcher_ios 6.4.2、url_launcher_macos 3.2.6。原锁条目及SDK约束逐项比较未变化，pubspec.yaml不变；不做广泛依赖升级。严格 enforce-lockfile 已实际成功。
+
+实际复现后，本次修改限于锁文件及9份测试，未改lib、后端、schema、UI或workflow：
+- App调度与备份测试的受控Future、Drift订阅与写入保持在Widget fake zone；只把真实SQLite/文件IO和平台初始化交给runAsync。有界交替事件循环与零时长pump，保留299/1ms debounce、真实outbox及备份owner断言，避免跨zone等待死锁或迟到Snackbar访问已销毁页面。
+- 首页及同步设置页在测试body结束前显式卸载并pump(Duration.zero)，处理Drift Timer.run清理；不以只调用pump()或测试收尾后addTearDown替代绑定不变量检查前的清理。同步设置页受控回执按需创建，真实数据库操作完成后再检查状态；回执更新重建折叠卡片时，测试重新展开后验证恢复按钮，不改生产页面。
+- 通知测试在mount内构造调度队列、stream/provider，平台initialize单独runAsync，避免真实zone的Future与fake clock互等；排程/过滤与失败恢复仍使用真实逻辑。
+- NAS账号会话中文JSON夹具显式UTF-8；可注入null/非法字段的Map/List显式声明允许的类型，使异常输入真正到达被测边界而非先在夹具赋值时报错。
+- 数据库时间戳断言转UTC后比较同一instant，保留精确时间、tombstone及成功时间屏障检查，不调整业务日期契约。
+
+本地Flutter3.47.7实际全套687项成功，默认时区与UTC各一轮；analyze零问题。现有测试名称和断言数量检查未减少；无skip、全局ignore或超时放宽。执行证据和先前失败/中断记录见VALIDATION。远端最新run #30仍针对244174c失败，本次未提交/推送；Android/iOS、后端及发布需要包含本次修改的新SHA独立验收。长期AI_CONTEXT无需因临时测试环境或单次本地通过重写。

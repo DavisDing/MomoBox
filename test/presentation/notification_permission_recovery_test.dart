@@ -18,10 +18,18 @@ void main() {
   late StreamController<List<ReminderAcknowledgement>> acknowledgements;
   late ProviderContainer container;
 
-  setUp(() async {
+  tearDown(() async {
+    container.dispose();
+    await inventory.close();
+    await acknowledgements.close();
+  });
+
+  Future<void> mount(WidgetTester tester, {bool seed = true}) async {
+    // Create async sources and the scheduling queue in the Widget fake zone.
+    // Real-zone futures otherwise cannot progress while only pumping frames.
     plugin = _RecordingPlugin();
     service = _PermissionService(plugin);
-    await service.initialize();
+    await tester.runAsync(service.initialize);
     service.permissionRequests = 0;
     inventory = StreamController<List<InventoryItem>>.broadcast();
     acknowledgements = StreamController<List<ReminderAcknowledgement>>.broadcast();
@@ -33,15 +41,6 @@ void main() {
     // Keep streams subscribed even while the initial permission is denied.
     container.listen(inventoryProvider, (_, __) {});
     container.listen(reminderAcknowledgementsProvider, (_, __) {});
-  });
-
-  tearDown(() async {
-    container.dispose();
-    await inventory.close();
-    await acknowledgements.close();
-  });
-
-  Future<void> mount(WidgetTester tester, {bool seed = true}) async {
     await tester.pumpWidget(UncontrolledProviderScope(
       container: container,
       child: const MaterialApp(home: NotificationSettingsScreen()),

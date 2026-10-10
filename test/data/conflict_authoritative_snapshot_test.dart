@@ -33,7 +33,7 @@ Map<String, dynamic> _snapshot({int version = 2, bool deleted = false}) => {
     },
   ],
   'shopping_items': [
-    {
+    <String, dynamic>{
       'id': 'shopping', 'version': version, 'product_id': 'product',
       if (deleted) 'deleted_at': _deletedAt.toIso8601String(),
       'name': 'NAS采购', 'category': 'NAS分类', 'desired_quantity': 2,
@@ -157,9 +157,9 @@ void main() {
 
   test('same-version authoritative tombstones delete product, batch and shopping', () async {
     await adapter.applyRemoteSnapshot(_snapshot(deleted: true), 20);
-    expect((await inventory.getProductRecord('product'))!.deletedAt, _deletedAt);
-    expect((await inventory.getBatchRecord('batch'))!.deletedAt, _deletedAt);
-    expect((await entry()).deletedAt, _deletedAt);
+    expect((await inventory.getProductRecord('product'))!.deletedAt?.toUtc(), _deletedAt);
+    expect((await inventory.getBatchRecord('batch'))!.deletedAt?.toUtc(), _deletedAt);
+    expect((await entry()).deletedAt?.toUtc(), _deletedAt);
     // Snapshot replay is not another logical mutation or stock movement.
     await adapter.applyRemoteSnapshot(_snapshot(deleted: true), 20);
     expect((await inventory.getProductRecord('product'))!.serverVersion, 2);

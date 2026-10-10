@@ -18,7 +18,7 @@ import '../support/memory_settings_repository.dart';
 http.Response _auth() => http.Response(jsonEncode({
   'user': {'id': 'user', 'email': 'user@example.com', 'nickname': '家人'},
   'access_token': 'access', 'refresh_token': 'refresh', 'expires_in': 900,
-}), 200);
+}), 200, headers: {'content-type': 'application/json; charset=utf-8'});
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -152,7 +152,7 @@ void main() {
     release.complete(http.Response(jsonEncode({
       'user': {'id': 'user', 'email': 'user@example.com', 'nickname': '家人'},
       'families': [], 'devices': [],
-    }), 200));
+    }), 200, headers: {'content-type': 'application/json; charset=utf-8'}));
     await oldRestore;
     expect(controller.state.status, NasAccountStatus.signedOut);
     expect(bRequests, isEmpty);

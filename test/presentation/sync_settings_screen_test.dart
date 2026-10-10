@@ -54,7 +54,9 @@ class _Api extends NasSyncApi {
   NasSyncConflictDetail? detail;
   int detailReads = 0;
   Object? detailError;
-  final response = Completer<NasSyncConflictResolveResponse>();
+  Completer<NasSyncConflictResolveResponse>? _response;
+  Completer<NasSyncConflictResolveResponse> get response =>
+      _response ??= Completer<NasSyncConflictResolveResponse>();
 
   @override
   Future<NasSyncConflictListResponse> listConflicts({
@@ -174,6 +176,32 @@ void main() {
     await database.close();
   });
 
+  Future<void> settleDatabaseWidgets(WidgetTester tester) async {
+    // SQLite completion needs the real event loop; Drift watches and UI work
+    // need the fake zone. pumpAndSettle alone can report idle before IO returns.
+    for (var turn = 0; turn < 20; turn++) {
+      await tester.runAsync(() async {
+        for (var i = 0; i < 8; i++) {
+          await Future<void>.delayed(Duration.zero);
+        }
+      });
+      await tester.pump(Duration.zero);
+    }
+    await tester.pumpAndSettle();
+  }
+
+  void syncTestWidgets(String description, WidgetTesterCallback body) {
+    testWidgets(description, (tester) async {
+      try {
+        await body(tester);
+      } finally {
+        // Flush Drift Timer.run cleanup before the binding checks invariants.
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(Duration.zero);
+      }
+    });
+  }
+
   Future<void> mount(WidgetTester tester, {SyncEngine? configuredEngine}) async {
     await tester.binding.setSurfaceSize(const Size(600, 1200));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -190,66 +218,66 @@ void main() {
         builder: (_, show, _) => show ? const SyncSettingsScreen() : const SizedBox(),
       )),
     ));
-    await tester.pumpAndSettle();
+    await settleDatabaseWidgets(tester);
     // Open the first (remote) conflict, rather than the second local copy.
     await tester.tap(find.byType(ExpansionTile).first);
-    await tester.pumpAndSettle();
+    await settleDatabaseWidgets(tester);
   }
 
-  testWidgets('manual bounded batch does not report full completion', (tester) async {
+  syncTestWidgets('manual bounded batch does not report full completion', (tester) async {
     final reporting = _ReportEngine(api, outbox, const SyncRunReport(
       pushed: 100, pulled: 0, skipped: false, deferred: 1, hasMorePending: true,
     ));
     await mount(tester, configuredEngine: reporting);
     await tester.tap(find.text('立即同步'));
-    await tester.pumpAndSettle();
+    await settleDatabaseWidgets(tester);
     expect(reporting.runs, 1);
     expect(find.textContaining('尚未完成同步'), findsOneWidget);
     expect(find.textContaining('同步完成：'), findsNothing);
   });
 
-  testWidgets('manual remote page boundary is not reported as complete', (tester) async {
+  syncTestWidgets('manual remote page boundary is not reported as complete', (tester) async {
     final reporting = _ReportEngine(api, outbox, const SyncRunReport(
       pushed: 0, pulled: 100, skipped: false, hasMoreRemote: true,
     ));
     await mount(tester, configuredEngine: reporting);
     await tester.tap(find.text('立即同步'));
-    await tester.pumpAndSettle();
+    await settleDatabaseWidgets(tester);
     expect(reporting.runs, 1);
     expect(find.textContaining('远端仍有数据'), findsOneWidget);
     expect(find.textContaining('同步完成：'), findsNothing);
   });
 
-  testWidgets('manual conflict deferral is reported as paused', (tester) async {
+  syncTestWidgets('manual conflict deferral is reported as paused', (tester) async {
     final reporting = _ReportEngine(api, outbox, const SyncRunReport(
       pushed: 0, pulled: 0, skipped: false, deferred: 1,
     ));
     await mount(tester, configuredEngine: reporting);
     await tester.tap(find.text('立即同步'));
-    await tester.pumpAndSettle();
+    await settleDatabaseWidgets(tester);
     expect(reporting.runs, 1);
     expect(find.textContaining('同步暂停：'), findsOneWidget);
     expect(find.textContaining('同步完成：'), findsNothing);
   });
 
-  testWidgets('manual request retains engine backoff feedback', (tester) async {
+  syncTestWidgets('manual request retains engine backoff feedback', (tester) async {
     final reporting = _ReportEngine(api, outbox, const SyncRunReport(
       pushed: 0, pulled: 0, skipped: true, reason: 'retry backoff is active',
     ));
     await mount(tester, configuredEngine: reporting);
     await tester.tap(find.text('立即同步'));
-    await tester.pumpAndSettle();
+    await settleDatabaseWidgets(tester);
     expect(reporting.runs, 1);
     expect(find.text('本次未同步：retry backoff is active'), findsOneWidget);
     expect(find.textContaining('同步完成：'), findsNothing);
   });
 
   for (final action in ['keep_remote', 'keep_local']) {
-    testWidgets('$action calls runOnce only after atomic settlement', (tester) async {
+    syncTestWidgets('$action calls runOnce only after atomic settlement', (tester) async {
       api.receipt = _resolved(action);
       await mount(tester);
       await tester.tap(find.text(action == 'keep_local' ? '保留本地' : '保留远端').first);
-      await tester.pumpAndSettle();
+      await settleDatabaseWidgets(tester);
       expect(engine.runs, 1);
       expect(api.requests.single.action, action);
       expect((await outbox.getConflict(conflictId))!.resolution, 'remote_$action');
@@ -259,51 +287,51 @@ void main() {
     });
   }
 
-  testWidgets('NAS rejection, transport error and wrong receipt preserve open conflict', (tester) async {
+  syncTestWidgets('NAS rejection, transport error and wrong receipt preserve open conflict', (tester) async {
     api.receipt = _resolved('keep_remote', accepted: false);
     await mount(tester);
     final button = find.text('保留远端').first;
     await tester.tap(button);
-    await tester.pumpAndSettle();
+    await settleDatabaseWidgets(tester);
     expect((await outbox.getConflict(conflictId))!.status, SyncConflictStatus.open);
     api.receipt = _resolved('keep_remote', id: 'wrong-conflict');
     await tester.tap(button);
-    await tester.pumpAndSettle();
+    await settleDatabaseWidgets(tester);
     expect((await outbox.getConflict(conflictId))!.status, SyncConflictStatus.open);
     api.error = StateError('network failed');
     await tester.tap(button);
-    await tester.pumpAndSettle();
+    await settleDatabaseWidgets(tester);
     expect((await outbox.getConflict(conflictId))!.status, SyncConflictStatus.open);
     expect(await outbox.hasSnapshotBlockingChanges(scopeId: 'family-a'), isTrue);
     expect(await outbox.getConflictResolutionRefreshToken('family-a'), isNull);
     expect(engine.runs, 0);
   });
 
-  testWidgets('failed follow-up sync retains settlement and durable refresh intent', (tester) async {
+  syncTestWidgets('failed follow-up sync retains settlement and durable refresh intent', (tester) async {
     api.receipt = _resolved('keep_remote');
     engine.error = StateError('NAS offline');
     await mount(tester);
     await tester.tap(find.text('保留远端').first);
-    await tester.pumpAndSettle();
+    await settleDatabaseWidgets(tester);
     expect(engine.runs, 1);
     expect((await outbox.getConflict(conflictId))!.status, SyncConflictStatus.rejected);
     expect(await outbox.getConflictResolutionRefreshToken('family-a'), isNotNull);
     expect(find.textContaining('最新快照同步尚未完成'), findsOneWidget);
   });
 
-  testWidgets('UI reports snapshot complete only after engine consumes refresh token', (tester) async {
+  syncTestWidgets('UI reports snapshot complete only after engine consumes refresh token', (tester) async {
     api.receipt = _resolved('keep_remote');
     engine.consumeRefresh = true;
     await mount(tester);
     await tester.tap(find.text('保留远端').first);
-    await tester.pumpAndSettle();
+    await settleDatabaseWidgets(tester);
     expect(engine.runs, 1);
     expect(await outbox.getConflictResolutionRefreshToken('family-a'), isNull);
     expect(find.textContaining('最新快照同步已完成'), findsOneWidget);
   });
 
   for (final action in ['keep_remote', 'keep_local']) {
-    testWidgets('$action legacy half-settlement recovers using GET without remote mutation', (tester) async {
+    syncTestWidgets('$action legacy half-settlement recovers using GET without remote mutation', (tester) async {
       await outbox.resolveConflict(
         id: conflictId,
         status: action == 'keep_local' ? SyncConflictStatus.resolved : SyncConflictStatus.rejected,
@@ -317,7 +345,7 @@ void main() {
       expect(find.text('保留本地'), findsNothing);
       expect(find.text('保留远端'), findsNothing);
       await tester.tap(find.text('按原动作恢复本地结算').first);
-      await tester.pumpAndSettle();
+      await settleDatabaseWidgets(tester);
       expect(api.requests, isEmpty);
       expect(api.detailReads, 1);
       expect(engine.runs, 1);
@@ -325,14 +353,14 @@ void main() {
       expect(await outbox.getConflictResolutionRefreshToken('family-a'), isNotNull);
       // Settled legacy audit must not be displayed again after reloading.
       showScreen.value = false;
-      await tester.pumpAndSettle();
+      await settleDatabaseWidgets(tester);
       showScreen.value = true;
-      await tester.pumpAndSettle();
+      await settleDatabaseWidgets(tester);
       expect(find.text('按原动作恢复本地结算'), findsNothing);
     });
   }
 
-  testWidgets('accepted but local write failed retains receipt for no-mutation retry', (tester) async {
+  syncTestWidgets('accepted but local write failed retains receipt for no-mutation retry', (tester) async {
     api.receipt = _resolved('keep_remote');
     await database.customStatement("""
       CREATE TRIGGER fail_refresh BEFORE INSERT ON app_settings
@@ -341,14 +369,18 @@ void main() {
     """);
     await mount(tester);
     await tester.tap(find.text('保留远端').first);
-    await tester.pumpAndSettle();
+    await settleDatabaseWidgets(tester);
     expect(api.requests.length, 1);
     expect(engine.runs, 0);
     expect((await outbox.getConflict(conflictId))!.status, SyncConflictStatus.open);
+    // Replacing the remote Future rebuilds the receipt tile in its collapsed
+    // state; reopen it as a user would before asserting the recovery action.
+    await tester.tap(find.byType(ExpansionTile).first);
+    await settleDatabaseWidgets(tester);
     expect(find.text('按原动作恢复本地结算'), findsWidgets);
     await database.customStatement('DROP TRIGGER fail_refresh');
     await tester.tap(find.text('按原动作恢复本地结算').first);
-    await tester.pumpAndSettle();
+    await settleDatabaseWidgets(tester);
     expect(api.requests.length, 1);
     expect(api.detailReads, 1);
     expect(engine.runs, 1);
@@ -356,7 +388,7 @@ void main() {
   });
 
   for (final code in ['CONFLICT_ALREADY_RESOLVED', 'NETWORK_ERROR']) {
-    testWidgets('$code reads GET receipt and settles without retry mutation', (tester) async {
+    syncTestWidgets('$code reads GET receipt and settles without retry mutation', (tester) async {
       api.error = NasApiError(
         kind: code == 'NETWORK_ERROR' ? NasApiErrorKind.network : NasApiErrorKind.conflict,
         message: 'receipt lost', code: code,
@@ -364,7 +396,7 @@ void main() {
       api.detail = _resolved('keep_remote').conflict;
       await mount(tester);
       await tester.tap(find.text('保留远端').first);
-      await tester.pumpAndSettle();
+      await settleDatabaseWidgets(tester);
       expect(api.requests.length, 1);
       expect(api.detailReads, 1);
       expect(engine.runs, 1);
@@ -372,35 +404,37 @@ void main() {
     });
   }
 
-  testWidgets('different original action requires recovery button, never repeats mutation', (tester) async {
+  syncTestWidgets('different original action requires recovery button, never repeats mutation', (tester) async {
     api.error = NasApiError(kind: NasApiErrorKind.conflict, message: 'already resolved', code: 'CONFLICT_ALREADY_RESOLVED');
     api.detail = _resolved('keep_local').conflict;
     await mount(tester);
     await tester.tap(find.text('保留远端').first);
-    await tester.pumpAndSettle();
+    await settleDatabaseWidgets(tester);
     expect(engine.runs, 0);
     expect((await outbox.getConflict(conflictId))!.status, SyncConflictStatus.open);
+    await tester.tap(find.byType(ExpansionTile).first);
+    await settleDatabaseWidgets(tester);
     await tester.tap(find.text('按原动作恢复本地结算').first);
-    await tester.pumpAndSettle();
+    await settleDatabaseWidgets(tester);
     expect(api.requests.length, 1);
     expect(engine.runs, 1);
     expect((await outbox.getConflict(conflictId))!.resolution, 'remote_keep_local');
   });
 
-  testWidgets('GET receipt mismatch leaves recovery conflict protected', (tester) async {
+  syncTestWidgets('GET receipt mismatch leaves recovery conflict protected', (tester) async {
     api.openConflicts = [];
     api.resolvedPages[0] = NasSyncConflictListResponse(conflicts: [_resolved('keep_remote').conflict], hasMore: false);
     api.detail = _resolved('keep_local').conflict;
     await mount(tester);
     await tester.tap(find.text('按原动作恢复本地结算').first);
-    await tester.pumpAndSettle();
+    await settleDatabaseWidgets(tester);
     expect(api.requests, isEmpty);
     expect(engine.runs, 0);
     expect((await outbox.getConflict(conflictId))!.status, SyncConflictStatus.open);
     expect(await outbox.hasSnapshotBlockingChanges(scopeId: 'family-a'), isTrue);
   });
 
-  testWidgets('leaving page during request still persists valid resolution', (tester) async {
+  syncTestWidgets('leaving page during request still persists valid resolution', (tester) async {
     await mount(tester);
     await tester.tap(find.text('保留远端').first);
     await tester.pump();
@@ -408,7 +442,7 @@ void main() {
     showScreen.value = false;
     await tester.pump();
     api.response.complete(_resolved('keep_remote'));
-    await tester.pumpAndSettle();
+    await settleDatabaseWidgets(tester);
     expect((await outbox.getConflict(conflictId))!.status, SyncConflictStatus.rejected);
     expect(await outbox.getConflictResolutionRefreshToken('family-a'), isNotNull);
     expect(engine.runs, 0);

@@ -140,17 +140,35 @@ void main() {
   Future<void> unmount(WidgetTester tester) async {
     await tester.pumpWidget(const SizedBox.shrink());
     // Stopping the App cancels Drift subscriptions and schedules query cleanup.
-    await tester.pump();
+    await tester.pump(Duration.zero);
   }
 
   Future<void> flushDatabaseWatch(WidgetTester tester, Future<void> Function() write) async {
-    await tester.runAsync(() async {
-      await write();
-      for (var i = 0; i < 8; i++) {
-        await Future<void>.delayed(Duration.zero);
-      }
+    // Keep writes and Drift watch continuations in the same fake zone. A
+    // real-zone transaction can otherwise wait for a fake-zone watch query
+    // that holds the executor while runAsync prevents the fake clock advancing.
+    var completed = false;
+    Object? failure;
+    StackTrace? failureStack;
+    final pending = write().then<void>((_) {
+      completed = true;
+    }, onError: (Object error, StackTrace stack) {
+      failure = error;
+      failureStack = stack;
+      completed = true;
     });
-    await tester.pump();
+    for (var attempt = 0; attempt < 100; attempt++) {
+      await tester.runAsync(() async {
+        for (var i = 0; i < 8; i++) {
+          await Future<void>.delayed(Duration.zero);
+        }
+      });
+      await tester.pump(Duration.zero);
+      if (completed) break;
+    }
+    expect(completed, isTrue, reason: 'Database write did not complete after bounded IO/clock turns');
+    await pending;
+    if (failure != null) Error.throwWithStackTrace(failure!, failureStack!);
   }
 
   Future<void> enqueue(String id, String scope) => SyncOutboxRepository(database)
