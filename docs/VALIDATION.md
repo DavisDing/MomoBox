@@ -278,3 +278,23 @@
 - PASSED（本地实际执行）：`git diff --check`；与HEAD逐字比较确认测试文件仅减少一行导入，其余内容完全一致。
 - NOT_EXECUTED：本次修改后的Flutter analyze/test/Android/iOS构建及发布；本机PATH仍无Flutter/Dart，未安装工具/依赖。run #27的PASS与FAIL属于修复前commit，不是本次修改后成功证据。
 - 未提交、推送或重跑旧CI。后续需验证包含本次一行修复的新commit；先通过analyze及全套tests/Android/iOS，再核对安装包和镜像实际发布，不能承诺后续步骤无新错误。
+
+
+## 2026-10-10：run #28 测试失败复核（设计阶段，未实施）
+
+- 最新查询返回 run `38010226751`（#28，attempt 1），main SHA `c304100216427c18e771fd86247d2a6fef20a32e`，2026-10-10 08:42:53～08:55:58（Asia/Shanghai）；本地 HEAD 一致、调查开始时工作区干净。上一轮一行导入修复已提交到该 SHA。
+- REMOTE PASS：Prepare pipeline、Flutter analyze（No issues found，stable 3.47.7）、iOS unsigned（Xcode 27）、Backend test/PostgreSQL regression/vet。
+- REMOTE FAIL：Flutter Unit tests，既有10分钟门限超时；可见进度 `+345 -23`，不是全套终态汇总。SKIPPED：Android debug、正式包构建及发布；无本轮 Android/Docker 打包失败证据。
+- 已读首错片段：HA首页 Widget 卸载后 Drift StreamQueryStore 创建零时长清理 FakeTimer，触发 pending timer 断言；备份锁测试 tearDown 报 originalPicker 未初始化。日志中段被连接器截断，其他失败与最终挂起尚未完整归因；不声称两项修复即可全套通过。公开 API 下载返回403，未登录浏览器要求登录；未获取凭证或绕过限制。
+- 设计与修改入口见 DESIGN 第16节。仅更新 docs/DESIGN.md 与本记录；不修改业务代码/测试/依赖/CI/数据库/页面/部署配置，不提交推送、不重跑或发布。保护所有原断言与10分钟门禁。
+- NOT_EXECUTED：任何新代码修复及其 Flutter analyze/test/build；本机 PATH 无 Flutter/Dart/Go。当前远端PASS仅属于上述SHA；需完整日志/同SDK复现和用户实施授权后继续。
+
+
+## 2026-10-10：run #28 已定位测试夹具修复（未运行 Flutter）
+
+- 用户授权“修复问题”。修改 `test/presentation/backup_operation_lock_test.dart` 与 `test/presentation/home_ha_quick_actions_test.dart`，保留上一轮文档改动，不改生产源码/CI/依赖/数据库/页面。
+- 备份测试显式注册现有 FilePickerIO，解决未注册 late platform 的读取入口；对实际保存的旧 picker 和已创建目录条件清理。核实 file_picker 8.3.7 发布源码的 platform/registerWith/export API，源码仅下载至临时目录用于阅读，未安装依赖。
+- HA Widget 测试统一卸载并推进一轮查询流清理，辅助入口的 tearDown 在消费者卸载后用 runAsync 关闭数据库，新增“首页卸载释放查询流，清理可重复执行”。原回执/禁用/权限/错误断言全部保留。
+- PASS（实际本地）：平台准备回归、发布版本计算回归、NAS脚本self-test、CI/release/NAS shell语法、workflow及两份Compose YAML解析、332条本地非生成Dart引用路径、原测试名称与expect断言行保留检查、文档围栏、git diff --check。
+- NOT_EXECUTED：Flutter format/analyze、两个单文件测试及全套测试、Android/iOS构建和正式发布。PATH无Flutter/Dart/Go，缓存配置所指的 `/private/tmp/momobox-verify-flutter` 与 pub-cache 均已不存在；未安装SDK/依赖，不使用旧缓存记录充当验证。
+- 未提交/推送/重跑CI。其他被截断的失败与总超时尚未全部归因；需包含这些修改的新commit验证。先运行两个修改文件，再运行全套测试与现有构建链路；不得放宽10分钟门禁、关闭timer断言或skip用例。

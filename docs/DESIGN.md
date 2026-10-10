@@ -1036,3 +1036,59 @@ JSON导入：owner锁覆盖picker→确认→校验→事务→报告/分享，�
 - **长期上下文建议**：AI_CONTEXT中“未验收”须按范围保留；可在实际确认后补“main 0d52280 / run #25 后端PG配置下测试+vet通过、App失败、发布skipped”的证据索引，并强调endpoint binding不隔离业务工作区、health不验证schema/epoch。该证据是临时进度，优先进VALIDATION，不大改长期事实。
 
 本次文档完成到“范围、职责、数据流、验收入口与建议明确”；D-01～08/DR方案尚未定案，不能称全部实施就绪。下一阶段仅在用户明确要求后开始对应实现，并在确认的数据/运维边界内工作。
+
+
+## 16. 2026-10-10：run #28 测试阻塞诊断与最小修复设计（未实施）
+
+### 16.1 目标、证据与本轮边界
+
+目标是恢复现有测试门禁，使同一修复提交能进入 Android 打包与正式发布；不是增加产品功能。本轮按架构设计角色仅更新设计和验证记录，不修改 lib/test、依赖、数据库、UI、CI 或部署资产，不提交、推送、重跑或发布。
+
+本轮查询最新返回的 [run #28](https://github.com/DavisDing/MomoBox/actions/runs/38010226751) 对应 main `c304100216427c18e771fd86247d2a6fef20a32e`，运行时间为 **2026-10-10 08:42:53～08:55:58（Asia/Shanghai）**，本地 HEAD 同 SHA，调查开始时工作区干净。run #27 的重复导入修复已经包含在该提交，不能再以旧静态分析错误解释本轮失败。
+
+| 阶段 | run #28 实际结果 | 解释边界 |
+| --- | --- | --- |
+| Prepare pipeline | PASS | 平台/发布版本/NAS 脚本检查通过，不是部署验收 |
+| Flutter static analysis | PASS | 日志显示 No issues found；SDK stable 3.47.7 |
+| Flutter unit tests | FAIL | 出现失败用例，10 分钟后步骤超时终止；无全套完成结果 |
+| iOS unsigned build（Xcode 27） | PASS | 不等于签名、安装或真机验收 |
+| Backend test / PostgreSQL regression / vet | PASS | 不等于镜像发布或真实 NAS 验收 |
+| Android debug / release packages / publish | SKIPPED | 被测试失败阻断，不能归因为已发生的 Android/Docker 构建错误 |
+
+### 16.2 已确认错误与调查限制
+
+1. **HA Widget 测试退出残留定时器（已确认）**：日志定位 `test/presentation/home_ha_quick_actions_test.dart` 的“真实状态和 typed turn_on；命令完成前不翻转”，退出调用在第 710 行。零时长、非周期 FakeTimer 的创建栈是 `StreamQueryStore.markAsClosed → QueryStream cancel → StreamProviderElement.dispose → ProviderContainer.dispose → ProviderScope unmount`。因此这条日志直接指向 Drift 查询流取消后的异步清理，不是 SyncScheduler 一分钟周期定时器的证据。源码 `_pumpHome` 创建真实内存数据库，并将关闭注册为 tearDown；用例最后卸载 Widget，但没有再推进一轮清理。
+2. **备份测试清理阶段未初始化变量（已确认，原始触发原因待补证）**：日志还显示 `LateInitializationError: Local 'originalPicker' has not been initialized`。`test/presentation/backup_operation_lock_test.dart` 在 setUp 第一条读取 `FilePicker.platform`，随后才赋值 `originalPicker`，tearDown 无条件恢复它及删除临时目录。初始化失败可导致清理再抛异常并掩盖首错；但当前日志不能确认 FilePicker 注册失败就是首错。
+3. **其他失败及总超时（未完成归因）**：可见进度到 `+345 -23` 后最终触发 10 分钟超时；这不是全套汇总，也不是 23 个独立根因。连接器返回内容中段明确含 `86373 chars truncated`，其中可能包含其他失败。公开日志下载 API 返回 403，未登录浏览器要求登录才能读取日志；未获取凭证或绕过限制。不得将上面两项当作所有失败原因，也不得断言 Drift 清理就是 10 分钟挂起的原因。
+
+### 16.3 拟实施工作包及修改入口
+
+| 工作包 | 独占修改入口 | 建议方案及保护条件 |
+| --- | --- | --- |
+| T-01 HA 测试资源生命周期 | `test/presentation/home_ha_quick_actions_test.dart` | 先单文件复现；把卸载、流取消后的有界 pump、资源关闭集中到现有测试辅助入口。只刷新已取消订阅产生的清理任务，不对未完成 HA 命令或持续动画无限 pumpAndSettle。失败路径也必须执行清理，数据库在消费者卸载后关闭；保留真实回执/无提前翻转/权限断言。 |
+| T-02 备份测试初始化与失败清理 | `test/presentation/backup_operation_lock_test.dart` | 先恢复首错日志，再判断是否需要在测试入口按锁定插件 API 注册平台实现。对实际取得的旧 picker、实际创建的目录与已安装 mock 分别记录初始化状态，条件清理并可靠恢复；禁止以捕获异常、skip 或删除断言隐藏未注册问题。未完成 share/picker gate 在测试收尾显式完成或按可控取消语义释放。 |
+| T-03 全套失败/挂起归因 | 完整 CI 日志及剩余失败文件，范围待列明 | 在具备同 SDK 的环境先逐文件复现；输出每条失败的文件、名称、首个异常和终止状态。对 Completer 未释放、fake clock/真实 I/O 等待、provider teardown 分别验证，不能仅增加 CI 超时。与 T-01/T-02 不交叉改文件；新增业务源码修改须有对应错误与回归证据。 |
+
+T-01、T-02可独立实施；统一验收依赖 T-03 完整失败清单。优先修测试夹具和清理契约，不为测试更改业务语义。如果复现证明确有生产生命周期错误，单独记录修改入口与影响后再实施，不能从当前清理栈直接推导生产数据丢失。
+
+本方案不引入新模块、表、API 或依赖；保留真实业务数据读取、backup owner lock、HA typed command/服务端回执、同步 checkpoint/revision/cursor 与 keep_local_only 中断保护。需求 AC-008、AC-020、AC-021 和 REQUIREMENT 第12节仍适用，不降低验收门槛。
+
+### 16.4 验收顺序、异常与停止条件
+
+1. 获得完整失败日志或在 Flutter stable 3.47.7 环境重现全部首错；不得仅依据截断输出批量改代码。
+2. T-01/T-02单文件退出成功、所有原断言保留，无 pending timer、未初始化清理或悬挂 gate。验证失败中途退出也能释放资源，不能只测成功路径。无需网络、真实文件选择器或真实 HA 设备。
+3. 相关 Widget/调度/备份/会话回归及 `flutter analyze` 全部成功，再运行现有 `flutter test --reporter expanded`；全套应在既有10分钟门限内正常结束，不能关闭计时器断言、跳过失败测试或增加全局 ignore。
+4. 同一修复提交的 CI 要实际完成 Android debug、iOS unsigned、后端验证；正式交付再检查 APK/AAB、SHA256、Compose/env 附件及双架构镜像的实际产出。iOS/backend 的当前成功仅属于 `c304100`。
+5. 设计交付后停止；本轮运行验证为 NOT_EXECUTED，本机 PATH 无 Flutter/Dart/Go，不安装依赖。需要用户明确进入实施阶段后才改测试/源码。完整日志或可复现 SDK 环境是验收依赖，不是产品需求变更；D-01～08不在本次决定范围。
+
+AI_CONTEXT 更新建议：长期验证门禁无需变化；本次按 SHA/run 的进度记入 VALIDATION。只有修复验证后再补对应证据索引，不把单次 iOS/backend 通过写成 App/NAS 全部已验收。
+
+
+### 16.5 2026-10-10 实施补充：用户授权修复，待 Flutter 验证
+
+用户明确要求“修复问题”后实施 T-01/T-02 的最小测试夹具修改；16.1～16.4 的“未实施”保留为先前设计阶段记录，不作为当前修改状态。
+
+- 备份锁测试在 suite 入口调用现有 `FilePickerIO.registerWith()`，再保存/替换 FilePicker.platform。核对 file_picker 8.3.7 发布源码确认 platform 是 late 静态实例，Widget 测试未注册时直接读取会抛错；registerWith 仅安装已有 method-channel 实例，不执行真实文件选择。原实例和临时目录按实际初始化状态清理，避免 setUp 失败后 tearDown 再抛未初始化错误。
+- 首页/家居 Widget 测试统一调用 `_unmountHome`：卸载后有界 pump 处理 Drift 的零时长流清理任务；在辅助入口注册失败路径清理，按逆序先卸载消费者，再在 runAsync 的真实异步区域等待数据库关闭。新增重复卸载清理回归，保留所有原测试名称与断言，不替换真实回执和权限检查。
+- 未改 lib、业务语义、数据库定义、UI、依赖、后端、部署资产或 CI。T-03 其他失败/整套超时仍待完整日志或同 SDK 复现，不能以这些改动宣称全套已修复。
+- 本地轻量检查实际通过，运行证据见 VALIDATION。本机无可用 Flutter/Dart；.dart_tool 仅残留已不存在的临时 SDK/cache 路径，不代表工具可执行。Flutter analyze、单文件/全套 tests、Android/iOS 和发布均 NOT_EXECUTED；未提交、推送、重跑或发布。

@@ -14,22 +14,29 @@ import 'package:momo_box/presentation/screens/settings_screen.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  // Widget tests do not execute the native plugin registrant. Register the
+  // existing method-channel implementation before saving/restoring platform.
+  FilePickerIO.registerWith();
   const pathChannel = MethodChannel('plugins.flutter.io/path_provider');
   const shareChannel = MethodChannel('dev.fluttercommunity.plus/share');
-  late FilePicker originalPicker;
+  FilePicker? originalPicker;
   late _ControlledPicker picker;
   late _ControlledBackupService service;
   late Directory temporaryDirectory;
+  Directory? directoryToClean;
   late Completer<String> shareGate;
   late int shareCalls;
   late Completer<void> shareEntered;
 
   setUp(() async {
+    directoryToClean = null;
+    originalPicker = null;
     originalPicker = FilePicker.platform;
     picker = _ControlledPicker();
     FilePicker.platform = picker;
     service = _ControlledBackupService();
     temporaryDirectory = await Directory.systemTemp.createTemp('momobox-backup-lock-');
+    directoryToClean = temporaryDirectory;
     shareGate = Completer<String>();
     shareCalls = 0;
     shareEntered = Completer<void>();
@@ -46,11 +53,13 @@ void main() {
   });
 
   tearDown(() async {
-    FilePicker.platform = originalPicker;
+    final previousPicker = originalPicker;
+    if (previousPicker != null) FilePicker.platform = previousPicker;
     final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     messenger.setMockMethodCallHandler(pathChannel, null);
     messenger.setMockMethodCallHandler(shareChannel, null);
-    await temporaryDirectory.delete(recursive: true);
+    final directory = directoryToClean;
+    if (directory != null) await directory.delete(recursive: true);
   });
 
   Future<void> pumpTransitions(WidgetTester tester) async {

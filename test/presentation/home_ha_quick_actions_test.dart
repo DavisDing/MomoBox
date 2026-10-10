@@ -472,7 +472,7 @@ void main() {
       expect(find.byKey(const ValueKey('smart-home-power-$_deviceId')), findsNothing);
       expect(repository.commands, isEmpty);
       expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox.shrink());
+      await _unmountHome(tester);
     });
 
     for (final attribute in ['brightness', 'brightness_pct']) {
@@ -492,7 +492,7 @@ void main() {
         expect(slider.onChanged, isNull);
         expect(repository.commands, isEmpty);
         expect(tester.takeException(), isNull);
-        await tester.pumpWidget(const SizedBox.shrink());
+        await _unmountHome(tester);
       });
     }
 
@@ -517,7 +517,7 @@ void main() {
       expect(tester.widget<Slider>(find.byType(Slider)).value, 1);
       expect(tester.widget<Slider>(find.byType(Slider)).onChanged, isNull);
       expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox.shrink());
+      await _unmountHome(tester);
     });
 
     for (final failure in ['403', 'timeout', 'mismatched_receipt']) {
@@ -561,7 +561,7 @@ void main() {
           expect(tester.widget<SwitchListTile>(power).onChanged, isNull);
         }
         expect(tester.takeException(), isNull);
-        await tester.pumpWidget(const SizedBox.shrink());
+        await _unmountHome(tester);
       });
     }
 
@@ -590,7 +590,7 @@ void main() {
         await controller.setDevicePower(_deviceId, true);
         expect(repository.commands, isEmpty);
         expect(tester.takeException(), isNull);
-        await tester.pumpWidget(const SizedBox.shrink());
+        await _unmountHome(tester);
       });
     }
 
@@ -620,7 +620,7 @@ void main() {
       expect(replacement.state.commandError, isNull);
       expect(replacementRepository.commands, isEmpty);
       expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox.shrink());
+      await _unmountHome(tester);
     });
 
     testWidgets('电视卡片使用明确 power 命令，回执期间禁用并保持真实状态', (tester) async {
@@ -648,7 +648,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.widget<Switch>(power).value, isTrue);
       expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox.shrink());
+      await _unmountHome(tester);
     });
 
     testWidgets('控制面板跟随回执刷新，未支持的音量操作不伪报已发送', (tester) async {
@@ -680,11 +680,21 @@ void main() {
       expect(find.textContaining('已发送音量'), findsNothing);
       expect(repository.commands, [NasHaCommand.turnOn]);
       expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox.shrink());
+      await _unmountHome(tester);
     });
   });
 
   group('首页 HA 快捷卡片', () {
+    testWidgets('首页卸载释放查询流，清理可重复执行', (tester) async {
+      final controller = await _controller(_FakeHaRepository());
+      await _pumpHome(tester, controller);
+      expect(find.text('客厅灯'), findsOneWidget);
+      await _unmountHome(tester);
+      await _unmountHome(tester);
+      expect(find.byType(HomeScreen), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('真实状态和 typed turn_on；命令完成前不翻转', (tester) async {
       final repository = _FakeHaRepository();
       final controller = await _controller(repository);
@@ -707,7 +717,7 @@ void main() {
       expect(tester.widget<Switch>(toggle).value, isTrue);
       expect(tester.widget<Switch>(toggle).onChanged, isNotNull);
       expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox.shrink());
+      await _unmountHome(tester);
     });
 
     for (final domain in ['climate', 'media_player']) {
@@ -731,7 +741,7 @@ void main() {
           expect(tester.widget<Switch>(toggle).value, !initiallyOn);
           expect(controller.state.commandError, isNull);
           expect(tester.takeException(), isNull);
-          await tester.pumpWidget(const SizedBox.shrink());
+          await _unmountHome(tester);
         });
       }
     }
@@ -747,7 +757,7 @@ void main() {
       expect(find.textContaining('控制请求未确认成功'), findsWidgets);
       expect(find.textContaining('执行指令已下发'), findsNothing);
       expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox.shrink());
+      await _unmountHome(tester);
     });
 
     for (final scenario in <String, _FakeHaRepository Function()>{
@@ -777,7 +787,7 @@ void main() {
         }
         expect(repository.commands, isEmpty);
         expect(tester.takeException(), isNull);
-        await tester.pumpWidget(const SizedBox.shrink());
+        await _unmountHome(tester);
       });
     }
 
@@ -799,7 +809,7 @@ void main() {
       repository.pendingCommand!.complete(_result(command: 'turn_on'));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox.shrink());
+      await _unmountHome(tester);
     });
 
     testWidgets('scene/script 实体不会作为开关；场景沿用家居页未接入语义', (tester) async {
@@ -815,7 +825,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('场景快捷执行尚未接入，未执行【晚安】。'), findsOneWidget);
       expect(repository.commands, isEmpty);
-      await tester.pumpWidget(const SizedBox.shrink());
+      await _unmountHome(tester);
     });
 
     testWidgets('首页 HA 服务行读取真实控制器状态，而非固定未接入', (tester) async {
@@ -825,7 +835,7 @@ void main() {
       expect(find.descendant(of: haRow, matching: find.text('已连接')), findsOneWidget);
       expect(find.descendant(of: haRow, matching: find.text('未接入')), findsNothing);
       expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox.shrink());
+      await _unmountHome(tester);
     });
   });
 }
@@ -847,7 +857,10 @@ Future<void> _pumpHome(
   StateProvider<SmartHomeController>? controllerSource,
 }) async {
   final database = AppDatabase.forTesting(NativeDatabase.memory());
-  addTearDown(database.close);
+  // Consumers must detach before closing their database. Native SQLite work
+  // completes in the real async zone, not the Widget test's fake clock.
+  addTearDown(() => tester.runAsync(database.close));
+  addTearDown(() => _unmountHome(tester));
   await tester.pumpWidget(ProviderScope(
     overrides: [
       databaseProvider.overrideWithValue(database),
@@ -870,6 +883,13 @@ Future<void> _pumpHome(
     child: MaterialApp(home: screen),
   ));
   await tester.pumpAndSettle();
+}
+
+Future<void> _unmountHome(WidgetTester tester) async {
+  await tester.pumpWidget(const SizedBox.shrink());
+  // Drift schedules zero-duration cleanup when a provider cancels its query
+  // stream. Flush that task after unmount, including assertion-failure paths.
+  await tester.pump();
 }
 
 Future<void> _openControlSheet(WidgetTester tester, String deviceId) async {
