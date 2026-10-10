@@ -267,3 +267,14 @@
 - Flutter/Dart SDK在PATH及所检查常见位置不可用：Dart format、`flutter analyze`、新增/相关/全套 `flutter test`、Android debug/release与iOS unsigned构建均未运行。未安装工具或依赖。
 - Go/真实PG/容器/NAS/真机验证未在本机执行。历史后端CI通过不能替代新提交验证；本次未改后端也不能证明镜像发布成功。
 - 未commit/push、未触发或重跑CI、未生成或发布安装包/镜像。下一步在具备SDK的环境或提交后的同commit CI运行生成Drift、analyze、全套tests及Android/iOS构建，再核对Release/镜像实际产出；新增错误继续定位，不关闭检查。
+
+
+## 2026-10-10：run #27 剩余静态检查阻塞修复
+
+- 已核实[run #27](https://github.com/DavisDing/MomoBox/actions/runs/37905903196)，main commit `f3ae9f1f18330a2ac41943ec7655e3f2ba5d0676`，2026-10-09 16:35:33～16:45:10（Asia/Shanghai）；本轮开始时本地HEAD一致且工作区干净，包含10月9日全部最小修复。
+- [Flutter job](https://github.com/DavisDing/MomoBox/actions/runs/37905903196/job/113739207618) 使用stable 3.47.7，静态分析只报告1项info：`test/application/sync_outbox_repository_test.dart:1:8` 的 `dart:async` 为 `unnecessary_import`，相关元素已由flutter_test导出。`flutter analyze` 退出码1，门禁保持不变。
+- run #27实际PASS：Prepare pipeline、iOS unsigned build（Xcode 27）、Backend test/PostgreSQL regression/vet。SKIPPED：Flutter unit tests、Android debug build、Build release packages、Publish image and GitHub Release。iOS通过不是签名安装验收，镜像发布被跳过不是Docker构建报错。
+- 本次代码仅删除该重复导入，保留所有测试与断言，不修改业务逻辑、依赖、数据库、页面、后端或CI设置。
+- PASSED（本地实际执行）：`git diff --check`；与HEAD逐字比较确认测试文件仅减少一行导入，其余内容完全一致。
+- NOT_EXECUTED：本次修改后的Flutter analyze/test/Android/iOS构建及发布；本机PATH仍无Flutter/Dart，未安装工具/依赖。run #27的PASS与FAIL属于修复前commit，不是本次修改后成功证据。
+- 未提交、推送或重跑旧CI。后续需验证包含本次一行修复的新commit；先通过analyze及全套tests/Android/iOS，再核对安装包和镜像实际发布，不能承诺后续步骤无新错误。
