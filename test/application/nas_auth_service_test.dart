@@ -22,16 +22,24 @@ http.Response _authResponse({String access = 'access-a', String refresh = 'refre
     http.Response(jsonEncode({
       'user': {'id': 'user', 'email': 'user@example.com', 'nickname': '家人'},
       'access_token': access, 'refresh_token': refresh, 'expires_in': 900,
-    }), 200);
+    }), 200, headers: const {'content-type': 'application/json; charset=utf-8'});
 
 http.Response _me() => http.Response(jsonEncode({
   'user': {'id': 'user', 'email': 'user@example.com', 'nickname': '家人'},
   'families': [], 'devices': [],
-}), 200);
+}), 200, headers: const {'content-type': 'application/json; charset=utf-8'});
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => FlutterSecureStorage.setMockInitialValues({}));
+
+  test('authentication fixtures preserve Chinese JSON as UTF-8', () {
+    for (final response in [_authResponse(), _me()]) {
+      expect(response.headers['content-type'], contains('charset=utf-8'));
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      expect((body['user'] as Map<String, dynamic>)['nickname'], '家人');
+    }
+  });
 
   test('unbound or foreign credentials skip corrupt residual token reads', () async {
     final storage = _GatedStorage();

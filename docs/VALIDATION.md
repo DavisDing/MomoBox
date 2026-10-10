@@ -298,3 +298,15 @@
 - PASS（实际本地）：平台准备回归、发布版本计算回归、NAS脚本self-test、CI/release/NAS shell语法、workflow及两份Compose YAML解析、332条本地非生成Dart引用路径、原测试名称与expect断言行保留检查、文档围栏、git diff --check。
 - NOT_EXECUTED：Flutter format/analyze、两个单文件测试及全套测试、Android/iOS构建和正式发布。PATH无Flutter/Dart/Go，缓存配置所指的 `/private/tmp/momobox-verify-flutter` 与 pub-cache 均已不存在；未安装SDK/依赖，不使用旧缓存记录充当验证。
 - 未提交/推送/重跑CI。其他被截断的失败与总超时尚未全部归因；需包含这些修改的新commit验证。先运行两个修改文件，再运行全套测试与现有构建链路；不得放宽10分钟门禁、关闭timer断言或skip用例。
+
+
+## 2026-10-10：run #29 新失败定位与验证环境准备（仍未完成）
+
+- 最新查询 run `38036063512`（#29，attempt 1），main SHA `d18f87df3b8202488a89e695d38336c40e874949`，2026-10-10 15:54:56～16:07:30（Asia/Shanghai），本地HEAD同SHA且调查开始时干净，已包含run #28夹具修改。
+- REMOTE PASS：prepare、Flutter analyze、iOS unsigned、backend/PG/vet。REMOTE FAIL：unit tests；仍10分钟超时。Android debug、release/publish SKIPPED，不能称已打包或镜像错误。
+- 新日志显示认证夹具的中文昵称在无Content-Type的http.Response默认Latin1编码时报Invalid argument，引发网络包装异常、gate未触达及后续超时；修复两个响应辅助函数为JSON UTF-8，新增中文往返回归，不删除竞态断言。
+- 新日志显示SyncScheduler slow-pull周期测试结束残留1分钟timer，以及App wiring卸载产生Drift零时长清理timer；前者在测试body结束前显式dispose并验证2分钟无新run，后者卸载后追加有界pump，保留原有次数/并发断言。
+- 测试日志中段仍截断，已显示13项失败，最后可见备份锁第一条用例随后总超时；不能将当前三文件修复视为全套已恢复。
+- 经许可将官方Flutter tag 3.47.7下载/初始化至 `/private/tmp/momobox-actions-flutter`；实际version为Flutter3.47.7、Dart3.13.5，未改系统安装。临时PUB_CACHE仅用于验证。
+- `flutter pub get --enforce-lockfile` 实际FAIL：pubspec.lock缺少现有pubspec所需7项依赖（connectivity_plus及其platform interface、nm、url_launcher及android/ios/macos实现）。锁未改写、build_runner尚未执行。后续按CI流程普通pub get解析会修改锁文件，审批拒绝，停止该动作，待用户明确批准；不通过包配置或其他方式绕过。
+- PASS：Dart format --output=none语法解析（未写格式，缺失旧flutter_lints路径告警，非analyze证据）、原expect断言行保留、git diff --check。NOT_EXECUTED：本次代码Flutter analyze/test/build，未提交推送/重跑CI。

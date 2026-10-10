@@ -1092,3 +1092,10 @@ AI_CONTEXT 更新建议：长期验证门禁无需变化；本次按 SHA/run 的
 - 首页/家居 Widget 测试统一调用 `_unmountHome`：卸载后有界 pump 处理 Drift 的零时长流清理任务；在辅助入口注册失败路径清理，按逆序先卸载消费者，再在 runAsync 的真实异步区域等待数据库关闭。新增重复卸载清理回归，保留所有原测试名称与断言，不替换真实回执和权限检查。
 - 未改 lib、业务语义、数据库定义、UI、依赖、后端、部署资产或 CI。T-03 其他失败/整套超时仍待完整日志或同 SDK 复现，不能以这些改动宣称全套已修复。
 - 本地轻量检查实际通过，运行证据见 VALIDATION。本机无可用 Flutter/Dart；.dart_tool 仅残留已不存在的临时 SDK/cache 路径，不代表工具可执行。Flutter analyze、单文件/全套 tests、Android/iOS 和发布均 NOT_EXECUTED；未提交、推送、重跑或发布。
+
+
+### 16.6 run #29 补充修复与验证依赖
+
+本地/远端 `d18f87d` 已包含16.5，但run #29测试仍失败。新增证据指向认证测试http.Response中文默认Latin1编码，以及slow-pull周期timer和App卸载的Drift清理timer；本轮仅修对应三份测试夹具并增加UTF-8往返回归，保留生产业务逻辑和CI门禁。认证gate超时先消除响应构造异常，未证明另有生产死锁；备份锁第一用例的停止位置尚需运行复现。
+
+临时官方Flutter3.47.7已可用，但enforce-lockfile失败，现有配置与锁文件缺少7项依赖。普通pub get会按现有约束解析缺项并写锁文件，必须先取得明确依赖变更许可；当前不通过间接配置修改绕过该限制。验证细节见VALIDATION，未达到全套Actions恢复条件。

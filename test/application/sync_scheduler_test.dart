@@ -726,6 +726,11 @@ void main() {
     await tester.pump(const Duration(minutes: 1));
     expect(engine.calls, 2);
     expect(engine.maxActive, 1);
+    // TearDown runs after Widget binding invariants; stop the periodic policy
+    // before this test body returns, then prove no timer restarts it.
+    scheduler.dispose();
+    await tester.pump(const Duration(minutes: 2));
+    expect(engine.calls, 2);
   });
 
   testWidgets('late completion after dispose never restores retry or drain timers', (tester) async {

@@ -137,6 +137,12 @@ void main() {
     ),
   );
 
+  Future<void> unmount(WidgetTester tester) async {
+    await tester.pumpWidget(const SizedBox.shrink());
+    // Stopping the App cancels Drift subscriptions and schedules query cleanup.
+    await tester.pump();
+  }
+
   Future<void> flushDatabaseWatch(WidgetTester tester, Future<void> Function() write) async {
     await tester.runAsync(() async {
       await write();
@@ -174,14 +180,14 @@ void main() {
     expect(await manual, same(_success));
     await tester.pump(const Duration(milliseconds: 300));
     expect(engine.calls, 1);
-    await tester.pumpWidget(const SizedBox.shrink());
+    await unmount(tester);
     await tester.pump(const Duration(minutes: 10));
     expect(engine.calls, 1);
     engine.run = null;
     await mount(tester);
     expect(container.read(syncSchedulerProvider), same(scheduler));
     expect(engine.calls, 2);
-    await tester.pumpWidget(const SizedBox.shrink());
+    await unmount(tester);
   });
 
   testWidgets('scoped committed intents debounce; status and remote apply do not feed back', (tester) async {
@@ -228,7 +234,7 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     expect(next.calls, beforeOldCommit);
     expect(await container.read(syncSchedulerProvider).runNow(), isNull);
-    await tester.pumpWidget(const SizedBox.shrink());
+    await unmount(tester);
   });
 
   testWidgets('provider invalidation reconnects mounted App to the manual policy owner', (tester) async {
@@ -244,7 +250,7 @@ void main() {
     expect(engine.calls, 2);
     await tester.pump(const Duration(minutes: 1));
     expect(engine.calls, 3); // One owner, not an old and new periodic timer.
-    await tester.pumpWidget(const SizedBox.shrink());
+    await unmount(tester);
     await tester.pump(const Duration(minutes: 10));
     expect(engine.calls, 3);
   });
