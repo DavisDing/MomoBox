@@ -428,3 +428,53 @@
 - 本次仅补DESIGN第19节、ANDROID_RELEASE_SIGNING排查及本记录，无业务代码/workflow/依赖更改；无Secrets配置、密钥生成、提交、推送、重跑或发布。管理员须在仓库Actions Secrets补齐固定密钥相关配置；当前job未声明environment，不会自动读取其他environment的Secrets。是否有原私钥及旧安装证书一致性仍NEEDS_CONFIRMATION，不用临时/debug签名绕过。
 - 配置修复后入口：重跑#33失败jobs，逐项核实APK/AAB实际签名、上传、镜像及Release产出；当前正式发布仍阻塞。真实设备/NAS/HA/恢复验收未由这些CI成功替代。
 - 证据：`https://github.com/DavisDing/MomoBox/actions/runs/38120748993`；正式包job `https://github.com/DavisDing/MomoBox/actions/runs/38120748993/job/114416293514`；run #32 `https://github.com/DavisDing/MomoBox/actions/runs/38118640934`。
+
+
+## 2026-10-11：无固定签名key及无旧数据——设计确认补记
+
+- 用户说明没有固定签名密钥，并确认未安装旧版或旧版没有需要保留的数据。本次仅设计本人无旧数据场景，不推断其他设备无数据，不授权卸载/清库/生成key。
+- 起始工作区干净，HEAD `9bd37f1b75265f5d690baf2c622ccebf25d3fbf0` 已含上一阶段排查文档；未实时查询该SHA的新Actions结果，不称run #33是本次最新状态。
+- 读取平台生成入口、已有签名配置/门禁及BackupFormat.coverage，确认JSON明确不支持媒体/OCR/身份/同步现场恢复。核对Android官方签名与App专属存储文档，作为设计依据而非项目实机证据。
+- 交付：DESIGN19.1～19.4及签名文档建议新长期key、首次安装、后续同签名升级、私有保管/备份与Secrets入口；参数PROPOSED，创建/配置待授权。不增加迁移功能、依赖、workflow或业务代码。
+- 文档空白检查PASS；真实key创建/备份恢复/Secrets配置/签名构建/首次安装/覆盖升级/新SHA CI均NOT_EXECUTED；没有运行Flutter/Go测试或安装JDK，没有提交、推送、发布或设备操作。设计结束停止，不把方案存在记为Actions已修复。
+
+
+## 2026-10-11：新增两套独立Compose模板（静态交付，未部署）
+
+- 用户明确要求自带最新稳定PostgreSQL与复用已有PostgreSQL两种完整配置。保留本轮前签名文档未提交改动；新增variants/with-postgres、external-postgres的docker-compose.yaml及.env.example、独立使用说明、真实.env忽略规则；局部更新部署入口/需求/设计。
+- 读取官方版本策略、18.6实际发布日期及Docker镜像标签：2026-10-11当前稳定18.6，2026-08-13发布，18.5未发布、19beta4不选。自带版固定postgres:18.6-alpine3.24，新的postgres18_data挂载/var/lib/postgresql；不改原PG16镜像/卷，不迁移已有实例。没有Docker registry pull/manifest或NAS运行证据，网页标签核实不代表拉取实测。
+- Ruby YAML实际解析与断言PASS：自带服务仅postgres/momo-backend、外部仅momo-backend、外部无数据库volume/depends_on、external网络存在、PG18卷路径正确，两套后端environment/read_only/tmpfs/cap_drop/security_opt/stop_grace_period/ports/healthcheck与原模板一致；原PG16配置仍不变。
+- Python纯文本必填变量/对应env完整性断言PASS，外部模板无POSTGRES_PASSWORD初始化项；git check-ignore证明两套真实.env被排除；git diff --check PASS。变量文本检查非Docker Compose插值/config验证，不打印秘密。
+- 原NAS self-test实际PASS：全部shell语法/help/参数检查及12项故障模拟，16.351秒；原运维脚本没有改动。git diff核对原Compose、scripts、backend、workflow均无本次差异，不以旧脚本测试证明新模板运行/外部升级安全。
+- Docker/Compose config与拉取、PG18真实migration/并发、外部专属库/角色/TLS/网络、UGOS导入、数据重建保留、备份恢复及升级均NOT_EXECUTED；本机无docker/go/psql。没有安装工具、启动服务、创建库/角色、切换LiteLLM网络、数据迁移、提交推送或发布。
+- 差距显式保留：原脚本固定原文件/自带postgres服务，不能用于两个新增目录；README提供新空库人工migrate/schema-check入口，已有真实库安全升级/版本匹配客户端备份恢复待适配与验收。正式Release仍只打包原模板，不声称两套已发布或生产可用。详见DESIGN20及variants/README。
+
+
+## 2026-10-12：Actions run #34 attempt2——签名输出兼容修复及NAS资产接入
+
+### 实时调查与范围
+
+- 用户明确授权修复当前Actions并提交；本地main与GitHub main起始SHA均为`9bd37f1b75265f5d690baf2c622ccebf25d3fbf0`。最新run为#34 `38147596818` attempt2，2026-10-11 23:34:56～23:43:51（Asia/Shanghai），completed/failure；查询runs集合、最新jobs及正式包job `114506821551`完整日志，不套用历史#33缺Secrets结论。
+- 签名prepare success；日志APK构建success（122.6MB）、AAB构建success（93.4MB），23:43:48报`APK signer does not match the single pinned certificate.`，退出1；cleanup success，上传/publish skipped。prepare、Flutter analyze/tests/debug、iOS unsigned、backend/PG/vet均success。KGP未来兼容和watching-path提示未使本次构建失败，不借此扩大依赖升级范围。
+- 原始apksigner证书输出未记录，旧错误同时覆盖格式解析失败及真正pin不匹配；因此具体单一根因仍未证实。读取Android官方ApkSignerTool源码，确认v3.1输出SDK-range标签，而原解析只识别Signer编号，这是已证实的兼容缺陷。修复两种已知标签并区分无证书/格式/数量/错pin诊断；保持工具非零拒绝、恰好一个有效signer、全部应用证书同pin、AAB strict及always清理。没有读生产key文件/密码、修改Secrets、更换pin或fallback debug。
+- CI新增debug APK临时副本的真实隔离签名回归，不触碰生产key/上传debug包；新回归仍需新SHA远端执行。纳入前一批已请求的两套完整Compose/env/操作指南及SHA256/Release资产，不更改原PG16部署、业务、依赖、数据库、运维升级/恢复脚本。
+
+### 本轮实际执行
+
+| 检查 | 结果 | 证据及限制 |
+| --- | --- | --- |
+| `python3 scripts/ci/test-android-release-signing.py` | PASS / SKIPPED | 13项中12项成功、1项真实JDK/可选APK夹具因无Java runtime跳过，最终0.052秒；标签/CRLF/SDK范围/错pin/未知格式/多签名/Source Stamp、旧保密/清理断言保留 |
+| `python3 scripts/ci/test-nas-release-assets.py` | PASS | 1项，0.054秒；实际执行workflow打包段到临时目录，10个资产、3套env固定镜像/版本、Compose原字节、9项SHA256、publish列表一致；APK/AAB仅占位字节，不是签名验证 |
+| 平台准备回归 | PASS | `bash scripts/ci/test-prepare-flutter-platforms.sh`；不是Android/iOS原生构建 |
+| 发布版本回归 | PASS | `bash scripts/release/test-next-version.sh` |
+| NAS脚本自检 | PASS | `sh deploy/nas/scripts/self-test.sh`；shell语法/help/参数及12项故障模拟，16.530秒；不等于新模板运行 |
+| workflow YAML及全部run段shell语法 | PASS | Ruby YAML解析、逐步`bash -n`；非GitHub端执行 |
+| Compose结构/环境与安全保护、真实env忽略、Python AST、空白 | PASS | Ruby断言两套服务/卷/网络和后端保护与原版一致，`.env`忽略确认、`git diff --check`；不是Compose插值/运行 |
+| 本机真实JDK/apksigner/Android/iOS、新SHA远端CI/签名发布/设备升级 | NOT_EXECUTED | 无本机运行环境，不安装依赖；旧SHA的success不作为修复后验证 |
+| PG18/外部库/UGOS、数据持久化/迁移/备份恢复 | NOT_EXECUTED | 无Docker/Go/psql，不启动服务或改LiteLLM |
+
+过程中诊断保留：新增CRLF用例首次暴露signer-count行解析未兼容CRLF，出现3个子用例错误；改为splitlines后完整13项重跑成功，未删用例。首次文档编辑命令因stdin编码声明缺失停止，补编码后重新成功；没有把后续shell退出0当作文档已经写入。官方源码只读网络请求在沙箱内DNS失败，经审批读取官方公开源码成功；未安装软件、无秘密传输。
+
+交付入口见DESIGN21及ANDROID_RELEASE_SIGNING补充。按用户授权本地提交前检查明确文件清单和秘密；不自动push/重跑/发布。必须在新SHA上确认正式校验、制品和发布成功才可称“Actions问题已关闭”；若明确出现真正pin不匹配，继续调查实际签名选择，不能换pin或绕过校验。原新增模板升级/备份脚本及现场验收缺口继续保留。
+
+证据：`https://github.com/DavisDing/MomoBox/actions/runs/38147596818`，job `https://github.com/DavisDing/MomoBox/actions/runs/38147596818/job/114506821551`；官方源码 `https://android.googlesource.com/platform/tools/apksig/+/refs/heads/main/src/apksigner/java/com/android/apksigner/ApkSignerTool.java`。

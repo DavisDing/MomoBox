@@ -162,6 +162,39 @@ def restore_and_cleanup(root):
             cleanup(root)
 
 
+def verify_apk_certificate(output, pin):
+    # apksigner uses SDK-range labels for v3.1 instead of numbered labels.
+    # Require one effective signer AND pin every scheme's certificate: merely
+    # finding one matching digest would accept a different rotation certificate.
+    lines = output.splitlines()
+    counts = [match[1] for line in lines
+              if (match := re.fullmatch(r'Number of signers:[ \t]*(\d+)[ \t]*', line))]
+    if counts != ['1']:
+        raise SigningError('APK verification must report exactly one effective signer.')
+    digests = []
+    numbered = []
+    for line in lines:
+        if ' certificate SHA-256 digest:' not in line:
+            continue
+        if line.startswith('Source Stamp Signer certificate SHA-256 digest:'):
+            continue  # A source stamp is not the application signing identity.
+        match = re.fullmatch(
+            r'(Signer #([1-9]\d*)|Signer \(minSdkVersion=\d+'
+            r'(?: \(dev release=true\))?, maxSdkVersion=\d+\))'
+            r' certificate SHA-256 digest:[ \t]*([0-9a-fA-F]{64})[ \t]*', line)
+        if not match:
+            raise SigningError('APK signer certificate output format is not recognized.')
+        if match[2]:
+            numbered.append(match[2])
+        digests.append(match[3].lower())
+    if not digests:
+        raise SigningError('APK verification did not report a signer certificate SHA-256.')
+    if numbered and (numbered != ['1'] or len(digests) != 1):
+        raise SigningError('APK verification reported ambiguous or multiple signer certificates.')
+    if any(digest != pin for digest in digests):
+        raise SigningError('APK signer certificate does not match the pinned SHA-256.')
+
+
 def verify(apk, aab, env, root=None):
     pin = fingerprint(env.get('ANDROID_SIGNING_CERT_SHA256', ''))
     sdk = Path(env.get('ANDROID_HOME') or env.get('ANDROID_SDK_ROOT') or '/nonexistent')
@@ -169,9 +202,7 @@ def verify(apk, aab, env, root=None):
     if not tools:
         raise SigningError('Android apksigner is unavailable.')
     output = run([str(tools[-1]), 'verify', '--verbose', '--print-certs', str(apk)], env).decode('utf-8', errors='replace')
-    digests = re.findall(r'^Signer #\d+ certificate SHA-256 digest:\s*([0-9a-fA-F]+)\s*$', output, re.MULTILINE)
-    if len(digests) != 1 or fingerprint(digests[0]) != pin:
-        raise SigningError('APK signer does not match the single pinned certificate.')
+    verify_apk_certificate(output, pin)
     verify_aab(aab, env, root)
 
 

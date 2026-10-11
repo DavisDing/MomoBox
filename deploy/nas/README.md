@@ -43,6 +43,12 @@ HA_TOKEN_ENCRYPTION_KEY=恰好32个ASCII字符
 
 创建项目后，先在 UGOS 的 Compose 编辑器中执行配置检查（或保存项目让 UGOS 校验）。**导入 Compose 不会自动执行数据库 migration**：使用同版本部署目录的 `scripts/update.sh` 完成首次迁移再启动后端，不能仅凭“项目已创建”认为初始化完成。后端启动前会只读核对 migration 记录与镜像文件，空库/不匹配时拒绝服务；健康检查通过后访问 `http://NAS地址:映射端口/api/v1/health`。
 
+## 两种新增独立模板
+
+如需全新PostgreSQL18部署或复用LiteLLM已有PostgreSQL，参见 `variants/README.md`：`variants/with-postgres/docker-compose.yaml`（自带PG18.6）与`variants/external-postgres/docker-compose.yaml`（仅后端、复用现有Docker网络及专属库）。每套有独立`.env.example`。
+
+下文及原`scripts/`仍仅适用于本目录原PG16 Compose，**不要拿原脚本运行新增模板**。新增模板配置已提供，但PG18/外部库/UGOS及新运维入口未验收；现有部署不会自动换数据库或升级大版本。
+
 ## 首次部署
 
 1. 将本目录复制到 NAS，例如 `/volume1/docker/momobox-nas`。生产 NAS 不需要克隆整个源码仓库，也不需要安装 Go 或 Flutter。

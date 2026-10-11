@@ -49,6 +49,9 @@ jobs:
           for script in deploy/nas/scripts/*.sh; do sh -n "$script"; done
           sh deploy/nas/scripts/self-test.sh
 
+      - name: Validate versioned NAS release assets
+        run: python3 scripts/ci/test-nas-release-assets.py
+
       - name: Calculate release and backend publication plan
         id: plan
         env:
@@ -155,6 +158,13 @@ jobs:
 
       - name: Android debug build
         run: flutter build apk --debug
+
+      - name: Verify signing with an isolated real APK fixture
+        env:
+          MOMO_SIGNING_TEST_APK_PATH: build/app/outputs/flutter-apk/app-debug.apk
+        run: |
+          java -version
+          python3 scripts/ci/test-android-release-signing.py
 
       - name: Upload Android debug package
         uses: actions/upload-artifact@v4
@@ -319,11 +329,20 @@ jobs:
           mkdir -p dist
           cp build/app/outputs/flutter-apk/app-release.apk "dist/MomoBox-v${VERSION}.apk"
           cp build/app/outputs/bundle/release/app-release.aab "dist/MomoBox-v${VERSION}.aab"
+          image_owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
           cp deploy/nas/docker-compose.yaml "dist/MomoBox-v${VERSION}-docker-compose.yaml"
           sed \
-            -e "s#^MOMO_BACKEND_IMAGE=.*#MOMO_BACKEND_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/momobox-backend:v${VERSION}#" \
+            -e "s#^MOMO_BACKEND_IMAGE=.*#MOMO_BACKEND_IMAGE=ghcr.io/${image_owner}/momobox-backend:v${VERSION}#" \
             -e "s#^APP_VERSION=.*#APP_VERSION=v${VERSION}#" \
             deploy/nas/.env.example > "dist/MomoBox-v${VERSION}-nas.env.example"
+          for variant in with-postgres external-postgres; do
+            cp "deploy/nas/variants/${variant}/docker-compose.yaml" "dist/MomoBox-v${VERSION}-${variant}-docker-compose.yaml"
+            sed \
+              -e "s#^MOMO_BACKEND_IMAGE=.*#MOMO_BACKEND_IMAGE=ghcr.io/${image_owner}/momobox-backend:v${VERSION}#" \
+              -e "s#^APP_VERSION=.*#APP_VERSION=v${VERSION}#" \
+              "deploy/nas/variants/${variant}/.env.example" > "dist/MomoBox-v${VERSION}-${variant}.env.example"
+          done
+          cp deploy/nas/variants/README.md "dist/MomoBox-v${VERSION}-nas-variants-README.md"
           sha256sum dist/* > dist/SHA256SUMS.txt
 
       - name: Remove temporary Android signing material
@@ -420,6 +439,11 @@ jobs:
             "dist/MomoBox-v${VERSION}.aab"
             "dist/MomoBox-v${VERSION}-docker-compose.yaml"
             "dist/MomoBox-v${VERSION}-nas.env.example"
+            "dist/MomoBox-v${VERSION}-with-postgres-docker-compose.yaml"
+            "dist/MomoBox-v${VERSION}-with-postgres.env.example"
+            "dist/MomoBox-v${VERSION}-external-postgres-docker-compose.yaml"
+            "dist/MomoBox-v${VERSION}-external-postgres.env.example"
+            "dist/MomoBox-v${VERSION}-nas-variants-README.md"
             'dist/SHA256SUMS.txt'
           )
 

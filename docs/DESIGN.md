@@ -6,7 +6,7 @@
 
 # 0. 当前设计基线与阅读入口
 
-> 安全补齐见第17节，已确认的单工作区保护见第18节（2026-10-11）。第0节及此前按日期记录的CI结果是历史基线，不代表当前工作区或实机验收；本地执行结果见VALIDATION。
+> 安全补齐见第17节，已确认的单工作区保护见第18节，发布签名阻塞及新密钥建议见第19节，新批次Actions修复见第21节（2026-10-12）。第0节及此前按日期记录的CI结果是历史基线，不代表当前工作区或实机验收；执行结果见VALIDATION。
 
 ## 0.1 本次目标与范围
 
@@ -1196,3 +1196,91 @@ AI_CONTEXT局部更新建议：验证后登记单工作区持久绑定、离线�
 日志明确报告5项`ANDROID_SIGNING_*`配置缺失，当前workflow读取同名Secrets，无environment声明。修复入口是管理员补齐可复用固定key、密码、alias和独立证书pin，详见ANDROID_RELEASE_SIGNING新增排查节；不需要修改库存/同步代码或依赖，不允许通过debug回退、临时key、跳过验证或成功退出伪装正式发布。
 
 NEEDS_CONFIRMATION：是否有可复用固定私钥、与既有安装证书是否一致；没有时须另定换签名和数据保护方案。当前连接器不能配置Secrets，本次未生成密钥或索取秘密；补齐后才重跑失败jobs并验收同SHA完整产物。本次只记录已确认根因和管理员入口，停止于外部配置阻塞，不宣称已修复发布。
+
+### 19.1 用户补充事实与本次边界
+
+2026-10-11用户明确回复“没有固定密钥，先确定新密钥与旧版升级方案”，并确认“未安装旧版，或旧版没有需要保留的数据”。“有无原固定密钥”在本人的本次安装范围内已澄清；这不证明其他设备或历史APK无数据，也不授权替用户卸载。前一段NEEDS_CONFIRMATION保留为调查时状态。
+
+本次基线HEAD为`9bd37f1b75265f5d690baf2c622ccebf25d3fbf0`，起始工作区干净。只设计新签名首次安装及以后升级路线；不生成真实密钥、配置Secrets、改业务代码/包名/依赖/workflow、卸载App、发布或进行设备操作，不新增完整迁移模块。run #33是前一SHA的失败证据，本次未查询更新的Actions结果。
+
+### 19.2 建议方案（PROPOSED，生成/配置须另授权）
+
+| 项目 | 建议与理由 |
+| --- | --- |
+| 当前安装 | 作为新签名首次安装；无旧版则直接安装。仍有旧版时先在设备上复核没有要保留的库存、图片、设置及离线意图，再由用户决定是否移除旧版，不承诺跨签名原地覆盖 |
+| 新key | 可信本机/JDK一次性创建独立长期release key；建议PKCS12、RSA3072、30年有效期、稳定alias `momobox-release`。参数是建议，不是已经创建的文件/证书；证书身份信息会随包公开，不填入不必要个人信息 |
+| 管理 | keystore存放于Git/构建目录之外的受限私有位置；至少两份独立加密备份，密码由用户保管；记录非秘密alias、证书指纹、有效期和负责人，正式启用前验证备份能够恢复同一证书 |
+| CI | 沿用已有5项Repository secrets及prepare→build→verify→cleanup；PKCS12采用相同store/key密码以避免工具兼容差异，密码只在可信本机或Secrets输入，不进命令参数、聊天或日志 |
+| 包身份 | 不通过更换applicationId或并行新App逃避签名问题；沿用既有平台生成入口，正式APK中实际applicationId作为首次基线固定，当前不从模板字符串假定已验收 |
+| 后续升级 | 新签名首包起连续复用同一私钥、证书与applicationId，versionCode递增；验收下一包覆盖安装且保留数据。正常发布不轮换密钥，任何换签名/商店分发另行设计 |
+
+Android官方签名说明建议证书有效期至少25年，并区分直接APK签名与Play上传key；直接分发丢失私钥时不能把上传key重置当作恢复能力。本项目当前方案是既有APK直接安装链路，不新引入Play App Signing；AAB生成不等于已上架或Google代管key。
+
+### 19.3 数据流、修改入口与失败处理
+
+授权实施后：用户在可信本机创建并备份key→导出DER证书独立核对SHA-256→管理员配置5项Secrets→既有签名脚本核对pin/注入→构建APK/AAB→核验实际签名→清理临时key→上传并检查发布结果。本次没有新增接口、数据库、UI或后端责任；入口仍为ANDROID_RELEASE_SIGNING、已有签名脚本和pipeline。
+
+- Secrets缺项、密码错误、证书不匹配继续失败，不fallback debug，不把正式包改名为debug包，不重复生成key碰运气。
+- 生成中断或文件已存在：停止核对状态，不覆盖已有候选key；尚未正式启用的失败候选也不能与正式key混淆。没有可验证备份时不启用正式签名。
+- 若复核发现旧版有数据：立即停止卸载路线。现有核心JSON不包含图片、OCR、密钥、NAS/HA绑定、outbox/cursor；源码`BackupFormat.coverage`明确媒体恢复不支持，不能用JSON成功宣称无损迁移。另立数据迁移设计，不静默丢弃队列或绕过单工作区保护。
+- CI仍缺配置时不盲目重跑。配置完成后才核对当前目标SHA并选择对应失败jobs或新提交完整链路；第19节记录的run #33不代表本次HEAD验证。
+
+### 19.4 验收、未决与停止条件
+
+1. key创建/备份恢复和导出证书指纹一致，真实密钥未进入仓库、日志、附件或聊天；证书长期有效。配置5项后既有门禁成功，失败路径仍清理。
+2. 同SHA的APK/AAB实际签名匹配固定pin，applicationId和版本正确；发布制品及镜像需逐项核对，不能由debug/iOS/PG成功代替。
+3. 当前无旧数据设备新安装成功；再用同key的较高versionCode包覆盖安装，检查库存、媒体、配置保留。若仅验证新安装，后续升级仍NOT_EXECUTED。
+4. 本阶段设计完成后停止。NEEDS_CONFIRMATION：建议密钥参数/私有保存位置与保管方式，以及是否授权后续创建key和配置Secrets；用户“无旧数据”答复不是上述操作授权。资源公开分发、其他设备旧版和未来换key/Play路线仍不自动批准。
+
+AI_CONTEXT更新建议：正式首包验证后登记固定签名指纹基线、密钥保管责任与首次/覆盖安装证据索引，不记录私钥、base64或密码；目前只保留建议，长期事实不改写。
+
+参考：Android官方`https://developer.android.com/studio/publish/app-signing`（证书、长期key及分发边界）、`https://developer.android.com/training/data-storage/app-specific`（卸载删除App专属文件）；2026-10-11读取，不等于项目设备验证。
+
+## 20. 2026-10-11：两套独立NAS Compose（用户明确要求）
+
+### 20.1 目标、已有能力与交付状态
+
+用户要求“带最新PostgreSQL容器”和“不带数据库容器、复用已有实例”两种完整Compose。原长期事实仍为PG16双服务；当前只新增配置模板与局部设计，不改App/后端、schema、既有Compose、运维脚本、CI或Release打包，不执行部署、数据库/角色创建或数据迁移。保护本轮前已有签名文档改动。
+
+新增 `deploy/nas/variants/with-postgres/docker-compose.yaml` + `.env.example`，以及`external-postgres`同名两文件；均独立选择，不叠加、不自动发现已有数据库。统一使用已发布固定后端镜像和现有Secrets/启动schema门禁。配置静态可读不代表可无迁移直接启动；使用和异常见variants/README。
+
+### 20.2 版本、数据流和责任边界
+
+- 2026-10-11读取PostgreSQL官方版本策略、18.6发布说明及Docker官方镜像标签：稳定版18.6（2026-08-13发布，18.5未发布），19beta4不作为正式版本。新自带模板固定`postgres:18.6-alpine3.24`，不浮动latest；卷按PG18契约挂`/var/lib/postgresql`，命名`postgres18_data`，不接旧PG16/17目录。不替用户做大版本升级，旧库迁移仍需另外审批与演练。
+- 自带版：后端→内部`postgres:5432`→新MomoBox库；数据库不发布宿主5432端口，健康依赖保留。初始化账号沿用现有专用实例模板；如果再供其他产品使用，必须另建非管理员角色，不共用此管理账号。
+- 复用版：后端→预存在的Docker external network→指定数据库别名/专属MomoBox库；只有后端容器，无postgres服务、数据库卷或跨项目depends_on。不接管LiteLLM生命周期、不访问其业务库；专属非superuser角色拥有MomoBox必要对象权限，pgcrypto/public schema权限须验证。
+- 当前外部模板选择同主机共享Docker网络；`DATABASE_NETWORK`必填，host不是localhost，网络/alias由管理员确认。不默认采用host网络，不自动开放新数据库端口；跨主机TLS/证书和ACL需另设方案，不以sslmode=disable跨公网连接。
+- 专属库预创建→证明就绪且无其他MomoBox写入者→执行现有migrate→schema-check→serve/health。凭据错/网络错/扩展权限不足失败停止，不fallback到另一个库；不清cursor/outbox或修改migration checksum。
+
+### 20.3 运维、交付差距与验收
+
+原update/backup/restore固定读取原Compose路径，并在其postgres服务执行客户端命令；**不能套到新增模板**。本轮用独立README明确新空库人工初始化入口；已有数据的有锁升级、版本匹配客户端备份/恢复入口仍需后续配置/脚本适配及故障注入，未把仅删容器称作运维完成。外部库由管理员备份专属MomoBox数据库和角色/配套密钥，不停LiteLLM；恢复维持现有隔离和未实现epoch边界。无验证最终备份不得执行已有库升级。
+
+验收：两文件及env独立配置通过Compose运行检查；PG18首次初始化、数据卷重建保留、16/18真实migration/库存并发与cursor/幂等测试；外部同网络专属角色实际连接、其他库不可写、网络/权限失败保持停止；原PG16控制流回归不变；UGOS导入、受控升级备份/恢复分别记录。Release后续应带两套Compose/env及操作指南，目前workflow仍只发布原模板，本轮未改打包。
+
+NEEDS_CONFIRMATION（实施相关，不阻塞通用模板）：用户已有数据库版本、网络名/alias、专属库/角色权限及真实升级备份责任；不向用户索取明文密码。无需这些信息即可交付通用复用模板，但不能验收用户现场。新自动初始化/升级脚本需另授权，不能通过serve自动migration扩张业务范围。
+
+AI_CONTEXT局部更新建议：新模板上线及对应CI/NAS验证后记录“PG16原部署+PG18新部署+外部库独立模板”及支持矩阵；当前长期事实不改，免把PG18标为已验收。
+
+官方依据：`https://www.postgresql.org/support/versioning/`、`https://www.postgresql.org/docs/release/18.6/`、`https://hub.docker.com/_/postgres`、`https://docs.docker.com/compose/how-tos/networking/`、`https://docs.docker.com/compose/how-tos/startup-order/`。
+
+
+## 21. 2026-10-12：当前Actions修复与两套Compose发布接入
+
+### 21.1 目标、证据和授权
+
+用户明确要求“把目前actions报错一起修复后再提交”，本阶段允许针对CI的脚本/workflow修复、回归与本地提交；不是新业务实现、安装依赖、读取生产私钥、修改Secrets、push、重跑远端或部署授权。包含此前明确请求且已落盘的签名方案说明与两套Compose，保护原PG16及所有业务/同步门禁。
+
+实时GitHub与本地main同为`9bd37f1b75265f5d690baf2c622ccebf25d3fbf0`。最新run #34 `38147596818` attempt2于2026-10-11 23:34:56～23:43:51（Asia/Shanghai）；签名prepare成功、APK/AAB构建成功，job `114506821551`在APK签名检查退出1；其他prepare/Flutter/iOS/backend验证成功、publish skipped。此前缺Secrets已不代表当前状态。旧错误合并解析和比对失败，工具原始输出未保留，具体是标签解析还是实际pin不匹配未证实；不把兼容性修复写成已经证明的单一根因。
+
+### 21.2 修改入口与安全边界
+
+- `scripts/ci/android-release-signing.py`：解析官方编号及SDK-range证书标签，要求一名有效signer且全部应用证书同pin；拒绝真正多签名、不同轮换证书、格式未知、无证书及错pin。细分不含秘密的诊断。固定key prepare、APK工具非零拒绝、AAB strict和always清理不变。
+- `scripts/ci/test-android-release-signing.py`：新增标签/CRLF/多个范围/错pin/未知格式/Source Stamp回归。原JDK临时JAR夹具可在CI接收debug APK路径，只重签临时副本并验证错pin和篡改；不使用生产Secrets、不替换已有debug产物。
+- `pipeline.yml`：debug构建后执行真实APK隔离回归；正式发布继续在全部门禁成功后打包/上传。另接入第20节两套完整Compose/env及使用指南，固定同版本后端镜像，纳入SHA256和Release资产；原PG16资产保留。第20节“不改CI”是前一批静态交付边界，本节只推进发布接入，不补已明确未实现的升级/备份脚本。
+
+### 21.3 验收和下一入口
+
+本地签名回归、平台/版本/NAS脚本、workflow YAML和shell语法、资产与模板结构、空白和秘密检查分别记录VALIDATION。真实JDK/APK/AAB、新SHA完整Actions/上传/镜像/Release、PG18/外部库/UGOS仍需独立证据；本机不安装工具或用Mock代替。
+
+本地提交后停止，不自动push。新提交远端验证若仍报告真正pin不匹配，应检查实际签名选择/产物，而不能放宽规则或替换pin。签名构建的成功不等于首次安装/覆盖升级，Release打包不等于NAS运行及灾备验收。AI_CONTEXT仅建议在新SHA验证后补签名门禁/发布资产长期事实，不本轮大改历史。
