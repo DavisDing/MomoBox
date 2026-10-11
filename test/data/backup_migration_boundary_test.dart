@@ -23,6 +23,7 @@ const _excludedSettings = <String, String>{
   'nas_refresh_token': 'nas-refresh-secret',
   'nas_access_token_expires_at_ms': '1000',
   'sync_local_workspace_id': 'old-workspace',
+  'sync_workspace_binding': '{"version":1,"endpoint":"https://old.invalid/api/v1","user_id":"old","family_id":"old"}',
   'sync_bootstrap:family:old-family': '{"status":"ready"}',
   'sync_aux:family:old-family:category:1': '{"name":"old"}',
   'sync_conflict_cursor:family:old-family:change': '100',

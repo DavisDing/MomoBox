@@ -43,6 +43,9 @@ class NasSyncApi {
   int _sessionRevision = 0;
   bool _closed = false;
 
+  /// Also guard database-only work after a network response has been parsed.
+  void assertCurrentSession() => _requireCurrentSession(_sessionRevision);
+
   void setAccessToken(String? token) {
     if (_closed) return;
     final normalized = token?.trim();

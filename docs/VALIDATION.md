@@ -386,3 +386,33 @@
 ### 仍不能宣称完成的事项
 
 正式签名key与旧安装证书/升级迁移、真实Go/PG/容器/NAS及设备验收未完成；首次Compose导入仍须执行同版本migration流程，不等于自动初始化。工作区数据归属、首次既有库存全量导入/分类出站/完整历史、date-only跨时区、TLS来源隔离、候选库/restore epoch/配套密钥等仍需后续决策与实施。当前批次仅补安全门禁，不把这些缺口记为已完成；恢复后的停机隔离不可用update/UGOS手动启动绕过。
+
+
+## 2026-10-11：单工作区保护——已有改动核对与设计收口
+
+### 身份、授权与范围
+
+- 用户明确确认“采用单工作区保护（推荐）”：换NAS/账号/家庭保留原数据、暂停同步，不自动迁移。D-03/04/07及多工作区/迁移仍未批准。
+- 当前基线HEAD为`5258a2b877784508ce777d09069f1257840b49ad`；本节验证对应已有未提交工作区改动，不是该提交或远端CI结果。既有修改涉及同步绑定、Provider/API门禁、原归属离线队列、迟到响应事务回滚及测试，见DESIGN第18节。
+- 本次按架构设计角色收口，仅核对已有源码/日志、等待已启动验证完成及补设计/证据；未继续改业务代码，未安装依赖、迁移、提交、推送、部署或执行恢复。AI_CONTEXT仅提出局部更新建议。
+
+### 最终实际执行证据
+
+| 检查 | 结果 | 证据及限制 |
+| --- | --- | --- |
+| Flutter3.47.7 / Dart3.13.5 `analyze --no-pub` | PASS | 零问题、5.8秒；`/private/tmp/momobox-workspace-analyze-final.log` |
+| 同SDK `test --no-pub --reporter expanded` | PASS | 已启动会话22402完成，实际退出0；全套706项、15秒，`/private/tmp/momobox-workspace-full-verified.log`；内存库/受控会话验证不替代真机/NAS |
+| 平台准备回归 | PASS | 收口时重新执行`bash scripts/ci/test-prepare-flutter-platforms.sh`，不等于原生构建 |
+| 发布版本计算回归 | PASS | 收口时重新执行`bash scripts/release/test-next-version.sh` |
+| NAS脚本自检 | PASS | 收口时重新执行`sh deploy/nas/scripts/self-test.sh`；语法/help/参数检查及12项模拟成功，15.559秒，无Docker/PG |
+| Android签名配置测试 | PASS / SKIPPED | 收口时重新执行`python3 scripts/ci/test-android-release-signing.py`；10项成功、1项因无JDK跳过，不等于正式包签名验证 |
+| `git diff --check` | PASS | 收口时实际执行；新增文档后再次检查 |
+| 新SHA远端CI/Android与iOS包/设备升级/NAS与HA/Go与PG/真实灾备 | NOT_EXECUTED | 没有发布、安装、运行容器或恢复；历史run #31和v0.12.31不得作为本次改动证据 |
+
+测试诊断不隐藏：先前夹具使用错误getter`.totalQuantity`，已改为`.totalStock`；新库存用例首次使用错误consumeBatch参数，导致文件编译加载失败，日志`/private/tmp/momobox-workspace-full-final.log`，不能算运行断言通过。既有修正采用`consumeBatch(batch.productId, batch.id, 1)`，最终上述706项完整重跑成功；中间705项成功仅属于新增库存用例之前。未减少断言、跳过失败用例或放宽CI超时。本次收口没有再次修改测试。
+
+### 验收边界与下一入口
+
+- 已确认：方案选择；本地分析及706项回归通过。未完成：真实身份切换、重启、离线队列恢复、在途请求回执及安装升级验收。
+- 同URL的服务端替换/旧dump恢复不能由endpoint识别；发送前的暂停与迟到本地回滚不能撤销原NAS已接受命令，仍须复用原幂等键处理未知回执。不把单工作区绑定称为完整恢复或数据迁移能力。
+- 设计收口后停止；建议下一阶段先做已确认范围的实机/新SHA门禁验收，再单独确定首次基线导入（D-03）设计。多库、改绑、清库、重置cursor、自动搬迁均不属于本次授权。

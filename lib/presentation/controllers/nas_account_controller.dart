@@ -200,6 +200,8 @@ class NasAccountController extends StateNotifier<NasAccountState> {
   String? _configuredServerUrl;
   int _sessionRevision = 0;
 
+  String? get serverIdentity => state.isAuthenticated ? _apiClient?.serverIdentity : null;
+
   bool _isCurrentSession(int revision) => mounted && revision == _sessionRevision;
 
   // Every explicit restore rereads the endpoint. Reusing an old in-flight
@@ -266,23 +268,24 @@ class NasAccountController extends StateNotifier<NasAccountState> {
   /// Creates a sync transport sharing this controller's authenticated NAS
   /// session. The returned client owns its HTTP connection and must be closed
   /// by the caller. It is null until the server, login and session are ready.
-  NasSyncApi? createSyncApi() {
+  NasSyncApi? createSyncApi({bool Function()? isWorkspaceCurrent}) {
     final baseUrl = _configuredServerUrl;
     final authService = _authService;
     final apiClient = _apiClient;
     final revision = _sessionRevision;
+    bool current() => _isCurrentSession(revision) && (isWorkspaceCurrent?.call() ?? true);
     if (baseUrl == null || authService == null || !state.isAuthenticated) {
       return null;
     }
     final api = NasSyncApi(
       baseUrl,
-      accessTokenProvider: () => _isCurrentSession(revision) ? apiClient?.accessToken : null,
-      isSessionCurrent: () => _isCurrentSession(revision),
+      accessTokenProvider: () => current() ? apiClient?.accessToken : null,
+      isSessionCurrent: current,
     );
     api.setRefreshHandler(() async {
-      if (!_isCurrentSession(revision)) return null;
+      if (!current()) return null;
       final refreshed = await authService.refresh();
-      if (!_isCurrentSession(revision)) return null;
+      if (!current()) return null;
       if (!refreshed.isAuthenticated) {
         if (mounted) {
           _setSignedOut(refreshed.error?.message);

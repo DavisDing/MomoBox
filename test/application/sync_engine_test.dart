@@ -26,6 +26,13 @@ class FakeSyncApi extends NasSyncApi {
   final List<NasSyncPullResponse> pages = [];
   Future<void> Function()? beforePull;
   Future<void> Function()? beforePush;
+  bool sessionCurrent = true;
+
+  @override
+  void assertCurrentSession() {
+    if (!sessionCurrent) throw NasApiError(kind: NasApiErrorKind.unauthorized, message: 'fixture identity changed');
+    super.assertCurrentSession();
+  }
 
   final events = <String>[];
   final pushedChanges = <List<NasSyncChange>>[];
@@ -120,6 +127,16 @@ class FailingCompletionRepository extends SyncOutboxRepository {
   Future<void> clearPendingBootstrap(String scopeId) async {
     await super.clearPendingBootstrap(scopeId);
     throw StateError('injected completion-marker failure');
+  }
+}
+
+class SessionChangingCompletionRepository extends SyncOutboxRepository {
+  SessionChangingCompletionRepository(super.database, this.api);
+  final FakeSyncApi api;
+  @override
+  Future<void> clearPendingBootstrap(String scopeId) async {
+    await super.clearPendingBootstrap(scopeId);
+    api.sessionCurrent = false;
   }
 }
 
@@ -1539,6 +1556,30 @@ void main() {
       expect(report.deferred, 1);
       expect(report.hasMorePending, isFalse);
       expect(api.bootstrapCalls, 0);
+    });
+
+    test('workspace identity changes while pull is in flight: no business or cursor applied', () async {
+      await completedRemoteMode();
+      api.response = const NasSyncPullResponse(changes: [NasSyncPullChange(
+        changeId: 'late', cursor: 12, operation: 'entity_upsert', entity: 'categories',
+        entityId: 'late-category', version: 1, payload: {'name': 'wrong identity'},
+      )], nextCursor: 12, hasMore: false);
+      api.beforePull = () async { api.sessionCurrent = false; };
+      await expectLater(engineWithBusinessAdapter(outbox).runOnce(), throwsA(isA<NasApiError>()));
+      expect((await outbox.getState(scope))!.pullCursor, 0);
+      expect(await outbox.getRemoteAuxiliaryEntity(scopeId: scope, entity: 'categories', entityId: 'late-category'), isNull);
+      expect(await outbox.hasAppliedChange(scopeId: scope, changeId: 'late'), isFalse);
+    });
+
+    test('workspace changes during snapshot completion roll back business/checkpoint/cursor together', () async {
+      final changing = SessionChangingCompletionRepository(database, api);
+      await ready(changing);
+      await pendingSnapshot();
+      await expectLater(engineWithBusinessAdapter(changing).runOnce(), throwsA(isA<NasApiError>()));
+      expect(await inventory.getProductRecord('product'), isNull);
+      expect(await inventory.getBatchRecord('batch'), isNull);
+      expect(await outbox.getPendingBootstrap(scope), isNotNull);
+      expect((await outbox.getState(scope))!.pullCursor, 0);
     });
   });
 

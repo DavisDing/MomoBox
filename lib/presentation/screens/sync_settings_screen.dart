@@ -7,6 +7,7 @@ import '../../application/sync_engine.dart';
 import '../../data/nas/nas_sync_api.dart';
 import '../../data/nas/nas_api_error.dart';
 import '../../data/repositories/sync_outbox_repository.dart';
+import '../../data/repositories/sync_workspace_repository.dart';
 import '../../domain/models/nas_sync_models.dart';
 import '../../domain/models/sync_models.dart';
 import '../controllers/nas_account_controller.dart';
@@ -76,6 +77,8 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     final familyId = account.family.familyId;
     final workspace = ref.watch(localWorkspaceIdProvider).valueOrNull;
     final enabled = engine != null;
+    final workspaceAccess = ref.watch(syncWorkspaceAccessProvider);
+    final access = workspaceAccess.asData?.value;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -108,6 +111,23 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
               const SizedBox(height: 4),
               Text('本地工作区：$workspace', style: Theme.of(context).textTheme.bodySmall),
             ],
+            if (workspaceAccess.hasError || access?.message != null) ...[
+              const SizedBox(height: 8),
+              Text(workspaceAccess.hasError
+                  ? '读取本机数据归属失败，同步已暂停；请保留数据后重试。'
+                  : access!.message!),
+            ],
+            if (access?.owner != null) ...[
+              const SizedBox(height: 4),
+              Text('本机数据所属家庭：${access!.owner!.familyId}', style: Theme.of(context).textTheme.bodySmall),
+            ],
+            if (access?.canBind == true) ...[
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: _working ? null : _bindWorkspace,
+                child: const Text('确认本机数据归属'),
+              ),
+            ],
             if (state?.lastSuccessAt != null) ...[
               const SizedBox(height: 8),
               Text('最近成功：${_formatDate(state!.lastSuccessAt!)}'),
@@ -135,6 +155,38 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _bindWorkspace() async {
+    final identity = ref.read(syncWorkspaceIdentityProvider);
+    if (identity == null) return;
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('确认本机数据归属'),
+        content: Text('NAS：${identity.endpoint}\n账号：${identity.userId}\n家庭：${identity.familyId}\n\n'
+            '只在确认本机全部库存和旧同步现场属于上述身份时继续。绑定后切换身份会暂停同步，不能直接改绑。'
+            '这不是既有库存全量上传或数据搬迁，后续仍需明确选择首次同步模式；不会清除本机数据。'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('确认属于此身份')),
+        ],
+      ),
+    );
+    if (!mounted || accepted != true) return;
+    setState(() => _working = true);
+    try {
+      await SyncWorkspaceRepository(ref.read(databaseProvider)).bind(identity, isCurrent: () {
+        final current = ref.read(syncWorkspaceIdentityProvider);
+        return mounted && current != null && identity.matches(current);
+      });
+      ref.invalidate(syncWorkspaceAccessProvider);
+      if (mounted) setState(() => _message = '本机数据归属已确认；首次同步模式仍需单独确认。');
+    } catch (error) {
+      if (mounted) setState(() => _message = '数据归属确认失败：$error');
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
   }
 
   Widget _buildBootstrapCard(BuildContext context, SyncEngine? engine, SyncStateModel? state) {

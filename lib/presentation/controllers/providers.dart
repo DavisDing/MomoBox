@@ -33,6 +33,7 @@ import '../../data/repositories/reminder_repository.dart';
 import '../../data/repositories/settings_repository.dart';
 import '../../data/repositories/shopping_repository.dart';
 import '../../data/repositories/sync_outbox_repository.dart';
+import '../../data/repositories/sync_workspace_repository.dart';
 import '../../data/nas/nas_sync_api.dart';
 import '../../domain/inventory/reminder_rules.dart';
 import '../../domain/models/ai_usage_models.dart';
@@ -54,11 +55,12 @@ final databaseProvider = Provider<AppDatabase>((ref) {
 
 final inventoryRepositoryProvider = Provider<InventoryRepository>((ref) {
   final database = ref.watch(databaseProvider);
-  final familyId = ref.watch(nasAccountProvider).family.familyId;
+  final familyId = ref.watch(syncWorkspaceAccessProvider).asData?.value.owner?.familyId;
   return InventoryRepository(
     database,
     outbox: SyncOutboxRepository(database),
     syncScopeId: familyId,
+    syncScopeResolver: SyncWorkspaceRepository(database).localMutationScope,
   );
 });
 
@@ -72,11 +74,12 @@ final inventoryProvider = StreamProvider<List<InventoryItem>>(
 
 final shoppingRepositoryProvider = Provider<ShoppingRepository>((ref) {
   final database = ref.watch(databaseProvider);
-  final familyId = ref.watch(nasAccountProvider).family.familyId;
+  final familyId = ref.watch(syncWorkspaceAccessProvider).asData?.value.owner?.familyId;
   return ShoppingRepository(
     database,
     outbox: SyncOutboxRepository(database),
     syncScopeId: familyId,
+    syncScopeResolver: SyncWorkspaceRepository(database).localMutationScope,
   );
 });
 
@@ -416,11 +419,46 @@ final nasAccountProvider = StateNotifierProvider<NasAccountController, NasAccoun
   return controller;
 });
 
+final syncWorkspaceIdentityProvider = Provider<SyncWorkspaceIdentity?>((ref) {
+  final account = ref.watch(nasAccountProvider);
+  final endpoint = ref.read(nasAccountProvider.notifier).serverIdentity;
+  final userId = account.auth.user?.id;
+  final familyId = account.family.familyId;
+  if (!account.isAuthenticated || endpoint == null || userId == null || familyId == null) return null;
+  return SyncWorkspaceIdentity(endpoint: endpoint, userId: userId, familyId: familyId);
+});
+
+final syncWorkspaceBindingProvider = StreamProvider<String?>((ref) =>
+    SyncWorkspaceRepository(ref.watch(databaseProvider)).watchBinding());
+
+final syncWorkspaceAccessProvider = FutureProvider<SyncWorkspaceAccess>((ref) async {
+  final identity = ref.watch(syncWorkspaceIdentityProvider);
+  final database = ref.watch(databaseProvider);
+  await ref.watch(syncWorkspaceBindingProvider.future);
+  return SyncWorkspaceRepository(database).inspect(identity);
+});
+
 /// A transport assembled only while the authenticated account has a live
 /// NAS session. The provider owns the sibling client's HTTP lifecycle.
 final nasSyncApiProvider = Provider<NasSyncApi?>((ref) {
   ref.watch(nasAccountProvider);
-  final api = ref.read(nasAccountProvider.notifier).createSyncApi();
+  final identity = ref.watch(syncWorkspaceIdentityProvider);
+  final value = ref.watch(syncWorkspaceAccessProvider);
+  final access = value.asData?.value;
+  if (identity == null || value.isLoading || access?.canSync != true ||
+      access?.owner?.matches(identity) != true) {
+    return null;
+  }
+  var active = true;
+  ref.onDispose(() => active = false);
+  final api = ref.read(nasAccountProvider.notifier).createSyncApi(isWorkspaceCurrent: () {
+    if (!active) return false;
+    final current = ref.read(syncWorkspaceIdentityProvider);
+    final latest = ref.read(syncWorkspaceAccessProvider);
+    return current != null && identity.matches(current) &&
+        !latest.isLoading && latest.asData?.value.canSync == true &&
+        latest.asData?.value.owner?.matches(current) == true;
+  });
   if (api != null) ref.onDispose(api.close);
   return api;
 });

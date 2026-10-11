@@ -133,9 +133,29 @@ class SyncEngine {
           deviceId: deviceId,
           familyId: familyId,
           localWorkspaceId: localWorkspaceId,
-          applyRemoteChange: adapter.applyRemoteChange,
-          applyRemoteSnapshotWithCompletion: (snapshot, cursor, onApplied) =>
-              adapter.applyRemoteSnapshot(snapshot, cursor, onApplied: onApplied),
+          applyRemoteChange: (change) async {
+            SyncRemoteChangeDeferred? deferred;
+            await repository.transaction(() async {
+              api.assertCurrentSession();
+              try {
+                await adapter.applyRemoteChange(change);
+              } on SyncRemoteChangeDeferred catch (error) {
+                // Conflict evidence must survive; the adapter already rolls
+                // back any incomplete command transaction before deferral.
+                deferred = error;
+              }
+              api.assertCurrentSession();
+            });
+            if (deferred != null) throw deferred!;
+          },
+          applyRemoteSnapshotWithCompletion: (snapshot, cursor, onApplied) async {
+            api.assertCurrentSession();
+            await adapter.applyRemoteSnapshot(snapshot, cursor, onApplied: () async {
+              api.assertCurrentSession();
+              await onApplied();
+              api.assertCurrentSession();
+            });
+          },
         );
 
   final NasSyncApi _api;
@@ -156,6 +176,7 @@ class SyncEngine {
   Future<NasSyncBootstrap> bootstrap() => _coordinated(_bootstrap);
 
   Future<NasSyncBootstrap> _bootstrap() async {
+    _api.assertCurrentSession();
     final previousPending = await _repository.getPendingBootstrap(_scopeId);
     final previousMode = await _repository.getConfirmedBootstrapMode(_scopeId);
     late final NasSyncBootstrap response;
@@ -168,6 +189,7 @@ class SyncEngine {
       rethrow;
     }
     await _repository.transaction(() async {
+      _api.assertCurrentSession();
       if (jsonEncode(await _repository.getPendingBootstrap(_scopeId)) != jsonEncode(previousPending) ||
           await _repository.getConfirmedBootstrapMode(_scopeId) != previousMode) {
         throw const SyncRemoteChangeDeferred('bootstrap choice changed while fetching snapshot');
@@ -213,6 +235,7 @@ class SyncEngine {
     // snapshot request. Keep confirmation outside the run/bootstrap queue;
     // exact durable mode/checkpoint/revision checks guard late responses.
     try {
+      _api.assertCurrentSession();
       await _verifyRemoteCompatibility();
       return await _confirmBootstrap(mode: mode);
     } catch (error) {
@@ -324,6 +347,7 @@ class SyncEngine {
   }
 
   Future<SyncRunReport> _runOnce({required int maxPush, required int pullLimit}) async {
+    _api.assertCurrentSession();
     final state = await _ensureState();
     final now = DateTime.now().toUtc();
     final retryPending = await _repository.getPendingBootstrap(_scopeId);
@@ -487,6 +511,7 @@ class SyncEngine {
   }
 
   Future<void> _assertRemoteSyncChoiceActive() async {
+    _api.assertCurrentSession();
     final state = await _ensureState();
     if (state.bootstrapStatus == SyncBootstrapStatus.keepLocalOnly ||
         await _repository.getConfirmedBootstrapMode(_scopeId) == 'keep_local_only') {
@@ -559,9 +584,13 @@ class SyncEngine {
       throw const FormatException('pending bootstrap server_cursor must be a non-negative integer');
     }
     final snapshot = Map<String, dynamic>.from(rawSnapshot);
-    Future<void> complete() => _completeBootstrapSnapshot(
-      _repository, _scopeId, snapshot, cursor.toInt(), pending, resolutionToken,
-    );
+    Future<void> complete() async {
+      _api.assertCurrentSession();
+      await _completeBootstrapSnapshot(
+        _repository, _scopeId, snapshot, cursor.toInt(), pending, resolutionToken,
+      );
+      _api.assertCurrentSession();
+    }
     final businessSnapshot = _applyRemoteSnapshotWithCompletion;
     if (businessSnapshot != null) {
       // Concrete adapter validates outside the transaction, but runs complete

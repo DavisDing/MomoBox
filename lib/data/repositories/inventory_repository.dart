@@ -17,14 +17,20 @@ class InventoryRepository {
     Uuid? uuid,
     SyncOutboxRepository? outbox,
     String? syncScopeId,
+    Future<String?> Function()? syncScopeResolver,
   })  : _uuid = uuid ?? const Uuid(),
         _outbox = outbox,
-        _syncScopeId = syncScopeId;
+        _syncScopeId = syncScopeId,
+        _syncScopeResolver = syncScopeResolver;
 
   final AppDatabase _database;
   final Uuid _uuid;
   final SyncOutboxRepository? _outbox;
   final String? _syncScopeId;
+  final Future<String?> Function()? _syncScopeResolver;
+
+  Future<String?> _mutationScope() async =>
+      _syncScopeResolver == null ? _syncScopeId : await _syncScopeResolver();
 
   AppDatabase get database => _database;
   String? get syncScopeId => _syncScopeId;
@@ -990,7 +996,7 @@ class InventoryRepository {
     required Map<String, dynamic> payload,
     required DateTime now,
   }) async {
-    final scopeId = _syncScopeId;
+    final scopeId = await _mutationScope();
     final outbox = _outbox;
     if (scopeId == null || scopeId.trim().isEmpty || outbox == null) return;
     final changeId = _uuid.v4();
@@ -1024,7 +1030,7 @@ class InventoryRepository {
     required List<Map<String, dynamic>> allocations,
     required DateTime now,
   }) async {
-    final scopeId = _syncScopeId;
+    final scopeId = await _mutationScope();
     final outbox = _outbox;
     if (scopeId == null || scopeId.trim().isEmpty || outbox == null) return;
     final changeId = _uuid.v4();
