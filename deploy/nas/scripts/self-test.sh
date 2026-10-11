@@ -20,7 +20,7 @@ fail() {
     exit 1
 }
 
-for script in "$BACKUP" "$RESTORE" "$UPDATE" "$0"; do
+for script in "$SCRIPT_DIR"/*.sh; do
     sh -n "$script" || fail "syntax check failed: $script"
 done
 
@@ -52,3 +52,4 @@ fi
 grep -q 'unknown option' "$TMP_DIR/update-unknown.err" || fail "update unknown-option error was not descriptive"
 
 printf '%s\n' "All shell syntax and help/argument behavior checks passed."
+python3 "$SCRIPT_DIR/test-safety.py"

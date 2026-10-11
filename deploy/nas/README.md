@@ -41,7 +41,7 @@ HA_TOKEN_ENCRYPTION_KEY=恰好32个ASCII字符
 
 其中 `MOMO_BACKEND_IMAGE` 和 `APP_VERSION` 必须对应同一个已发布版本；生产环境不要使用 `latest`。绿联 NAS 需要能够访问 GHCR，且 `momo-backend` 镜像必须支持 NAS 的 CPU 架构（当前发布镜像为 `linux/amd64` 和 `linux/arm64`）。
 
-创建项目后，先在 UGOS 的 Compose 编辑器中执行配置检查（或保存项目让 UGOS 校验），再启动项目。首次启动应等待 `postgres` 健康后再启动后端；后端健康检查通过后访问 `http://NAS地址:映射端口/api/v1/health`。
+创建项目后，先在 UGOS 的 Compose 编辑器中执行配置检查（或保存项目让 UGOS 校验）。**导入 Compose 不会自动执行数据库 migration**：使用同版本部署目录的 `scripts/update.sh` 完成首次迁移再启动后端，不能仅凭“项目已创建”认为初始化完成。后端启动前会只读核对 migration 记录与镜像文件，空库/不匹配时拒绝服务；健康检查通过后访问 `http://NAS地址:映射端口/api/v1/health`。
 
 ## 首次部署
 
@@ -73,7 +73,9 @@ openssl rand -hex 16  # HA_TOKEN_ENCRYPTION_KEY：输出恰好 32 个 ASCII 字�
 ./scripts/update.sh
 ```
 
-该脚本会按顺序：获取部署互斥锁、备份 PostgreSQL、拉取 `MOMO_BACKEND_IMAGE`、停止旧后端、执行 migration、启动新后端并等待 healthcheck。它先完成拉取再停止现有服务；若 migration 或健康等待失败，脚本会返回失败，避免宣称部署成功。脚本会输出备份文件路径。`backup.sh`、`restore.sh` 与更新流程共享同一锁，不能并发操作数据库。
+该脚本会按顺序：获取部署互斥锁、在线预备份、拉取 `MOMO_BACKEND_IMAGE`、停止并核对本项目全部后端容器（含 restarting）、**停写后最终备份**、migration、只读 `schema-check`、启动新后端并等待全部容器 healthcheck。先拉取再停机，拉取失败不影响原服务；最终备份失败不回退到在线 dump 继续迁移。输出的最终备份才是本项目停写后的升级恢复点，NAS 上其他项目、手工进程或外部数据库写入者仍须单独隔离。
+
+停机后的任何失败都保持后端隔离；容器状态无法确认、迁移失败或信号打断导致数据库任务结果未知时，**保留部署锁**等待人工核对。脚本与镜像必须来自支持 `schema-check` 的同版本；旧镜像不支持该命令时拒绝启动，不跳过检查。`backup.sh`、`restore.sh` 与更新流程共享同一锁，不能并发操作数据库。
 
 仅当你已在部署目录外保留了当前且已验证的备份时，才可跳过自动备份：
 
@@ -128,7 +130,11 @@ docker compose \
 ./deploy/nas/scripts/restore.sh --yes /path/to/momobox.dump
 ```
 
-恢复完成后脚本会重新启动此前正在运行的后端。更新、备份、恢复均使用 `deploy/nas/.momobox-deployment.lock` 互斥；发现锁存在时不要直接删除，先确认没有其他操作，再按 NAS 运维流程处理。执行恢复前仍应保留当前数据库的独立备份，并确认 dump 来源和目标 NAS 环境。
+**恢复成功、失败或中断后都不会自动重启后端。** 成功仅代表原库单事务恢复及镜像 migration 身份核对完成，不是安全重开服务的许可。旧 dump 可能恢复旧账号权限、会话、cursor和库存历史；外部 restore epoch、App 离线意图审阅、配套密钥及独立候选库切换尚未实现。不要直接运行更新脚本或在 UGOS 点击启动来绕过恢复后的隔离；需先按 `docs/NAS_RECOVERY_PLAN_2026-10-07.md` 单独制定并验证恢复准入方案。
+
+更新、备份、恢复使用 `deploy/nas/.momobox-deployment.lock` 互斥。发现锁存在时不要直接删除：先检查 owner 元信息、本项目所有容器（含 one-off）、PostgreSQL 活动及仍可能运行的迁移/恢复进程，证明任务已终止后再按运维流程处理；删除锁不代表数据库或同步历史已安全。恢复仍是破坏性原库操作，执行前必须另存当前库备份、验证来源与目标；本脚本不等于完整灾备方案。
+
+后端 `schema-check` 和 `serve` 启动门禁只验证 ledger 的版本、名称、checksum（保留限定 legacy 兼容），不修复记录、不验证物理表结构或数据/历史完整性；`/api/v1/health` 仍仅报告数据库连接，不是 restore epoch 或完整 readiness 接口。
 
 ## 明确不包含的服务
 

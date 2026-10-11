@@ -241,13 +241,15 @@ func run(ctx context.Context, args []string) error {
 		return serve(ctx)
 	case "migrate":
 		return migrate(ctx)
+	case "schema-check":
+		return schemaCheck(ctx)
 	case "healthcheck":
 		return healthcheck(ctx)
 	case "help", "-h", "--help":
-		fmt.Println("usage: momo-backend [serve|migrate|healthcheck]")
+		fmt.Println("usage: momo-backend [serve|migrate|schema-check|healthcheck]")
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q (expected serve, migrate, or healthcheck)", command)
+		return fmt.Errorf("unknown command %q (expected serve, migrate, schema-check, or healthcheck)", command)
 	}
 }
 
@@ -273,6 +275,12 @@ func serve(ctx context.Context) error {
 	defer cancelStartup()
 	if err := db.PingContext(startupCtx); err != nil {
 		return fmt.Errorf("connect database: %w", err)
+	}
+	if err := platform.CheckMigrationSchema(startupCtx, os.Getenv("MIGRATIONS_DIR"), func(ctx context.Context) ([]platform.MigrationRecord, error) {
+		return platform.ReadMigrationSchema(ctx, db)
+	}); err != nil {
+		// Do not log raw database errors/DSNs or start serving an older restore.
+		return errors.New("database schema is not ready; verify this image's migration ledger before serving")
 	}
 
 	authRepositories := authpostgres.NewRepositories(db)
@@ -403,5 +411,26 @@ func healthcheck(ctx context.Context) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("health endpoint returned %s", resp.Status)
 	}
+	return nil
+}
+
+func schemaCheck(ctx context.Context) error {
+	cfg, err := platform.LoadConfig()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, databaseStartupTimeout)
+	defer cancel()
+	db, err := platform.OpenPostgresSQL(cfg.DatabaseURL)
+	if err != nil {
+		return errors.New("schema-check: could not open database")
+	}
+	defer db.Close()
+	if err := platform.CheckMigrationSchema(ctx, os.Getenv("MIGRATIONS_DIR"), func(ctx context.Context) ([]platform.MigrationRecord, error) {
+		return platform.ReadMigrationSchema(ctx, db)
+	}); err != nil {
+		return errors.New("schema-check: migration ledger does not match this image or could not be read; no changes were made")
+	}
+	fmt.Println("Schema check passed (read-only migration identity check; not restore/history validation).")
 	return nil
 }

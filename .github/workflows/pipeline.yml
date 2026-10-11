@@ -41,6 +41,9 @@ jobs:
       - name: Validate platform preparation script
         run: scripts/ci/test-prepare-flutter-platforms.sh
 
+      - name: Validate fixed Android release signing configuration
+        run: python3 scripts/ci/test-android-release-signing.py
+
       - name: Validate NAS deployment scripts
         run: |
           for script in deploy/nas/scripts/*.sh; do sh -n "$script"; done
@@ -278,6 +281,16 @@ jobs:
         if: needs.prepare.outputs.release_required == 'true'
         run: scripts/ci/prepare-flutter-platforms.sh
 
+      - name: Configure fixed Android release signing (no debug fallback)
+        if: needs.prepare.outputs.release_required == 'true'
+        env:
+          ANDROID_SIGNING_KEYSTORE_BASE64: ${{ secrets.ANDROID_SIGNING_KEYSTORE_BASE64 }}
+          ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}
+          ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}
+          ANDROID_SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}
+          ANDROID_SIGNING_CERT_SHA256: ${{ secrets.ANDROID_SIGNING_CERT_SHA256 }}
+        run: python3 scripts/ci/android-release-signing.py prepare
+
       - name: Install Dart packages
         if: needs.prepare.outputs.release_required == 'true'
         run: flutter pub get
@@ -291,11 +304,18 @@ jobs:
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
           BUILD_NUMBER: ${{ github.run_number }}
+          ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}
+          ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}
+          ANDROID_SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}
+          ANDROID_SIGNING_CERT_SHA256: ${{ secrets.ANDROID_SIGNING_CERT_SHA256 }}
         run: |
           flutter build apk --release --build-name "$VERSION" --build-number "$BUILD_NUMBER" \
             --dart-define="MOMO_APP_VERSION=$VERSION" --dart-define="MOMO_BUILD_NUMBER=$BUILD_NUMBER"
           flutter build appbundle --release --build-name "$VERSION" --build-number "$BUILD_NUMBER" \
             --dart-define="MOMO_APP_VERSION=$VERSION" --dart-define="MOMO_BUILD_NUMBER=$BUILD_NUMBER"
+          python3 scripts/ci/android-release-signing.py verify \
+            --apk build/app/outputs/flutter-apk/app-release.apk \
+            --aab build/app/outputs/bundle/release/app-release.aab
           mkdir -p dist
           cp build/app/outputs/flutter-apk/app-release.apk "dist/MomoBox-v${VERSION}.apk"
           cp build/app/outputs/bundle/release/app-release.aab "dist/MomoBox-v${VERSION}.aab"
@@ -305,6 +325,10 @@ jobs:
             -e "s#^APP_VERSION=.*#APP_VERSION=v${VERSION}#" \
             deploy/nas/.env.example > "dist/MomoBox-v${VERSION}-nas.env.example"
           sha256sum dist/* > dist/SHA256SUMS.txt
+
+      - name: Remove temporary Android signing material
+        if: always() && needs.prepare.outputs.release_required == 'true'
+        run: python3 scripts/ci/android-release-signing.py cleanup
 
       - name: Upload release packages for publication
         if: needs.prepare.outputs.release_required == 'true'

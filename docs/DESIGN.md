@@ -6,6 +6,8 @@
 
 # 0. 当前设计基线与阅读入口
 
+> 当前补齐批次见第17节（2026-10-11）。第0节及此前按日期记录的CI结果是历史基线，不代表本批次已通过运行验收。
+
 ## 0.1 本次目标与范围
 
 完善App与NAS/Docker的需求映射和技术边界，消除旧提案与已批准方案的矛盾，补齐已接入能力的异常/验收入口。不新增业务模块、依赖、表、API或UI，不执行migration、提交/推送、发布、恢复或部署。
@@ -1113,3 +1115,28 @@ AI_CONTEXT 更新建议：长期验证门禁无需变化；本次按 SHA/run 的
 - 数据库时间戳断言转UTC后比较同一instant，保留精确时间、tombstone及成功时间屏障检查，不调整业务日期契约。
 
 本地Flutter3.47.7实际全套687项成功，默认时区与UTC各一轮；analyze零问题。现有测试名称和断言数量检查未减少；无skip、全局ignore或超时放宽。执行证据和先前失败/中断记录见VALIDATION。远端最新run #30仍针对244174c失败，本次未提交/推送；Android/iOS、后端及发布需要包含本次修改的新SHA独立验收。长期AI_CONTEXT无需因临时测试环境或单次本地通过重写。
+
+## 17. 2026-10-11：既有能力安全缺口补齐
+
+### 17.1 范围与授权边界
+
+用户要求“把要补齐的先补齐”，本批次仅补发布签名配置、数据库启动版本门禁、升级最终备份及恢复失败隔离。复用现有平台生成/发布链路和NAS脚本；不增加业务功能、依赖、schema或UI，不执行提交、推送、发布、部署或真实恢复。起点为`f2d9fea`，此前run #31成功仅属于该SHA，不能作为本批次的验收证据。
+
+D-06采用只读migration身份检查和失败保持停机的窄安全加固，不代表D-05网络拓扑、D-07完整灾备或D-02～04数据归属/迁移/时区已批准。未决产品选择仍保留NEEDS_CONFIRMATION。
+
+### 17.2 修改入口、数据流及关键异常
+
+| 入口 | 本批次方案 | 保护与边界 |
+| --- | --- | --- |
+| `backend/internal/platform/schema_check.go`、CLI `schema-check`及`serve` | 只读repeatable-read读取migration ledger，对照镜像migration文件的版本/名称/checksum；serve在监听前校验 | 缺表、缺migration、未知新版本、重复或不匹配即拒绝；保留已限定的legacy兼容，不写ledger、不迁移。仅证明记录身份，不验证实体结构、数据完整或restore epoch；现有health响应不改 |
+| `deploy/nas/scripts/update.sh`及`backend-isolation.sh` | 原在线预备份→拉取镜像→停服务并核对包括restarting在内的项目容器→最终备份→migration→schema-check→启动与health | 最终备份失败不退回在线dump继续；失败/信号后核验隔离，无法证明任务终止则保留锁。只覆盖该Compose项目，其他写入者须运维隔离；显式skip-backup仍是调用方承担的例外 |
+| `deploy/nas/scripts/restore.sh` | dump预检和确认→核验停机→现有单事务恢复→schema-check；任何结果都不自动重开服务 | 成功退出只代表恢复和ledger核对完成；旧会话、cursor与离线意图未解决，不把health或checksum当恢复准入。独立候选库/epoch尚未实现，不自动清库、cursor或outbox |
+| 发布job与`scripts/ci/android-release-signing.py` | 平台生成后，从CI secrets读取固定签名key和期望证书指纹；验证配置后注入正式release签名；APK/AAB实际签名和指纹核验后才上传 | 缺失/部分/错误密钥或指纹不匹配则阻断正式发布，不降级debug签名。PR/debug/iOS unsigned验证不需要密钥。临时文件权限收紧，失败和job收尾清理，不输出密钥/密码 |
+
+### 17.3 验收与交付依赖
+
+- NAS脚本用无Docker的故障注入覆盖pull、最终备份、stop/枚举、migration、schema、health、restore及信号；必须另外做真实Compose/PG/NAS演练，模拟PASS不等于生产验收。
+- 后端纯单元覆盖migration身份、legacy兼容、取消和读失败；PG条件回归验证只读查询和缺表不建表。Go/PG不可用时明确NOT_EXECUTED，不能从源码推出PASS。
+- 签名夹具覆盖Kotlin/Groovy平台模板、密钥缺失/格式、证书不匹配、保密和清理；真实JDK/Android构建/签名验收另记。密钥由仓库管理员配置，不自动生成，不要求在聊天中发送秘密。
+- NEEDS_CONFIRMATION：既有私装APK证书与拟用固定key是否一致及升级迁移策略；资源授权/Release可见性；灾备恢复后的epoch、撤权、数据归属和离线意图审阅。不同证书不可作为原地升级已验收，不建议为换签名卸载清数据。
+- 长期AI_CONTEXT更新建议：验证通过后补“serve启动ledger门禁、restore不自动重开、正式包固定签名要求”的事实；本批次临时执行结果留在VALIDATION，不覆盖历史记录或把完整灾备写成已实现。

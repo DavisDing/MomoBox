@@ -1,7 +1,7 @@
 # MomoBox NAS Docker 部署契约
 
-- 文档版本：v0.3
-- 更新时间：2026-09-26
+- 文档版本：v0.4
+- 更新时间：2026-10-11
 - 适用范围：Go NAS 后端和 PostgreSQL
 
 ## 1. 仓库目录隔离
@@ -27,10 +27,12 @@ MomoBox/
 │       ├── README.md
 │       └── scripts/
 │           ├── deployment-lock.sh     # update/backup/restore 共享互斥锁
+│           ├── backend-isolation.sh   # 全项目后端状态核验
 │           ├── update.sh
 │           ├── backup.sh
 │           ├── restore.sh
-│           └── self-test.sh
+│           ├── self-test.sh
+│           └── test-safety.py         # 无Docker故障注入，仅测试需Python3
 ├── lib/                     # Flutter 客户端
 ├── test/                    # Flutter 测试
 ├── android/
@@ -151,7 +153,7 @@ LOG_LEVEL=info
 
 推荐使用 `openssl rand -hex 32` 生成 JWT Secret 和 Refresh Token Pepper，使用 `openssl rand -hex 16` 生成 HA Token 加密密钥。后者输出恰好 32 个 ASCII 字符，满足后端“32 bytes”校验；不要把换行或引号计入变量值。`POSTGRES_PASSWORD` 与 `DATABASE_URL` 中的密码必须一致，特殊字符必须进行 URL 编码。Compose 内服务固定监听 `0.0.0.0:8080`，宿主机映射端口只通过 `MOMO_BACKEND_PORT` 调整，避免端口映射与健康检查失配。
 
-生产 Compose 不设置 `MOMO_BACKEND_IMAGE` 默认值。每次升级前应把 `MOMO_BACKEND_IMAGE` 与 `APP_VERSION` 一起固定到目标版本，然后使用 `scripts/update.sh`；脚本会获取部署互斥锁、先备份、拉取镜像、运行 migration、启动服务并等待后端 healthcheck。若要回退应用镜像，将这两个变量改为 `ghcr.io/davisding/momobox-backend:vX.Y.Z` 与对应版本；镜像回退不会自动回退数据库 schema。
+生产 Compose 不设置 `MOMO_BACKEND_IMAGE` 默认值。每次升级前应把 `MOMO_BACKEND_IMAGE` 与 `APP_VERSION` 一起固定到目标版本，然后使用同版本 `scripts/update.sh`；脚本获取锁、在线预备份、拉取镜像、核验停机、最终备份、migration、schema-check后才启动并等待health。拉取失败不停止旧服务，停机后失败保持隔离；未知数据库任务/无法核验隔离时保留锁。回退应用镜像不自动回退数据库schema；旧镜像缺少schema-check时失败关闭，不绕过核验。
 
 不提供以下后端变量：
 
@@ -189,6 +191,7 @@ AI_PROXY_URL
 
 ```text
 momo-backend migrate
+momo-backend schema-check
 momo-backend serve
 ```
 
@@ -205,7 +208,7 @@ scripts/update.sh
 
 ```text
 scripts/update.sh
-# lock → backup → pull pinned MOMO_BACKEND_IMAGE → stop backend → migrate → start → wait healthy
+# lock → online backup → pull → verify stopped → final backup → migrate → schema-check → start → wait healthy
 ```
 
 不得使用自动重启型镜像更新器绕过 migration。迁移执行必须：
@@ -215,6 +218,8 @@ scripts/update.sh
 - 失败时返回非零退出码；
 - 不在每个 HTTP 请求中执行迁移；
 - 迁移失败时不启动可写业务服务。
+
+`serve`监听前以有界只读snapshot核对migration ledger与镜像文件的版本/名称/checksum，缺表/缺版本/未知版本/不匹配拒绝服务。`schema-check`提供同一核验而不migration、不写ledger。它们仅证明记录身份，不证明物理schema、恢复历史或epoch；Compose导入不替代首次migration。
 
 ## 7. 健康检查
 
@@ -264,7 +269,7 @@ HA_ACCESS_TOKEN
 ./deploy/nas/scripts/restore.sh /volume1/backups/momobox/momobox-postgres-YYYYMMDDTHHMMSSZ-PID.dump
 ```
 
-恢复默认要求交互确认，自动化环境必须显式传入 `--yes`；恢复期间停止后端，完成后只在其原本运行时重新启动。备份使用临时文件并在成功后原子重命名，失败时不能留下看似成功的 dump。
+恢复默认要求交互确认，自动化环境须显式 `--yes`；dump预检在停机前完成。进入写入阶段后核验停机，成功/失败/信号后均不重开后端；成功只表示原库单事务恢复及schema-check完成。旧会话、cursor、离线意图及配套密钥需另行审阅，完整epoch/候选库灾备尚未实施，不能直接启动或调用update绕过隔离。未知任务或隔离核验失败保留锁。备份临时写入、目录校验后原子重命名，不把目录校验当完整恢复验收。
 
 更新、备份和恢复脚本共享同一个基于 `mkdir` 的部署互斥锁；锁目录为 `deploy/nas/.momobox-deployment.lock`。锁存在时脚本会拒绝并发执行，避免更新、备份和恢复交叉修改同一数据库。
 

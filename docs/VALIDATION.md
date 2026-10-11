@@ -340,3 +340,49 @@
 | 本次修复Android/iOS构建、Go/PG、Docker/NAS/设备、正式发布 | NOT_EXECUTED | 本地测试不替代包含本次修改的新SHA的CI/原生/实机验收 |
 
 未提交、推送、重跑Actions或发布。下一入口：将修复提交后，在同一SHA核对完整测试、Android debug、iOS unsigned、后端及最终发布产物；不能重跑旧244174c就宣称新修改已验证。AI_CONTEXT更新建议：保留长期门禁，当前进度引用本记录即可，不把临时SDK或本地687项通过写成全平台发布验收。
+
+## 2026-10-10：run #31 远端完整链路成功（核对补记）
+
+此前等待提交的阻塞已解除：修复已进入main提交 `f2d9fea61ee1ecb4f0f6dc08d62e087ce68694c8`。本次调查起始本地工作区干净，HEAD、GitHub main、Release目标及v0.12.31标签均为同一SHA；不是旧244174c的重跑。
+
+- Actions run #31：`38060561355`，attempt 1，push，2026-10-10 22:40:41～23:01:28（Asia/Shanghai），status=completed、conclusion=success。
+- 已逐job/step核对：prepare、Flutter analyze/test/Android debug、iOS unsigned Xcode27、backend/真实PostgreSQL regression/vet、release packages、publish均成功；关键构建、测试与发布步骤未跳过。
+- Flutter job日志确认687项全部通过（49秒），并构建/上传Android debug APK；不能以本地通过替代该远端证据。
+- Release v0.12.31已公开发布，draft=false、prerelease=false；附件5项均uploaded且非空：APK 122547319字节、AAB 93354717字节、Compose 1913字节、NAS env模板844字节、SHA256SUMS 396字节。元数据具有sha256 digest；本次未下载大包逐字节复核或执行设备安装。
+- 发布job日志确认linux/amd64和linux/arm64均构建，manifest list `sha256:664f4613914a67d8ca5c7aff7bdb74ed0410313f2603d43284b75e2d75b51438` 已成功推送为 `ghcr.io/davisding/momobox-backend:v0.12.31` 与 `sha-f2d9fea`。没有在NAS拉取、启动或演练恢复；镜像发布成功不等于实机部署验收。
+- workflow artifacts包含同SHA debug包、`momobox-v0.12.31`发布包及dockerbuild记录，均未expired。
+
+证据入口：GitHub Actions run `https://github.com/DavisDing/MomoBox/actions/runs/38060561355`；Release `https://github.com/DavisDing/MomoBox/releases/tag/v0.12.31`；jobs `114237823227`（Flutter）、`114237823301`（backend）、`114237823352`（iOS）、`114239769307`（release）、`114241198241`（publish）。
+
+结论：本次“修复Actions报错”的目标已由包含修复的新SHA完整成功链路证实。不扩展为设备、NAS、HA、签名iOS或全部产品需求已验收。本次仅本地追加验证证据，没有再次提交、推送、重跑或发布。
+
+## 2026-10-11：既有能力安全补齐第一批（本地工作区，未发布）
+
+### 范围与实际修改
+
+- 起点HEAD `f2d9fea61ee1ecb4f0f6dc08d62e087ce68694c8`，保留上节原有未提交验证补记；本批次无提交/推送/远端CI/部署/真实恢复。run #31和v0.12.31仅证明此前SHA，不能验证本批次。
+- 后端新增`schema-check`及`serve`监听前migration身份门禁：有界read-only repeatable-read，只校验ledger版本/名称/checksum，保留限定legacy兼容，不migration、不修复、不证明物理schema或恢复历史。
+- NAS update停机核验包括restarting容器，最终备份在停写后执行，不以早先在线dump兜底继续；迁移/核验/health失败保持停止，未知任务或无法核验时保留锁。restore预检和确认后才停机，任何完成状态都不自动启动；原库单事务恢复仍非完整DR方案。
+- 发布job注入固定key配置，验证证书pin及APK/AAB实际签名后才上传；缺配置不降级debug。密码仅通过env，临时key限制权限并在失败/always收尾清理。并未配置仓库真实key，未生成生产key；旧安装签名一致性/迁移与资源公开分发仍待确认。
+- 无lib、业务模型、依赖、migration文件或UI变更；新增测试均保留既有门禁，未删测试或放宽超时。设计见DESIGN第17节，操作变化同步至NAS部署文档，签名配置见ANDROID_RELEASE_SIGNING。
+
+### 本次实际执行
+
+| 检查 | 结果 | 证据/限制 |
+| --- | --- | --- |
+| `bash scripts/ci/test-prepare-flutter-platforms.sh` | PASS | 现有平台生成回归；不等于原生构建 |
+| `bash scripts/release/test-next-version.sh` | PASS | 现有版本计算回归 |
+| `sh deploy/nas/scripts/self-test.sh` | PASS | 全部shell语法/help/参数及12项故障模拟；后者16.491秒，无Docker/PG，仅控制流验收 |
+| `python3 scripts/ci/test-android-release-signing.py` | PASS / SKIPPED | 11项中10项配置/保密/清理/签名核验控制流通过，1项真实临时JDK签名JAR与篡改回归因无Java runtime跳过；不是APK/AAB正式签名验收 |
+| Python AST解析、shell语法、workflow/两Compose Ruby YAML解析 | PASS | 未安装新依赖；YAML解析不证明GitHub执行或Compose运行 |
+| Flutter3.47.7 `analyze --no-pub` | PASS | 零问题，5.8秒；`/private/tmp/momobox-gap-analyze-20261011.log` |
+| 同SDK `test --no-pub --reporter expanded` | PASS | 全套687项，15秒，退出0；`/private/tmp/momobox-gap-tests-final-20261011.log`；没有运行pub get或改变锁文件 |
+| `git diff --check` | PASS | 本地实际检查，非构建 |
+| Go单元/新PG read-only回归/vet/gofmt | NOT_EXECUTED | 无Go/PG/Docker；新增PG回归只通过显式MOMO_TEST_DATABASE_URL启用，使用随机隔离schema，无生产DSN回退；需新SHA的CI执行 |
+| JDK真实签名、Android/iOS构建/签名升级、Docker/NAS/HA演练 | NOT_EXECUTED | Java入口仅为无runtime系统wrapper；不安装运行时、配置仓库密钥或使用Mock代替实机验收 |
+
+环境失败如实保留：首次Flutter调用无法写沙箱外tool_state，改用允许的临时XDG配置目录（未改系统权限）；沙箱内test因无法绑定127.0.0.1端口产生52个文件加载失败，执行了0项测试，不是业务断言失败（`/private/tmp/momobox-gap-tests-20261011.log`）。经审批允许测试回环端口后重跑，首轮日志687项成功但外围zsh使用只读变量status导致命令失败；修正为rc后重新全套运行，最终实际退出0。未通过其他路径绕过端口审批或安装依赖。
+
+### 仍不能宣称完成的事项
+
+正式签名key与旧安装证书/升级迁移、真实Go/PG/容器/NAS及设备验收未完成；首次Compose导入仍须执行同版本migration流程，不等于自动初始化。工作区数据归属、首次既有库存全量导入/分类出站/完整历史、date-only跨时区、TLS来源隔离、候选库/restore epoch/配套密钥等仍需后续决策与实施。当前批次仅补安全门禁，不把这些缺口记为已完成；恢复后的停机隔离不可用update/UGOS手动启动绕过。

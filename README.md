@@ -31,7 +31,7 @@
 当前自动发布范围包含 **Android APK/AAB** 与 NAS 后端 Docker 镜像。iOS 发布仍为后续工作：
 
 - **iOS**：CI 保留无签名构建验证；待确定 Bundle ID，并配置 Apple 证书、Provisioning Profile 和 App Store Connect 凭据后，再增加签名 IPA / TestFlight 发布。
-- **后端 Docker**：`backend/` 已提供实际 Go 后端与 Dockerfile。默认分支后端变更在通过 Go 测试、vet 与双架构 Buildx 构建后发布公开 GHCR 的 `latest`/`sha-*` 镜像；正式产品 Release 同时发布 `vX.Y.Z` 标签。NAS 生产部署使用 `deploy/nas/scripts/update.sh` 按“备份 → 拉取 → migration → 启动”流程更新，并应在 `.env` 中固定到 `vX.Y.Z`、`sha-*` 或 digest，不使用 `latest` 作为默认值。
+- **后端 Docker**：`backend/` 已提供实际 Go 后端与 Dockerfile。默认分支后端变更在通过 Go 测试、vet 与双架构 Buildx 构建后发布公开 GHCR 的 `latest`/`sha-*` 镜像；正式产品 Release 同时发布 `vX.Y.Z` 标签。NAS 生产部署用同版本 `deploy/nas/scripts/update.sh` 按“在线预备份 → 拉取 → 核验停机 → 最终备份 → migration → schema-check → 启动与health”流程更新，失败保持隔离；`.env` 固定到版本/提交/digest，不使用 `latest`。
 
 ### 发布版本规则
 
@@ -50,12 +50,14 @@
 
 1. 将目标发布分支设为 GitHub 仓库的默认分支。
 2. 在仓库 **Settings → Actions → General → Workflow permissions** 中允许工作流拥有 **Read and write permissions**。`pipeline.yml` 的 `publish` job 显式声明了 `contents: write` 和 `packages: write`，用于创建 Release 与推送 GHCR 镜像。
-3. 将需要发布的变更推送到默认分支；每次推送都会触发发布链路。
+3. 按 `docs/ANDROID_RELEASE_SIGNING.md` 配置固定 Android 签名 Secrets 和证书 SHA-256。缺失或不匹配会阻断正式发布，不再回退 debug 签名；PR/debug/iOS unsigned验证不需要这些密钥。
+4. 将需要发布的变更推送到默认分支；每次推送都会触发发布链路。
 
 发布成功后，Release 会附带：
 
 - `MomoBox-vX.Y.Z.apk`：可安装的 Android APK；
 - `MomoBox-vX.Y.Z.aab`：用于提交到 Google Play 等商店的 Android App Bundle；
-- `SHA256SUMS.txt`：两个发布包的 SHA-256 校验和。
+- `MomoBox-vX.Y.Z-docker-compose.yaml` 与 `MomoBox-vX.Y.Z-nas.env.example`：版本化NAS配置；部署脚本需另取同版本部署目录；
+- `SHA256SUMS.txt`：上述发布附件的 SHA-256 校验和。
 
-> 当前仓库未提交 Android 原生工程和正式签名密钥。工作流会临时生成 Flutter 默认 Android 工程，因此 APK/AAB 适用于内部测试与分发验证；在配置正式 Android 签名、应用 ID、图标和商店发布前，不应将其视为可上架的生产包。iOS 仍需要 Apple 签名与发布流程，未纳入 GitHub Release 自动上传。
+> Android原生工程仍由CI生成，密钥不入库；正式发布要求固定签名配置及APK/AAB证书核验。密钥是否与既有安装一致、应用ID及资源授权、设备升级/商店验收仍需确认，签名配置代码不代表已完成上线；不同证书不得当作可原地升级。iOS仍需要独立Apple签名与发布流程。
