@@ -416,3 +416,15 @@
 - 已确认：方案选择；本地分析及706项回归通过。未完成：真实身份切换、重启、离线队列恢复、在途请求回执及安装升级验收。
 - 同URL的服务端替换/旧dump恢复不能由endpoint识别；发送前的暂停与迟到本地回滚不能撤销原NAS已接受命令，仍须复用原幂等键处理未知回执。不把单工作区绑定称为完整恢复或数据迁移能力。
 - 设计收口后停止；建议下一阶段先做已确认范围的实机/新SHA门禁验收，再单独确定首次基线导入（D-03）设计。多库、改绑、清库、重置cursor、自动搬迁均不属于本次授权。
+
+
+## 2026-10-11：Actions run #33固定签名配置失败（外部配置阻塞）
+
+- 起始工作区干净；本地HEAD和实时GitHub main均为`dfffb506358f4df391432d181f984583714a7beb`。通过GitHub连接器查询repository runs集合（commit-workflow wrapper仅查PR，返回空不是无push运行），最新run为#33 `38120748993`、attempt1、push、completed/failure，2026-10-11 15:15:22～15:25:12（Asia/Shanghai）。
+- 逐job/step核对：prepare、Flutter analyze/unit tests/Android debug/上传debug、iOS unsigned、backend真实PG配置下test/vet全部success。正式包job `114416293514` 在步骤7“Configure fixed Android release signing (no debug fallback)”failure；后续依赖解析/构建/上传skipped，清理success，publish skipped。不将未发生的APK/AAB构建称为编译错误。
+- 实际job日志2026-10-11 15:25:08显示5项ANDROID_SIGNING环境变量为空，明确错误为`Missing required signing configuration`，逐项是KEYSTORE_BASE64、STORE_PASSWORD、KEY_PASSWORD、KEY_ALIAS、CERT_SHA256（均带ANDROID_SIGNING_前缀），退出1。未输出或读取真实私钥/密码；只说明此job未取得配置，不推断其他environment/组织没有密钥。
+- run #32 `38118640934`（SHA `5258a2b877784508ce777d09069f1257840b49ad`）也已核对job/step，同一签名prepare步骤failure；其他验证success，publish skipped。#32未读取全job日志，不将#33具体报错无证据地套到#32。
+- 本地重跑`python3 scripts/ci/test-android-release-signing.py`：11项中10项PASS、1项真实JDK签名夹具因无runtime SKIPPED，0.048秒。空配置调用config精确复现相同5项缺失错误，不生成key、不写Android目录。`git diff --check` PASS。未重跑Flutter或实际原生构建，远端success依据本次连接器核实，不依据旧本地706项。
+- 本次仅补DESIGN第19节、ANDROID_RELEASE_SIGNING排查及本记录，无业务代码/workflow/依赖更改；无Secrets配置、密钥生成、提交、推送、重跑或发布。管理员须在仓库Actions Secrets补齐固定密钥相关配置；当前job未声明environment，不会自动读取其他environment的Secrets。是否有原私钥及旧安装证书一致性仍NEEDS_CONFIRMATION，不用临时/debug签名绕过。
+- 配置修复后入口：重跑#33失败jobs，逐项核实APK/AAB实际签名、上传、镜像及Release产出；当前正式发布仍阻塞。真实设备/NAS/HA/恢复验收未由这些CI成功替代。
+- 证据：`https://github.com/DavisDing/MomoBox/actions/runs/38120748993`；正式包job `https://github.com/DavisDing/MomoBox/actions/runs/38120748993/job/114416293514`；run #32 `https://github.com/DavisDing/MomoBox/actions/runs/38118640934`。

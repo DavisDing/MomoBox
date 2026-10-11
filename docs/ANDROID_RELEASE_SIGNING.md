@@ -27,6 +27,19 @@
 
 未配置key的正式发布会明确FAIL，不是签名已验收，也不能用旧run #31成功替代新配置验证。原自动发布分支、Release可见性及资源授权政策未改变；私用主题资源的公开分发决定仍需另行确认。
 
+## Actions缺失配置排查（2026-10-11实测）
+
+run #33（`38120748993`，SHA `dfffb506358f4df391432d181f984583714a7beb`）正式包job在prepare步骤报告上述5项全部缺失；日志中对应环境变量均为空。App分析/测试/Android debug、iOS unsigned及backend/PG/vet已经通过。这只能证明本次job未取得配置，不能通过日志推断其他environment或组织中不存在密钥。
+
+管理员处理顺序：
+
+1. 先确认可复用的固定私钥及独立核对的证书指纹；旧APK只有公钥证书，无法从APK恢复私钥。无原密钥时先决定换签名/升级方案，不自动生成新key，不建议卸载清数据。
+2. 在仓库 `Settings → Secrets and variables → Actions` 配置表中的5个**Repository secrets**，名称须完全一致；不要误配成普通Variables。当前`build-release-packages`未声明environment，单独放在某个Environment中的secret不会被该job读取；组织secret则需授予该仓库访问。仅配置非秘密alias/指纹也不能解除其他缺项。
+3. 在GitHub管理界面或可信本机工具完成配置，不把base64、密码或私钥发到聊天、提交进Git或打印到日志。保留独立离线备份；不要复用一次性runner的debug keystore。
+4. 配置完成后重跑run #33失败的jobs，检查prepare实际完成、APK/AAB构建和verify成功、临时材料清理，以及同SHA的上传/发布结果。原运行会仍保留失败记录；重跑成功才是配置修复证据。尚未配置时反复重跑无助于解决缺项。
+
+本次未更改签名保护或workflow，也未写入Secrets、提交、触发重跑或发布；当前连接器不提供Secrets管理能力。缺失配置由管理员补齐之前，正式发布仍阻塞。
+
 ## 验证入口
 
 - 无JDK/Docker依赖的配置与控制流回归：`python3 scripts/ci/test-android-release-signing.py`，不等于真实签名或Android构建。
