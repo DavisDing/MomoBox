@@ -24,7 +24,7 @@ class SigningError(Exception):
 
 
 def fingerprint(value):
-    result = value.replace(':', '').strip().lower()
+    result = value.replace(':', '').replace(' ', '').strip().lower()
     if not re.fullmatch(r'[0-9a-f]{64}', result):
         raise SigningError('Signing certificate SHA-256 must contain exactly 64 hex digits.')
     return result
@@ -179,14 +179,15 @@ def verify_apk_certificate(output, pin):
         if line.startswith('Source Stamp Signer certificate SHA-256 digest:'):
             continue  # A source stamp is not the application signing identity.
         match = re.fullmatch(
-            r'(Signer #([1-9]\d*)|Signer \(minSdkVersion=\d+'
-            r'(?: \(dev release=true\))?, maxSdkVersion=\d+\))'
-            r' certificate SHA-256 digest:[ \t]*([0-9a-fA-F]{64})[ \t]*', line)
+            r'(Signer #([1-9]\d*)|Signer \((?=[^\r\n]*\bminSdkVersion=\d+)'
+            r'(?=[^\r\n]*\bmaxSdkVersion=\d+)[^\r\n]*\))'
+            r' certificate SHA-256 digest:[ \t]*'
+            r'(([0-9a-fA-F]{64})|([0-9a-fA-F]{2}:){31}[0-9a-fA-F]{2})[ \t]*', line)
         if not match:
             raise SigningError('APK signer certificate output format is not recognized.')
         if match[2]:
             numbered.append(match[2])
-        digests.append(match[3].lower())
+        digests.append(fingerprint(match[3]))
     if not digests:
         raise SigningError('APK verification did not report a signer certificate SHA-256.')
     if numbered and (numbered != ['1'] or len(digests) != 1):
