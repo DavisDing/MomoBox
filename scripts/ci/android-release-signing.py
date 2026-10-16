@@ -178,17 +178,22 @@ def verify_apk_certificate(output, pin):
             continue
         if line.startswith('Source Stamp Signer certificate SHA-256 digest:'):
             continue  # A source stamp is not the application signing identity.
-        match = re.fullmatch(
-            r'(Signer #([1-9]\d*)|(?:V(?:2|3(?:\.0|\.1)?|4) Signer)|'
-            r'Signer \((?=[^\r\n]*\bminSdkVersion=\d+)'
-            r'(?=[^\r\n]*\bmaxSdkVersion=\d+)[^\r\n]*\))'
-            r' certificate SHA-256 digest:[ \t]*'
-            r'(([0-9a-fA-F]{64})|([0-9a-fA-F]{2}:){31}[0-9a-fA-F]{2})[ \t]*', line)
-        if not match:
+        prefix, value = line.split(' certificate SHA-256 digest:', 1)
+        prefix = prefix.strip()
+        value = value.strip()
+        known_prefix = (
+            re.fullmatch(r'Signer #[1-9]\d*', prefix)
+            or re.fullmatch(r'V(?:2|3(?:\.0|\.1)?|4) Signer(?: #[1-9]\d*)?', prefix)
+            or re.fullmatch(
+                r'Signer \((?=[^\r\n]*\bminSdkVersion=\d+)'
+                r'(?=[^\r\n]*\bmaxSdkVersion=\d+)[^\r\n]*\)', prefix)
+        )
+        if not known_prefix or not re.fullmatch(
+                r'(?:[0-9a-fA-F]{64}|(?:[0-9a-fA-F]{2}:){31}[0-9a-fA-F]{2})', value):
             raise SigningError('APK signer certificate output format is not recognized.')
-        if match[2]:
-            numbered.append(match[2])
-        digests.append(fingerprint(match[3]))
+        if re.fullmatch(r'Signer #[1-9]\d*', prefix):
+            numbered.append(prefix.rsplit('#', 1)[1])
+        digests.append(fingerprint(value))
     if not digests:
         raise SigningError('APK verification did not report a signer certificate SHA-256.')
     if numbered and (numbered != ['1'] or len(digests) != 1):

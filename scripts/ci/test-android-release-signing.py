@@ -188,7 +188,8 @@ class SigningTests(unittest.TestCase):
         signing.verify_apk_certificate(
             'Number of signers: 1\n'
             'Signer #1 certificate SHA-256 digest: ' + colon_pin + '\n', self.pin)
-        for label in ('V2 Signer', 'V3 Signer', 'V3.0 Signer', 'V3.1 Signer', 'V4 Signer'):
+        for label in ('V2 Signer', 'V2 Signer #1', 'V3 Signer', 'V3 Signer #1',
+                      'V3.0 Signer', 'V3.1 Signer', 'V4 Signer'):
             with self.subTest(label=label):
                 signing.verify_apk_certificate(
                     'Number of signers: 1\n' + label +
