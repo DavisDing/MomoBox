@@ -194,6 +194,9 @@ class SigningTests(unittest.TestCase):
                 signing.verify_apk_certificate(
                     'Number of signers: 1\n' + label +
                     ' certificate SHA-256 digest: ' + self.pin + '\n', self.pin)
+                signing.verify_apk_certificate(
+                    'Number of signers: 1\n' + label +
+                    ': certificate SHA-256 digest: ' + self.pin + '\n', self.pin)
         scoped = ('Number of signers: 1\n'
                   'Signer (minSdkVersion=33, maxSdkVersion=2147483647) certificate SHA-256 digest: ' + self.pin + '\n'
                   'Signer (minSdkVersion=28, maxSdkVersion=32) certificate SHA-256 digest: ' + self.pin + '\n')

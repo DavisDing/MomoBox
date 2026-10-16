@@ -178,9 +178,11 @@ def verify_apk_certificate(output, pin):
             continue
         if line.startswith('Source Stamp Signer certificate SHA-256 digest:'):
             continue  # A source stamp is not the application signing identity.
-        prefix, value = line.split(' certificate SHA-256 digest:', 1)
-        prefix = prefix.strip()
-        value = value.strip()
+        match = re.fullmatch(r'(.+?)\s*:?[ \t]+certificate SHA-256 digest:[ \t]*(.+?)[ \t]*', line)
+        if not match:
+            raise SigningError('APK signer certificate output format is not recognized.')
+        prefix = match[1].strip()
+        value = match[2].strip()
         known_prefix = (
             re.fullmatch(r'Signer #[1-9]\d*', prefix)
             or re.fullmatch(r'V(?:2|3(?:\.0|\.1)?|4) Signer(?: #[1-9]\d*)?', prefix)
