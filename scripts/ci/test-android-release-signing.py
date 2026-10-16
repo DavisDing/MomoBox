@@ -184,6 +184,19 @@ class SigningTests(unittest.TestCase):
                 output = ('Number of signers: 1\r\n' + label +
                           ' certificate SHA-256 digest: ' + self.pin.upper() + '\r\n')
                 signing.verify_apk_certificate(output, self.pin)
+        colon_pin = ':'.join(self.pin[index:index + 2] for index in range(0, len(self.pin), 2))
+        signing.verify_apk_certificate(
+            'Number of signers: 1\n'
+            'Signer #1 certificate SHA-256 digest: ' + colon_pin + '\n', self.pin)
+        for label in ('V2 Signer', 'V2 Signer #1', 'V3 Signer', 'V3 Signer #1',
+                      'V3.0 Signer', 'V3.1 Signer', 'V4 Signer'):
+            with self.subTest(label=label):
+                signing.verify_apk_certificate(
+                    'Number of signers: 1\n' + label +
+                    ' certificate SHA-256 digest: ' + self.pin + '\n', self.pin)
+                signing.verify_apk_certificate(
+                    'Number of signers: 1\n' + label +
+                    ': certificate SHA-256 digest: ' + self.pin + '\n', self.pin)
         scoped = ('Number of signers: 1\n'
                   'Signer (minSdkVersion=33, maxSdkVersion=2147483647) certificate SHA-256 digest: ' + self.pin + '\n'
                   'Signer (minSdkVersion=28, maxSdkVersion=32) certificate SHA-256 digest: ' + self.pin + '\n')
@@ -197,6 +210,7 @@ class SigningTests(unittest.TestCase):
                  good + 'Number of signers: 1\n',
                  good + line.replace('minSdkVersion=33', 'minSdkVersion=28').replace(self.pin, '0' * 64),
                  good + 'Signer #1 certificate SHA-256 digest: ' + self.pin + '\n',
+                 good + 'V5 Signer certificate SHA-256 digest: ' + self.pin + '\n',
                  good.replace('Signer (', 'Unknown signer ('),
                  good.replace(self.pin, 'abc'),
                  'Number of signers: 1\nSource Stamp Signer certificate SHA-256 digest: ' + self.pin + '\n')
