@@ -179,7 +179,8 @@ def verify_apk_certificate(output, pin):
         if line.startswith('Source Stamp Signer certificate SHA-256 digest:'):
             continue  # A source stamp is not the application signing identity.
         match = re.fullmatch(
-            r'(Signer #([1-9]\d*)|Signer \((?=[^\r\n]*\bminSdkVersion=\d+)'
+            r'(Signer #([1-9]\d*)|(?:V(?:2|3(?:\.0|\.1)?|4) Signer)|'
+            r'Signer \((?=[^\r\n]*\bminSdkVersion=\d+)'
             r'(?=[^\r\n]*\bmaxSdkVersion=\d+)[^\r\n]*\))'
             r' certificate SHA-256 digest:[ \t]*'
             r'(([0-9a-fA-F]{64})|([0-9a-fA-F]{2}:){31}[0-9a-fA-F]{2})[ \t]*', line)
