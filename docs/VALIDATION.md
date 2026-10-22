@@ -525,3 +525,14 @@
 本批实现有限制：1000 条/1 MiB 超限整批阻塞；旧日期/分类歧义与同 UUID（包括重复历史）重叠保留人工核对；旧日期来源已丢失时，非午夜检测不保证识别整日偏差或还原原值，审阅需对照原始资料；普通后续库存命令历史尚未统一跨端查询/去重。完整灾备切换、restore epoch/服务实例变更、改绑/多工作区、媒体迁移仍不在本批；HA scene/script 的 App 接入与真实事件来源方案仍待确认。NAS 当前不能称为全部完成验收。
 
 长期事实更新建议：取得同 SHA CI、真实 PG/NAS 与设备证据后，再局部补充 AI_CONTEXT 的 schema6/0007、首次导入、分类/日期、HA 会话与三模式运维支持矩阵。本批不覆盖旧验收记录。
+
+
+## 2026-10-22：run #42 NAS 自检临时路径修复
+
+- GitHub 连接器实时核对：本地与远端 main 同为 `40f7d146cb8e0b69010a3bf18820631a99a4aca2`，开始时工作区干净。run #42 `39739379172` attempt 1，于 2026-10-22 15:16:40～15:17:05（Asia/Shanghai）失败，Prepare job `119692628327` 的 Validate NAS deployment scripts 报 3 failures / 1 error；后续 Flutter/iOS/backend/发布均 skipped，不能当作已执行成功。
+- 根因：`test-pg-client.py` 先将容器 awk 路径替换为本机绝对路径，再全局替换 `/tmp/`。Ubuntu 的临时目录本身位于 `/tmp`，故 parser 路径被再次展开成 `/tmp/<fixture>/<fixture>/pg-connection.awk`。macOS 默认临时目录未包含 `/tmp/`，此前检查未覆盖该布局。
+- 修复：先重定位生产脚本中的容器私有 `/tmp/` 路径，再注入 parser 路径；所有该套件夹具固定创建在独立 `/tmp` 子目录，使 macOS 本地也覆盖 Linux 路径布局。测试仍执行实际 awk/client shell，保留权限、错误私有化、凭据和候选恢复断言；未改生产脚本或降低 CI 门禁。
+- 原 HEAD 回归复现：读取原测试源码并强制 `/tmp` 布局，probe 用例按预期失败，错误为重复目录的 awk 文件不存在。该预期失败用于根因证据，不计入修复后通过结果。
+- 修复后实际结果：`python3 deploy/nas/scripts/test-pg-client.py` PASS（9 项）；`sh deploy/nas/scripts/self-test.sh` PASS（12+17+9=38 项，分别 15.781 / 20.404 / 8.250 秒）；`python3 scripts/ci/test-nas-release-assets.py` PASS（1 项，0.066 秒）；`git diff --check` PASS。
+- 上述验证为本机 POSIX shell/awk/Python 和 fake PG/Docker，不是 Ubuntu 原生执行、真实 PostgreSQL/Compose/NAS 验收。当前尚未提交/推送/重跑远端；run #42 仍是原失败状态，新提交的后续 Flutter/Go/设备验证均需独立证据。
+- 证据：`https://github.com/DavisDing/MomoBox/actions/runs/39739379172`；job `https://github.com/DavisDing/MomoBox/actions/runs/39739379172/job/119692628327`。

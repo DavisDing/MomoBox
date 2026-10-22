@@ -40,7 +40,9 @@ elif name=='pg_dump': print('mock archive')
 
 class PgClientTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='momobox-pg-client-')
+        # Cover the Linux runner's /tmp layout on every host. Injected absolute
+        # parser paths must not be relocated a second time below.
+        self.temp = tempfile.TemporaryDirectory(prefix='momobox-pg-client-', dir='/tmp')
         self.root = Path(self.temp.name)
         self.bin = self.root / 'bin'
         self.bin.mkdir()
@@ -52,8 +54,8 @@ class PgClientTests(unittest.TestCase):
         self.parser.write_text((OPERATIONS / 'pg-connection.awk').read_text().replace('/tmp/', str(self.root) + '/'))
         self.script = self.root / 'pg-client.sh'
         self.script.write_text((OPERATIONS / 'pg-client.sh').read_text()
-                               .replace('/momo/pg-connection.awk', str(self.parser))
-                               .replace('/tmp/', str(self.root) + '/'))
+                               .replace('/tmp/', str(self.root) + '/')
+                               .replace('/momo/pg-connection.awk', str(self.parser)))
         for name in ('psql', 'pg_dump', 'pg_restore'):
             path = self.bin / name
             path.write_text(FAKE_PG)
