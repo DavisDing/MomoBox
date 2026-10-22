@@ -129,10 +129,17 @@ class _ImportApi extends NasSyncApi {
 
   @override
   Future<NasSyncPushResponse> push({required String deviceId, required int baseCursor,
-    required List<NasSyncChange> changes}) async => NasSyncPushResponse(accepted: [
+    required List<NasSyncChange> changes}) async {
+    final accepted = [
       for (final change in changes) NasSyncAcceptedChange(changeId: change.changeId,
         serverCursor: 10, serverVersion: 1)
-    ], replayed: const [], conflicts: const [], rejected: const [], cursor: 10);
+    ];
+    return NasSyncPushResponse(accepted: accepted,
+      replayed: const [], conflicts: const [], rejected: const [], results: [
+        for (final entry in accepted) NasSyncPushResult(changeId: entry.changeId,
+          status: 'accepted', accepted: entry)
+      ], cursor: 10);
+  }
 }
 
 void main() {

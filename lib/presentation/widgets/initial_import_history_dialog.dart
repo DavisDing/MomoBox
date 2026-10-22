@@ -68,13 +68,15 @@ class _InitialImportHistoryDialogState extends State<InitialImportHistoryDialog>
         _pageNumber++;
       });
     } catch (error) {
-      if (mounted) setState(() {
-        if (!widget.isSessionCurrent()) {
-          _page = null;
-          _sessionChanged = true;
-        }
-        _error = '读取历史归档失败：$error';
-      });
+      if (mounted) {
+        setState(() {
+          if (!widget.isSessionCurrent()) {
+            _page = null;
+            _sessionChanged = true;
+          }
+          _error = '读取历史归档失败：$error';
+        });
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }

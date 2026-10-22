@@ -536,3 +536,14 @@
 - 修复后实际结果：`python3 deploy/nas/scripts/test-pg-client.py` PASS（9 项）；`sh deploy/nas/scripts/self-test.sh` PASS（12+17+9=38 项，分别 15.781 / 20.404 / 8.250 秒）；`python3 scripts/ci/test-nas-release-assets.py` PASS（1 项，0.066 秒）；`git diff --check` PASS。
 - 上述验证为本机 POSIX shell/awk/Python 和 fake PG/Docker，不是 Ubuntu 原生执行、真实 PostgreSQL/Compose/NAS 验收。当前尚未提交/推送/重跑远端；run #42 仍是原失败状态，新提交的后续 Flutter/Go/设备验证均需独立证据。
 - 证据：`https://github.com/DavisDing/MomoBox/actions/runs/39739379172`；job `https://github.com/DavisDing/MomoBox/actions/runs/39739379172/job/119692628327`。
+
+## 2026-10-22：run #43 Flutter 编译与 analyze 修复（本地修改，运行待验证）
+
+- 基线：本地 HEAD 与 run #43 均为 `f7c9617449f39bd8d88c809a883d7b37aefb88d1`，开始时工作区干净。run `39743266476` attempt 1 于 2026-10-22 15:49:54（Asia/Shanghai）触发，最终失败；本节修改尚未提交/推送，不能用该 run 代表修改后通过。
+- 远端已通过：Prepare job `119705445434` 的 NAS 脚本和发布资产检查通过，确认上轮临时路径修复通过 Ubuntu 检查；Backend job `119705657697` 的 Go 测试与 vet 通过，日志有真实 `postgres:16` service、显式测试数据库 URL 及 `internal/store/syncpostgres` 测试通过。证据仅绑定上述 SHA，不替代 NAS/PG18/外部库/HA/设备验收。
+- Flutter job `119705657797` 的 analyze 报 6 项：`sync_engine.dart:615` 的 `String?` 参数、`initial_import_service_test.dart:132` 缺少必需 `results`，以及账号控制器/历史弹窗的 2 处 if braces 和导入卡片的 2 处异步 context lint。iOS job `119705657831` 也因同一个 `String?` 参数失败；没有 Xcode 配置修复证据或需求。
+- 修复：首次导入恢复在既有模式白名单上显式拒绝 null，让局部变量提升为非空 String；保留异步后模式复检、scope/session/checkpoint 校验。测试 API 从同一 accepted 列表生成逐条 `NasSyncPushResult(status: 'accepted', accepted: entry)`，与真实回执合同及引擎优先消费 results 的路径一致。预览/继续在 await 后显式检查 mounted，并保留原 service 身份检查；另外两处只补分支花括号。
+- 源码复核：既有“接受后新增 outbox 按原 key 结算再恢复”测试仍检查 pushed=1、accepted 状态、原 idempotency key 和余量 5，未删除或放宽断言。无 UI 布局、依赖、数据库、workflow 或 lint 门禁变更。
+- 本机实际执行：`git diff --check` PASS；对照全部 6 项日志和当前 diff 完成静态复核。这些检查不构成 Dart 编译或运行验证。
+- 本机 `flutter`/`dart` 不在 PATH，残缺临时 SDK 也无 Dart executable/analysis snapshot；未安装或下载工具。`flutter analyze`、`flutter test`、Android debug 与 iOS unsigned build 均为 `NOT_EXECUTED`。原 run 的 Flutter tests/debug build、正式打包和发布均为 `SKIPPED`；需后续新提交的完整 CI 确认。
+- 证据：`https://github.com/DavisDing/MomoBox/actions/runs/39743266476`；失败 jobs `119705657797`、`119705657831`；后端 job `119705657697`。

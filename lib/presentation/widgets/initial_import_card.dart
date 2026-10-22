@@ -144,7 +144,7 @@ class _InitialImportCardState extends ConsumerState<InitialImportCard> {
 
   Future<void> _preview(InitialImportService service) => _withBusy(service, () async {
     final preview = await service.preview();
-    if (!_isCurrent(service)) return;
+    if (!mounted || !_isCurrent(service)) return;
     final accepted = await showDialog<bool>(
       context: context,
       builder: (_) => InitialImportReviewDialog(preview: preview, confirmImport: false),
@@ -160,7 +160,7 @@ class _InitialImportCardState extends ConsumerState<InitialImportCard> {
 
   Future<void> _resume(InitialImportService service) => _withBusy(service, () async {
     final preview = await service.readPreparedPreview();
-    if (!_isCurrent(service)) return;
+    if (!mounted || !_isCurrent(service)) return;
     if (preview == null) throw StateError('未找到原冻结计划，请重新读取导入状态。');
     final accepted = await showDialog<bool>(
       context: context,

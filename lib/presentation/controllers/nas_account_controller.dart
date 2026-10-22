@@ -758,7 +758,9 @@ class NasAccountController extends StateNotifier<NasAccountState> {
       return;
     }
     if (owner.endpoint != serverIdentity || owner.userId != state.auth.user?.id ||
-        owner.familyId != response.family.id || !identical(state.family.current, response)) return;
+        owner.familyId != response.family.id || !identical(state.family.current, response)) {
+      return;
+    }
     CalendarDate.validateTimeZone(response.family.timeZone);
     if (!_isCurrentSession(revision)) return;
     await _settings.setValue('sync_family_time_zone:${owner.familyId}', response.family.timeZone);

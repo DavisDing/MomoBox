@@ -601,7 +601,7 @@ class SyncEngine {
         _api.assertCurrentSession();
         await _assertSnapshotScopeQuiescent();
         final mode = await _repository.getConfirmedBootstrapMode(_scopeId);
-        if (mode != 'join_and_merge' && mode != 'create_new_family') {
+        if (mode == null || (mode != 'join_and_merge' && mode != 'create_new_family')) {
           throw const SyncRemoteChangeDeferred('initial import requires an explicitly confirmed remote mode');
         }
         final snapshot = await _bootstrap();
