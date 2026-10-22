@@ -38,6 +38,7 @@ If migration or the post-update healthcheck fails after the old backend is
 stopped, this script leaves the backend stopped/failed rather than claiming a
 successful deployment. The backup path is printed before the update proceeds.
 USAGE
+    momo_context_help
 }
 
 fail() {
@@ -45,7 +46,12 @@ fail() {
     exit 1
 }
 
+. "$SCRIPT_DIR/deployment-context.sh"
+. "$SCRIPT_DIR/postgres-client.sh"
+
 while [ "$#" -gt 0 ]; do
+    momo_context_option "$@"
+    if [ "$MOMO_OPTION_CONSUMED" -gt 0 ]; then shift "$MOMO_OPTION_CONSUMED"; continue; fi
     case $1 in
         --skip-backup)
             SKIP_BACKUP=1
@@ -68,6 +74,7 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
+momo_context_init
 [ -f "$COMPOSE_FILE" ] || fail "compose file not found: $COMPOSE_FILE"
 [ -f "$BACKUP" ] || fail "backup script not found: $BACKUP"
 [ -x "$BACKUP" ] || fail "backup script is not executable: $BACKUP"
@@ -81,6 +88,10 @@ momo_deployment_lock_acquire || exit 1
 cleanup() {
     status=$?
     trap - 0 HUP INT TERM
+    if [ "$MOMO_DATABASE_MODE" != legacy ] && ! momo_client_tasks_quiescent; then
+        printf '%s: PostgreSQL client task completion is unknown; deployment lock retained.\n' "$PROGRAM" >&2
+        exit 1
+    fi
     if [ "$ISOLATION_REQUIRED" -eq 1 ] && [ "$DEPLOYMENT_ACCEPTED" -ne 1 ]; then
         if ! momo_backend_stop_verified || ! momo_deployment_tasks_quiescent; then
             printf '%s: isolation could not be verified; deployment lock retained, inspect active tasks before manual recovery.\n' "$PROGRAM" >&2
@@ -99,23 +110,6 @@ trap cleanup 0
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
-
-if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-    COMPOSE_KIND=docker
-elif command -v docker-compose >/dev/null 2>&1; then
-    COMPOSE_KIND=docker-compose
-else
-    fail "Docker Compose is required (docker compose or docker-compose)"
-fi
-command -v docker >/dev/null 2>&1 || fail "docker is required for service health inspection"
-
-compose() {
-    if [ "$COMPOSE_KIND" = docker ]; then
-        docker compose --project-directory "$NAS_DIR" -f "$COMPOSE_FILE" "$@"
-    else
-        docker-compose --project-directory "$NAS_DIR" -f "$COMPOSE_FILE" "$@"
-    fi
-}
 
 wait_for_postgres() {
     attempts=0
@@ -157,8 +151,15 @@ wait_for_service_health() {
     return 1
 }
 
+[ ! -e "$NAS_DIR/.momobox-restored" ] || fail "restored database remains quarantined"
+if [ "$MOMO_DATABASE_MODE" != legacy ]; then
+    [ "$SKIP_BACKUP" -eq 0 ] || fail "new deployments cannot skip backups"
+    momo_database_ready
+    momo_update_admission
+fi
+
 if [ "$SKIP_BACKUP" -eq 0 ]; then
-    BACKUP_PATH=$($BACKUP) || fail "backup failed; no image was pulled or service was stopped"
+    BACKUP_PATH=$(momo_backup_child) || fail "backup failed; no image was pulled or service was stopped"
     printf '%s\n' "Backup created: $BACKUP_PATH"
 else
     printf '%s\n' 'WARNING: skipping backup at caller request.' >&2
@@ -171,17 +172,21 @@ compose pull momo-backend || fail "failed to pull momo-backend; current service 
 ISOLATION_REQUIRED=1
 momo_backend_stop_verified || fail "failed to stop and verify all backend containers before migration"
 
-compose up -d postgres >/dev/null
-wait_for_postgres || fail "postgres did not become ready within 60 seconds"
+momo_database_ready
+if [ "$MOMO_DATABASE_MODE" != legacy ]; then momo_pg writers || fail "database writers remain"; fi
 
 # The earlier online dump is a preparation point, not the final upgrade point.
 # This closes this project's backend writes; other writers must be isolated by
 # the operator. A failed final backup must never fall back to the online dump.
 if [ "$SKIP_BACKUP" -eq 0 ]; then
-    FINAL_BACKUP_PATH=$($BACKUP) || fail "final backup failed; backend remains stopped, migration was not started"
+    FINAL_BACKUP_PATH=$(momo_backup_child) || fail "final backup failed; backend remains stopped, migration was not started"
     printf '%s\n' "Final stopped-backend backup created: $FINAL_BACKUP_PATH"
 fi
 momo_backend_verify_stopped || fail "backend restarted during final backup; migration refused"
+if [ "$MOMO_DATABASE_MODE" != legacy ]; then
+    momo_pg writers || fail "database writers appeared during final backup"
+    momo_update_admission
+fi
 
 DATABASE_TASK_UNCERTAIN=1
 if compose run --rm --no-deps momo-backend migrate; then

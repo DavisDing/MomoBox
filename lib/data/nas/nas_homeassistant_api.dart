@@ -2,12 +2,29 @@ import '../../domain/models/nas_homeassistant_models.dart';
 import 'nas_api_client.dart';
 
 class NasHomeAssistantApi {
-  NasHomeAssistantApi(this._client);
+  NasHomeAssistantApi(this._client, {bool Function()? isSessionCurrent})
+      : _isSessionCurrent = isSessionCurrent;
 
   final NasApiClient _client;
+  final bool Function()? _isSessionCurrent;
+
+  Future<Map<String, dynamic>> _requestJson({
+    required String method,
+    required String path,
+    Map<String, dynamic>? body,
+    Map<String, String>? queryParameters,
+    bool expectBody = true,
+  }) => _client.requestJson(
+    method: method,
+    path: path,
+    body: body,
+    queryParameters: queryParameters,
+    expectBody: expectBody,
+    isSessionCurrent: _isSessionCurrent,
+  );
 
   Future<List<NasHaIntegration>> listIntegrations() async {
-    final json = await _client.requestJson(
+    final json = await _requestJson(
       method: 'GET',
       path: '/home-assistant/integrations',
     );
@@ -15,7 +32,7 @@ class NasHomeAssistantApi {
   }
 
   Future<NasHaIntegration> addIntegration(NasHaIntegrationInput input) async {
-    final json = await _client.requestJson(
+    final json = await _requestJson(
       method: 'POST',
       path: '/home-assistant/integrations',
       body: input.toJson(),
@@ -27,7 +44,7 @@ class NasHomeAssistantApi {
     String integrationId,
     NasHaIntegrationUpdate update,
   ) async {
-    final json = await _client.requestJson(
+    final json = await _requestJson(
       method: 'PATCH',
       path: '/home-assistant/integrations/${_pathSegment(integrationId)}',
       body: update.toJson(),
@@ -36,7 +53,7 @@ class NasHomeAssistantApi {
   }
 
   Future<void> deleteIntegration(String integrationId) async {
-    await _client.requestJson(
+    await _requestJson(
       method: 'DELETE',
       path: '/home-assistant/integrations/${_pathSegment(integrationId)}',
       expectBody: false,
@@ -44,7 +61,7 @@ class NasHomeAssistantApi {
   }
 
   Future<NasHaConnectionTestResult> testIntegration(String integrationId) async {
-    final json = await _client.requestJson(
+    final json = await _requestJson(
       method: 'POST',
       path: '/home-assistant/integrations/${_pathSegment(integrationId)}/test',
     );
@@ -52,7 +69,7 @@ class NasHomeAssistantApi {
   }
 
   Future<NasHaDiscoverResult> discover(String integrationId) async {
-    final json = await _client.requestJson(
+    final json = await _requestJson(
       method: 'POST',
       path: '/home-assistant/integrations/${_pathSegment(integrationId)}/discover',
     );
@@ -67,7 +84,7 @@ class NasHomeAssistantApi {
       if (integrationId != null) 'integration_id': integrationId,
       'controllable_only': '$controllableOnly',
     };
-    final json = await _client.requestJson(
+    final json = await _requestJson(
       method: 'GET',
       path: '/home-assistant/entities',
       queryParameters: query,
@@ -79,7 +96,7 @@ class NasHomeAssistantApi {
     required String integrationId,
     required String entityId,
   }) async {
-    final json = await _client.requestJson(
+    final json = await _requestJson(
       method: 'GET',
       path: '/home-assistant/entities/${_pathSegment(entityId)}/state',
       queryParameters: {'integration_id': integrationId},
@@ -94,7 +111,7 @@ class NasHomeAssistantApi {
     required String requestId,
     NasHaCommandParameters? parameters,
   }) async {
-    final json = await _client.requestJson(
+    final json = await _requestJson(
       method: 'POST',
       path: '/home-assistant/entities/${_pathSegment(entityId)}/commands',
       queryParameters: {'integration_id': integrationId},
@@ -110,7 +127,7 @@ class NasHomeAssistantApi {
 
 
   Future<List<NasHaConsumableGroup>> listConsumableGroups() async {
-    final json = await _client.requestJson(
+    final json = await _requestJson(
       method: 'GET',
       path: '/home-assistant/consumable-groups',
     );
@@ -120,7 +137,7 @@ class NasHomeAssistantApi {
   Future<NasHaConsumableGroup> saveConsumableGroup(
     NasHaConsumableGroup group,
   ) async {
-    final json = await _client.requestJson(
+    final json = await _requestJson(
       method: group.id.isEmpty ? 'POST' : 'PUT',
       path: group.id.isEmpty
           ? '/home-assistant/consumable-groups'
@@ -131,7 +148,7 @@ class NasHomeAssistantApi {
   }
 
   Future<List<NasHaConsumableRecipe>> listConsumableRecipes() async {
-    final json = await _client.requestJson(
+    final json = await _requestJson(
       method: 'GET',
       path: '/home-assistant/consumable-recipes',
     );
@@ -141,7 +158,7 @@ class NasHomeAssistantApi {
   Future<NasHaConsumableRecipe> saveConsumableRecipe(
     NasHaConsumableRecipe recipe,
   ) async {
-    final json = await _client.requestJson(
+    final json = await _requestJson(
       method: recipe.id.isEmpty ? 'POST' : 'PUT',
       path: recipe.id.isEmpty
           ? '/home-assistant/consumable-recipes'
@@ -152,7 +169,7 @@ class NasHomeAssistantApi {
   }
 
   Future<List<NasHaLinkageRule>> listLinkageRules() async {
-    final json = await _client.requestJson(
+    final json = await _requestJson(
       method: 'GET',
       path: '/home-assistant/linkage-rules',
     );
@@ -160,7 +177,7 @@ class NasHomeAssistantApi {
   }
 
   Future<NasHaLinkageRule> saveLinkageRule(NasHaLinkageRule rule) async {
-    final json = await _client.requestJson(
+    final json = await _requestJson(
       method: rule.id.isEmpty ? 'POST' : 'PUT',
       path: rule.id.isEmpty
           ? '/home-assistant/linkage-rules'
@@ -173,7 +190,7 @@ class NasHomeAssistantApi {
   Future<List<NasHaLinkageSuggestion>> listLinkageSuggestions({
     NasHaLinkageSuggestionStatus? status,
   }) async {
-    final json = await _client.requestJson(
+    final json = await _requestJson(
       method: 'GET',
       path: '/home-assistant/linkage-suggestions',
       queryParameters: {
@@ -191,7 +208,7 @@ class NasHomeAssistantApi {
     required String suggestionId,
     required NasHaSuggestionDecision decision,
   }) async {
-    final json = await _client.requestJson(
+    final json = await _requestJson(
       method: 'POST',
       path: '/home-assistant/linkage-suggestions/${_pathSegment(suggestionId)}/resolve',
       body: {'decision': nasHaSuggestionDecisionValue(decision)},
@@ -200,7 +217,7 @@ class NasHomeAssistantApi {
   }
 
   Future<List<NasHaEntityPermission>> listPermissions() async {
-    final json = await _client.requestJson(
+    final json = await _requestJson(
       method: 'GET',
       path: '/home-assistant/permissions',
     );
@@ -210,7 +227,7 @@ class NasHomeAssistantApi {
   Future<NasHaEntityPermission> updatePermission(
     NasHaEntityPermission permission,
   ) async {
-    final json = await _client.requestJson(
+    final json = await _requestJson(
       method: 'PUT',
       path: '/home-assistant/permissions',
       body: permission.toJson(),

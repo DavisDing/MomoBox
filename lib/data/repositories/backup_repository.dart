@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 
 import '../../core/database/app_database.dart';
 import '../../domain/backup/backup_format.dart';
+import 'calendar_date_repository.dart';
 
 class ImportFailure {
   const ImportFailure({
@@ -63,6 +64,12 @@ class BackupRepository {
             await _database.select(_database.reminderAcknowledgments).get();
         final barcodeCache =
             await _database.select(_database.barcodeLookupCache).get();
+        final calendarBatches = await Future.wait(batches.map((batch) async {
+          final calendar = await CalendarDateRepository(_database).read(batch.id);
+          return {..._batchToJson(batch),
+            if (calendar['produced_date'] != null) 'production_date': calendar['produced_date'],
+            if (calendar['expiry_date'] != null) 'expiry_date': calendar['expiry_date']};
+        }));
 
         return const JsonEncoder.withIndent('  ').convert({
           'format': BackupFormat.formatName,
@@ -70,7 +77,7 @@ class BackupRepository {
           'exported_at': DateTime.now().toIso8601String(),
           'coverage': BackupFormat.coverage,
           'products': products.map(_productToJson).toList(),
-          'batches': batches.map(_batchToJson).toList(),
+          'batches': calendarBatches,
           'stock_movements': movements.map(_movementToJson).toList(),
           'shopping_entries': shopping.map(_shoppingToJson).toList(),
           'settings': settings
@@ -130,6 +137,14 @@ class BackupRepository {
           continue;
         }
         await _database.into(_database.productBatches).insert(_batchFromJson(row));
+        final calendar = <String, dynamic>{};
+        for (final key in ['production_date', 'expiry_date']) {
+          final value = row[key];
+          if (value == null || (value is String && RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value))) {
+            calendar[key] = value;
+          }
+        }
+        await CalendarDateRepository(_database).applyPayload(row['id'] as String, calendar);
         imported++;
       }
       for (final raw in movements) {

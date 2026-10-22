@@ -6,6 +6,7 @@ import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
 import '../domain/inventory/reminder_rules.dart';
+import '../domain/inventory/calendar_date.dart';
 import '../domain/models/inventory_models.dart';
 
 
@@ -130,7 +131,8 @@ class LocalNotificationService {
     final candidates = ReminderRules.unacknowledgedCandidates(
       items,
       acknowledgements,
-      today: reference,
+      today: items.isEmpty ? reference : CalendarDate.today(
+        timeZone: items.first.familyTimeZone, instant: reference),
     ).toList();
     // A cancel + scheduling pass is indivisible relative to other sync calls.
     // Capture candidates now rather than reading a mutable caller list later.
@@ -153,7 +155,8 @@ class LocalNotificationService {
 
     await _plugin.cancelAll();
     for (final candidate in candidates) {
-      final scheduled = _nextNineAm(candidate.date, reference);
+      final scheduled = _nextNineAm(candidate.date, reference,
+        timeZone: candidate.item.familyTimeZone);
       await _plugin.zonedSchedule(
         _stableId(candidate.key),
         _title(candidate.type),
@@ -177,12 +180,13 @@ class LocalNotificationService {
     }
   }
 
-  tz.TZDateTime _nextNineAm(DateTime date, DateTime now) {
-    var scheduled = tz.TZDateTime(tz.local, date.year, date.month, date.day, 9);
-    final current = tz.TZDateTime.from(now, tz.local);
+  tz.TZDateTime _nextNineAm(DateTime date, DateTime now, {String? timeZone}) {
+    final location = timeZone == null ? tz.local : tz.getLocation(timeZone);
+    var scheduled = tz.TZDateTime(location, date.year, date.month, date.day, 9);
+    final current = tz.TZDateTime.from(now, location);
     if (!scheduled.isAfter(current)) {
       final next = date.add(const Duration(days: 1));
-      scheduled = tz.TZDateTime(tz.local, next.year, next.month, next.day, 9);
+      scheduled = tz.TZDateTime(location, next.year, next.month, next.day, 9);
     }
     return scheduled;
   }

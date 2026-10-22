@@ -478,3 +478,50 @@
 交付入口见DESIGN21及ANDROID_RELEASE_SIGNING补充。按用户授权本地提交前检查明确文件清单和秘密；不自动push/重跑/发布。必须在新SHA上确认正式校验、制品和发布成功才可称“Actions问题已关闭”；若明确出现真正pin不匹配，继续调查实际签名选择，不能换pin或绕过校验。原新增模板升级/备份脚本及现场验收缺口继续保留。
 
 证据：`https://github.com/DavisDing/MomoBox/actions/runs/38147596818`，job `https://github.com/DavisDing/MomoBox/actions/runs/38147596818/job/114506821551`；官方源码 `https://android.googlesource.com/platform/tools/apksig/+/refs/heads/main/src/apksigner/java/com/android/apksigner/ApkSignerTool.java`。
+
+
+## 2026-10-22：NAS 并行实现与本地收口（未提交、未运行验收）
+
+### 范围、基线与实际交付
+
+- 起始 `main` / HEAD `ee70ffd47c32a288fd75c61ef0cc7f6d8b92085b`，工作区初始干净；本批修改仍未提交，没有 push、发布、真实库/设备操作。此 SHA 是起始基线，不能代表新代码已经进入该提交。
+- 用户明确批准当前库存＋独立历史归档、保留日历年月日并以家庭时区（默认 Asia/Shanghai）判断今天、三模式共用运维和新模式独立空候选库恢复。实现对应 REQUIREMENT AC-025～027、DESIGN 第 23 节及本日三个分项方案。
+- 后端新增导入预检/确认/永久回执/独立历史分页，PostgreSQL additive 0007、家庭时区与严格日期；App 新增冻结计划/原 ID 恢复/分类身份/日历文本列、Drift 5→6 和现有同步设置页的审阅/进度/归档入口。NAS 三模式脚本与 operations release 工具包已接入。
+- 另修复已核对的 run #41 Flutter analyze 诊断，以及 HA 生产 repository 未共享账号 endpoint/session 保护的问题。新会话检查覆盖请求/响应/refresh/retry。没有删除测试、放宽门禁、清业务库/outbox/cursor或引入依赖。
+
+### 本次实际执行并通过
+
+| 检查 | 结果 | 证据范围 |
+| --- | --- | --- |
+| `sh deploy/nas/scripts/self-test.sh` | PASS | shell 语法/help/参数；原安全 12 项、变体 17 项、PG client/URI 9 项，共 38 项。执行的是实际脚本与 awk，但 Docker/PG 是 fake；不能推导真实数据库通过 |
+| `python3 scripts/ci/test-nas-release-assets.py` | PASS | 实际执行 workflow NAS 打包段，核对 11 资产、10 SHA256、operations 归档 12 文件白名单/内容/权限及发布列表；无真实发布 |
+| workflow 和 2 个 operations YAML 解析；33 个 workflow run 块 `bash -n` | PASS | Ruby YAML 与 shell 语法，不执行里面的构建/上传/部署 |
+| 新增 SQLite 原始 DDL smoke | PASS | Python sqlite3 执行当前 initialImportSchema 的 4 条原始 DDL 和新增 nullable 日历列；检查旧数量/时间戳未改、canonical 日期重开后保留、FK/重复来源与 cursor 约束、事务回滚、integrity_check/foreign_key_check。仅为 SQLite SQL 证据，不是 Dart/Drift migration 执行 |
+| 代码/合同交叉复核 | 完成静态核对 | 分类实际 auxiliary payload 解包及负 sort_order 兼容、服务端连续 SQL 参数、未知回执原 ID 恢复、导入 marker 与旧 outbox 结算、receipt/旧快照失效标记原子保存、固定历史高水位与末页、会话迟到响应保护 |
+| `git diff --check` 和新增文件逐行空白/末尾换行 | PASS | 同时检查 git 未跟踪的新源码/测试/文档，不把 diff 对未跟踪文件的遗漏当通过 |
+| 4 个变更 Python 文件 AST | PASS | 语法解析，不等于所有执行分支测试 |
+| migration 0001～0006 及依赖清单/锁文件与 HEAD 字节核对 | PASS | 旧迁移不变；pubspec.yaml/pubspec.lock、backend/go.mod/go.sum 无新增依赖或改写 |
+
+### 已补充的回归源码（未运行）
+
+- 后端 `internal/sync/import_test.go`、`internal/httpapi/import_test.go` 与 `internal/store/syncpostgres/import_postgres_test.go`：有界字段合同、认证设备/真实权限、12/5 基线、独立历史、重复/并发/换设备回执、目标重叠与撤销 prepared、receipt 写入/COMMIT 故障整体回滚、普通实体 insert/update 的连续参数绑定。真实 PG 仅显式 MOMO_TEST_DATABASE_URL 启用，随机隔离 schema 无 public fallback，跑新旧 migration。
+- 原库存真实 PG fixture 补齐 families.time_zone 的实际契约，新增上海/洛杉矶到期当日/次日和两种消费命令回归；没有通过删除生产时区检查回避 fixture 缺表。
+- App `initial_import_service_test.dart`：预览只读、独立确认、12/5 与归档不重放、回执丢失重启恢复、源数据/canonical 日期改变、暂停和切会话迟到响应、摘要不一致、旧快照失效、非法历史分页不推进 cursor、接受后新增 outbox 用原 key 结算、分类出站依赖。
+- `initial_import_repository_test.dart`、`calendar_date_test.dart`、`sync_business_adapter_test.dart`：v5→6、旧日期不猜测回填、辅助 category envelope/负排序、canonical JSON v3 备份兼容与归档排除、跨日期线/夏令时及到期日有效。
+- UI `initial_import_review_dialog_test.dart`、`initial_import_history_dialog_test.dart`：目标与覆盖、逐批日期核对、两次确认、阻塞无法勾掉、固定高水位、失败重试原页、拒绝变化水位和会话迟到响应。
+- HA `nas_smart_home_repository_test.dart`、`nas_ha_session_test.dart`：endpoint 绑定、共享认证/refresh 生命周期，close/logout/family/refresh 竞态与旧会话重试保护。
+
+### 未执行、剩余事项与交付边界
+
+| 验证 | 状态 | 原因/限制 |
+| --- | --- | --- |
+| Dart format / Flutter analyze、test、Drift build_runner、Android/iOS build | NOT_EXECUTED | 当前 PATH 无 Flutter/Dart，已有临时 SDK 不完整；未安装、继续下载或调用隐式下载入口 |
+| Go test / vet / gofmt、Linux build | NOT_EXECUTED | 当前无 Go/gofmt 工具链；没有以静态阅读代替编译或格式化 |
+| 真 PG16/PG18 migration/权限/并发/幂等/事务回滚/历史分页 | NOT_EXECUTED | 当前无 psql/Docker 或已授权测试库连接；新增真实 PG 测试源码未运行 |
+| 实际 Docker/Compose、managed/external、UGOS、升级/候选恢复及 HA | NOT_EXECUTED | 没有目标环境运行；fake daemon 不作为设备证据 |
+| 新改动同提交 Actions、镜像与 release operations 资产发布 | NOT_EXECUTED | 修改仍未提交/推送；历史远端通过不能证明当前代码 |
+| UI 截图/真机、双设备断网/重启/第二份备份重复导入 | NOT_EXECUTED | 无真机运行；UI 与恢复行为需后续联合验收 |
+
+本批实现有限制：1000 条/1 MiB 超限整批阻塞；旧日期/分类歧义与同 UUID（包括重复历史）重叠保留人工核对；旧日期来源已丢失时，非午夜检测不保证识别整日偏差或还原原值，审阅需对照原始资料；普通后续库存命令历史尚未统一跨端查询/去重。完整灾备切换、restore epoch/服务实例变更、改绑/多工作区、媒体迁移仍不在本批；HA scene/script 的 App 接入与真实事件来源方案仍待确认。NAS 当前不能称为全部完成验收。
+
+长期事实更新建议：取得同 SHA CI、真实 PG/NAS 与设备证据后，再局部补充 AI_CONTEXT 的 schema6/0007、首次导入、分类/日期、HA 会话与三模式运维支持矩阵。本批不覆盖旧验收记录。

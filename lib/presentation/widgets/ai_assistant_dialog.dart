@@ -248,8 +248,10 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
         await service.execute(action, confirmedDescription: description);
       }
       store.actionReceipts[message.id] = action.kind == 'open_page' ? '已打开页面' : '已执行';
-      if (store.sessions.contains(origin)) origin.messages.add(ChatMessage(id: const Uuid().v4(), role: 'assistant',
-        content: action.kind == 'open_page' ? '已打开${AiInventoryAction.pages[action.string('page')]}页面；具体操作以页面结果为准。' : '已完成：$description', timestamp: DateTime.now()));
+      if (store.sessions.contains(origin)) {
+        origin.messages.add(ChatMessage(id: const Uuid().v4(), role: 'assistant',
+          content: action.kind == 'open_page' ? '已打开${AiInventoryAction.pages[action.string('page')]}页面；具体操作以页面结果为准。' : '已完成：$description', timestamp: DateTime.now()));
+      }
       await store.save();
     } catch (error) {
       if (executing && !{'已执行', '已打开页面'}.contains(store.actionReceipts[message.id])) {

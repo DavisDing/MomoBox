@@ -117,6 +117,7 @@ class NasApiClient {
     bool authenticated = true,
     bool retryOnUnauthorized = true,
     bool expectBody = true,
+    bool Function()? isSessionCurrent,
   }) {
     return _sendJson(
       method: method,
@@ -126,6 +127,7 @@ class NasApiClient {
       authenticated: authenticated,
       retryOnUnauthorized: retryOnUnauthorized,
       expectBody: expectBody,
+      isSessionCurrent: isSessionCurrent,
     );
   }
 
@@ -154,7 +156,9 @@ class NasApiClient {
     bool retryOnUnauthorized = true,
     bool expectBody = true,
     String? tokenOverride,
+    bool Function()? isSessionCurrent,
   }) async {
+    _requireCurrentSession(isSessionCurrent);
     final sessionRevision = _sessionRevision;
     final relativePath = path.startsWith('/') ? path.substring(1) : path;
     final resolvedUri = _baseUri.resolve(relativePath);
@@ -209,6 +213,7 @@ class NasApiClient {
       throw NasApiError.network(error);
     }
 
+    _requireCurrentSession(isSessionCurrent);
     if (authenticated && sessionRevision != _sessionRevision) {
       throw NasApiError(
         kind: NasApiErrorKind.unauthorized,
@@ -221,6 +226,7 @@ class NasApiClient {
         retryOnUnauthorized &&
         _refreshHandler != null) {
       final refreshedToken = await _refreshOnce();
+      _requireCurrentSession(isSessionCurrent);
       if (refreshedToken != null && sessionRevision == _sessionRevision) {
         // The refresh callback may be supplied by a caller other than
         // NasAuthService. Do not rely on that callback to update this client;
@@ -234,6 +240,7 @@ class NasApiClient {
           authenticated: authenticated,
           retryOnUnauthorized: false,
           expectBody: expectBody,
+          isSessionCurrent: isSessionCurrent,
         );
       }
     }
@@ -282,6 +289,16 @@ class NasApiClient {
             .timeout(_requestTimeout);
       default:
         throw ArgumentError('Unsupported NAS HTTP method: $method');
+    }
+  }
+
+  void _requireCurrentSession(bool Function()? isSessionCurrent) {
+    if (isSessionCurrent != null && !isSessionCurrent()) {
+      throw NasApiError(
+        kind: NasApiErrorKind.unauthorized,
+        message: 'NAS 登录会话已改变，请重新登录。',
+        statusCode: 401,
+      );
     }
   }
 

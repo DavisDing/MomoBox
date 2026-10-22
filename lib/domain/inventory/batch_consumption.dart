@@ -16,7 +16,7 @@ class BatchConsumption {
     if (batch.remainingQuantity < 1) {
       throw StateError('当前批次没有可消耗库存。');
     }
-    if (ExpiryRules.statusFor(batch.expiryDate, today: today) ==
+    if (ExpiryRules.statusFor(batch.expiryDate, today: today ?? batch.calendarToday) ==
         ExpiryStatus.expired) {
       throw StateError('已过期批次不能消耗。');
     }

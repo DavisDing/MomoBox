@@ -9,6 +9,7 @@ COMPOSE_FILE=$NAS_DIR/docker-compose.yaml
 LOCK_HELPER=$SCRIPT_DIR/deployment-lock.sh
 DEFAULT_OUTPUT_DIR=$NAS_DIR/backups
 OUTPUT_DIR=$DEFAULT_OUTPUT_DIR
+OUTPUT_DIR_SET=0
 
 usage() {
     cat <<USAGE
@@ -24,6 +25,7 @@ Options:
 The completed dump path is printed to standard output. The dump is written to a
 private temporary file, validated with pg_restore --list, and atomically renamed.
 USAGE
+    momo_context_help
 }
 
 fail() {
@@ -31,12 +33,18 @@ fail() {
     exit 1
 }
 
+. "$SCRIPT_DIR/deployment-context.sh"
+. "$SCRIPT_DIR/postgres-client.sh"
+
 while [ "$#" -gt 0 ]; do
+    momo_context_option "$@"
+    if [ "$MOMO_OPTION_CONSUMED" -gt 0 ]; then shift "$MOMO_OPTION_CONSUMED"; continue; fi
     case $1 in
         -o|--output-dir)
             [ "$#" -ge 2 ] || fail "$1 requires a directory argument"
             [ -n "$2" ] || fail "$1 requires a non-empty directory argument"
             OUTPUT_DIR=$2
+            OUTPUT_DIR_SET=1
             shift 2
             ;;
         -h|--help)
@@ -56,6 +64,8 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
+momo_context_init
+if [ "$OUTPUT_DIR_SET" -eq 0 ]; then OUTPUT_DIR=$NAS_DIR/backups; fi
 [ -f "$COMPOSE_FILE" ] || fail "compose file not found: $COMPOSE_FILE"
 [ -f "$LOCK_HELPER" ] || fail "deployment lock helper not found: $LOCK_HELPER"
 # shellcheck disable=SC1090
@@ -75,22 +85,6 @@ trap 'exit 143' TERM
 
 command -v mktemp >/dev/null 2>&1 || fail "mktemp is required"
 command -v date >/dev/null 2>&1 || fail "date is required"
-
-if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-    COMPOSE_KIND=docker
-elif command -v docker-compose >/dev/null 2>&1; then
-    COMPOSE_KIND=docker-compose
-else
-    fail "Docker Compose is required (docker compose or docker-compose)"
-fi
-
-compose() {
-    if [ "$COMPOSE_KIND" = docker ]; then
-        docker compose --project-directory "$NAS_DIR" -f "$COMPOSE_FILE" "$@"
-    else
-        docker-compose --project-directory "$NAS_DIR" -f "$COMPOSE_FILE" "$@"
-    fi
-}
 
 wait_for_postgres() {
     attempts=0
@@ -126,6 +120,11 @@ cleanup_temp() {
 cleanup_lock_and_temp() {
     status=$?
     cleanup_temp
+    rm -f "${TEMP_META:-}"
+    if [ "$MOMO_DATABASE_MODE" != legacy ]; then
+        . "$SCRIPT_DIR/backend-isolation.sh"
+        momo_client_tasks_quiescent || { printf "%s\n" "client isolation unknown; lock retained" >&2; exit 1; }
+    fi
     momo_deployment_lock_release
     trap - 0 HUP INT TERM
     exit "$status"
@@ -137,19 +136,23 @@ trap 'exit 143' TERM
 
 # Start only PostgreSQL if needed. Compose reads deploy/nas/.env via
 # --project-directory; credentials remain inside the container environment.
-compose up -d postgres >/dev/null
-wait_for_postgres || fail "postgres did not become ready within 60 seconds"
+momo_database_ready
 
-if ! compose exec -T postgres sh -eu -c \
-    'exec pg_dump --format=custom --no-owner --no-privileges --username "$POSTGRES_USER" --dbname "$POSTGRES_DB"' \
-    >"$TEMP_PATH"; then
+if ! momo_dump >"$TEMP_PATH"; then
     fail "pg_dump failed; no completed backup was created"
 fi
 
 [ -s "$TEMP_PATH" ] || fail "pg_dump produced an empty file"
 
-if ! compose exec -T postgres pg_restore --list <"$TEMP_PATH" >/dev/null; then
+if ! momo_dump_list <"$TEMP_PATH"; then
     fail "backup validation failed; no completed backup was created"
+fi
+
+if [ "$MOMO_DATABASE_MODE" != legacy ]; then
+    TEMP_META=$(mktemp "$OUTPUT_DIR/.momobox-meta.XXXXXX") || fail "cannot create metadata"
+    chmod 600 "$TEMP_META"
+    momo_backup_metadata "$TEMP_PATH" >"$TEMP_META" || fail "cannot create backup metadata"
+    mv "$TEMP_META" "$FINAL_PATH.meta" || fail "cannot finalize metadata"
 fi
 
 # mv is atomic because the temporary and final files are in the same directory.

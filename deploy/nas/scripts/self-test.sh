@@ -23,6 +23,7 @@ fail() {
 for script in "$SCRIPT_DIR"/*.sh; do
     sh -n "$script" || fail "syntax check failed: $script"
 done
+sh -n "$SCRIPT_DIR/../operations/pg-client.sh" || fail "PG client shell syntax check failed"
 
 # Invoke from an unrelated working directory to exercise location-independent
 # help paths without requiring Docker or a running database.
@@ -53,3 +54,5 @@ grep -q 'unknown option' "$TMP_DIR/update-unknown.err" || fail "update unknown-o
 
 printf '%s\n' "All shell syntax and help/argument behavior checks passed."
 python3 "$SCRIPT_DIR/test-safety.py"
+python3 "$SCRIPT_DIR/test-variants.py"
+python3 "$SCRIPT_DIR/test-pg-client.py"

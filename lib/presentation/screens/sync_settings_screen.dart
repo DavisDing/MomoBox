@@ -13,6 +13,7 @@ import '../../domain/models/nas_sync_models.dart';
 import '../../domain/models/sync_models.dart';
 import '../controllers/nas_account_controller.dart';
 import '../controllers/providers.dart';
+import '../widgets/initial_import_card.dart';
 
 /// Sync controls intentionally remain explicit: the user must choose a
 /// bootstrap mode when the NAS reports that local and remote data need a
@@ -27,6 +28,7 @@ class SyncSettingsScreen extends ConsumerStatefulWidget {
 
 class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
   bool _working = false;
+  bool _importWorking = false;
   String? _message;
   List<String> _availableModes = const <String>[];
   String? _selectedMode;
@@ -64,6 +66,13 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           _buildBootstrapCard(context, engine, state),
           const SizedBox(height: 12),
           _buildConflictCard(context, scopeId, conflicts, syncApi, deviceId),
+          const SizedBox(height: 12),
+          InitialImportCard(
+            disabled: _working || _resolvingRemoteConflictId != null,
+            onBusyChanged: (busy) {
+              if (mounted) setState(() => _importWorking = busy);
+            },
+          ),
         ],
       ),
     );
@@ -76,6 +85,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     SyncStateModel? state,
   ) {
     final familyId = account.family.familyId;
+    final family = account.family.current?.family;
     final workspace = ref.watch(localWorkspaceIdProvider).valueOrNull;
     final enabled = engine != null;
     final workspaceAccess = ref.watch(syncWorkspaceAccessProvider);
@@ -107,6 +117,11 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
             if (familyId != null) ...[
               const SizedBox(height: 8),
               Text('同步范围：$familyId', style: Theme.of(context).textTheme.bodySmall),
+              if (family != null) ...[
+                const SizedBox(height: 4),
+                Text('家庭时区：${family.timeZone} · 到期日当天仍有效',
+                  style: Theme.of(context).textTheme.bodySmall),
+              ],
             ],
             if (workspace != null) ...[
               const SizedBox(height: 4),
@@ -125,7 +140,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
             if (access?.canBind == true) ...[
               const SizedBox(height: 8),
               OutlinedButton(
-                onPressed: _working ? null : _bindWorkspace,
+                onPressed: _working || _importWorking ? null : _bindWorkspace,
                 child: const Text('确认本机数据归属'),
               ),
             ],
@@ -146,7 +161,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
             ],
             const SizedBox(height: 12),
             FilledButton.icon(
-              onPressed: !enabled || _working ? null : () => _runSync(engine),
+              onPressed: !enabled || _working || _importWorking ? null : () => _runSync(engine),
               icon: _working
                   ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.sync),
@@ -212,14 +227,14 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
               ),
             if (awaitingChoice && _availableModes.isNotEmpty) const SizedBox(height: 8),
             OutlinedButton.icon(
-              onPressed: engine == null || _working ? null : () => _bootstrap(engine),
+              onPressed: engine == null || _working || _importWorking ? null : () => _bootstrap(engine),
               icon: const Icon(Icons.cloud_download_outlined),
               label: Text(awaitingChoice ? '重新读取可选模式' : '检查首次同步状态'),
             ),
             if (awaitingChoice) ...[
               const SizedBox(height: 8),
               FilledButton.icon(
-                onPressed: engine == null || _working || _selectedMode == null
+                onPressed: engine == null || _working || _importWorking || _selectedMode == null
                     ? null
                     : () => _confirmBootstrap(engine, _selectedMode!),
                 icon: const Icon(Icons.check),
@@ -247,7 +262,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     };
     return RadioListTile<String>(
       value: mode,
-      enabled: !_working,
+      enabled: !_working && !_importWorking,
       title: Text(title),
       subtitle: Text(description),
       contentPadding: EdgeInsets.zero,
@@ -275,7 +290,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                 if (scopeId != null)
                   IconButton(
                     tooltip: '刷新本地与远端冲突',
-                    onPressed: _working
+                    onPressed: _working || _importWorking
                         ? null
                         : () {
                             ref.invalidate(syncConflictsProvider(scopeId));
@@ -441,7 +456,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                 )
               else ...[
               TextButton(
-                onPressed: resolving
+                onPressed: resolving || _importWorking
                     ? null
                     : () => _resolveRemoteConflict(
                           conflict: conflict,
@@ -458,7 +473,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                     : const Text('保留远端'),
               ),
               FilledButton.tonal(
-                onPressed: resolving || unsupportedLocal
+                onPressed: resolving || unsupportedLocal || _importWorking
                     ? null
                     : () => _resolveRemoteConflict(
                           conflict: conflict,
@@ -520,7 +535,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                 _buildSettlementRecoveryAction(remote, deviceId, [conflict])
               else ...[
               TextButton(
-                onPressed: !canResolveRemotely || resolving
+                onPressed: !canResolveRemotely || resolving || _importWorking
                     ? null
                     : () => _resolveRemoteConflict(
                           conflict: remote,
@@ -531,7 +546,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                 child: const Text('保留远端'),
               ),
               FilledButton.tonal(
-                onPressed: !canResolveRemotely || resolving || unsupportedLocal
+                onPressed: !canResolveRemotely || resolving || unsupportedLocal || _importWorking
                     ? null
                     : () => _resolveRemoteConflict(
                           conflict: remote,
@@ -570,7 +585,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
             ? 'NAS 已按“${action == 'keep_local' ? '保留本地' : '保留远端'}”解决；仅恢复本地结算，不再执行远端变更。'
             : 'NAS 已解决，但原动作不支持恢复；本地冲突继续保留。'),
         FilledButton.tonal(
-          onPressed: !supported || working ? null : () => _resolveRemoteConflict(
+          onPressed: !supported || working || _importWorking ? null : () => _resolveRemoteConflict(
             conflict: remote, deviceId: deviceId, localConflicts: locals,
             action: action as String,
           ),

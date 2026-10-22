@@ -97,7 +97,7 @@ class AiInventoryActionService {
         return '采购「${a.string('name')}」增加 ${a.quantity} 件；'
             '${existing == null ? '新建采购项' : '合并到现有 ${existing.targetQuantity} 件，合计 ${existing.targetQuantity + a.quantity!} 件'}。'
             '\n分类：${existing?.category ?? (existing == null ? a.string('category') : null) ?? '未分类'}；'
-            '原因：${existing == null ? a.string('reason') ?? 'AI 助手建议' : existing.reason ?? '未记录'}。';
+            '原因：${existing == null ? a.string('reason') ?? 'AI 助手建议' : existing.reason}。';
       case 'shopping_complete':
       case 'shopping_delete':
         if (_shopping == null) throw StateError('采购服务不可用。');

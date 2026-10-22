@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:drift/drift.dart';
+
 import '../data/nas/nas_api_error.dart';
 import '../data/nas/nas_sync_api.dart';
 import '../data/repositories/inventory_repository.dart';
@@ -63,6 +65,7 @@ class SyncEngine {
     ApplyNasSyncSnapshotWithCompletion? applyRemoteSnapshotWithCompletion,
     this.familyId,
     this.localWorkspaceId,
+    this.prepareFeatureSupport,
   })  : _api = api,
         _repository = repository,
         _scopeId = scopeId,
@@ -83,6 +86,7 @@ class SyncEngine {
     required String deviceId,
     String? familyId,
     String? localWorkspaceId,
+    Future<void> Function()? prepareFeatureSupport,
   }) : this._withBusinessAdapter(
           api: api,
           repository: repository,
@@ -92,6 +96,7 @@ class SyncEngine {
           deviceId: deviceId,
           familyId: familyId,
           localWorkspaceId: localWorkspaceId,
+          prepareFeatureSupport: prepareFeatureSupport,
         );
 
   SyncEngine._withBusinessAdapter({
@@ -103,6 +108,7 @@ class SyncEngine {
     required String deviceId,
     String? familyId,
     String? localWorkspaceId,
+    Future<void> Function()? prepareFeatureSupport,
   }) : this._fromAdapter(
           api: api,
           repository: repository,
@@ -116,6 +122,7 @@ class SyncEngine {
           deviceId: deviceId,
           familyId: familyId,
           localWorkspaceId: localWorkspaceId,
+          prepareFeatureSupport: prepareFeatureSupport,
         );
 
   SyncEngine._fromAdapter({
@@ -126,6 +133,7 @@ class SyncEngine {
     required String deviceId,
     String? familyId,
     String? localWorkspaceId,
+    Future<void> Function()? prepareFeatureSupport,
   }) : this(
           api: api,
           repository: repository,
@@ -133,6 +141,7 @@ class SyncEngine {
           deviceId: deviceId,
           familyId: familyId,
           localWorkspaceId: localWorkspaceId,
+          prepareFeatureSupport: prepareFeatureSupport,
           applyRemoteChange: (change) async {
             SyncRemoteChangeDeferred? deferred;
             await repository.transaction(() async {
@@ -167,6 +176,7 @@ class SyncEngine {
   final ApplyNasSyncSnapshotWithCompletion? _applyRemoteSnapshotWithCompletion;
   final String? familyId;
   final String? localWorkspaceId;
+  final Future<void> Function()? prepareFeatureSupport;
 
   Future<SyncRunReport>? _runInFlight;
 
@@ -348,6 +358,21 @@ class SyncEngine {
 
   Future<SyncRunReport> _runOnce({required int maxPush, required int pullLimit}) async {
     _api.assertCurrentSession();
+    final importMarker = await (_repository.database.select(_repository.database.appSettings)
+          ..where((row) => row.key.equals('sync_initial_import_active:$_scopeId')))
+        .getSingleOrNull();
+    if (importMarker != null) {
+      final plan = await _repository.database.customSelect(
+        'SELECT receipt_json FROM sync_initial_import_plans WHERE scope_id=? AND import_id=?',
+        variables: [Variable<String>(_scopeId), Variable<String>(importMarker.value)],
+      ).getSingleOrNull();
+      final rawReceipt = plan?.readNullable<String>('receipt_json');
+      final receipt = rawReceipt == null ? null : jsonDecode(rawReceipt);
+      if (receipt is! Map || receipt['status'] != 'completed') {
+        return const SyncRunReport(pushed: 0, pulled: 0, skipped: true,
+          reason: 'initial import requires explicit completion or recovery');
+      }
+    }
     final state = await _ensureState();
     final now = DateTime.now().toUtc();
     final retryPending = await _repository.getPendingBootstrap(_scopeId);
@@ -487,6 +512,7 @@ class SyncEngine {
     // before any queued command, even for a legacy already-ready local state.
     final versions = await _api.capabilities();
     _requireSupportedVersions(versions.schemaVersion, versions.syncProtocolVersion);
+    await prepareFeatureSupport?.call();
     final state = await _ensureState();
     // An existing snapshot was decoded using the recorded contract. A newer
     // endpoint cannot make an incompatible staged snapshot safe to consume.
@@ -568,7 +594,33 @@ class SyncEngine {
     await _assertSnapshotScopeQuiescent();
   }
 
-  Future<void> _applyPendingBootstrapSnapshot({String? resolutionToken}) async {
+  /// Applies a fresh authoritative snapshot after an atomic import receipt.
+  /// The import completion marker is committed in the same business transaction.
+  Future<void> completeInitialImport({required Future<void> Function() onApplied}) =>
+      _coordinated(() async {
+        _api.assertCurrentSession();
+        await _assertSnapshotScopeQuiescent();
+        final mode = await _repository.getConfirmedBootstrapMode(_scopeId);
+        if (mode != 'join_and_merge' && mode != 'create_new_family') {
+          throw const SyncRemoteChangeDeferred('initial import requires an explicitly confirmed remote mode');
+        }
+        final snapshot = await _bootstrap();
+        if (snapshot.snapshot == null) {
+          throw const FormatException('initial import recovery requires a fresh snapshot');
+        }
+        _api.assertCurrentSession();
+        if (await _repository.getConfirmedBootstrapMode(_scopeId) != mode) {
+          throw const SyncRemoteChangeDeferred('bootstrap choice changed during import recovery');
+        }
+        final confirmed = await _confirmBootstrap(mode: mode, refreshedSnapshot: true);
+        if (!confirmed.accepted) {
+          throw const SyncRemoteChangeDeferred('fresh import snapshot checkpoint was rejected');
+        }
+        await _applyPendingBootstrapSnapshot(onApplied: onApplied);
+      });
+
+  Future<void> _applyPendingBootstrapSnapshot({String? resolutionToken,
+    Future<void> Function()? onApplied}) async {
     final applySnapshot = _applyRemoteSnapshot;
     final pending = await _repository.getPendingBootstrap(_scopeId);
     if (pending == null) return;
@@ -589,6 +641,7 @@ class SyncEngine {
       await _completeBootstrapSnapshot(
         _repository, _scopeId, snapshot, cursor.toInt(), pending, resolutionToken,
       );
+      if (onApplied != null) await onApplied();
       _api.assertCurrentSession();
     }
     final businessSnapshot = _applyRemoteSnapshotWithCompletion;

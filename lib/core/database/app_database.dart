@@ -5,6 +5,8 @@ import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'initial_import_schema.dart';
+
 part 'app_database.g.dart';
 
 @DataClassName('ProductRecord')
@@ -243,12 +245,13 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (migrator) async {
           await migrator.createAll();
+          await _createInitialImportTables();
           await _createOcrSearchIndex();
         },
         onUpgrade: (migrator, from, to) async {
@@ -278,6 +281,9 @@ class AppDatabase extends _$AppDatabase {
             await _createOcrSearchIndex();
             await _rebuildOcrSearchIndex();
           }
+          if (from < 6) {
+            await _createInitialImportTables();
+          }
         },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = ON');
@@ -287,6 +293,19 @@ class AppDatabase extends _$AppDatabase {
           await _createOcrSearchIndex();
         },
       );
+
+  Future<void> _createInitialImportTables() async {
+    for (final statement in initialImportSchema) {
+      await customStatement(statement);
+    }
+    final batchColumns = await customSelect('PRAGMA table_info(product_batches)').get();
+    final names = batchColumns.map((row) => row.read<String>('name')).toSet();
+    for (final name in ['production_date_calendar', 'expiry_date_calendar']) {
+      if (!names.contains(name)) {
+        await customStatement('ALTER TABLE product_batches ADD COLUMN $name TEXT');
+      }
+    }
+  }
 
   Future<void> _createOcrSearchIndex() async {
     await customStatement('''

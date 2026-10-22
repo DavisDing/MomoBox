@@ -1,4 +1,5 @@
 import '../inventory/expiry_rules.dart';
+import '../inventory/calendar_date.dart';
 
 class IntakeDraft {
   const IntakeDraft({
@@ -84,6 +85,7 @@ class InventoryBatch {
     required this.expiryDate,
     required this.productionDate,
     this.reminderPolicy = const ReminderPolicy(),
+    this.familyTimeZone,
   });
 
   final String id;
@@ -96,13 +98,16 @@ class InventoryBatch {
   final DateTime? productionDate;
 
   final ReminderPolicy reminderPolicy;
+  final String? familyTimeZone;
+  DateTime get calendarToday => CalendarDate.today(timeZone: familyTimeZone);
 
   // Disabling notifications never changes expiry facts or availability.
   ExpiryStatus get expiryStatus => ExpiryRules.statusFor(
         expiryDate,
         expiringDays: reminderPolicy.expiryWarningDays,
+        today: calendarToday,
       );
-  int? get daysUntilExpiry => ExpiryRules.daysUntil(expiryDate);
+  int? get daysUntilExpiry => ExpiryRules.daysUntil(expiryDate, today: calendarToday);
   bool get isAvailable => remainingQuantity > 0 && !isDiscarded;
 }
 
@@ -119,6 +124,7 @@ class InventoryItem {
     required int lowStockThreshold,
     required this.batches,
     this.reminderPolicy = const ReminderPolicy(),
+    this.familyTimeZone,
   }) : _lowStockThreshold = lowStockThreshold;
 
   final String id;
@@ -132,6 +138,8 @@ class InventoryItem {
   final int _lowStockThreshold;
   final List<InventoryBatch> batches;
   final ReminderPolicy reminderPolicy;
+  final String? familyTimeZone;
+  DateTime get calendarToday => CalendarDate.today(timeZone: familyTimeZone);
 
   int get lowStockThreshold =>
       reminderPolicy.lowStockThreshold ?? _lowStockThreshold;
@@ -159,6 +167,7 @@ class InventoryItem {
   ExpiryStatus get overallExpiryStatus => ExpiryRules.statusFor(
         nearestDatedBatch?.expiryDate,
         expiringDays: reminderPolicy.expiryWarningDays,
+        today: calendarToday,
       );
 }
 
@@ -231,7 +240,7 @@ class ReminderSummary {
     return expiring.where((item) {
       final remainingDays = ExpiryRules.daysUntil(
         item.nearestDatedBatch?.expiryDate,
-        today: today,
+        today: today ?? item.calendarToday,
       );
       return remainingDays != null && remainingDays >= 0 && remainingDays <= days;
     }).length;

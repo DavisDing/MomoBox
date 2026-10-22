@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/momobox/backend/internal/family"
 )
 
 var (
@@ -181,15 +183,29 @@ func (s *Service) Execute(ctx context.Context, command Command) (Result, error) 
 }
 
 func (s *Service) plan(ctx context.Context, tx Tx, command Command) ([]Allocation, error) {
+	zone := family.DefaultTimeZone
+	if provider, ok := tx.(interface {
+		FamilyTimeZone(context.Context, string) (string, error)
+	}); ok {
+		var err error
+		zone, err = provider.FamilyTimeZone(ctx, command.FamilyID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	today, err := family.CalendarDay(s.now(), zone)
+	if err != nil {
+		return nil, err
+	}
 	switch command.Command {
 	case CommandConsumeFEFO:
 		batches, err := tx.FindBatchesForUpdate(ctx, command.FamilyID, command.ProductID)
 		if err != nil {
 			return nil, err
 		}
-		return allocateFEFO(batches, command.Quantity, s.now())
+		return allocateFEFO(batches, command.Quantity, today)
 	case CommandConsumeAllocated:
-		return validateAllocated(ctx, tx, command, s.now())
+		return validateAllocated(ctx, tx, command, today)
 	case CommandRestock, CommandDiscard:
 		batch, err := tx.FindBatchForUpdate(ctx, command.FamilyID, command.BatchID)
 		if err != nil {
@@ -322,7 +338,6 @@ func quantityDelta(command CommandName, quantity int) int {
 }
 
 func dateOnly(value time.Time) time.Time {
-	value = value.UTC()
 	return time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, time.UTC)
 }
 

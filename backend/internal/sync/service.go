@@ -643,6 +643,9 @@ func validateEntityIdentity(change SyncChange) error {
 
 func validateEntityPayload(change SyncChange) error {
 	if change.Entity == EntityProductBatches {
+		if err := ValidateCalendarDates(change.Payload); err != nil {
+			return err
+		}
 		for _, field := range []string{"quantity", "current_quantity", "quantity_change"} {
 			if _, exists := change.Payload[field]; exists {
 				return fmt.Errorf("product_batches.%s must be changed by inventory_command", field)

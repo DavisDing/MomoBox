@@ -47,7 +47,7 @@ HA_TOKEN_ENCRYPTION_KEY=恰好32个ASCII字符
 
 如需全新PostgreSQL18部署或复用LiteLLM已有PostgreSQL，参见 `variants/README.md`：`variants/with-postgres/docker-compose.yaml`（自带PG18.6）与`variants/external-postgres/docker-compose.yaml`（仅后端、复用现有Docker网络及专属库）。每套有独立`.env.example`。
 
-下文及原`scripts/`仍仅适用于本目录原PG16 Compose，**不要拿原脚本运行新增模板**。新增模板配置已提供，但PG18/外部库/UGOS及新运维入口未验收；现有部署不会自动换数据库或升级大版本。
+下文无参数命令仍指本目录原PG16 Compose。新增模板使用同一套`scripts/`，但必须按[OPERATIONS.md](OPERATIONS.md)传入完整部署目录、project、模式、库/角色和固定PG client digest；不能直接无参数运行。新增运维入口已完成源码实现与离线故障模拟，PG18/外部库/UGOS真实验收仍未执行；现有部署不会自动换数据库或升级大版本。
 
 ## 首次部署
 
@@ -137,6 +137,8 @@ docker compose \
 ```
 
 **恢复成功、失败或中断后都不会自动重启后端。** 成功仅代表原库单事务恢复及镜像 migration 身份核对完成，不是安全重开服务的许可。旧 dump 可能恢复旧账号权限、会话、cursor和库存历史；外部 restore epoch、App 离线意图审阅、配套密钥及独立候选库切换尚未实现。不要直接运行更新脚本或在 UGOS 点击启动来绕过恢复后的隔离；需先按 `docs/NAS_RECOVERY_PLAN_2026-10-07.md` 单独制定并验证恢复准入方案。
+
+恢复会写入`.momobox-restored`隔离标记，后续`update`拒绝自动重开；删除标记不代表灾备已完成。新模式只支持独立空候选库恢复，详见[OPERATIONS.md](OPERATIONS.md)。
 
 更新、备份、恢复使用 `deploy/nas/.momobox-deployment.lock` 互斥。发现锁存在时不要直接删除：先检查 owner 元信息、本项目所有容器（含 one-off）、PostgreSQL 活动及仍可能运行的迁移/恢复进程，证明任务已终止后再按运维流程处理；删除锁不代表数据库或同步历史已安全。恢复仍是破坏性原库操作，执行前必须另存当前库备份、验证来源与目标；本脚本不等于完整灾备方案。
 

@@ -50,7 +50,7 @@ class Fefo {
 
   static bool _isEligible(InventoryBatch batch, {DateTime? today}) {
     if (!batch.isAvailable) return false;
-    return ExpiryRules.statusFor(batch.expiryDate, today: today) !=
+    return ExpiryRules.statusFor(batch.expiryDate, today: today ?? batch.calendarToday) !=
         ExpiryStatus.expired;
   }
 

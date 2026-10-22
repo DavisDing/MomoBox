@@ -6,10 +6,14 @@ import 'package:uuid/uuid.dart';
 import '../../core/database/app_database.dart';
 import '../../domain/inventory/batch_consumption.dart';
 import '../../domain/inventory/fefo.dart';
+import '../../domain/inventory/calendar_date.dart';
 import '../../domain/models/inventory_models.dart';
 import '../../domain/models/sync_models.dart';
 import 'sync_outbox_repository.dart';
 import 'reminder_repository.dart';
+import 'calendar_date_repository.dart';
+import 'sync_category_repository.dart';
+import '../../domain/models/initial_import_models.dart';
 
 class InventoryRepository {
   InventoryRepository(
@@ -63,6 +67,7 @@ class InventoryRepository {
     required String categoryId,
     required String name,
   }) async {
+    await SyncCategoryRepository(_database).rename(scopeId, categoryId, name);
     final prefix = 'sync_category_binding:$scopeId:';
     final bindings = await (_database.select(_database.appSettings)
           ..where((row) => row.value.equals(categoryId)))
@@ -89,6 +94,8 @@ class InventoryRepository {
   }
 
   Future<List<InventoryItem>> loadInventory([List<ProductRecord>? source]) async {
+    final familyTimeZone = await CalendarDateRepository(_database)
+        .familyTimeZone(await _mutationScope());
     final products = source ??
         await (_database.select(_database.products)
               ..where((product) => product.deletedAt.isNull()))
@@ -109,7 +116,8 @@ class InventoryRepository {
         lowStockThreshold: productPolicy?.lowStockThreshold ??
             familyPolicy?.lowStockThreshold ?? product.lowStockThreshold,
       );
-      return _toInventoryItem(product, reminderPolicy: effectivePolicy);
+      return _toInventoryItem(product, reminderPolicy: effectivePolicy,
+        familyTimeZone: familyTimeZone);
     }));
     items.sort((a, b) {
       final aDate = a.nearestDatedBatch?.expiryDate;
@@ -125,6 +133,7 @@ class InventoryRepository {
   Future<InventoryItem> _toInventoryItem(
     ProductRecord product, {
     ReminderPolicy reminderPolicy = const ReminderPolicy(),
+    String? familyTimeZone,
   }) async {
     final batches = await (_database.select(_database.productBatches)
           ..where((batch) =>
@@ -141,21 +150,24 @@ class InventoryRepository {
       unit: product.unit,
       lowStockThreshold: product.lowStockThreshold,
       reminderPolicy: reminderPolicy,
-      batches: batches
-          .map(
-            (batch) => InventoryBatch(
+      familyTimeZone: familyTimeZone,
+      batches: await Future.wait(batches.map((batch) async {
+        final calendar = await CalendarDateRepository(_database).read(batch.id);
+        return InventoryBatch(
               id: batch.id,
               productId: batch.productId,
               batchNo: batch.batchNo,
               initialQuantity: batch.initialQuantity,
               remainingQuantity: batch.remainingQuantity,
               isDiscarded: batch.isDiscarded,
-              expiryDate: batch.expiryDate,
-              productionDate: batch.productionDate,
+              expiryDate: calendar['expiry_date'] == null ? batch.expiryDate :
+                CalendarDate.decode(calendar['expiry_date']!),
+              productionDate: calendar['produced_date'] == null ? batch.productionDate :
+                CalendarDate.decode(calendar['produced_date']!),
               reminderPolicy: reminderPolicy,
-            ),
-          )
-          .toList(growable: false),
+              familyTimeZone: familyTimeZone,
+            );
+      })),
     );
   }
 
@@ -399,7 +411,17 @@ class InventoryRepository {
             ),
           )
           .toList(growable: false);
-      final allocations = Fefo.allocate(batches, quantity, today: now);
+      final today = CalendarDate.today(timeZone: await CalendarDateRepository(_database)
+        .familyTimeZone(await _mutationScope()), instant: now);
+      final canonicalBatches = await Future.wait(batches.map((batch) async {
+        final calendar = await CalendarDateRepository(_database).read(batch.id);
+        return InventoryBatch(id: batch.id, productId: batch.productId, batchNo: batch.batchNo,
+          initialQuantity: batch.initialQuantity, remainingQuantity: batch.remainingQuantity,
+          isDiscarded: batch.isDiscarded, productionDate: batch.productionDate,
+          expiryDate: calendar['expiry_date'] == null ? batch.expiryDate :
+            CalendarDate.decode(calendar['expiry_date']!));
+      }));
+      final allocations = Fefo.allocate(canonicalBatches, quantity, today: today);
       for (final allocation in allocations) {
         final current = records.firstWhere((record) => record.id == allocation.batchId);
         await (_database.update(_database.productBatches)
@@ -445,6 +467,7 @@ class InventoryRepository {
         throw StateError('找不到要消耗的批次。');
       }
       final record = records.single;
+      final calendar = await CalendarDateRepository(_database).read(batchId);
       final batch = InventoryBatch(
         id: record.id,
         productId: record.productId,
@@ -452,10 +475,13 @@ class InventoryRepository {
         initialQuantity: record.initialQuantity,
         remainingQuantity: record.remainingQuantity,
         isDiscarded: record.isDiscarded,
-        expiryDate: record.expiryDate,
+        expiryDate: calendar['expiry_date'] == null ? record.expiryDate :
+          CalendarDate.decode(calendar['expiry_date']!),
         productionDate: record.productionDate,
       );
-      BatchConsumption.validate(batch, quantity, today: now);
+      final today = CalendarDate.today(timeZone: await CalendarDateRepository(_database)
+        .familyTimeZone(await _mutationScope()), instant: now);
+      BatchConsumption.validate(batch, quantity, today: today);
       await (_database.update(_database.productBatches)
             ..where((entry) => entry.id.equals(batchId)))
           .write(
@@ -835,6 +861,7 @@ class InventoryRepository {
           ),
         );
       }
+      await CalendarDateRepository(_database).applyPayload(batchId, payload);
       return SyncRemoteApplyStatus.applied;
     });
   }
@@ -973,7 +1000,7 @@ class InventoryRepository {
       if (!payload.containsKey(key)) continue;
       final value = payload[key];
       if (value == null) return null;
-      if (value is String) return DateTime.parse(value).toUtc();
+      if (value is String) return CalendarDate.decode(value);
       throw FormatException('$key must be an RFC3339 date or null');
     }
     return null;
@@ -999,6 +1026,38 @@ class InventoryRepository {
     final scopeId = await _mutationScope();
     final outbox = _outbox;
     if (scopeId == null || scopeId.trim().isEmpty || outbox == null) return;
+    final importSupport = await (_database.select(_database.appSettings)
+      ..where((row) => row.key.equals('sync_import_format:$scopeId'))).getSingleOrNull();
+    if (importSupport?.value == '1' && entity == 'products') {
+      final product = await getProductRecord(entityId);
+      if (product == null) throw StateError('找不到商品资料，不能生成分类出站。');
+      final categories = SyncCategoryRepository(_database);
+      var categoryId = await categories.readId(scopeId, product.category);
+      if (categoryId == null) {
+        final candidates = (await categories.remoteCategories(scopeId)).where((category) =>
+          (category['name'] as String?)?.trim().toLowerCase() == product.category.trim().toLowerCase()).toList();
+        if (candidates.length > 1 ||
+            (candidates.isNotEmpty && candidates.single['name'] != product.category)) {
+          throw StateError('分类名称存在歧义，请先核对分类后再入库。');
+        }
+        final reuse = candidates.length == 1;
+        categoryId = reuse ? candidates.single['id'] as String : _uuid.v4();
+        await categories.save(scopeId, InitialImportCategory(sourceName: product.category,
+          categoryId: categoryId, action: reuse ? InitialImportCategoryAction.reuse : InitialImportCategoryAction.create));
+        if (!reuse) {
+          await _enqueueEntityUpsert(entity: 'categories', entityId: categoryId,
+            baseVersion: 0, payload: {'name': product.category}, now: now);
+        }
+      }
+      await bindRemoteProductCategory(scopeId: scopeId, productId: product.id,
+        categoryId: categoryId, updatedAt: now);
+      payload = {...payload, 'category_id': categoryId, 'location': product.location,
+        'unit': product.unit, 'low_stock_threshold': product.lowStockThreshold};
+    } else if (importSupport?.value == '1' && entity == 'product_batches') {
+      final batch = await getBatchRecord(entityId);
+      if (batch == null) throw StateError('找不到批次资料。');
+      payload = {...payload, 'batch_no': batch.batchNo, 'is_opened': batch.isOpened};
+    }
     final changeId = _uuid.v4();
     await outbox.enqueueInCurrentTransaction(
       SyncOutboxDraft(
@@ -1114,10 +1173,7 @@ class InventoryRepository {
   }
 
   String _dateOnly(DateTime value) {
-    final local = value.toLocal();
-    final month = local.month.toString().padLeft(2, '0');
-    final day = local.day.toString().padLeft(2, '0');
-    return '${local.year.toString().padLeft(4, '0')}-$month-$day';
+    return CalendarDate.encode(value);
   }
 
   Future<void> _insertBatch({
@@ -1146,6 +1202,8 @@ class InventoryRepository {
             updatedAt: now,
           ),
         );
+    await CalendarDateRepository(_database).write(batchId,
+      producedDate: productionDate, expiryDate: expiryDate);
   }
 
   Future<void> _insertMovement({

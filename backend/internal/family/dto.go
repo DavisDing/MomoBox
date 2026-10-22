@@ -4,6 +4,7 @@ import "time"
 
 type CreateFamilyRequest struct {
 	Name string `json:"name"`
+	TimeZone string `json:"time_zone,omitempty"`
 }
 
 type FamilyResponse struct {

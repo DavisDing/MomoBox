@@ -1,123 +1,122 @@
+import '../../application/nas_auth_service.dart';
 import '../../data/nas/nas_api_client.dart';
 import '../../data/nas/nas_api_error.dart';
 import '../../domain/models/nas_homeassistant_models.dart';
-import '../../domain/models/nas_models.dart';
 import '../../services/nas_credentials_service.dart';
 import '../nas/nas_homeassistant_api.dart';
 
 /// Remote Home Assistant repository boundary.
 ///
 /// The direct constructor is kept for callers/tests that already own an API
-/// client. [fromBaseUrl] is used by the presentation layer when the NAS URL
-/// is known but the access token must be restored from secure storage first.
+/// client. The presentation layer shares the account's authenticated session;
+/// [fromBaseUrl] remains available for callers owning an independent session.
 class NasSmartHomeRepository {
   NasSmartHomeRepository(this._api)
       : _client = null,
-        _credentials = null;
+        _auth = null,
+        _isSessionCurrent = null;
+
+  factory NasSmartHomeRepository.withSession(
+    NasApiClient? client, {
+    required bool Function() isSessionCurrent,
+  }) {
+    late final NasSmartHomeRepository repository;
+    bool current() => !repository._closed && isSessionCurrent();
+    repository = NasSmartHomeRepository._shared(
+      client == null ? null : NasHomeAssistantApi(client, isSessionCurrent: current),
+      current,
+    );
+    return repository;
+  }
+
+  NasSmartHomeRepository._shared(this._api, this._isSessionCurrent)
+      : _client = null,
+        _auth = null;
 
   factory NasSmartHomeRepository.fromBaseUrl(
     String? baseUrl, {
     NasCredentialsService? credentials,
+    NasApiClient Function(String)? apiClientFactory,
   }) {
-    final client = _createClient(baseUrl);
-    return NasSmartHomeRepository._configured(
+    final client = _createClient(baseUrl, apiClientFactory);
+    late final NasSmartHomeRepository repository;
+    repository = NasSmartHomeRepository._configured(
       client,
       credentials ?? NasCredentialsService(),
+      client == null ? null : NasHomeAssistantApi(client,
+        isSessionCurrent: () => !repository._closed,
+      ),
     );
+    return repository;
   }
 
   NasSmartHomeRepository._configured(
     NasApiClient? client,
     NasCredentialsService credentials,
+    this._api,
   )  : _client = client,
-        _credentials = credentials,
-        _api = client == null ? null : NasHomeAssistantApi(client);
+        _auth = client == null ? null : NasAuthService(
+          apiClient: client, credentials: credentials,
+        ),
+        _isSessionCurrent = null;
 
   final NasHomeAssistantApi? _api;
   final NasApiClient? _client;
-  final NasCredentialsService? _credentials;
+  final NasAuthService? _auth;
+  final bool Function()? _isSessionCurrent;
+  bool _closed = false;
 
-  bool get isConfigured => _api != null;
+  bool get isConfigured => !_closed && _api != null;
 
   /// Restores the NAS session for a repository created with [fromBaseUrl].
   ///
   /// Returns false when the NAS URL or secure credentials are unavailable.
   /// It never treats a configured URL alone as an authenticated session.
   Future<bool> restoreCredentials() async {
-    final client = _client;
-    final credentials = _credentials;
-    if (client == null || credentials == null) return false;
-
-    final stored = await credentials.read();
-    if (stored == null) {
-      client.setAccessToken(null);
-      return false;
-    }
-
-    client.setAccessToken(stored.accessToken);
-    client.setRefreshHandler(_refreshAccessToken);
-    return true;
+    if (_closed) return false;
+    final isSessionCurrent = _isSessionCurrent;
+    if (isSessionCurrent != null) return isSessionCurrent();
+    final auth = _auth;
+    if (auth == null) return false;
+    final snapshot = await auth.restore();
+    return !_closed && snapshot.isAuthenticated;
   }
 
-  Future<String?> _refreshAccessToken() async {
-    final client = _client;
-    final credentials = _credentials;
-    if (client == null || credentials == null) return null;
-
-    final stored = await credentials.read();
-    if (stored == null) return null;
-
-    try {
-      final response = await client.refresh(
-        NasRefreshRequest(stored.refreshToken),
-      );
-      await credentials.save(response);
-      client.setAccessToken(response.accessToken);
-      return response.accessToken;
-    } on NasApiError catch (error) {
-      if (error.isUnauthorized) {
-        await credentials.clear();
-        client.setAccessToken(null);
-        return null;
-      }
-      rethrow;
-    }
-  }
-
-  Future<List<NasHaIntegration>> listIntegrations() => _requiredApi.listIntegrations();
+  Future<List<NasHaIntegration>> listIntegrations() =>
+      _withApi((api) => api.listIntegrations());
 
   Future<NasHaIntegration> addIntegration(NasHaIntegrationInput input) =>
-      _requiredApi.addIntegration(input);
+      _withApi((api) => api.addIntegration(input));
 
   Future<NasHaIntegration> updateIntegration(
     String integrationId,
     NasHaIntegrationUpdate update,
   ) =>
-      _requiredApi.updateIntegration(integrationId, update);
+      _withApi((api) => api.updateIntegration(integrationId, update));
 
   Future<void> deleteIntegration(String integrationId) =>
-      _requiredApi.deleteIntegration(integrationId);
+      _withApi((api) => api.deleteIntegration(integrationId));
 
   Future<NasHaConnectionTestResult> testIntegration(String integrationId) =>
-      _requiredApi.testIntegration(integrationId);
+      _withApi((api) => api.testIntegration(integrationId));
 
   Future<NasHaDiscoverResult> discover(String integrationId) =>
-      _requiredApi.discover(integrationId);
+      _withApi((api) => api.discover(integrationId));
 
   Future<List<NasHaEntity>> listEntities({
     String? integrationId,
     bool controllableOnly = false,
   }) =>
-      _requiredApi.listEntities(
+      _withApi((api) => api.listEntities(
         integrationId: integrationId,
         controllableOnly: controllableOnly,
-      );
+      ));
 
   Future<NasHaEntityState> fetchEntityState({
     required String integrationId,
     required String entityId,
   }) =>
-      _requiredApi.fetchEntityState(integrationId: integrationId, entityId: entityId);
+      _withApi((api) => api.fetchEntityState(integrationId: integrationId, entityId: entityId));
 
   Future<NasHaCommandResult> sendCommand({
     required String integrationId,
@@ -126,65 +125,92 @@ class NasSmartHomeRepository {
     required String requestId,
     NasHaCommandParameters? parameters,
   }) =>
-      _requiredApi.sendCommand(
+      _withApi((api) => api.sendCommand(
         integrationId: integrationId,
         entityId: entityId,
         command: command,
         requestId: requestId,
         parameters: parameters,
-      );
+      ));
 
   Future<List<NasHaConsumableGroup>> listConsumableGroups() =>
-      _requiredApi.listConsumableGroups();
+      _withApi((api) => api.listConsumableGroups());
 
   Future<NasHaConsumableGroup> saveConsumableGroup(
     NasHaConsumableGroup group,
   ) =>
-      _requiredApi.saveConsumableGroup(group);
+      _withApi((api) => api.saveConsumableGroup(group));
 
   Future<List<NasHaConsumableRecipe>> listConsumableRecipes() =>
-      _requiredApi.listConsumableRecipes();
+      _withApi((api) => api.listConsumableRecipes());
 
   Future<NasHaConsumableRecipe> saveConsumableRecipe(
     NasHaConsumableRecipe recipe,
   ) =>
-      _requiredApi.saveConsumableRecipe(recipe);
+      _withApi((api) => api.saveConsumableRecipe(recipe));
 
   Future<List<NasHaLinkageRule>> listLinkageRules() =>
-      _requiredApi.listLinkageRules();
+      _withApi((api) => api.listLinkageRules());
 
   Future<NasHaLinkageRule> saveLinkageRule(NasHaLinkageRule rule) =>
-      _requiredApi.saveLinkageRule(rule);
+      _withApi((api) => api.saveLinkageRule(rule));
 
   Future<List<NasHaLinkageSuggestion>> listLinkageSuggestions({
     NasHaLinkageSuggestionStatus? status,
   }) =>
-      _requiredApi.listLinkageSuggestions(status: status);
+      _withApi((api) => api.listLinkageSuggestions(status: status));
 
   Future<NasHaLinkageSuggestion> resolveLinkageSuggestion({
     required String suggestionId,
     required NasHaSuggestionDecision decision,
   }) =>
-      _requiredApi.resolveLinkageSuggestion(
+      _withApi((api) => api.resolveLinkageSuggestion(
         suggestionId: suggestionId,
         decision: decision,
-      );
+      ));
 
-  Future<List<NasHaEntityPermission>> listPermissions() => _requiredApi.listPermissions();
+  Future<List<NasHaEntityPermission>> listPermissions() =>
+      _withApi((api) => api.listPermissions());
 
   Future<NasHaEntityPermission> updatePermission(
     NasHaEntityPermission permission,
   ) =>
-      _requiredApi.updatePermission(permission);
+      _withApi((api) => api.updatePermission(permission));
 
-  void close() => _client?.close();
+  void close() {
+    if (_closed) return;
+    _closed = true;
+    _auth?.abandon();
+    _client?.close();
+  }
 
-  NasHomeAssistantApi get _requiredApi =>
-      _api ?? (throw StateError('NAS Home Assistant repository is not configured.'));
+  Future<T> _withApi<T>(Future<T> Function(NasHomeAssistantApi) operation) async {
+    _assertCurrentSession();
+    final api = _api;
+    if (api == null) {
+      throw StateError('NAS Home Assistant repository is not configured.');
+    }
+    final result = await operation(api);
+    _assertCurrentSession();
+    return result;
+  }
 
-  static NasApiClient? _createClient(String? baseUrl) {
+  void _assertCurrentSession() {
+    if (_closed || !(_isSessionCurrent?.call() ?? true)) {
+      throw NasApiError(
+        kind: NasApiErrorKind.unauthorized,
+        message: 'NAS 登录会话已改变，请重新登录。',
+        statusCode: 401,
+      );
+    }
+  }
+
+  static NasApiClient? _createClient(
+    String? baseUrl,
+    NasApiClient Function(String)? apiClientFactory,
+  ) {
     final normalized = baseUrl?.trim();
     if (normalized == null || normalized.isEmpty) return null;
-    return NasApiClient(normalized);
+    return (apiClientFactory ?? NasApiClient.new)(normalized);
   }
 }

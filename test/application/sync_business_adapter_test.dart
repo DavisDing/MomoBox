@@ -290,14 +290,20 @@ void main() {
     expect(await database.select(database.products).get(), isEmpty);
   });
 
-  test('分类颜色与自定义排序无法映射时显式失败', () async {
-    await expectLater(adapter.applyRemoteChange(change('categories', 'category', {
-      'name': '食品', 'color': '#ffffff',
+  test('分类颜色与排序保存在辅助记录；现有名称界面不编辑这些元数据', () async {
+    await adapter.applyRemoteChange(change('categories', 'category', {
+      'name': '食品', 'color': '#ffffff', 'sort_order': -4,
+    }));
+    final stored = await outbox.getRemoteAuxiliaryEntity(
+      scopeId: scope, entity: 'categories', entityId: 'category');
+    expect(stored!['payload']['color'], '#ffffff');
+    expect(stored['payload']['sort_order'], -4);
+    await expectLater(adapter.applyRemoteChange(change('categories', 'invalid-color', {
+      'name': '食品', 'color': 123,
     })), throwsFormatException);
-    await expectLater(adapter.applyRemoteChange(change('categories', 'category', {
-      'name': '食品', 'sort_order': 1,
+    await expectLater(adapter.applyRemoteChange(change('categories', 'invalid-sort', {
+      'name': '食品', 'sort_order': 1.5,
     })), throwsFormatException);
-    expect(await database.select(database.appSettings).get(), isEmpty);
   });
 
   test('提醒增量更新真实低库存阈值；删除恢复商品自身阈值', () async {

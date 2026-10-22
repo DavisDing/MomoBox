@@ -11,6 +11,7 @@ import '../../application/ai_usage_service.dart';
 import '../../application/backup_service.dart';
 import '../../application/barcode_lookup_service.dart';
 import '../../application/inventory_service.dart';
+import '../../application/initial_import_service.dart';
 import '../../application/inventory_statistics_service.dart';
 import '../../application/manual_qa_service.dart';
 import '../../application/media_service.dart';
@@ -29,6 +30,7 @@ import '../../core/database/app_database.dart';
 import '../../data/repositories/backup_repository.dart';
 import '../../data/repositories/barcode_cache_repository.dart';
 import '../../data/repositories/inventory_repository.dart';
+import '../../data/repositories/initial_import_repository.dart';
 import '../../data/repositories/media_repository.dart';
 import '../../data/repositories/nas_smart_home_repository.dart';
 import '../../data/repositories/reminder_repository.dart';
@@ -37,9 +39,12 @@ import '../../data/repositories/shopping_repository.dart';
 import '../../data/repositories/sync_outbox_repository.dart';
 import '../../data/repositories/sync_workspace_repository.dart';
 import '../../data/nas/nas_sync_api.dart';
+import '../../data/nas/nas_api_error.dart';
+import '../../domain/inventory/calendar_date.dart';
 import '../../domain/inventory/reminder_rules.dart';
 import '../../domain/models/ai_usage_models.dart';
 import '../../domain/models/inventory_models.dart';
+import '../../domain/models/initial_import_models.dart';
 import '../../domain/models/recognition_models.dart';
 import '../../domain/models/sync_models.dart';
 import '../../services/local_notification_service.dart';
@@ -352,8 +357,14 @@ final aiConfigurationStatusProvider = StreamProvider<bool>((ref) => ref
     .map((value) => value?.trim().isNotEmpty == true));
 
 final nasSmartHomeRepositoryProvider = Provider<NasSmartHomeRepository>((ref) {
-  final connection = ref.watch(nasConnectionProvider);
-  final repository = NasSmartHomeRepository.fromBaseUrl(connection.serverUrl);
+  ref.watch(nasAccountProvider.select((account) => (
+    account.status,
+    account.auth.user?.id,
+    account.family.status,
+    account.family.current,
+  )));
+  final repository = ref.read(nasAccountProvider.notifier)
+      .createHomeAssistantRepository();
   ref.onDispose(repository.close);
   return repository;
 });
@@ -508,16 +519,68 @@ final syncEngineProvider = Provider<SyncEngine?>((ref) {
       localWorkspaceId == null) {
     return null;
   }
+  final database = ref.watch(databaseProvider);
   return SyncEngine.withBusinessAdapter(
     api: api,
-    repository: SyncOutboxRepository(ref.watch(databaseProvider)),
+    repository: SyncOutboxRepository(database),
     inventoryRepository: ref.watch(inventoryRepositoryProvider),
     shoppingRepository: ref.watch(shoppingRepositoryProvider),
     scopeId: familyId,
     deviceId: deviceId,
     familyId: familyId,
     localWorkspaceId: localWorkspaceId,
+    prepareFeatureSupport: () async {
+      try {
+        final capability = await api.importCapabilities(deviceId: deviceId);
+        CalendarDate.validateTimeZone(capability.familyTimeZone);
+        await database.transaction(() async {
+          api.assertCurrentSession();
+          final settings = <String, String>{
+            'sync_import_format:$familyId': '1',
+            'sync_family_time_zone:$familyId': capability.familyTimeZone,
+          };
+          for (final entry in settings.entries) {
+            final existing = await (database.select(database.appSettings)
+              ..where((row) => row.key.equals(entry.key))).getSingleOrNull();
+            if (existing?.value == entry.value) continue;
+            await database.into(database.appSettings).insertOnConflictUpdate(
+              AppSettingsCompanion.insert(key: entry.key, value: entry.value,
+                updatedAt: DateTime.now().toUtc()));
+          }
+          api.assertCurrentSession();
+        });
+      } on NasApiError catch (error) {
+        if (error.statusCode != 404) rethrow;
+        api.assertCurrentSession();
+        await (database.delete(database.appSettings)
+          ..where((row) => row.key.equals('sync_import_format:$familyId'))).go();
+      }
+    },
   );
+});
+
+final initialImportServiceProvider = Provider<InitialImportService?>((ref) {
+  final api = ref.watch(nasSyncApiProvider);
+  final engine = ref.watch(syncEngineProvider);
+  final identity = ref.watch(syncWorkspaceIdentityProvider);
+  final workspaceId = ref.watch(localWorkspaceIdProvider).valueOrNull;
+  final deviceId = ref.watch(nasAccountProvider).devices.currentDeviceId;
+  if (api == null || engine == null || identity == null || workspaceId == null || deviceId == null) {
+    return null;
+  }
+  final service = InitialImportService(database: ref.watch(databaseProvider), api: api,
+    engine: engine, identity: identity, deviceId: deviceId, localWorkspaceId: workspaceId);
+  ref.onDispose(service.close);
+  return service;
+});
+
+final initialImportProgressProvider = StreamProvider<InitialImportProgress?>((ref) async* {
+  // Observe the durable owner even when signed out or using a different account.
+  await ref.watch(syncWorkspaceBindingProvider.future);
+  final database = ref.watch(databaseProvider);
+  final owner = await SyncWorkspaceRepository(database).readOwner();
+  if (owner == null) { yield null; return; }
+  yield* InitialImportRepository(database).watchProgress(owner.familyId);
 });
 
 final syncNetworkStatusSourceProvider = Provider<NetworkStatusSource>((ref) {

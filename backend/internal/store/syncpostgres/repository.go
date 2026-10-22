@@ -146,7 +146,7 @@ func (r *Repository) ReadBootstrap(ctx context.Context, familyID string) (syncdo
 func readBootstrapSnapshot(ctx context.Context, tx *sql.Tx, familyID string) (syncdomain.BootstrapSnapshot, error) {
 	var familyRaw []byte
 	err := tx.QueryRowContext(ctx, `
-SELECT jsonb_build_object('id', id, 'name', name, 'created_at', created_at, 'updated_at', updated_at)
+SELECT jsonb_build_object('id', id, 'name', name, 'time_zone', time_zone, 'created_at', created_at, 'updated_at', updated_at)
 FROM families
 WHERE id = $1::uuid AND deleted_at IS NULL`, familyID).Scan(&familyRaw)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -728,6 +728,11 @@ func (r *transactionRepository) UpsertEntity(ctx context.Context, mutation syncd
 			nil,
 		)
 	}
+	if mutation.Entity == syncdomain.EntityProductBatches {
+		if err := syncdomain.ValidateCalendarDates(mutation.Payload); err != nil {
+			return syncdomain.EntityRecord{}, err
+		}
+	}
 	if err := validateRequiredPayload(spec, mutation.Payload, mutation.BaseVersion == 0); err != nil {
 		return syncdomain.EntityRecord{}, syncdomain.NewBusinessError("VALIDATION_FAILED", err.Error(), nil)
 	}
@@ -752,8 +757,12 @@ func (r *transactionRepository) UpsertEntity(ctx context.Context, mutation syncd
 	}
 	var record syncdomain.EntityRecord
 	var raw []byte
+	var versionOrCreator any = mutation.BaseVersion
+	if mutation.BaseVersion == 0 {
+		versionOrCreator = r.userID
+	}
 	err = r.tx.QueryRowContext(ctx, query,
-		mutation.EntityID, r.familyID, payload, r.deviceID, mutation.BaseVersion, r.userID,
+		mutation.EntityID, r.familyID, payload, r.deviceID, versionOrCreator,
 	).Scan(&record.Version, &raw, &record.DeletedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return syncdomain.EntityRecord{}, r.classifyMutationFailure(ctx, spec, mutation.EntityID, mutation.BaseVersion)

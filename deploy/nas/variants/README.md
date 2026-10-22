@@ -1,6 +1,6 @@
 # 两种独立 NAS Compose 模板（2026-10-11）
 
-> 已生成配置文件并完成静态检查；Docker、PG18、UGOS、外部数据库及恢复演练 **NOT_EXECUTED**。发布流程已接入这两套模板及操作指南，但新提交的远端发布尚待验证；这不是已有数据库升级工具。
+> 已生成配置文件并完成静态检查；Docker、PG18、UGOS、外部数据库及恢复演练 **NOT_EXECUTED**。发布流程已接入这两套模板及操作指南，但新提交的远端发布尚待验证；这些模板不是PostgreSQL大版本升级工具。
 
 ## 选择一套，不要同时导入
 
@@ -9,7 +9,7 @@
 | `with-postgres` | 全新部署，尚无可复用 PostgreSQL | 后端 + PostgreSQL 18.6 + 新数据卷 |
 | `external-postgres` | 已有 PostgreSQL，例如 LiteLLM 使用的实例 | 仅 MomoBox 后端；不创建、停止、升级或清理现有 PostgreSQL |
 
-两套都是完整的 `docker-compose.yaml`，不是 overlay，不要用多个 `-f` 合并。原 `deploy/nas/docker-compose.yaml` 与其 PG16 运维脚本未改动，以保护已有用户数据。
+两套都是完整的 `docker-compose.yaml`，不是 overlay，不要用多个 `-f` 合并。原 `deploy/nas/docker-compose.yaml` 的 PG16 镜像与数据卷保持不变；共享运维脚本已增加显式部署上下文，原无参数入口保留兼容。
 
 “最新”指2026-10-11已核实稳定版本 **18.6**，固定镜像 `postgres:18.6-alpine3.24`，不使用浮动 `latest` 或19 beta。版本需定期审核，但不能随App升级自动跨PostgreSQL大版本。PG18官方镜像卷挂载 `/var/lib/postgresql`；本模板使用新命名卷 `postgres18_data`，不接旧的 `postgres_data`。既有PG16/17数据须另做经过验证的dump/restore或pg_upgrade，不能直接替换镜像/挂原数据目录，也不能用`down -v`处理启动错误。
 
@@ -35,20 +35,28 @@
 
 ## 全新 MomoBox 数据库的初始化
 
-以下操作必须在选中部署目录执行，固定项目名/目录不变。**仅用于全新MomoBox库**，不可拿来在运行中的旧库替代安全升级流程：
+以下操作必须固定为UGOS登记的同一项目名和部署目录。**仅用于全新MomoBox库**，不可拿来在运行中的旧库替代安全升级流程：
 
 ```sh
-# 先校验配置；--quiet避免将含密码的展开配置打印到日志。
-docker compose --env-file .env -f docker-compose.yaml config --quiet
-docker compose --env-file .env -f docker-compose.yaml pull momo-backend
+DEPLOY_DIR=/volume1/docker/momobox
+PROJECT=momobox  # 必须与UGOS登记的项目名一致
+# 固定选择.env，避免调用shell中的同名变量覆盖它。不source .env。
+dc() (
+  unset DATABASE_URL DATABASE_NETWORK POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD MOMO_BACKEND_IMAGE APP_VERSION APP_ENV MOMO_BACKEND_PORT JWT_SECRET REFRESH_TOKEN_PEPPER HA_TOKEN_ENCRYPTION_KEY REGISTRATION_MODE ACCESS_TOKEN_TTL REFRESH_TOKEN_TTL MAX_REQUEST_BODY_BYTES LOG_LEVEL COMPOSE_PROFILES
+  docker compose --project-directory "$DEPLOY_DIR" --project-name "$PROJECT" \
+    --env-file "$DEPLOY_DIR/.env" -f "$DEPLOY_DIR/docker-compose.yaml" "$@"
+)
+# --quiet避免将含密码的展开配置打印到日志。
+dc config --quiet
+dc pull momo-backend
 ```
 
 自带版另执行：
 
 ```sh
-docker compose --env-file .env -f docker-compose.yaml pull postgres
-docker compose --env-file .env -f docker-compose.yaml up -d postgres
-docker compose --env-file .env -f docker-compose.yaml ps postgres
+dc pull postgres
+dc up -d postgres
+dc ps postgres
 # 等postgres健康后再继续；不要只以容器running判定就绪。
 ```
 
@@ -56,31 +64,26 @@ docker compose --env-file .env -f docker-compose.yaml ps postgres
 
 ```sh
 # 如果导入时已自动启动了后端，先停止并核对全部后端实例。
-docker compose --env-file .env -f docker-compose.yaml stop momo-backend
-docker compose --env-file .env -f docker-compose.yaml ps --all
+dc stop momo-backend
+dc ps --all
 # 确认无running/restarting及未完成one-off任务后，逐条执行；失败立即停止。
-docker compose --env-file .env -f docker-compose.yaml run --rm --no-deps momo-backend migrate
-docker compose --env-file .env -f docker-compose.yaml run --rm --no-deps momo-backend schema-check
+dc run --rm --no-deps momo-backend migrate
+dc run --rm --no-deps momo-backend schema-check
 # 只有以上全部成功且确认无旧恢复现场，才能开始serve。
-docker compose --env-file .env -f docker-compose.yaml up -d momo-backend
-docker compose --env-file .env -f docker-compose.yaml ps
+dc up -d momo-backend
+dc ps
 ```
 
 命令仅为操作入口，未在本机执行；migration连接启动检查有界，外部数据库未就绪时会失败，不承诺无限等待。失败/任务结果未知需保持停止并检查；不能跳过schema-check或反复执行恢复解决。
 
-## 已有数据升级、备份与恢复：不要用错脚本
+## 已有数据升级、备份与恢复
 
-**原 `deploy/nas/scripts/update.sh`、`backup.sh`、`restore.sh` 写死原Compose路径和自带`postgres`服务，不适用于这两个新增目录，尤其不能用于外部LiteLLM库。** 目前不提供新模板的一键安全运维脚本；切勿复制原脚本然后直接执行，也不要替换原Compose来假装适配完成。
+共享脚本已支持显式选择managed/external部署，完整参数、固定client digest、专属角色、备份sidecar、独立空候选库恢复演练证明、更新准入与隔离规则见[../OPERATIONS.md](../OPERATIONS.md)。新模式禁止`--skip-backup`，不可无参数调用原PG16默认入口。
 
-上线含真实数据前，需完成以下独立运维验收：
+这是源码实现与离线故障模拟状态，不是Docker/PG18/外部数据库或UGOS验收通过。上线前须完成真实权限、网络、备份、候选恢复与失败隔离矩阵；D-07正式灾备、restore epoch及生产切库仍未实现。
 
-- 固定选中Compose、project及数据库身份；锁定本项目全部后端与one-off任务，不停止其他LiteLLM进程/数据库。在线预备份、拉取、停写核验、最终备份、migration、schema-check、健康启动顺序不放宽。
-- 备份只导出MomoBox专属库；`pg_dump`/`pg_restore`客户端使用与目标服务器匹配的主版本和受审补丁，原backend镜像没有这些工具。外部管理员另备份角色权限及应用配套密钥，不以数据库dump代表完整灾备。
-- 恢复到独立MomoBox候选库验证，绝不对LiteLLM库`--clean`；恢复任何结果不自动重新开启MomoBox。实例/restore epoch、App离线意图仍按现有灾备未决项处理。
-- 无容器/客户端、权限不足、备份不可验证、其他MomoBox写入者不能隔离时拒绝升级，不使用`--skip-backup`作为外部版默认方案。
+发布资产：每个版本分别提供 `MomoBox-v版本-with-postgres-docker-compose.yaml` / `-with-postgres.env.example`、`-external-postgres-docker-compose.yaml` / `-external-postgres.env.example` 和 `-nas-variants-README.md`；共享脚本及操作指南另打包为 `MomoBox-v版本-nas-operations.tar.gz`，统一纳入 SHA256SUMS。下载选中模式的 Compose/env 并重命名为 `docker-compose.yaml` / `.env`；不要同时导入两套。新提交实际发布仍待验证。
 
-发布资产：每个版本分别提供 `MomoBox-v版本-with-postgres-docker-compose.yaml` / `-with-postgres.env.example`、`-external-postgres-docker-compose.yaml` / `-external-postgres.env.example` 和 `-nas-variants-README.md`，统一纳入 SHA256SUMS。下载选中模式的 Compose/env 并重命名为 `docker-compose.yaml` / `.env`；不要同时导入两套。新提交实际发布仍待验证。
-
-后续实施入口：选定模式的运维脚本及故障注入、PG16+PG18回归；本次不修改现有数据库。
+后续验收入口：真实PG16+PG18、外部专属角色、UGOS与远端发布；本次不修改现有数据库。
 
 参考：PostgreSQL版本策略与18.6发布说明；Docker官方PostgreSQL镜像PG18卷路径；Compose启动顺序和网络契约。

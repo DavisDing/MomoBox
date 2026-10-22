@@ -9,6 +9,9 @@ import '../../data/nas/nas_api_client.dart';
 import '../../data/nas/nas_sync_api.dart';
 import '../../data/nas/nas_api_error.dart';
 import '../../data/nas/nas_family_device_api.dart';
+import '../../data/repositories/nas_smart_home_repository.dart';
+import '../../data/repositories/sync_workspace_repository.dart';
+import '../../domain/inventory/calendar_date.dart';
 import '../../domain/models/nas_family_device_models.dart';
 import '../../domain/models/nas_models.dart';
 import '../../application/settings_service.dart';
@@ -265,6 +268,23 @@ class NasAccountController extends StateNotifier<NasAccountState> {
     await _runAuthOperation(() => _authService!.register(request));
   }
 
+  /// Shares the auth-owned transport without giving the feature ownership of
+  /// credentials, refresh rotation or the account client's lifetime.
+  NasSmartHomeRepository createHomeAssistantRepository() {
+    final client = _apiClient;
+    final auth = _authService;
+    final revision = _sessionRevision;
+    final family = state.family.current;
+    return NasSmartHomeRepository.withSession(
+      client,
+      isSessionCurrent: () => _isCurrentSession(revision) &&
+          state.isAuthenticated && auth?.isAuthenticated == true &&
+          client?.hasAccessToken == true &&
+          state.family.status != NasFamilyStatus.loading &&
+          identical(state.family.current, family),
+    );
+  }
+
   /// Creates a sync transport sharing this controller's authenticated NAS
   /// session. The returned client owns its HTTP connection and must be closed
   /// by the caller. It is null until the server, login and session are ready.
@@ -382,6 +402,7 @@ class NasAccountController extends StateNotifier<NasAccountState> {
         ),
         devices: const NasDeviceState(status: NasDeviceStatus.loading),
       );
+      await _persistFamilyTimeZone(family, revision);
       await _loadMembers(familyService);
       if (!_isCurrentSession(revision) || !state.isAuthenticated) return;
       await _loadDevices(familyService);
@@ -701,6 +722,7 @@ class NasAccountController extends StateNotifier<NasAccountState> {
         devices: const NasDeviceState(status: NasDeviceStatus.loading),
         clearError: true,
       );
+      await _persistFamilyTimeZone(family, revision);
       await _loadMembers(familyService);
       if (!_isCurrentSession(revision) || !state.isAuthenticated) return;
       await _loadDevices(familyService);
@@ -722,6 +744,24 @@ class NasAccountController extends StateNotifier<NasAccountState> {
       throw const _NasAccountException('请先在 NAS 设置中保存服务器地址。');
     }
     _configure(serverUrl);
+  }
+
+  Future<void> _persistFamilyTimeZone(NasFamilyResponseDto response, int revision) async {
+    final rawOwner = await _settings.getValue(syncWorkspaceBindingKey);
+    if (!_isCurrentSession(revision) || rawOwner == null) return;
+    final SyncWorkspaceIdentity owner;
+    try {
+      owner = SyncWorkspaceIdentity.decode(rawOwner);
+    } on FormatException {
+      // A corrupt local sync binding is handled by workspace access. It must
+      // not make an otherwise valid family response fail to load.
+      return;
+    }
+    if (owner.endpoint != serverIdentity || owner.userId != state.auth.user?.id ||
+        owner.familyId != response.family.id || !identical(state.family.current, response)) return;
+    CalendarDate.validateTimeZone(response.family.timeZone);
+    if (!_isCurrentSession(revision)) return;
+    await _settings.setValue('sync_family_time_zone:${owner.familyId}', response.family.timeZone);
   }
 
   void _configure(String serverUrl) {

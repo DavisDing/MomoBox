@@ -45,6 +45,9 @@ var entitySpecs = map[string]entitySpec{
 			{name: "category_id", cast: "uuid"},
 			{name: "identity_key", cast: "text"},
 			{name: "notes", cast: "text"},
+			{name: "location", cast: "text"},
+			{name: "unit", cast: "text", insertExpr: "COALESCE(NULLIF($3::jsonb ->> 'unit', ''), '件')"},
+			{name: "low_stock_threshold", cast: "integer", insertExpr: "COALESCE(($3::jsonb ->> 'low_stock_threshold')::integer, 1)"},
 		},
 		requiredInsert: []string{"name"},
 	},
@@ -52,6 +55,8 @@ var entitySpecs = map[string]entitySpec{
 		table: "product_batches",
 		columns: []entityColumn{
 			{name: "product_id", cast: "uuid"},
+			{name: "batch_no", cast: "text"},
+			{name: "is_opened", cast: "boolean", insertExpr: "COALESCE(($3::jsonb ->> 'is_opened')::boolean, false)"},
 			{name: "produced_date", cast: "date"},
 			{name: "expiry_date", cast: "date"},
 			{name: "date_source", cast: "text"},
@@ -68,6 +73,8 @@ var entitySpecs = map[string]entitySpec{
 	"shopping_items": {
 		table: "shopping_items",
 		columns: []entityColumn{
+			{name: "category", cast: "text"},
+			{name: "reason", cast: "text", insertExpr: "COALESCE($3::jsonb ->> 'reason', '手动添加')"},
 			{name: "product_id", cast: "uuid"},
 			{name: "name", cast: "text", insertExpr: "NULLIF($3::jsonb ->> 'name', '')"},
 			{name: "desired_quantity", cast: "integer", insertExpr: "COALESCE(($3::jsonb ->> 'desired_quantity')::integer, 1)"},
@@ -101,7 +108,7 @@ func buildInsertSQL(spec entitySpec) string {
 		insertValues = append(insertValues, expression)
 	}
 	columnNames = append(columnNames, "created_by_user_id", "updated_by_device")
-	insertValues = append(insertValues, "NULLIF($6, '')::uuid", "NULLIF($4, '')::uuid")
+	insertValues = append(insertValues, "NULLIF($5, '')::uuid", "NULLIF($4, '')::uuid")
 	return fmt.Sprintf(`
 INSERT INTO %s (%s)
 VALUES (%s)

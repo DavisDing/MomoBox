@@ -343,6 +343,13 @@ jobs:
               "deploy/nas/variants/${variant}/.env.example" > "dist/MomoBox-v${VERSION}-${variant}.env.example"
           done
           cp deploy/nas/variants/README.md "dist/MomoBox-v${VERSION}-nas-variants-README.md"
+          # Explicit allowlist: never archive live .env, dumps, proofs or locks.
+          COPYFILE_DISABLE=1 tar -czf "dist/MomoBox-v${VERSION}-nas-operations.tar.gz" -C deploy/nas \
+            OPERATIONS.md scripts/backup.sh scripts/restore.sh scripts/update.sh \
+            scripts/deployment-context.sh scripts/postgres-client.sh \
+            scripts/deployment-lock.sh scripts/backend-isolation.sh \
+            operations/managed-client.yaml operations/external-client.yaml \
+            operations/pg-client.sh operations/pg-connection.awk
           sha256sum dist/* > dist/SHA256SUMS.txt
 
       - name: Remove temporary Android signing material
@@ -444,6 +451,7 @@ jobs:
             "dist/MomoBox-v${VERSION}-external-postgres-docker-compose.yaml"
             "dist/MomoBox-v${VERSION}-external-postgres.env.example"
             "dist/MomoBox-v${VERSION}-nas-variants-README.md"
+            "dist/MomoBox-v${VERSION}-nas-operations.tar.gz"
             'dist/SHA256SUMS.txt'
           )
 

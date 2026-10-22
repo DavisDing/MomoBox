@@ -120,7 +120,7 @@ func haStatus(code string) int {
 
 func syncStatus(code string) int {
 	switch code {
-	case "VALIDATION_FAILED", "INVALID_REQUEST":
+	case "VALIDATION_FAILED", "INVALID_REQUEST", "IMPORT_UNSUPPORTED_FORMAT", "IMPORT_LIMIT_EXCEEDED":
 		return http.StatusBadRequest
 	case "UNAUTHORIZED":
 		return http.StatusUnauthorized
@@ -128,8 +128,10 @@ func syncStatus(code string) int {
 		return http.StatusForbidden
 	case "NOT_FOUND":
 		return http.StatusNotFound
-	case "CONFLICT", "VERSION_CONFLICT", "IDEMPOTENCY_CONFLICT":
+	case "CONFLICT", "VERSION_CONFLICT", "IDEMPOTENCY_CONFLICT", "IMPORT_ID_REUSED", "IMPORT_CHECKPOINT_STALE", "IMPORT_BLOCKED":
 		return http.StatusConflict
+	case "IMPORT_NOT_AVAILABLE":
+		return http.StatusServiceUnavailable
 	default:
 		return http.StatusInternalServerError
 	}

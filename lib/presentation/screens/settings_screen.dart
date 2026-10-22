@@ -1061,7 +1061,7 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
             if (!isNew)
               TextButton(
                 onPressed: testing ? null : () => Navigator.pop(ctx, <String, dynamic>{
-                  ...item!,
+                  ...item,
                   'name': nameCtrl.text.trim(),
                   'endpoint': urlCtrl.text.trim(),
                   'model': modelCtrl.text.trim(),
@@ -1095,7 +1095,7 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                     _profiles.add(profile);
                     _assignProfileRole(profile, fallbackRole);
                   } else {
-                    final profile = item!;
+                    final profile = item;
                     profile['name'] = name;
                     profile['endpoint'] = url;
                     profile['model'] = model;

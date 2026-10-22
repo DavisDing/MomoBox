@@ -735,7 +735,9 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
         parameters = NasHaBrightnessParameters(value);
       case NasHaCommand.setTemperature:
         if (value is! num || !value.isFinite || value < (entity.temperatureMin ?? 16) ||
-            value > (entity.temperatureMax ?? 30)) throw StateError('温度超出设备支持范围。');
+            value > (entity.temperatureMax ?? 30)) {
+          throw StateError('温度超出设备支持范围。');
+        }
         parameters = NasHaTemperatureParameters(value.toDouble());
       case NasHaCommand.setHvacMode:
         if (value is! String || !entity.hvacModes.contains(value)) throw StateError('设备不支持该模式。');

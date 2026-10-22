@@ -32,7 +32,8 @@ class ReminderRules {
     DateTime? today,
     int? expiringDays,
   }) {
-    final reference = ExpiryRules.dateOnly(today ?? DateTime.now());
+    final reference = ExpiryRules.dateOnly(today ??
+      (items.isEmpty ? DateTime.now() : items.first.calendarToday));
     final acknowledged = {
       for (final entry in acknowledgements)
         '${entry.reminderKey}|${entry.fingerprint}',
@@ -51,7 +52,8 @@ class ReminderRules {
     DateTime? today,
     int? expiringDays,
   }) {
-    final reference = ExpiryRules.dateOnly(today ?? DateTime.now());
+    final reference = ExpiryRules.dateOnly(today ??
+      (items.isEmpty ? DateTime.now() : items.first.calendarToday));
     return unacknowledgedCandidates(
       items,
       acknowledgements,
@@ -95,7 +97,7 @@ class ReminderRules {
       -(_daysUntil(item, today: today));
 
   static int _daysUntil(InventoryItem item, {DateTime? today}) =>
-      ExpiryRules.daysUntil(item.nearestDatedBatch?.expiryDate, today: today) ??
+      ExpiryRules.daysUntil(item.nearestDatedBatch?.expiryDate, today: today ?? item.calendarToday) ??
       ExpiryRules.expiringDays +
           1;
 
@@ -110,7 +112,8 @@ class ReminderRules {
     if (expiringDays != null && expiringDays < 0) {
       throw ArgumentError.value(expiringDays, 'expiringDays', '不能为负数');
     }
-    final reference = ExpiryRules.dateOnly(today ?? DateTime.now());
+    final reference = ExpiryRules.dateOnly(today ??
+      (items.isEmpty ? DateTime.now() : items.first.calendarToday));
     final result = <ReminderCandidate>[];
     for (final item in items) {
       if (!item.reminderPolicy.enabled) continue;

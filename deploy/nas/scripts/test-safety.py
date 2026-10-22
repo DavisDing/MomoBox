@@ -19,12 +19,20 @@ with (root / 'calls').open('a') as f: f.write(json.dumps(args) + '\n')
 state = root / 'state'
 if args[0] == 'inspect':
     if scenario == 'inspect-failure': sys.exit(1)
+    if 'Config.Labels' in args[2]: print('momo-pg-client' if args[-1]=='client-id' else 'momo-backend'); sys.exit(0)
+    if args[-1]=='client-id': print('running'); sys.exit(0)
     if 'Health' in args[2]: print(state.read_text() + (' unhealthy' if scenario == 'health-failure' else ' healthy'))
     else: print(state.read_text())
     sys.exit(0)
+if args[0] == 'ps':
+    if scenario=='ps-failure': sys.exit(1)
+    if 'label=com.docker.compose.service=momo-pg-client' in args:
+        if scenario=='client-busy': print('client-id')
+    elif state.read_text()!='absent': print('backend-id')
+    sys.exit(0)
 if args[:2] == ['compose', 'version']: sys.exit(0)
 args = args[1:]
-while args and args[0] in ['--project-directory', '-f']: args = args[2:]
+while args and args[0] in ['--project-directory', '--project-name', '--env-file', '-f']: args = args[2:]
 command = args[0]
 if command == 'pull': sys.exit(1 if scenario == 'pull-failure' else 0)
 if command == 'stop':
@@ -38,6 +46,28 @@ if command == 'ps':
 if command in ['up', 'start']:
     if args[-1] == 'momo-backend': state.write_text('running')
     sys.exit(0)
+if command == 'run' and 'momo-pg-client' in args:
+    operation=args[-1]
+    if operation=='probe':
+        if scenario=='identity-failure': sys.exit(1)
+        print('database='+os.environ['MOMO_EXPECTED_DATABASE'])
+        print('role='+os.environ['MOMO_EXPECTED_ROLE'])
+        print('pg_major=18\nserver_address=10.0.0.2:5432\ndatabase_oid=42')
+        if os.environ['MOMO_DATABASE_MODE']=='managed': print('cluster=12345')
+        sys.exit(0)
+    if operation=='schema-signature':
+        if scenario=='signature-failure': sys.exit(1)
+        print('ledger-v1'); sys.exit(0)
+    if operation in ['writers','empty']:
+        sys.exit(1 if scenario in ['writers-present','candidate-not-empty'] else 0)
+    if operation=='restore-candidate':
+        sys.stdin.read()
+        if scenario=='restore-interrupted':
+            os.kill(os.getppid(), signal.SIGTERM); sys.exit(143)
+        sys.exit(1 if scenario=='restore-failure' else 0)
+    if operation=='dump': command='exec'; args=['exec','pg_dump']
+    elif operation=='dump-list': command='exec'; args=['exec','pg_restore','--list']
+    else: raise SystemExit('unexpected client operation')
 if command == 'run':
     if args[-1] == 'migrate':
         if scenario == 'migration-interrupted':
@@ -49,12 +79,16 @@ if command == 'run':
 if command == 'exec':
     text = ' '.join(args)
     if 'pg_isready' in text: sys.exit(0)
+    if 'pg_control_system' in text: print('99999' if scenario=='cluster-mismatch' else '12345'); sys.exit(0)
     if 'pg_dump' in text:
         count = root / 'dump-count'
         n = int(count.read_text()) + 1 if count.exists() else 1
         count.write_text(str(n))
         if scenario == 'final-backup-failure' and n == 2: sys.exit(1)
         if scenario == 'backend-reactivated' and n == 2: state.write_text('running')
+        if scenario == 'configuration-drift':
+            context = root / 'chosen deployment' / '.env'
+            context.write_text(context.read_text()+'# changed during operation\n')
         print('valid-mock-dump'); sys.exit(0)
     if '--list' in text:
         sys.stdin.read(); sys.exit(1 if scenario == 'dump-list-failure' else 0)
@@ -95,6 +129,7 @@ class ScriptSafetyTests(unittest.TestCase):
 
     def run_script(self, name, scenario='', state='running', extra=()):
         (self.root / 'state').write_text(state)
+        (self.root / 'calls').write_text('')
         env = dict(self.env, SCENARIO=scenario)
         args = ['sh', str(self.nas / 'scripts' / (name + '.sh'))]
         if name == 'restore': args += ['--yes', str(self.root / 'input.dump')]

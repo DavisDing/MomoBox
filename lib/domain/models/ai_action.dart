@@ -82,7 +82,9 @@ class AiInventoryAction {
       final kind = data['kind'];
       final allowed = schemas[kind];
       if (kind is! String || allowed == null ||
-          data.keys.any((key) => key != 'kind' && !allowed.contains(key))) return null;
+          data.keys.any((key) => key != 'kind' && !allowed.contains(key))) {
+        return null;
+      }
       bool text(String key) => data[key] is String &&
           (data[key] as String).trim().isNotEmpty && (data[key] as String).length <= 1000;
       bool integer(String key) => data[key] is int &&
@@ -103,18 +105,26 @@ class AiInventoryAction {
       if (['intake', 'shopping_add'].contains(kind) && !text('name')) return null;
       if (kind == 'intake') {
         if (data['shelfLifeUnit'] != null &&
-            !ShelfLifeUnit.values.any((unit) => unit.name == data['shelfLifeUnit'])) return null;
+            !ShelfLifeUnit.values.any((unit) => unit.name == data['shelfLifeUnit'])) {
+          return null;
+        }
         if (data['productionDate'] != null && data['expiryDate'] != null &&
-            date(data['expiryDate'])!.isBefore(date(data['productionDate'])!)) return null;
+            date(data['expiryDate'])!.isBefore(date(data['productionDate'])!)) {
+          return null;
+        }
         if (data['shelfLifeAmount'] != null && data['productionDate'] == null) return null;
       }
       if (['shopping_complete', 'shopping_delete', 'reminder_acknowledge',
         'chore_update', 'chore_complete', 'chore_delete', 'chore_toggle', 'device_control']
-          .contains(kind) && !text('id')) return null;
+          .contains(kind) && !text('id')) {
+        return null;
+      }
       if (kind == 'shopping_complete' && data['completed'] is! bool) return null;
       if (kind == 'chore_toggle' && data['enabled'] is! bool) return null;
       if (['chore_add', 'chore_update'].contains(kind) &&
-          (!text('title') || !ChoreRepeatInterval.values.any((v) => v.name == data['repeatInterval']))) return null;
+          (!text('title') || !ChoreRepeatInterval.values.any((v) => v.name == data['repeatInterval']))) {
+        return null;
+      }
       if (kind == 'set_theme' && !['default', 'momo', 'doraemon', 'forest', 'sakura'].contains(data['value'])) return null;
       if (kind == 'set_font_scale' && ![0.9, 1.0, 1.15, 1.3].contains(data['value'])) return null;
       if (kind == 'open_page' && !pages.containsKey(data['page'])) return null;

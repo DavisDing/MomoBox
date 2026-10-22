@@ -6,6 +6,7 @@ import '../data/repositories/reminder_repository.dart';
 import '../data/repositories/sync_outbox_repository.dart';
 import '../domain/models/nas_sync_models.dart';
 import '../domain/models/sync_models.dart';
+import '../domain/inventory/calendar_date.dart';
 import 'sync_change_control.dart';
 
 /// Applies NAS pull changes to the local business repositories.
@@ -221,7 +222,7 @@ class SyncBusinessAdapter {
     }
     for (final key in [
       'quantity', 'current_quantity', 'remaining_quantity', 'initial_quantity',
-      'expiry_warning_days', 'opened_warning_days', 'sort_order',
+      'expiry_warning_days', 'opened_warning_days',
     ]) {
       if (payload[key] == null) continue;
       final value = _integer(payload, [key])!;
@@ -242,9 +243,14 @@ class SyncBusinessAdapter {
     if (_string(payload, 'name') == null) {
       throw const FormatException('categories.name must be a non-empty string');
     }
-    if (payload['color'] != null || (payload['sort_order'] ?? 0) != 0) {
-      throw const FormatException('unsupported categories color/sort_order: local categories are strings only');
+    if (payload['color'] != null && payload['color'] is! String) {
+      throw const FormatException('categories.color must be a string or null');
     }
+    if (payload['sort_order'] != null && payload['sort_order'] is! int) {
+      throw const FormatException('categories.sort_order must be an integer');
+    }
+    // Names drive the existing UI. Color/order stay in the durable auxiliary
+    // payload and are never cleared by this client or presented as editable.
   }
 
   Future<Map<String, dynamic>> _productPayload(
@@ -726,6 +732,9 @@ class SyncBusinessAdapter {
     final value = payload[key];
     if (value == null) return null;
     if (value is! String) throw FormatException('$key must be an ISO date/timestamp');
+    if (const ['produced_date', 'production_date', 'expiry_date', 'opened_date'].contains(key)) {
+      return CalendarDate.decode(value);
+    }
     final parts = RegExp(
       r'^(\d{4})-(\d{2})-(\d{2})(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?$',
     ).firstMatch(value);

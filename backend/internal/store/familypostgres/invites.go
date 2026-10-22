@@ -68,11 +68,11 @@ func (r *Repository) JoinWithInvite(ctx context.Context, codeHash, userID string
 			return &family.ServiceError{Code: family.CodeInviteExhausted, Message: "invite code has no remaining uses"}
 		}
 		if err := tx.QueryRowContext(ctx, `
-			SELECT id::text, name, created_at
+			SELECT id::text, name, created_at, time_zone
 			FROM families
 			WHERE id = $1::uuid AND deleted_at IS NULL
 			FOR SHARE`, invite.FamilyID).
-			Scan(&joinedFamily.ID, &joinedFamily.Name, &joinedFamily.CreatedAt); err != nil {
+			Scan(&joinedFamily.ID, &joinedFamily.Name, &joinedFamily.CreatedAt, &joinedFamily.TimeZone); err != nil {
 			return err
 		}
 

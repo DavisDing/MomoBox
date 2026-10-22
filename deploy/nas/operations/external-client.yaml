@@ -1,0 +1,26 @@
+# Does not own PostgreSQL, its volume, or the LiteLLM project.
+services:
+  momo-pg-client:
+    image: ${MOMO_PG_CLIENT_IMAGE:?use an approved official PostgreSQL digest}
+    profiles: [operations]
+    entrypoint: ["/bin/sh", "/momo/pg-client.sh"]
+    restart: "no"
+    read_only: true
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      MOMO_EXPECTED_DATABASE: ${MOMO_EXPECTED_DATABASE:?assert database}
+      MOMO_EXPECTED_ROLE: ${MOMO_EXPECTED_ROLE:?assert role}
+      MOMO_DATABASE_MODE: external
+    networks: [database_network]
+    volumes:
+      - type: bind
+        source: ${MOMO_OPS_DIR:?set operations directory}/pg-client.sh
+        target: /momo/pg-client.sh
+        read_only: true
+      - type: bind
+        source: ${MOMO_OPS_DIR:?set operations directory}/pg-connection.awk
+        target: /momo/pg-connection.awk
+        read_only: true

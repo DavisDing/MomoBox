@@ -13,6 +13,7 @@ const (
 type Family struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
+	TimeZone  string    `json:"time_zone"`
 	CreatedAt time.Time `json:"created_at"`
 }
 

@@ -85,11 +85,13 @@ class NasFamilyDto {
     required this.id,
     required this.name,
     required this.createdAt,
+    this.timeZone = 'Asia/Shanghai',
   });
 
   final String id;
   final String name;
   final DateTime createdAt;
+  final String timeZone;
 
   factory NasFamilyDto.fromJson(Object? value) {
     final json = _object(value, 'family');
@@ -97,6 +99,7 @@ class NasFamilyDto {
       id: _requiredString(json, 'id'),
       name: _requiredString(json, 'name'),
       createdAt: _requiredDateTime(json, 'created_at', aliases: const ['createdAt']),
+      timeZone: _optionalString(json, 'time_zone') ?? 'Asia/Shanghai',
     );
   }
 }

@@ -1318,3 +1318,42 @@ AI_CONTEXT局部更新建议：新模板上线及对应CI/NAS验证后记录“P
 复制读取来源的临时密钥或 `SecureSettingsService` 中的配置密钥，只留在表单作用域内，不填入密钥输入框。空输入继承来源密钥，非空输入仅替换副本密钥；读取失败提示，不静默生成缺密钥副本。保存使用已有 uuid 依赖生成新配置 ID，并由原 `_save()` 将密钥写入新 ID 对应的安全存储，普通 JSON 仍剔除密钥。取消及右滑关闭不写配置/密钥；复制本身不发送模型请求，只有用户点测试才发送既有验证请求。
 
 复制取消、独立 ID/密钥、未保存字段、协议继承、显式角色修改和普通配置不含密钥的回归源码已补充；按用户此前“跳过测试”要求，未执行 analyze/test/build、截图或真机验证。本补充无新增依赖或数据库结构变更；AI_CONTEXT 后续可在运行验收后补充此配置能力。
+
+
+## 23. 2026-10-22：首次导入、家庭日期、NAS 运维与会话修复
+
+### 23.1 已确认范围
+
+用户要求拆分独立任务并行推进，并明确批准“当前库存＋独立历史归档”“保留原年月日，家庭时区默认 Asia/Shanghai”“原 PG16、自带 PG18 与外部专属库共用运维脚本，新模式只恢复到独立空候选库”。本批对应 REQUIREMENT AC-025～027，不包括正式灾备切换、restore epoch、HA 新事件订阅或 scene/script 的 App 新交互。先前第 20 节新模板不支持共用脚本的记录是历史状态，由本节更新。
+
+### 23.2 导入协议、持久化与恢复
+
+现行协议详见 `nas/05-initial-import-contract.md`。既有同步 schema/protocol 仍为 1/1，首次导入通过独立 capability 启用，最大 1000 条/1 MiB。preflight 冻结完整 manifest 并检查权限/重叠，不写业务；confirm 复检后在同一 PG 事务写商品、分类、批次初始/当前量、采购、可表达策略、独立历史、change log 和永久 receipt。累计 12、余量 5 直接保存为 12/5，历史不进入 consumption_records 或再次扣量。
+
+PostgreSQL 新增 additive migration `0007_initial_import_and_family_dates.sql`，不修改已应用 0001～0006；新增 family.time_zone、缺失业务字段、计划和归档表。导入身份限定当前家庭/原导入账号，换设备可查原回执；来源业务 UUID 重叠（含 tombstone）拒绝，精确分类可审阅后复用。历史独立 cursor/高水位分页，分配锁持有至事务结束，防止较小 cursor 延迟提交后被跳过。
+
+App Drift schema 5→6，新增可查询计划/条目/归档表和两个 nullable 日历日期文本列。旧记录不推测回填；保留原业务记录/outbox/cursor。Application 编排复用会话与 scope 协调器；两次明确确认分别授权上传预检和正式导入。冻结后来源变化使未确认计划过期；只有永久 confirm_started=false 才允许结束计划。超时/暂停/重启继续核对原 import ID 与持久摘要，不用普通 restock/consume 重放。
+
+未获持久 completed receipt 时，普通同步保持阻塞；NAS 已接受后允许原有 outbox/冲突按原流程结算。归档完整分页与新鲜权威快照恢复后，业务应用/cursor/导入完成标记在本地事务提交；未静默或部分失败保持恢复状态。同 URL 服务替换和旧 dump恢复仍属 D-07，不承诺自动续传。
+
+### 23.3 分类、日期与 UI 影响
+
+分类保持现有名称展示，通过持久 UUID 映射出站；新分类先于引用商品入队。入站辅助 payload 保留原颜色/排序，不新增编辑能力，不用默认值覆盖远端。商品位置/单位/阈值、批次号/开封状态、采购分类/原因加入字段兼容。已有远端版本不重新初始化；现有 NAS 提醒策略沿用，覆盖报告分别列出排除和沿用内容。
+
+生产日/到期日严格传输 YYYY-MM-DD；事件仍使用带偏移 instant。App 批次读取优先 canonical 文本，家庭的“今天”用于库存状态、FEFO、提醒和通知；后端 FEFO 与 HA 耗材日期也使用家庭时区。非午夜等可检测的旧日期歧义在预检阻塞，审阅弹窗逐批列出当前日期；来源丢失时不能保证自动识别整日偏差或还原原值，仍需对照原始资料。核心 JSON 备份保留 canonical 日历值，明确不携带 NAS 导入计划/receipt/独立历史归档。
+
+仅在原同步设置页加入现有风格卡片和审阅/归档弹窗，保留原导航、主题、冲突卡片及控件。展示目标 NAS/账号/家庭/时区、分类 UUID、数量、阻塞和覆盖；网络结果在切会话后不推进。归档浏览只读、固定高水位分页，不修改库存。真实 UI 布局和设备行为仍需运行验收。
+
+### 23.4 三模式运维与发布资产
+
+共用部署 context、锁、PG client 和 writer 隔离，详见 `deploy/nas/OPERATIONS.md` 与 `NAS_VARIANT_OPERATIONS_PLAN_2026-10-22.md` 第 9 节。原 PG16 保留容器内工具；managed PG18/external 使用固定官方 digest one-off client，检查主版本、库/角色与来源身份。env 不作为 shell source，密码不进入 argv 或日志，client 私有 tmpfs 内生成 passfile。
+
+升级继续要求新鲜恢复证明、所有 writer 停止后的最终备份、来源/ledger 一致；未知结果保锁，schema 失败保持停止。新模式 restore 仅不同名称的预建独立空候选库，单事务无 clean/来源会话终止；无论结果都不启动，隔离标记阻止 update 重开。目录锁只覆盖同规范化部署目录，不能代替跨 NAS 或其他 project 的现场隔离。
+
+新增版本化 operations 工具包进入 release 资产与 SHA256，12 个运行时文件显式白名单，不含真实 env/dump/proof/锁。没有自动初始化、正式生产切换或完整灾备包；现场 PG/网络/角色/writer/密钥责任仍需管理员确认。没有安装宿主软件或引入新第三方依赖。
+
+### 23.5 CI 与 HA 会话修复及验收边界
+
+已针对 ee70ffd 上 run #41 的 Flutter analyze 诊断修正冗余表达式、空断言及 if braces，不降 lint 门禁。HA 生产 repository 改为共享账号 NasApiClient/refresh 生命周期；独立地址构造也采用 endpoint 绑定认证。请求前、响应后、401 refresh 后及重试前检查原会话，防止旧 token/物理动作跨 endpoint、家庭或账号继续。
+
+运维离线故障注入和资产打包检查可本机执行；Flutter/Dart、Go/gofmt/vet、真实 PostgreSQL、Docker、UGOS 与双设备当前未执行，不能把新增测试源码或旧远端结果当作本批验收。详细证据见 VALIDATION 最新记录。待运行证据齐备后再建议 AI_CONTEXT 局部更新，临时进度保留在本节和方案文档。

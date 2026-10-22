@@ -166,6 +166,15 @@ func newTx(tx *sql.Tx, skipIdempotency bool) *txRepository {
 	return &txRepository{tx: tx, skipIdempotency: skipIdempotency, locked: make(map[string]lockedBatch)}
 }
 
+func (r *txRepository) FamilyTimeZone(ctx context.Context, familyID string) (string, error) {
+	if err := r.bindFamily(familyID); err != nil {
+		return "", err
+	}
+	var zone string
+	err := r.tx.QueryRowContext(ctx, `SELECT time_zone FROM families WHERE id=$1::uuid AND deleted_at IS NULL`, familyID).Scan(&zone)
+	return zone, err
+}
+
 func (r *txRepository) FindBatchesForUpdate(ctx context.Context, familyID, productID string) ([]inventory.Batch, error) {
 	if err := r.bindFamily(familyID); err != nil {
 		return nil, err

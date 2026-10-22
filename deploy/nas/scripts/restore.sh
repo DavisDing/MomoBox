@@ -11,17 +11,20 @@ ISOLATION_HELPER=$SCRIPT_DIR/backend-isolation.sh
 ASSUME_YES=0
 DUMP_FILE=
 DATABASE_TASK_UNCERTAIN=0
+PROOF_OUTPUT=
+SOURCE_META=
+SOURCE_RECORD=
 
 usage() {
     cat <<USAGE
-Usage: $PROGRAM [--yes] DUMP_FILE
+Usage: $PROGRAM [--yes] [shared identity options] [--proof-output FILE] DUMP_FILE
 
-Restore a PostgreSQL custom-format dump into the database configured for the
-postgres service in:
+Without shared options, restore the original PG16 database configured in:
   $COMPOSE_FILE
 
 Options:
   -y, --yes   Skip the interactive confirmation (for deliberate automation)
+  --proof-output FILE  New local proof file, required for managed/external mode
   -h, --help  Show this help and exit
 
 Safety behavior:
@@ -30,9 +33,12 @@ Safety behavior:
   * Every backend instance in this project is stopped and verified before writes.
   * The backend stays stopped on success, failure, or interruption. A restored
     database is NOT automatically safe for existing App sync cursors/sessions.
-  * Objects represented by the dump are cleaned and restored in one transaction.
-    Active sessions are terminated after momo-backend is stopped.
+  * Original mode cleans represented objects and terminates target sessions.
+  * Managed/external mode requires an empty, precreated candidate database whose
+    name differs from the source. It never cleans objects or terminates sessions.
+  * Candidate proof records archive and ledger checks, not full DR approval.
 USAGE
+    momo_context_help
 }
 
 fail() {
@@ -40,8 +46,17 @@ fail() {
     exit 1
 }
 
+. "$SCRIPT_DIR/deployment-context.sh"
+. "$SCRIPT_DIR/postgres-client.sh"
+
 while [ "$#" -gt 0 ]; do
+    momo_context_option "$@"
+    if [ "$MOMO_OPTION_CONSUMED" -gt 0 ]; then shift "$MOMO_OPTION_CONSUMED"; continue; fi
     case $1 in
+        --proof-output)
+            [ "$#" -ge 2 ] && [ -n "$2" ] && [ -z "$PROOF_OUTPUT" ] || fail "--proof-output requires one new output file"
+            PROOF_OUTPUT=$2
+            shift 2 ;;
         -y|--yes)
             ASSUME_YES=1
             shift
@@ -73,6 +88,7 @@ done
     usage >&2
     fail "a dump file is required"
 }
+momo_context_init
 [ -f "$COMPOSE_FILE" ] || fail "compose file not found: $COMPOSE_FILE"
 [ -f "$LOCK_HELPER" ] || fail "deployment lock helper not found: $LOCK_HELPER"
 [ -f "$ISOLATION_HELPER" ] || fail "backend isolation helper not found: $ISOLATION_HELPER"
@@ -93,6 +109,10 @@ DUMP_FILE=$DUMP_DIR/$(basename "$DUMP_FILE")
 momo_deployment_lock_acquire || exit 1
 cleanup_lock() {
     status=$?
+    if [ "$MOMO_DATABASE_MODE" != legacy ] && ! momo_client_tasks_quiescent; then
+        printf '%s: PostgreSQL client task completion is unknown; deployment lock retained.\n' "$PROGRAM" >&2
+        exit 1
+    fi
     momo_deployment_lock_release
     trap - 0 HUP INT TERM
     exit "$status"
@@ -101,23 +121,6 @@ trap cleanup_lock 0
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
-
-if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-    COMPOSE_KIND=docker
-elif command -v docker-compose >/dev/null 2>&1; then
-    COMPOSE_KIND=docker-compose
-else
-    fail "Docker Compose is required (docker compose or docker-compose)"
-fi
-command -v docker >/dev/null 2>&1 || fail "docker is required to verify backend isolation"
-
-compose() {
-    if [ "$COMPOSE_KIND" = docker ]; then
-        docker compose --project-directory "$NAS_DIR" -f "$COMPOSE_FILE" "$@"
-    else
-        docker-compose --project-directory "$NAS_DIR" -f "$COMPOSE_FILE" "$@"
-    fi
-}
 
 wait_for_postgres() {
     attempts=0
@@ -134,14 +137,40 @@ wait_for_postgres() {
 }
 
 # Start only PostgreSQL so validation can use the image-matched pg_restore.
-compose up -d postgres >/dev/null
-wait_for_postgres || fail "postgres did not become ready within 60 seconds"
-if ! compose exec -T postgres pg_restore --list <"$DUMP_FILE" >/dev/null; then
+momo_database_ready
+if ! momo_dump_list <"$DUMP_FILE"; then
     fail "the file is not a readable PostgreSQL custom-format dump"
 fi
 
+if [ "$MOMO_DATABASE_MODE" != legacy ]; then
+    SOURCE_META=$DUMP_FILE.meta
+    # Snapshot a strict whitelist before changing the candidate. Never copy
+    # arbitrary metadata fields into a proof or source metadata as shell code.
+    for source_key in format database role pg_major server_address database_oid client_image schema_signature sha256; do
+        source_value=$(momo_meta_get "$SOURCE_META" "$source_key") || fail "source metadata field missing or duplicated: $source_key"
+        SOURCE_RECORD="${SOURCE_RECORD}${source_key}=${source_value}
+"
+    done
+    source_cluster=$(momo_meta_get "$SOURCE_META" cluster || true)
+    if [ -n "$source_cluster" ]; then SOURCE_RECORD="${SOURCE_RECORD}cluster=${source_cluster}
+"; fi
+    SOURCE_META_SHA=$(momo_sha256 "$SOURCE_META") || fail "cannot fingerprint source metadata"
+    SOURCE_DUMP_SHA=$(momo_sha256 "$DUMP_FILE") || fail "cannot fingerprint source dump"
+    [ "$(momo_meta_get "$SOURCE_META" format)" = 1 ] || fail "candidate restore requires source backup metadata"
+    [ "$(momo_meta_get "$SOURCE_META" sha256)" = "$SOURCE_DUMP_SHA" ] || fail "source dump checksum mismatch"
+    [ "$(momo_meta_get "$SOURCE_META" database)" != "$MOMO_EXPECTED_DATABASE" ] || fail "candidate database must differ from source"
+    [ "$(momo_meta_get "$SOURCE_META" pg_major)" = "$(printf "%s\n" "$momo_identity" | sed -n "s/^pg_major=//p")" ] || fail "candidate PostgreSQL major differs"
+    [ "$(momo_meta_get "$SOURCE_META" client_image)" = "$MOMO_PG_CLIENT_IMAGE" ] || fail "candidate client image differs from backup"
+    [ -n "$PROOF_OUTPUT" ] && [ ! -e "$PROOF_OUTPUT" ] || fail "a new --proof-output file is required"
+    momo_pg empty || fail "candidate must be empty with no other clients"
+fi
+
 if [ "$ASSUME_YES" -ne 1 ]; then
-    printf '%s\n' "WARNING: this will replace the configured MomoBox PostgreSQL database." >&2
+    if [ "$MOMO_DATABASE_MODE" = legacy ]; then
+        printf '%s\n' "WARNING: this will replace the configured MomoBox PostgreSQL database." >&2
+    else
+        printf '%s\n' "Restore only into the selected empty candidate; it will remain quarantined." >&2
+    fi
     printf '%s\n' "Dump: $DUMP_FILE" >&2
     printf '%s' "Type RESTORE to continue: " >&2
     IFS= read -r CONFIRMATION || fail "confirmation input was not received"
@@ -170,7 +199,9 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 momo_backend_stop_verified || fail "failed to stop and verify momo-backend"
+(umask 077; printf "%s\n" "Restored history: do not start without separate DR approval" >"$NAS_DIR/.momobox-restored") || fail "cannot quarantine restored deployment"
 
+if [ "$MOMO_DATABASE_MODE" = legacy ]; then
 # With momo-backend stopped, terminate any remaining sessions to prevent stale
 # application connections from interfering. current_database() avoids embedding
 # the configured database name in SQL or output.
@@ -196,6 +227,24 @@ else
     fail "database restore failed"
 fi
 
+else
+    DATABASE_TASK_UNCERTAIN=1
+    if momo_pg restore-candidate <"$DUMP_FILE"; then DATABASE_TASK_UNCERTAIN=0
+    else fail "candidate restore failed; backend remains quarantined"; fi
+fi
+
 momo_backend_verify_stopped || fail "backend became active during restore"
 compose run --rm --no-deps momo-backend schema-check || fail "restored schema does not match the configured image; backend remains stopped"
+if [ "$MOMO_DATABASE_MODE" != legacy ]; then
+    [ "$(momo_sha256 "$DUMP_FILE")" = "$SOURCE_DUMP_SHA" ] &&
+        [ "$(momo_sha256 "$SOURCE_META")" = "$SOURCE_META_SHA" ] || fail "source dump or metadata changed; no proof created"
+    proof_dir=$(CDPATH= cd -P "$(dirname "$PROOF_OUTPUT")" && pwd) || fail "proof directory missing"
+    proof_tmp=$(mktemp "$proof_dir/.momobox-proof.XXXXXX") || fail "cannot create proof"
+    chmod 600 "$proof_tmp"
+    { printf '%s' "$SOURCE_RECORD"; printf "verified=candidate-schema-check\nverified_at=%s\ncandidate_database=%s\n" "$(date -u +%s)" "$MOMO_EXPECTED_DATABASE"; } >"$proof_tmp"
+    # noclobber prevents an existing proof from being overwritten.
+    (set -C; cat "$proof_tmp" >"$PROOF_OUTPUT") || { rm -f "$proof_tmp"; fail "cannot finalize proof"; }
+    chmod 600 "$PROOF_OUTPUT"
+    rm -f "$proof_tmp"
+fi
 printf '%s\n' "Database restore and read-only schema check completed. Backend remains stopped; this is not deployment approval."

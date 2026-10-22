@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../domain/models/nas_sync_models.dart';
+import '../../domain/models/nas_import_models.dart';
 import 'nas_api_error.dart';
 
 typedef NasSyncAccessTokenProvider = String? Function();
@@ -75,6 +76,44 @@ class NasSyncApi {
   Future<NasSyncVersions> capabilities() async {
     final json = await _sendJson(method: 'GET', path: '/capabilities');
     return _parse(json, NasSyncVersions.fromJson);
+  }
+
+  Future<NasImportCapabilities> importCapabilities({required String deviceId}) async {
+    final json = await _sendJson(method: 'GET', path: '/sync/import/capabilities',
+      queryParameters: {'device_id': deviceId});
+    return _parse(json, NasImportCapabilities.fromJson);
+  }
+
+  Future<NasImportReceipt> preflightImport(Map<String, dynamic> manifest) async {
+    final json = await _sendJson(method: 'POST', path: '/sync/import/preflight', body: manifest);
+    return _parse(json, NasImportReceipt.fromJson);
+  }
+
+  Future<NasImportReceipt> confirmImport({required String importId,
+    required String deviceId, required String checkpoint, required String fingerprint}) async {
+    final json = await _sendJson(method: 'POST',
+      path: '/sync/import/${Uri.encodeComponent(importId)}/confirm',
+      body: {'device_id': deviceId, 'checkpoint': checkpoint,
+        'fingerprint': fingerprint, 'unsettled_outbox_count': 0});
+    return _parse(json, NasImportReceipt.fromJson);
+  }
+
+  Future<NasImportReceipt> getImport({required String importId, required String deviceId}) async {
+    final json = await _sendJson(method: 'GET',
+      path: '/sync/import/${Uri.encodeComponent(importId)}',
+      queryParameters: {'device_id': deviceId});
+    return _parse(json, NasImportReceipt.fromJson);
+  }
+
+  Future<NasImportHistoryPage> importHistory({required String deviceId,
+    int after = 0, int until = 0, int limit = 100}) async {
+    if (after < 0 || until < 0 || (until != 0 && after > until) || limit < 1 || limit > 500) {
+      throw ArgumentError('invalid history page bounds');
+    }
+    final json = await _sendJson(method: 'GET', path: '/sync/import/history',
+      queryParameters: {'device_id': deviceId, 'after': '$after',
+        'until': '$until', 'limit': '$limit'});
+    return _parse(json, NasImportHistoryPage.fromJson);
   }
 
   Future<NasSyncBootstrap> bootstrap({required String deviceId}) async {

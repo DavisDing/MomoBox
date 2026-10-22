@@ -380,6 +380,13 @@ class ShoppingRepository {
     final scopeId = await _mutationScope();
     final outbox = _outbox;
     if (scopeId == null || scopeId.trim().isEmpty || outbox == null) return;
+    final importSupport = await (_database.select(_database.appSettings)
+      ..where((row) => row.key.equals('sync_import_format:$scopeId'))).getSingleOrNull();
+    if (importSupport?.value == '1') {
+      final entry = await (_database.select(_database.shoppingEntries)
+        ..where((row) => row.id.equals(entryId))).getSingleOrNull();
+      if (entry != null) payload = {...payload, 'category': entry.category, 'reason': entry.reason};
+    }
     final changeId = _uuid.v4();
     final idempotencyKey = '$scopeId:$changeId';
     await outbox.enqueueInCurrentTransaction(

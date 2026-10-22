@@ -9,6 +9,7 @@ import (
     "strings"
     "time"
 
+    "github.com/momobox/backend/internal/family"
     "github.com/momobox/backend/internal/homeassistant"
 )
 
@@ -552,7 +553,7 @@ func (r *AutomationRepository) calculatePurchaseSuggestions(ctx context.Context,
     if err:=rows.Err();err!=nil{return nil,err}
     ids:=make([]string,0,len(requiredByProduct));for id:=range requiredByProduct{ids=append(ids,id)};sort.Strings(ids)
     result:=make([]homeassistant.PurchaseSuggestion,0)
-    date:=now.UTC().Format("2006-01-02")
+    date, err:=familyCalendarDate(ctx,q,familyID,now);if err!=nil{return nil,err}
     for _,id:=range ids{value:=requiredByProduct[id];var stock int;if err:=q.QueryRowContext(ctx,`SELECT COALESCE(SUM(quantity),0) FROM product_batches WHERE family_id=$1::uuid AND product_id=$2::uuid AND deleted_at IS NULL AND status='active' AND quantity>0 AND (expiry_date IS NULL OR expiry_date >= $3::date)`,familyID,id,date).Scan(&stock);err!=nil{return nil,fmt.Errorf("read HA stock: %w",err)};if stock<value.quantity{result=append(result,homeassistant.PurchaseSuggestion{ProductID:id,ProductName:value.name,Quantity:value.quantity-stock,Unit:value.unit})}}
     return result,nil
 }
@@ -750,9 +751,17 @@ WHERE family_id = $1::uuid AND id = $2::uuid`, familyID, value.ID, now, actorID)
 type lockedBatch struct{id string; quantity int; version int64}
 type requiredBatches struct{required int;batches []lockedBatch}
 func (r *AutomationRepository) lockRequiredBatches(ctx context.Context,tx *sql.Tx,familyID,recipeID string,now time.Time)(map[string]requiredBatches,error){
-    rows,err:=tx.QueryContext(ctx,`SELECT gi.product_id::text,(rg.quantity*gi.quantity) FROM ha_consumable_recipe_groups rg JOIN ha_consumable_group_items gi ON gi.group_id=rg.group_id AND gi.family_id=rg.family_id WHERE rg.family_id=$1::uuid AND rg.recipe_id=$2::uuid ORDER BY gi.product_id`,familyID,recipeID);if err!=nil{return nil,err};defer rows.Close();required:=map[string]int{};for rows.Next(){var id string;var qty int;if err:=rows.Scan(&id,&qty);err!=nil{return nil,err};required[id]+=qty};if err:=rows.Err();err!=nil{return nil,err};result:=map[string]requiredBatches{};date:=now.UTC().Format("2006-01-02");ids:=make([]string,0,len(required));for id:=range required{ids=append(ids,id)};sort.Strings(ids);for _,id:=range ids{batchRows,err:=tx.QueryContext(ctx,`SELECT id::text,quantity,version FROM product_batches WHERE family_id=$1::uuid AND product_id=$2::uuid AND deleted_at IS NULL AND status='active' AND quantity>0 AND (expiry_date IS NULL OR expiry_date >= $3::date) ORDER BY expiry_date ASC NULLS LAST,id FOR UPDATE`,familyID,id,date);if err!=nil{return nil,err};var batches []lockedBatch;total:=0;for batchRows.Next(){var b lockedBatch;if err:=batchRows.Scan(&b.id,&b.quantity,&b.version);err!=nil{batchRows.Close();return nil,err};batches=append(batches,b);total+=b.quantity};batchRows.Close();if total<required[id]{return nil,automationError(homeassistant.CodeInvalidArgument,"inventory changed and is insufficient for confirmation",nil)};result[id]=requiredBatches{required:required[id],batches:batches}};return result,nil}
+    rows,err:=tx.QueryContext(ctx,`SELECT gi.product_id::text,(rg.quantity*gi.quantity) FROM ha_consumable_recipe_groups rg JOIN ha_consumable_group_items gi ON gi.group_id=rg.group_id AND gi.family_id=rg.family_id WHERE rg.family_id=$1::uuid AND rg.recipe_id=$2::uuid ORDER BY gi.product_id`,familyID,recipeID);if err!=nil{return nil,err};defer rows.Close();required:=map[string]int{};for rows.Next(){var id string;var qty int;if err:=rows.Scan(&id,&qty);err!=nil{return nil,err};required[id]+=qty};if err:=rows.Err();err!=nil{return nil,err};result:=map[string]requiredBatches{};date,err:=familyCalendarDate(ctx,tx,familyID,now);if err!=nil{return nil,err};ids:=make([]string,0,len(required));for id:=range required{ids=append(ids,id)};sort.Strings(ids);for _,id:=range ids{batchRows,err:=tx.QueryContext(ctx,`SELECT id::text,quantity,version FROM product_batches WHERE family_id=$1::uuid AND product_id=$2::uuid AND deleted_at IS NULL AND status='active' AND quantity>0 AND (expiry_date IS NULL OR expiry_date >= $3::date) ORDER BY expiry_date ASC NULLS LAST,id FOR UPDATE`,familyID,id,date);if err!=nil{return nil,err};var batches []lockedBatch;total:=0;for batchRows.Next(){var b lockedBatch;if err:=batchRows.Scan(&b.id,&b.quantity,&b.version);err!=nil{batchRows.Close();return nil,err};batches=append(batches,b);total+=b.quantity};batchRows.Close();if total<required[id]{return nil,automationError(homeassistant.CodeInvalidArgument,"inventory changed and is insufficient for confirmation",nil)};result[id]=requiredBatches{required:required[id],batches:batches}};return result,nil}
 func sortedBatchProducts(values map[string]requiredBatches)[]string{ids:=make([]string,0,len(values));for id:=range values{ids=append(ids,id)};sort.Strings(ids);return ids}
 func (r *AutomationRepository)newOperationID(ctx context.Context,tx *sql.Tx)(string,error){var id string;if err:=tx.QueryRowContext(ctx,`SELECT gen_random_uuid()::text`).Scan(&id);err!=nil{return "",fmt.Errorf("generate HA operation ID: %w",err)};return id,nil}
 func insertLinkageAudit(ctx context.Context,tx *sql.Tx,familyID,ruleID,runID,suggestionID,action string,details map[string]any,now time.Time)(string,error){payload,err:=marshalJSON(details);if err!=nil{return "",err};var id string;err=tx.QueryRowContext(ctx,`INSERT INTO ha_linkage_audit_logs (family_id,rule_id,appliance_run_id,suggestion_id,action,actor_id,details,created_at) VALUES ($1::uuid,NULLIF($2,'')::uuid,$3,NULLIF($4,'')::uuid,$5,NULL,$6::jsonb,$7) RETURNING id::text`,familyID,ruleID,runID,suggestionID,action,payload,now).Scan(&id);if err!=nil{return "",fmt.Errorf("write HA linkage audit: %w",err)};return id,nil}
 func validateGroupItems(items []homeassistant.ConsumableGroupItem)error{seen:=map[string]struct{}{};for _,item:=range items{if item.Quantity<1||!item.Unit.Valid()||strings.TrimSpace(item.ProductID)==""{return automationError(homeassistant.CodeInvalidArgument,"group item is invalid",nil)};if _,ok:=seen[item.ProductID];ok{return automationError(homeassistant.CodeInvalidArgument,"a group cannot contain the same product twice",nil)};seen[item.ProductID]=struct{}{}};return nil}
 func validateRecipeGroups(items []homeassistant.ConsumableRecipeGroup)error{seen:=map[string]struct{}{};for _,item:=range items{if item.Quantity<1||!item.Unit.Valid()||strings.TrimSpace(item.GroupID)==""{return automationError(homeassistant.CodeInvalidArgument,"recipe group is invalid",nil)};if _,ok:=seen[item.GroupID];ok{return automationError(homeassistant.CodeInvalidArgument,"a recipe cannot contain the same group twice",nil)};seen[item.GroupID]=struct{}{}};return nil}
+
+func familyCalendarDate(ctx context.Context, q querier, familyID string, instant time.Time) (string,error) {
+    var zone string
+    if err:=q.QueryRowContext(ctx, `SELECT time_zone FROM families WHERE id=$1::uuid AND deleted_at IS NULL`, familyID).Scan(&zone);err!=nil{return "",err}
+    day,err:=family.CalendarDay(instant,zone)
+    if err!=nil{return "",err}
+    return day.Format("2006-01-02"),nil
+}

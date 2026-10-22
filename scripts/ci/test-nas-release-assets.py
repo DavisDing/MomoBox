@@ -6,12 +6,20 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import tarfile
 import tempfile
 import textwrap
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[2]
+OPERATIONS_FILES = {
+    'OPERATIONS.md', 'scripts/backup.sh', 'scripts/restore.sh', 'scripts/update.sh',
+    'scripts/deployment-context.sh', 'scripts/postgres-client.sh',
+    'scripts/deployment-lock.sh', 'scripts/backend-isolation.sh',
+    'operations/managed-client.yaml', 'operations/external-client.yaml',
+    'operations/pg-client.sh', 'operations/pg-connection.awk',
+}
 
 
 class NasReleaseAssetsTests(unittest.TestCase):
@@ -31,6 +39,16 @@ class NasReleaseAssetsTests(unittest.TestCase):
                             ignore=shutil.ignore_patterns('.env', 'backups'))
             for name in ('docker-compose.yaml', '.env.example'):
                 shutil.copyfile(ROOT / 'deploy/nas' / name, stage / 'deploy/nas' / name)
+            for name in OPERATIONS_FILES:
+                target = stage / 'deploy/nas' / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(ROOT / 'deploy/nas' / name, target)
+            # Simulated sensitive/unrelated files must never enter the tarball.
+            for name in ('.env', '.momobox-deployment.lock/owner', 'backups/production.dump',
+                         'operations/proof.txt', 'scripts/test-unrelated.py'):
+                target = stage / 'deploy/nas' / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text('must not ship')
             # Placeholder bytes test packaging only, never APK/AAB signing.
             for name in ('build/app/outputs/flutter-apk/app-release.apk',
                          'build/app/outputs/bundle/release/app-release.aab'):
@@ -44,7 +62,8 @@ class NasReleaseAssetsTests(unittest.TestCase):
             expected = {'MomoBox-v0.12.35.apk', 'MomoBox-v0.12.35.aab',
                         'MomoBox-v0.12.35-docker-compose.yaml',
                         'MomoBox-v0.12.35-nas.env.example',
-                        'MomoBox-v0.12.35-nas-variants-README.md', 'SHA256SUMS.txt'}
+                        'MomoBox-v0.12.35-nas-variants-README.md',
+                        'MomoBox-v0.12.35-nas-operations.tar.gz', 'SHA256SUMS.txt'}
             for variant in ('with-postgres', 'external-postgres'):
                 expected.add(f'MomoBox-v0.12.35-{variant}-docker-compose.yaml')
                 expected.add(f'MomoBox-v0.12.35-{variant}.env.example')
@@ -61,6 +80,18 @@ class NasReleaseAssetsTests(unittest.TestCase):
                 self.assertEqual(path.read_bytes(), source.read_bytes())
             self.assertEqual((dist / 'MomoBox-v0.12.35-nas-variants-README.md').read_bytes(),
                              (ROOT / 'deploy/nas/variants/README.md').read_bytes())
+            with tarfile.open(dist / 'MomoBox-v0.12.35-nas-operations.tar.gz') as archive:
+                members = archive.getmembers()
+                self.assertEqual({m.name for m in members}, OPERATIONS_FILES)
+                self.assertEqual(len(members), len(OPERATIONS_FILES))
+                for member in members:
+                    self.assertTrue(member.isfile())
+                    self.assertFalse(Path(member.name).is_absolute())
+                    self.assertNotIn('..', Path(member.name).parts)
+                    self.assertEqual(archive.extractfile(member).read(),
+                                     (ROOT / 'deploy/nas' / member.name).read_bytes())
+                    if member.name in ('scripts/update.sh', 'scripts/backup.sh', 'scripts/restore.sh'):
+                        self.assertTrue(member.mode & 0o100, 'entrypoint must remain executable')
             sums = (dist / 'SHA256SUMS.txt').read_text().splitlines()
             self.assertEqual(len(sums), len(expected) - 1)
             for line in sums:

@@ -32,6 +32,16 @@ func (s *Service) CreateFamily(ctx context.Context, userID string, request Creat
 		return empty, newError(CodeUnauthorized, "user is required")
 	}
 	name := strings.TrimSpace(request.Name)
+	zone := strings.TrimSpace(request.TimeZone)
+	if zone == "" {
+		zone = DefaultTimeZone
+	}
+	if len(zone) > 255 || zone == "Local" {
+		return empty, newError(CodeValidation, "family time zone is invalid")
+	}
+	if _, err := time.LoadLocation(zone); err != nil {
+		return empty, newError(CodeValidation, "family time zone is invalid")
+	}
 	if n := utf8.RuneCountInString(name); n < 1 || n > 120 {
 		return empty, newError(CodeValidation, "family name must be 1-120 characters")
 	}
@@ -40,7 +50,7 @@ func (s *Service) CreateFamily(ctx context.Context, userID string, request Creat
 		return empty, err
 	}
 	now := s.clock.Now()
-	family := Family{ID: familyID, Name: name, CreatedAt: now}
+	family := Family{ID: familyID, Name: name, TimeZone: zone, CreatedAt: now}
 	membership := Membership{FamilyID: familyID, UserID: userID, Role: RoleOwner, JoinedAt: now}
 	if err := s.families.CreateWithOwner(ctx, family, membership); err != nil {
 		return empty, err

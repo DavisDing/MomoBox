@@ -22,8 +22,8 @@ func (r *Repository) CreateWithOwner(ctx context.Context, value family.Family, o
 	}
 	return common.WithTx(ctx, r.db, nil, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, `
-			INSERT INTO families (id, name, created_by_user_id, created_at)
-			VALUES ($1::uuid, $2, $3::uuid, $4)`, value.ID, value.Name, owner.UserID, value.CreatedAt)
+			INSERT INTO families (id, name, created_by_user_id, created_at, time_zone)
+			VALUES ($1::uuid, $2, $3::uuid, $4, COALESCE(NULLIF($5,''),'Asia/Shanghai'))`, value.ID, value.Name, owner.UserID, value.CreatedAt, value.TimeZone)
 		if err != nil {
 			return mapFamilyWriteError(err)
 		}
@@ -37,15 +37,15 @@ func (r *Repository) CreateWithOwner(ctx context.Context, value family.Family, o
 func (r *Repository) FindByID(ctx context.Context, familyID string) (family.Family, error) {
 	var value family.Family
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id::text, name, created_at
+		SELECT id::text, name, created_at, time_zone
 		FROM families
 		WHERE id = $1::uuid AND deleted_at IS NULL`, familyID).
-		Scan(&value.ID, &value.Name, &value.CreatedAt)
+		Scan(&value.ID, &value.Name, &value.CreatedAt, &value.TimeZone)
 	return value, err
 }
 
 const findCurrentForUserSQL = `
-SELECT f.id::text, f.name, f.created_at, fm.user_id::text, fm.role, fm.joined_at
+SELECT f.id::text, f.name, f.created_at, fm.user_id::text, fm.role, fm.joined_at, f.time_zone
 FROM users AS u
 JOIN family_members AS fm
   ON fm.family_id = u.current_family_id
@@ -62,7 +62,7 @@ func (r *Repository) FindCurrentForUser(ctx context.Context, userID string) (fam
 	var membership family.Membership
 	err := r.db.QueryRowContext(ctx, findCurrentForUserSQL, userID).Scan(
 		&value.ID, &value.Name, &value.CreatedAt,
-		&membership.UserID, &membership.Role, &membership.JoinedAt,
+		&membership.UserID, &membership.Role, &membership.JoinedAt, &value.TimeZone,
 	)
 	membership.FamilyID = value.ID
 	return value, membership, err

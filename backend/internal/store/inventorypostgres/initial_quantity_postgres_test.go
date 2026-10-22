@@ -71,6 +71,7 @@ func newInitialQuantityPostgres(t *testing.T) (context.Context, *sql.DB) {
 		scoped.RuntimeParams = make(map[string]string)
 	}
 	scoped.RuntimeParams["search_path"] = schema
+	scoped.RuntimeParams["timezone"] = "UTC"
 	db := stdlib.OpenDB(*scoped)
 	db.SetMaxOpenConns(3)
 	t.Cleanup(func() { _ = db.Close() })
@@ -78,6 +79,11 @@ func newInitialQuantityPostgres(t *testing.T) (context.Context, *sql.DB) {
 		t.Fatalf("connect to isolated quantity schema: %v", err)
 	}
 	if _, err := db.ExecContext(ctx, `
+CREATE TABLE families (
+    id uuid PRIMARY KEY,
+    time_zone text NOT NULL DEFAULT 'Asia/Shanghai',
+    deleted_at timestamptz
+);
 CREATE TABLE product_batches (
     id uuid PRIMARY KEY,
     family_id uuid NOT NULL,
@@ -135,6 +141,9 @@ CREATE TABLE sync_idempotency (
     PRIMARY KEY (family_id, device_id, idempotency_key)
 );`); err != nil {
 		t.Fatalf("create isolated inventory fixture: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO families (id) VALUES ($1::uuid)`, initialQuantityFamilyID); err != nil {
+		t.Fatalf("seed family calendar contract: %v", err)
 	}
 	return ctx, db
 }
@@ -317,6 +326,53 @@ WHERE operation_id = $1::uuid AND family_id = $2::uuid AND batch_id = $3::uuid`,
 	}
 	assertInitialQuantityBatch(t, ctx, db, steps[len(steps)-1].want)
 	assertInitialQuantityWrites(t, ctx, db, len(steps))
+}
+
+func TestPostgresConsumptionExpiryUsesStoredFamilyTimeZone(t *testing.T) {
+	for _, test := range []struct {
+		name, zone, instant string
+		expired             bool
+	}{
+		{"Shanghai expiry day", "Asia/Shanghai", "2026-10-22T15:59:59Z", false},
+		{"Shanghai next day", "Asia/Shanghai", "2026-10-22T16:00:00Z", true},
+		{"Los Angeles expiry day", "America/Los_Angeles", "2026-10-23T06:59:59Z", false},
+		{"Los Angeles next day", "America/Los_Angeles", "2026-10-23T07:00:00Z", true},
+	} {
+		for _, commandName := range []inventory.CommandName{inventory.CommandConsumeFEFO, inventory.CommandConsumeAllocated} {
+			t.Run(test.name+"/"+string(commandName), func(t *testing.T) {
+				ctx, db := newInitialQuantityPostgres(t)
+				seedInitialQuantityBatch(t, ctx, db, 1, 1)
+				if _, err := db.ExecContext(ctx, `UPDATE families SET time_zone=$2 WHERE id=$1::uuid`, initialQuantityFamilyID, test.zone); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := db.ExecContext(ctx, `UPDATE product_batches SET expiry_date='2026-10-22'::date WHERE id=$1::uuid`, initialQuantityBatchID); err != nil {
+					t.Fatal(err)
+				}
+				now, err := time.Parse(time.RFC3339, test.instant)
+				if err != nil {
+					t.Fatal(err)
+				}
+				command := initialQuantityCommand(1, commandName, 1)
+				if commandName == inventory.CommandConsumeAllocated {
+					command.Allocations = []inventory.Allocation{{BatchID: initialQuantityBatchID, Quantity: 1}}
+				}
+				_, err = inventory.NewServiceWithClock(New(db), func() time.Time { return now }).Execute(ctx, command)
+				if test.expired {
+					if !errors.Is(err, inventory.ErrInsufficientStock) && !errors.Is(err, inventory.ErrBatchUnavailable) {
+						t.Fatalf("expired stock error = %v", err)
+					}
+					assertInitialQuantityBatch(t, ctx, db, initialQuantityBatchState{1, 1, 1, "active"})
+					assertInitialQuantityWrites(t, ctx, db, 0)
+				} else {
+					if err != nil {
+						t.Fatal(err)
+					}
+					assertInitialQuantityBatch(t, ctx, db, initialQuantityBatchState{0, 1, 2, "used_up"})
+					assertInitialQuantityWrites(t, ctx, db, 1)
+				}
+			})
+		}
+	}
 }
 
 func TestPostgresInitialQuantityBoundStoreActualBatchChanges(t *testing.T) {

@@ -18,7 +18,8 @@ class BackupFormat {
   /// not a portable file archive. Old parsers ignore this extra header field.
   static const scopeDescription =
       '核心 JSON 备份包含商品、批次、库存变动、采购清单、提醒记录、条码缓存及用户业务配置'
-      '（含家务和 AI 聊天）；不包含图片、说明书文件、媒体 OCR 文本、凭据、NAS 绑定或同步状态。';
+      '（含家务和 AI 聊天）；不包含图片、说明书文件、媒体 OCR 文本、凭据、NAS 绑定、同步状态、'
+      'NAS 独立历史归档或首次导入计划与回执。NAS 归档需从原 NAS 另行恢复。';
   static const privacyDescription =
       '备份 JSON 和 AI 聊天历史可能包含个人信息；请保存在可信位置。'
       '备份与恢复均在本地进行，无需上传文件。';
@@ -61,6 +62,9 @@ class BackupFormat {
       'sync_outbox',
       'sync_conflicts',
       'sync_applied_changes',
+      'sync_initial_import_plans',
+      'sync_initial_import_items',
+      'sync_imported_history',
     ],
     'restore_policy': 'insert_missing_preserve_existing_and_device_identity',
     'media_restore_supported': false,
