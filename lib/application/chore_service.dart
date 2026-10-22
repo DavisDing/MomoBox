@@ -13,6 +13,12 @@ class ChoreService {
   final SettingsRepository _settingsRepository;
   static const _storageKey = 'recurring_chores_list';
 
+  /// Reading assistant context must never initialize or change business data.
+  Future<List<ChoreItem>> readSavedChores() async {
+    final raw = await _settingsRepository.getValue(_storageKey);
+    return raw == null ? [] : ChoreItem.decodeList(raw);
+  }
+
   /// 获取所有周期家务
   Future<List<ChoreItem>> getChores() {
     return _loading ??= _loadChores().whenComplete(() {

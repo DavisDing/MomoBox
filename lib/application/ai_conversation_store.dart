@@ -91,7 +91,7 @@ class AiConversationStore extends ChangeNotifier {
         content:
             '你好呀！我是 MomoBox 的随身智能管家。\n'
             '我可以查询真实库存、效期和存放位置，提供采买建议。\n'
-            '库存操作需在设置中授权，并逐次确认；设备控制尚未接入。',
+            '入库、采购、家务、提醒及已授权设备操作，均由你查看并确认后执行。',
         timestamp: DateTime.now(),
       ),
     ],

@@ -1,3 +1,4 @@
+import '../../app/momo_typography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -112,7 +113,7 @@ class SmartHomeScreen extends ConsumerWidget {
           children: [
             Icon(isError ? Icons.error_outline : Icons.info_outline, size: 20, color: color),
             const SizedBox(width: 8),
-            Expanded(child: Text(text, style: TextStyle(fontSize: 12, color: color))),
+            Expanded(child: Text(text, style: TextStyle(fontSize: MomoTextSize.caption, color: color))),
           ],
         ),
       ),
@@ -144,7 +145,7 @@ class SmartHomeScreen extends ConsumerWidget {
             decoration: BoxDecoration(shape: BoxShape.circle, color: color),
           ),
           const SizedBox(width: 4),
-          Text(label, style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.bold)),
+          Text(label, style: TextStyle(fontSize: MomoTextSize.caption, color: color, fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -159,12 +160,12 @@ class SmartHomeScreen extends ConsumerWidget {
           children: [
             const Icon(Icons.hub_outlined, size: 64, color: Colors.grey),
             const SizedBox(height: 16),
-            const Text('Home Assistant 尚未配置', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text('Home Assistant 尚未配置', style: TextStyle(fontSize: MomoTextSize.section, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             const Text(
               '当前没有可用的 NAS/ Home Assistant 集成。请先完成真实连接配置；未连接时不会展示虚假设备或执行控制。',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: Colors.grey),
+              style: TextStyle(fontSize: MomoTextSize.body, color: Colors.grey),
             ),
             const SizedBox(height: 20),
             FilledButton.icon(
@@ -193,7 +194,7 @@ class SmartHomeScreen extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(title, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-            Text(subtitle, style: theme.textTheme.bodySmall?.copyWith(fontSize: 11, color: Colors.grey)),
+            Text(subtitle, style: theme.textTheme.bodySmall?.copyWith(fontSize: MomoTextSize.caption, color: Colors.grey)),
           ],
         ),
       ],
@@ -266,7 +267,7 @@ class SmartHomeScreen extends ConsumerWidget {
                       children: [
                         Text(
                           scene.name,
-                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                          style: const TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.bold),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -274,7 +275,7 @@ class SmartHomeScreen extends ConsumerWidget {
                         Text(
                           scene.description,
                           style: TextStyle(
-                            fontSize: 10,
+                            fontSize: MomoTextSize.caption,
                             color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.7),
                           ),
                           maxLines: 1,
@@ -359,7 +360,7 @@ class SmartHomeScreen extends ConsumerWidget {
                       Expanded(
                         child: Text(
                           log.ruleDescription,
-                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                          style: const TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.bold),
                         ),
                       ),
                       Container(
@@ -370,7 +371,7 @@ class SmartHomeScreen extends ConsumerWidget {
                         ),
                         child: Text(
                           statusLabel,
-                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: statusColor),
+                          style: TextStyle(fontSize: MomoTextSize.caption, fontWeight: FontWeight.bold, color: statusColor),
                         ),
                       ),
                     ],
@@ -378,23 +379,23 @@ class SmartHomeScreen extends ConsumerWidget {
                   const SizedBox(height: 6),
                   Text(
                     '${log.deviceName} · ${log.eventSummary}',
-                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     '耗材建议：${log.consumableName} × ${log.quantity} ${log.unit}',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: palette.primary),
+                    style: TextStyle(fontSize: MomoTextSize.caption, fontWeight: FontWeight.w600, color: palette.primary),
                   ),
                   if (isInsufficient && log.purchaseSuggestions.isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    Text('库存不足，NAS 已生成采购建议：', style: TextStyle(fontSize: 11, color: statusColor)),
+                    Text('库存不足，NAS 已生成采购建议：', style: TextStyle(fontSize: MomoTextSize.caption, color: statusColor)),
                     const SizedBox(height: 4),
                     ...log.purchaseSuggestions.map(
                       (item) => Padding(
                         padding: const EdgeInsets.only(bottom: 2),
                         child: Text(
                           '• ${item.productName} × ${item.quantity} ${item.unit}',
-                          style: const TextStyle(fontSize: 11),
+                          style: const TextStyle(fontSize: MomoTextSize.caption),
                         ),
                       ),
                     ),
@@ -422,7 +423,7 @@ class SmartHomeScreen extends ConsumerWidget {
                                     );
                                   }
                                 },
-                          child: const Text('忽略', style: TextStyle(fontSize: 11)),
+                          child: const Text('忽略', style: TextStyle(fontSize: MomoTextSize.caption)),
                         ),
                         const SizedBox(width: 8),
                         FilledButton(
@@ -445,7 +446,7 @@ class SmartHomeScreen extends ConsumerWidget {
                                 },
                           child: isActing
                               ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                              : const Text('确认扣减', style: TextStyle(fontSize: 11)),
+                              : const Text('确认扣减', style: TextStyle(fontSize: MomoTextSize.caption)),
                         ),
                       ],
                     ),
@@ -481,12 +482,12 @@ class SmartHomeScreen extends ConsumerWidget {
                   children: [
                     Text(
                       room,
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                      style: const TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(width: 6),
                     Text(
                       '(${roomDevices.length} 个设备)',
-                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                      style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey),
                     ),
                   ],
                 ),
@@ -549,7 +550,7 @@ class SmartHomeScreen extends ConsumerWidget {
                           children: [
                             Text(
                               device.name,
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                              style: const TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.bold),
                             ),
                             const SizedBox(width: 6),
                             const Icon(Icons.tune_rounded, size: 14, color: Colors.grey),
@@ -558,7 +559,7 @@ class SmartHomeScreen extends ConsumerWidget {
                         Text(
                           device.statusText,
                           style: TextStyle(
-                            fontSize: 12,
+                            fontSize: MomoTextSize.caption,
                             color: device.isOn ? palette.primary : theme.textTheme.bodySmall?.color,
                           ),
                         ),
@@ -592,11 +593,11 @@ class SmartHomeScreen extends ConsumerWidget {
                           ),
                           child: Text(
                             device.mode,
-                            style: TextStyle(fontSize: 11, color: palette.primary, fontWeight: FontWeight.bold),
+                            style: TextStyle(fontSize: MomoTextSize.caption, color: palette.primary, fontWeight: FontWeight.bold),
                           ),
                         ),
                         const SizedBox(width: 6),
-                        Text('风速: ${device.windSpeed}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                        Text('风速: ${device.windSpeed}', style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey)),
                       ],
                     ),
                     Row(
@@ -608,7 +609,7 @@ class SmartHomeScreen extends ConsumerWidget {
                         ),
                         Text(
                           '${device.temperature.toStringAsFixed(0)}°C',
-                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                          style: const TextStyle(fontSize: MomoTextSize.title, fontWeight: FontWeight.bold),
                         ),
                         IconButton(
                           visualDensity: VisualDensity.compact,
@@ -638,7 +639,7 @@ class SmartHomeScreen extends ConsumerWidget {
                         },
                       ),
                     ),
-                    Text('${device.brightness}%', style: const TextStyle(fontSize: 12)),
+                    Text('${device.brightness}%', style: const TextStyle(fontSize: MomoTextSize.caption)),
                   ],
                 ),
               ],
@@ -718,7 +719,7 @@ class SmartHomeScreen extends ConsumerWidget {
                             ),
                             Text(
                               '${latestDevice.room} · ${latestDevice.statusText}',
-                              style: const TextStyle(fontSize: 12, color: Colors.grey),
+                              style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey),
                             ),
                           ],
                         ),
@@ -733,13 +734,13 @@ class SmartHomeScreen extends ConsumerWidget {
 
                   // 电源开关
                   SwitchListTile(
-                    title: const Text('设备电源', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                    title: const Text('设备电源', style: TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.bold)),
                     // A scaffold SnackBar can sit behind this modal. Keep the
                     // actual failure visible in the existing power subtitle.
                     subtitle: Text(
                       '${latestDevice.isOn ? '已开启' : '已关闭'}'
                       '${homeState.commandError == null ? '' : '\n${homeState.commandError}'}',
-                      style: const TextStyle(fontSize: 12),
+                      style: const TextStyle(fontSize: MomoTextSize.caption),
                     ),
                     isThreeLine: homeState.commandError != null,
                     value: latestDevice.isOn,
@@ -766,7 +767,7 @@ class SmartHomeScreen extends ConsumerWidget {
                   // 空调高级操作面板
                   if (latestDevice.type == DeviceType.climate) ...[
                     const SizedBox(height: 12),
-                    const Text('运行模式', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    const Text('运行模式', style: TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
@@ -785,7 +786,7 @@ class SmartHomeScreen extends ConsumerWidget {
                       }).toList(),
                     ),
                     const SizedBox(height: 16),
-                    const Text('风速档位', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    const Text('风速档位', style: TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
@@ -807,7 +808,7 @@ class SmartHomeScreen extends ConsumerWidget {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('设定温度', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                        const Text('设定温度', style: TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.bold)),
                         Row(
                           children: [
                             IconButton(
@@ -818,7 +819,7 @@ class SmartHomeScreen extends ConsumerWidget {
                             ),
                             Text(
                               '${latestDevice.temperature.toStringAsFixed(0)}°C',
-                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                              style: const TextStyle(fontSize: MomoTextSize.section, fontWeight: FontWeight.bold),
                             ),
                             IconButton(
                               icon: const Icon(Icons.add_circle_outline),
@@ -835,7 +836,7 @@ class SmartHomeScreen extends ConsumerWidget {
                   // 灯光高级操作面板
                   if (latestDevice.type == DeviceType.light) ...[
                     const SizedBox(height: 12),
-                    const Text('亮度调节', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    const Text('亮度调节', style: TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.bold)),
                     Slider(
                       // HA can legitimately report zero brightness while the
                       // light is off; keep the real display value but satisfy
@@ -851,7 +852,7 @@ class SmartHomeScreen extends ConsumerWidget {
                     Center(
                       child: Text(
                         '当前亮度: ${latestDevice.brightness}%',
-                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey),
                       ),
                     ),
                   ],
@@ -859,7 +860,7 @@ class SmartHomeScreen extends ConsumerWidget {
                   // 电视高级操作面板
                   if (latestDevice.type == DeviceType.tv) ...[
                     const SizedBox(height: 12),
-                    const Text('常用多媒体快捷指令', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    const Text('常用多媒体快捷指令', style: TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 10),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -898,7 +899,7 @@ class SmartHomeScreen extends ConsumerWidget {
                   // 洗衣机高级操作面板
                   if (latestDevice.type == DeviceType.washer) ...[
                     const SizedBox(height: 12),
-                    const Text('洗护状态', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    const Text('洗护状态', style: TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 6),
                     Container(
                       padding: const EdgeInsets.all(12),
@@ -913,7 +914,7 @@ class SmartHomeScreen extends ConsumerWidget {
                           Expanded(
                             child: Text(
                               latestDevice.statusText,
-                              style: const TextStyle(fontSize: 12),
+                              style: const TextStyle(fontSize: MomoTextSize.caption),
                             ),
                           ),
                         ],

@@ -1,3 +1,4 @@
+import 'momo_typography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -185,6 +186,9 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
     systemNavigationBarContrastEnforced: false,
   );
 
+  final textTheme = buildMomoTextTheme(ThemeData(brightness: brightness).textTheme)
+      .apply(bodyColor: text, displayColor: text);
+
   return ThemeData(
     useMaterial3: true,
     buttonTheme: const ButtonThemeData(alignedDropdown: true),
@@ -206,6 +210,8 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
     dialogTheme: DialogThemeData(
       backgroundColor: surface,
       elevation: 6,
+      titleTextStyle: textTheme.titleLarge,
+      contentTextStyle: textTheme.bodyMedium,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(28),
       ),
@@ -223,7 +229,7 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
       ),
       textStyle: TextStyle(
         color: text,
-        fontSize: 13,
+        fontSize: MomoTextSize.body,
         fontWeight: FontWeight.w500,
       ),
     ),
@@ -241,21 +247,20 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
       scrolledUnderElevation: 0,
       centerTitle: false,
       systemOverlayStyle: systemUiOverlayStyle,
+      titleTextStyle: textTheme.titleLarge,
     ),
     navigationBarTheme: NavigationBarThemeData(
       backgroundColor: Colors.transparent,
       indicatorColor: palette.primary.withValues(alpha: isDark ? 0.32 : 0.18),
       elevation: 0,
+      labelTextStyle: WidgetStatePropertyAll(textTheme.labelMedium),
     ),
-    textTheme: ThemeData(brightness: brightness).textTheme.apply(
-          bodyColor: text,
-          displayColor: text,
-        ),
+    textTheme: textTheme,
     snackBarTheme: SnackBarThemeData(
       backgroundColor: (isDark ? const Color(0xFF1E293B) : Colors.white).withValues(alpha: 0.88),
       contentTextStyle: TextStyle(
         color: text,
-        fontSize: 13,
+        fontSize: MomoTextSize.body,
         fontWeight: FontWeight.w500,
       ),
       behavior: SnackBarBehavior.floating,
@@ -269,6 +274,11 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(
+      labelStyle: textTheme.bodyMedium,
+      hintStyle: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+      helperStyle: textTheme.bodySmall,
+      errorStyle: textTheme.bodySmall,
+      errorMaxLines: 3,
       filled: true,
       fillColor: isDark ? const Color(0xFF1E293B) : surface,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),

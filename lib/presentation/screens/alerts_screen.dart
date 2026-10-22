@@ -1,3 +1,4 @@
+import '../../app/momo_typography.dart';
 import '../widgets/calendar_sync_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -155,7 +156,7 @@ class _EmptyAlerts extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('✨', style: TextStyle(fontSize: 48)),
+            const Text('✨', style: TextStyle(fontSize: MomoTextSize.display)),
             const SizedBox(height: 12),
             Text('当前无待处理提醒。', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 4),
@@ -195,7 +196,7 @@ class _AlertDashboard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Text(mascot, style: const TextStyle(fontSize: 42)),
+                Text(mascot, style: const TextStyle(fontSize: MomoTextSize.display)),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(

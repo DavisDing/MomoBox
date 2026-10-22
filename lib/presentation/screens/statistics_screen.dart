@@ -1,3 +1,4 @@
+import '../../app/momo_typography.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -225,7 +226,7 @@ class _StatisticsChartPainter extends CustomPainter {
     ).toInt())).toDouble();
     final gridPaint = Paint()..color = Colors.grey.withValues(alpha: 0.22)..strokeWidth = 1;
     final axisPaint = Paint()..color = Colors.grey.withValues(alpha: 0.55)..strokeWidth = 1;
-    final labelStyle = const TextStyle(fontSize: 10, color: Colors.grey);
+    final labelStyle = const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey);
 
     for (var index = 0; index <= 4; index++) {
       final y = chart.top + chart.height * index / 4;

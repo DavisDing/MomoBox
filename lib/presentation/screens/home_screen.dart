@@ -1,3 +1,4 @@
+import '../../app/momo_typography.dart';
 import '../widgets/calendar_sync_dialog.dart';
 import '../widgets/chores_sheet.dart';
 import 'package:flutter/material.dart';
@@ -105,7 +106,10 @@ class HomeScreen extends ConsumerWidget {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Row(
+                                Wrap(
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  spacing: 8,
+                                  runSpacing: 4,
                                   children: [
                                     Text(
                                       '嬷嬷的温馨小家',
@@ -113,7 +117,6 @@ class HomeScreen extends ConsumerWidget {
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
-                                    const SizedBox(width: 8),
                                     _buildModeBadge(context, isNas: nasState.isConnected),
                                   ],
                                 ),
@@ -168,7 +171,7 @@ class HomeScreen extends ConsumerWidget {
       child: Text(
         isNas ? 'NAS 协同模式' : '单机模式',
         style: TextStyle(
-          fontSize: 10,
+          fontSize: MomoTextSize.caption,
           fontWeight: FontWeight.w600,
           color: isNas ? Colors.green.shade700 : Colors.blueGrey.shade700,
         ),
@@ -184,37 +187,24 @@ class HomeScreen extends ConsumerWidget {
     final statusColor = isConnected ? Colors.green : Colors.blueGrey.shade400;
     final detailColor = isConnected ? Colors.green.shade700 : Colors.blueGrey.shade700;
 
-    return Row(
-      children: [
-        Container(
-          width: 9,
-          height: 9,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: statusColor,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Text(
-          detail,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 14,
-            color: detailColor,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(width: 8, height: 8,
+            decoration: BoxDecoration(shape: BoxShape.circle, color: statusColor)),
+          const SizedBox(width: 8),
+          Expanded(child: Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            spacing: 8, runSpacing: 2,
+            children: [
+              Text(label, style: const TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.w600)),
+              Text(detail, style: TextStyle(fontSize: MomoTextSize.caption, color: detailColor)),
+            ],
+          )),
+        ],
+      ),
     );
   }
 
@@ -243,79 +233,41 @@ class HomeScreen extends ConsumerWidget {
     final aiConfigured = ref.watch(aiConfigurationStatusProvider).valueOrNull == true;
     final nasState = ref.watch(nasConnectionProvider);
     final homeState = ref.watch(smartHomeControllerProvider);
-    final aiStatus = aiConfigured ? '待验证' : '未配置';
-
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: SizedBox(
-          height: 132,
-          child: Row(
-            children: [
-              Expanded(
-                flex: 1,
-                child: _buildQuickActionBtn(
-                  context,
-                  icon: Icons.qr_code_scanner,
-                  label: '入库',
-                  color: palette.primary,
-                  onTap: () => showModalBottomSheet<void>(
-                    context: context,
-                    isScrollControlled: true,
-                    useSafeArea: true,
-                    builder: (_) => const IntakeSheet(),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 2,
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.45)),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        '服务状态',
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 5),
-                      Expanded(
-                        child: _buildStatusDot(
-                          label: 'NAS服务',
-                          isConnected: nasState.isConnected,
-                          detail: _nasStatusLabel(nasState.status),
-                        ),
-                      ),
-                      Divider(height: 1, color: Theme.of(context).dividerColor.withValues(alpha: 0.35)),
-                      Expanded(
-                        child: _buildStatusDot(
-                          label: 'HA服务',
-                          isConnected: homeState.nasOnline &&
-                              homeState.haStatus == HaConnectionStatus.online &&
-                              !homeState.isLoading,
-                          detail: _haStatusLabel(homeState),
-                        ),
-                      ),
-                      Divider(height: 1, color: Theme.of(context).dividerColor.withValues(alpha: 0.35)),
-                      Expanded(
-                        child: _buildStatusDot(
-                          label: 'AI服务',
-                          isConnected: false,
-                          detail: aiStatus,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+        child: Row(children: [
+          Expanded(child: _buildQuickActionBtn(context,
+            icon: Icons.qr_code_scanner, label: '入库', color: palette.primary,
+            onTap: () => showModalBottomSheet<void>(context: context,
+              isScrollControlled: true, useSafeArea: true,
+              builder: (_) => const IntakeSheet()),
+          )),
+          const SizedBox(width: 12),
+          Expanded(flex: 2, child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.45)),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Column(mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('服务状态', style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(height: 4),
+                _buildStatusDot(label: 'NAS服务', isConnected: nasState.isConnected,
+                  detail: _nasStatusLabel(nasState.status)),
+                Divider(height: 1, color: Theme.of(context).dividerColor.withValues(alpha: 0.35)),
+                _buildStatusDot(label: 'HA服务',
+                  isConnected: homeState.nasOnline && homeState.haStatus == HaConnectionStatus.online && !homeState.isLoading,
+                  detail: _haStatusLabel(homeState)),
+                Divider(height: 1, color: Theme.of(context).dividerColor.withValues(alpha: 0.35)),
+                _buildStatusDot(label: 'AI服务', isConnected: false,
+                  detail: aiConfigured ? '待验证' : '未配置'),
+              ],
+            ),
+          )),
+        ]),
       ),
     );
   }
@@ -349,7 +301,7 @@ class HomeScreen extends ConsumerWidget {
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              style: const TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.w600),
             ),
           ],
         ),
@@ -393,7 +345,7 @@ class HomeScreen extends ConsumerWidget {
                 const SizedBox(width: 6),
                 TextButton(
                   onPressed: () => context.push('/alerts'),
-                  child: const Text('待处理详情 >', style: TextStyle(fontSize: 12)),
+                  child: const Text('待处理详情 >', style: TextStyle(fontSize: MomoTextSize.caption)),
                 ),
               ],
             ),
@@ -495,7 +447,7 @@ class HomeScreen extends ConsumerWidget {
                   Text(
                     '$count',
                     style: TextStyle(
-                      fontSize: 18,
+                      fontSize: MomoTextSize.section,
                       fontWeight: FontWeight.bold,
                       color: color,
                       height: 1.1,
@@ -505,7 +457,7 @@ class HomeScreen extends ConsumerWidget {
                   Text(
                     label,
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: MomoTextSize.caption,
                       color: theme.textTheme.bodySmall?.color,
                       fontWeight: FontWeight.w600,
                     ),
@@ -546,14 +498,14 @@ class HomeScreen extends ConsumerWidget {
                 const Spacer(),
                 TextButton(
                   onPressed: () => context.push('/shopping'),
-                  child: const Text('查看完整清单 >', style: TextStyle(fontSize: 12)),
+                  child: const Text('查看完整清单 >', style: TextStyle(fontSize: MomoTextSize.caption)),
                 ),
               ],
             ),
             const SizedBox(height: 8),
             shoppingAsync.when(
               loading: () => const LinearProgressIndicator(),
-              error: (e, _) => Text('加载采购失败: $e', style: const TextStyle(fontSize: 12)),
+              error: (e, _) => Text('加载采购失败: $e', style: const TextStyle(fontSize: MomoTextSize.caption)),
               data: (entries) {
                 final pending = entries.where((e) => !e.isCompleted).toList();
                 if (pending.isEmpty) {
@@ -593,13 +545,13 @@ class HomeScreen extends ConsumerWidget {
                               Expanded(
                                 child: Text(
                                   entry.itemName,
-                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                                  style: const TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.w500),
                                 ),
                               ),
                               Text(
                                 '需采购 ${entry.targetQuantity} 件',
                                 style: TextStyle(
-                                  fontSize: 12,
+                                  fontSize: MomoTextSize.caption,
                                   color: theme.textTheme.bodySmall?.color,
                                 ),
                               ),
@@ -611,7 +563,7 @@ class HomeScreen extends ConsumerWidget {
                         padding: const EdgeInsets.only(top: 6),
                         child: Text(
                           '等共计 ${pending.length} 项待采购...',
-                          style: TextStyle(fontSize: 11, color: palette.primary),
+                          style: TextStyle(fontSize: MomoTextSize.caption, color: palette.primary),
                         ),
                       ),
                   ],
@@ -667,7 +619,7 @@ class HomeScreen extends ConsumerWidget {
                 ),
                 TextButton(
                   onPressed: () => context.go('/smart-home'),
-                  child: const Text('进入家居页 >', style: TextStyle(fontSize: 12)),
+                  child: const Text('进入家居页 >', style: TextStyle(fontSize: MomoTextSize.caption)),
                 ),
               ],
             ),
@@ -699,7 +651,7 @@ class HomeScreen extends ConsumerWidget {
                         children: [
                           Text(scene.icon, style: const TextStyle(fontSize: 16)),
                           const SizedBox(width: 6),
-                          Text(scene.name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                          Text(scene.name, style: const TextStyle(fontSize: MomoTextSize.caption, fontWeight: FontWeight.bold)),
                         ],
                       ),
                     ),
@@ -734,14 +686,14 @@ class HomeScreen extends ConsumerWidget {
                             children: [
                               Text(
                                 device.name,
-                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                style: const TextStyle(fontSize: MomoTextSize.caption, fontWeight: FontWeight.bold),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
                               Text(
                                 isExecuting ? '控制请求进行中' :
                                     (unavailable ?? device.statusText),
-                                style: TextStyle(fontSize: 10, color: theme.textTheme.bodySmall?.color),
+                                style: TextStyle(fontSize: MomoTextSize.caption, color: theme.textTheme.bodySmall?.color),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -815,7 +767,7 @@ class HomeScreen extends ConsumerWidget {
                 ),
                 TextButton(
                   onPressed: () => ChoresSheet.show(context),
-                  child: const Text('管理/新增 >', style: TextStyle(fontSize: 12)),
+                  child: const Text('管理/新增 >', style: TextStyle(fontSize: MomoTextSize.caption)),
                 ),
               ],
             ),
@@ -827,7 +779,7 @@ class HomeScreen extends ConsumerWidget {
                   child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
                 ),
               ),
-              error: (err, _) => Text('周期数据加载异常：', style: const TextStyle(fontSize: 12)),
+              error: (err, _) => Text('周期数据加载异常：', style: const TextStyle(fontSize: MomoTextSize.caption)),
               data: (chores) {
                 if (chores.isEmpty) {
                   return InkWell(
@@ -842,7 +794,7 @@ class HomeScreen extends ConsumerWidget {
                           Expanded(
                             child: Text(
                               '设置常规定期家务（如换床单、洗浴巾、换滤芯）',
-                              style: TextStyle(fontSize: 13, color: palette.primary),
+                              style: TextStyle(fontSize: MomoTextSize.body, color: palette.primary),
                             ),
                           ),
                         ],
@@ -873,7 +825,7 @@ class HomeScreen extends ConsumerWidget {
                               child: Text(
                                 chore.title,
                                 style: TextStyle(
-                                  fontSize: 13,
+                                  fontSize: MomoTextSize.body,
                                   fontWeight: isDue ? FontWeight.bold : FontWeight.normal,
                                 ),
                                 maxLines: 1,
@@ -885,7 +837,7 @@ class HomeScreen extends ConsumerWidget {
                                   ? (days < 0 ? '逾期 ${-days} 天' : '今日待办')
                                   : '还有 $days 天',
                               style: TextStyle(
-                                fontSize: 12,
+                                fontSize: MomoTextSize.caption,
                                 color: isDue ? Colors.redAccent : theme.hintColor,
                                 fontWeight: isDue ? FontWeight.bold : FontWeight.normal,
                               ),
@@ -947,7 +899,7 @@ class HomeScreen extends ConsumerWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('调整首页模块显示顺序', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    const Text('调整首页模块显示顺序', style: TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.title)),
                     TextButton(
                       onPressed: () async {
                         await ref.read(settingsServiceProvider).setValue(homeSectionOrderKey, order.join(','));
@@ -959,7 +911,7 @@ class HomeScreen extends ConsumerWidget {
                 ),
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 4),
-                  child: Text('长按并拖拽右侧手柄调整顺序，保存后首页将实时更新。', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  child: Text('长按并拖拽右侧手柄调整顺序，保存后首页将实时更新。', style: TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey)),
                 ),
                 const SizedBox(height: 8),
                 ReorderableListView(
@@ -976,7 +928,7 @@ class HomeScreen extends ConsumerWidget {
                       ListTile(
                         key: ValueKey(key),
                         leading: Icon(moduleLabels[key]?.$2 ?? Icons.widgets_outlined),
-                        title: Text(moduleLabels[key]?.$1 ?? key, style: const TextStyle(fontSize: 14)),
+                        title: Text(moduleLabels[key]?.$1 ?? key, style: const TextStyle(fontSize: MomoTextSize.body)),
                         trailing: const Icon(Icons.drag_handle_rounded),
                       ),
                   ],

@@ -1,4 +1,3 @@
-import '../support/memory_settings_repository.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -8,10 +7,11 @@ import 'package:momo_box/application/ai_assistant_service.dart';
 import 'package:momo_box/data/repositories/mock_smart_home_repository.dart';
 import 'package:momo_box/domain/models/smart_home_models.dart';
 import 'package:momo_box/presentation/controllers/providers.dart';
-import 'package:momo_box/presentation/controllers/smart_home_controller.dart';
 import 'package:momo_box/presentation/screens/home_assistant_settings_screen.dart';
 import 'package:momo_box/presentation/screens/nas_settings_screen.dart';
 import 'package:momo_box/presentation/widgets/ai_assistant_dialog.dart';
+
+import '../support/memory_settings_repository.dart';
 
 void main() {
   testWidgets('洗衣液问题走真实服务入口，不再返回固定的两瓶库存', (tester) async {
@@ -25,18 +25,16 @@ void main() {
     expect(find.textContaining('批次 20260810'), findsNothing);
   });
 
-  testWidgets('设备、消耗和混合计划请求明确未执行', (tester) async {
+  testWidgets('操作请求进入真实 AI 服务，收到建议前不假报成功', (tester) async {
     final service = _ControlledAssistant();
     await _pumpAssistant(tester, service);
-    for (final question in ['打开电视', '吃了两片感冒药', '我要洗衣服']) {
-      await _ask(tester, question);
-      await tester.pumpAndSettle();
-    }
-    expect(service.questions, isEmpty);
-    expect(find.textContaining('未扣减库存或写入记录'), findsOneWidget);
-    expect(find.textContaining('未发送设备指令，也未扣减耗材'), findsWidgets);
-    expect(find.textContaining('变动记录已写入'), findsNothing);
-    expect(find.textContaining('计划执行完成'), findsNothing);
+    await _ask(tester, '打开电视');
+    expect(service.questions, ['打开电视']);
+    expect(find.textContaining('已完成：'), findsNothing);
+    service.reply.complete('{"reply":"需要先连接 NAS 并授权设备。","action":null}');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('需要先连接 NAS'), findsOneWidget);
+    expect(find.textContaining('已执行'), findsNothing);
   });
 
   for (final fail in [false, true]) {
@@ -153,6 +151,7 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(1000, 1100));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       final settings = MemorySettingsRepository();
+      settings.values['ai_assistant_context_consent_v2'] = 'true';
       addTearDown(settings.close);
       await tester.pumpWidget(ProviderScope(
         overrides: [
@@ -193,6 +192,7 @@ Future<void> _pumpAssistant(WidgetTester tester, _ControlledAssistant service) a
   await tester.binding.setSurfaceSize(const Size(1000, 1100));
   addTearDown(() => tester.binding.setSurfaceSize(null));
   final settings = MemorySettingsRepository();
+  settings.values['ai_assistant_context_consent_v2'] = 'true';
   addTearDown(settings.close);
   await tester.pumpWidget(ProviderScope(
     overrides: [

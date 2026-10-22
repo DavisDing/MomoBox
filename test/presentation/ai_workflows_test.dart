@@ -15,12 +15,14 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:momo_box/application/ai_assistant_service.dart';
 import 'package:momo_box/application/ai_conversation_store.dart';
+import 'package:momo_box/application/ai_draft_service.dart';
 import 'package:momo_box/application/ai_fallback_executor.dart';
 import 'package:momo_box/domain/models/ai_usage_models.dart';
 import 'package:momo_box/presentation/controllers/providers.dart';
 import 'package:momo_box/presentation/screens/ai_usage_screen.dart';
 import 'package:momo_box/presentation/screens/settings_screen.dart';
 import 'package:momo_box/presentation/widgets/ai_assistant_dialog.dart';
+import 'package:momo_box/presentation/widgets/intake_sheet.dart';
 
 import '../support/memory_settings_repository.dart';
 
@@ -37,8 +39,67 @@ class _PendingAssistant implements AiAssistantService {
 }
 
 void main() {
+  testWidgets('AI 入库填入可编辑草稿，取消不写入，修改后确认才入库并保存回执', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(430, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final settings = MemorySettingsRepository();
+    addTearDown(settings.close);
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final inventory = InventoryService(InventoryRepository(db));
+    final store = AiConversationStore(settings);
+    await store.load();
+    store.current.messages.add(ChatMessage(id: 'intake-proposal', role: 'assistant',
+      timestamp: DateTime.now(), content: jsonEncode({'action': {
+        'kind': 'intake', 'name': '牛奶', 'category': '食品生鲜',
+        'quantity': 2, 'expiryDate': '2027-01-01', 'location': '冰箱',
+      }})));
+    await tester.pumpWidget(ProviderScope(overrides: [
+      databaseProvider.overrideWithValue(db),
+      settingsRepositoryProvider.overrideWithValue(settings),
+      inventoryServiceProvider.overrideWithValue(inventory),
+      aiConversationStoreProvider.overrideWith((ref) => store),
+      aiInventoryActionServiceProvider.overrideWithValue(AiInventoryActionService(settings, inventory)),
+    ], child: const MaterialApp(home: Scaffold(body: AiAssistantDialog()))));
+    Future<void> flush() async {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+      await tester.pumpAndSettle();
+    }
+    await flush();
+    await tester.tap(find.text('查看并确认操作'));
+    await flush();
+    expect(find.byType(IntakeSheet), findsOneWidget);
+    expect(find.text('牛奶'), findsOneWidget);
+    await tester.runAsync(() async => expect(await inventory.watchInventory().first, isEmpty));
+    await tester.binding.handlePopRoute();
+    await flush();
+    expect(store.actionReceipts.containsKey('intake-proposal'), isFalse);
+    await tester.tap(find.text('查看并确认操作'));
+    await flush();
+    final name = find.byWidgetPredicate((widget) => widget is TextField &&
+      widget.decoration?.labelText == '物品名称 *');
+    await tester.enterText(name, '用户核对后的牛奶');
+    final sheetScroll = find.descendant(of: find.byType(IntakeSheet), matching: find.byType(Scrollable)).first;
+    await tester.scrollUntilVisible(find.text('确认入库'), 300, scrollable: sheetScroll);
+    await tester.tap(find.text('确认入库'));
+    await flush();
+    await tester.runAsync(() async {
+      final item = (await inventory.watchInventory().first).single;
+      expect(item.name, '用户核对后的牛奶');
+      expect(item.totalStock, 2);
+      expect(item.location, '冰箱');
+      expect(item.batches.single.expiryDate, DateTime(2027, 1, 1));
+    });
+    expect(store.actionReceipts['intake-proposal'], '已执行');
+    expect(find.text('已按你确认的草稿完成入库。'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await flush();
+  });
+
   testWidgets('关闭并重新打开弹窗保留在途回复和历史，无需新增会话', (tester) async {
     final settings = MemorySettingsRepository();
+    settings.values['ai_assistant_context_consent_v2'] = 'true';
     addTearDown(settings.close);
     final assistant = _PendingAssistant();
     await tester.pumpWidget(
@@ -130,6 +191,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(430, 950));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final settings = MemorySettingsRepository();
+    settings.values['ai_assistant_context_consent_v2'] = 'true';
     addTearDown(settings.close);
     settings.values[AiInventoryActionService.permissionKey] = 'true';
     final db = AppDatabase.forTesting(NativeDatabase.memory());
@@ -167,13 +229,13 @@ void main() {
     );
     await tester.pumpAndSettle();
     Future<void> openConfirmation() async {
-      await tester.tap(find.text('查看并确认库存操作'));
+      await tester.tap(find.text('查看并确认操作'));
       await tester.runAsync(
         () async =>
             await Future<void>.delayed(const Duration(milliseconds: 100)),
       );
       await tester.pumpAndSettle();
-      expect(find.text('确认库存变更'), findsOneWidget);
+      expect(find.text('确认操作'), findsOneWidget);
     }
 
     await openConfirmation();
@@ -202,9 +264,106 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  for (final fromEditor in [false, true]) {
+    testWidgets('${fromEditor ? '编辑弹窗' : '配置列表'}复制模型可取消，保存独立密钥并显式调整角色', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(600, 1100));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      FlutterSecureStorage.setMockInitialValues({
+        'ai_api_key_profile_source': 'source-test-secret',
+      });
+      final settings = MemorySettingsRepository();
+      addTearDown(settings.close);
+      final source = <String, dynamic>{
+        'id': 'source', 'name': '已配置服务', 'endpoint': 'https://configured.example/v1',
+        'model': 'configured-model', 'endpointType': 'responses',
+        AiDraftService.profileRoleKey: AiDraftService.primaryRole,
+      };
+      settings.values.addAll({
+        AiDraftService.profilesKey: jsonEncode([source]),
+        AiDraftService.activeProfileKey: 'source',
+        AiDraftService.endpointKey: source['endpoint'] as String,
+        AiDraftService.modelKey: source['model'] as String,
+        AiDraftService.endpointTypeKey: 'responses',
+      });
+      await tester.pumpWidget(ProviderScope(overrides: [
+        settingsRepositoryProvider.overrideWithValue(settings),
+      ], child: const MaterialApp(home: AiSettingsScreen())));
+      await tester.pumpAndSettle();
+      final before = Map<String, String>.of(settings.values);
+      final keysBefore = await const FlutterSecureStorage().readAll();
+
+      Future<void> openCopy() async {
+        if (fromEditor) {
+          await tester.tap(find.byTooltip('编辑配置'));
+          await tester.pumpAndSettle();
+          await tester.enterText(find.byType(TextField).at(0), '调整中的服务');
+          await tester.tap(find.text('复制为新配置'));
+        } else {
+          await tester.tap(find.byTooltip('配置操作'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('复制配置'));
+        }
+        await tester.pumpAndSettle();
+        expect(find.text('复制 AI 模型服务'), findsOneWidget);
+      }
+
+      await openCopy();
+      final fields = find.byType(TextField);
+      expect(tester.widget<TextField>(fields.at(0)).controller!.text,
+          fromEditor ? '调整中的服务 副本' : '已配置服务 副本');
+      expect(tester.widget<TextField>(fields.at(1)).controller!.text, source['endpoint']);
+      expect(tester.widget<TextField>(fields.at(2)).controller!.text, source['model']);
+      expect(tester.widget<TextField>(fields.at(3)).controller!.text, isEmpty);
+      final selectors = find.byType(DropdownButtonFormField<String>);
+      expect(tester.widget<DropdownButtonFormField<String>>(selectors.first).initialValue,
+          AiDraftService.standbyRole);
+      expect(tester.widget<DropdownButtonFormField<String>>(selectors.last).initialValue, 'responses');
+      expect(settings.values, before);
+      expect(await const FlutterSecureStorage().readAll(), keysBefore);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(settings.values, before);
+      expect(await const FlutterSecureStorage().readAll(), keysBefore);
+
+      await openCopy();
+      await tester.enterText(find.byType(TextField).at(0), '复制的副服务');
+      if (fromEditor) {
+        await tester.enterText(find.byType(TextField).at(3), 'copy-test-secret');
+      }
+      await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('副服务（主服务失败时调用）').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('确定'));
+      await tester.pumpAndSettle();
+
+      final profiles = (jsonDecode(settings.values[AiDraftService.profilesKey]!) as List)
+          .cast<Map<String, dynamic>>();
+      expect(profiles, hasLength(2));
+      expect(profiles.singleWhere((profile) => profile['id'] == 'source'), source);
+      final copy = profiles.singleWhere((profile) => profile['id'] != 'source');
+      expect(copy['name'], '复制的副服务');
+      expect(copy['endpoint'], source['endpoint']);
+      expect(copy['model'], source['model']);
+      expect(copy['endpointType'], 'responses');
+      expect(copy[AiDraftService.profileRoleKey], AiDraftService.secondaryRole);
+      expect(settings.values[AiDraftService.activeProfileKey], 'source');
+      expect(settings.values[AiDraftService.secondaryProfileIdKey], copy['id']);
+      final keys = await const FlutterSecureStorage().readAll();
+      expect(keys['ai_api_key_profile_source'], 'source-test-secret');
+      expect(keys['ai_api_key_profile_${copy['id']}'],
+          fromEditor ? 'copy-test-secret' : 'source-test-secret');
+      expect(settings.values.values.any((value) => value.contains('test-secret')), isFalse);
+      expect(copy.containsKey('_apiKeyDraft'), isFalse);
+      expect(copy.containsKey('apiKey'), isFalse);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('新增配置测试仅请求草稿服务，不保存配置或密钥', (tester) async {
     FlutterSecureStorage.setMockInitialValues({});
     final settings = MemorySettingsRepository();
+    settings.values['ai_assistant_context_consent_v2'] = 'true';
     addTearDown(settings.close);
     final requests = <http.Request>[];
     final executor = AiFallbackExecutor(

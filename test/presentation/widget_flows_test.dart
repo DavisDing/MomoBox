@@ -13,7 +13,6 @@ import 'package:momo_box/data/repositories/settings_repository.dart';
 import 'package:momo_box/domain/models/inventory_models.dart';
 import 'package:momo_box/domain/inventory/inventory_sorting.dart';
 import 'package:momo_box/presentation/controllers/providers.dart';
-import 'package:momo_box/presentation/controllers/smart_home_controller.dart';
 import 'package:momo_box/presentation/screens/alerts_screen.dart';
 import 'package:momo_box/presentation/screens/product_detail_screen.dart';
 import 'package:momo_box/presentation/screens/shopping_screen.dart';

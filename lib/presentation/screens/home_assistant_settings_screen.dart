@@ -1,3 +1,4 @@
+import '../../app/momo_typography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -192,16 +193,16 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Home Assistant 集成', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  const Text('Home Assistant 集成', style: TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.body)),
                   const SizedBox(height: 4),
-                  Text(status.description, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  Text(status.description, style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey)),
                   if (integration != null) ...[
                     const SizedBox(height: 6),
                     Text(
                       '${integration.name} · ${integration.baseUrl}',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12),
+                      style: const TextStyle(fontSize: MomoTextSize.caption),
                     ),
                   ],
                 ],
@@ -216,7 +217,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
               ),
               child: Text(
                 status.label,
-                style: TextStyle(fontSize: 11, color: status.color, fontWeight: FontWeight.bold),
+                style: TextStyle(fontSize: MomoTextSize.caption, color: status.color, fontWeight: FontWeight.bold),
               ),
             ),
           ],
@@ -263,7 +264,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
             Icon(isError ? Icons.error_outline_rounded : Icons.info_outline_rounded,
                 size: 20, color: isError ? Colors.red : Colors.blue),
             const SizedBox(width: 8),
-            Expanded(child: Text(text, style: const TextStyle(fontSize: 12, height: 1.4))),
+            Expanded(child: Text(text, style: const TextStyle(fontSize: MomoTextSize.caption, height: 1.4))),
           ],
         ),
       ),
@@ -280,11 +281,11 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('连接参数配置', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              const Text('连接参数配置', style: TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.body)),
               const SizedBox(height: 6),
               const Text(
                 '配置会保存到已连接的 NAS；令牌由 NAS 保管，页面不会回显已有令牌。',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
+                style: TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey),
               ),
               const SizedBox(height: 12),
               TextFormField(
@@ -390,15 +391,15 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
                 const Icon(Icons.checklist_rounded, size: 20),
                 const SizedBox(width: 8),
                 const Expanded(
-                  child: Text('实体权限与状态', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  child: Text('实体权限与状态', style: TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.body)),
                 ),
-                if (entities.isNotEmpty) Text('${entities.length} 个实体', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                if (entities.isNotEmpty) Text('${entities.length} 个实体', style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey)),
               ],
             ),
             const SizedBox(height: 6),
             const Text(
               '实体来自 NAS 的真实发现结果。权限开关只修改 NAS 侧白名单，不会直接向 Home Assistant 发送未授权服务调用。',
-              style: TextStyle(fontSize: 12, color: Colors.grey, height: 1.4),
+              style: TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey, height: 1.4),
             ),
             const Divider(height: 20),
             if (state.isLoading && entities.isEmpty)
@@ -435,10 +436,10 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
         tilePadding: const EdgeInsets.symmetric(horizontal: 12),
         childrenPadding: const EdgeInsets.only(left: 12, right: 12, bottom: 8),
         leading: Icon(_entityIcon(entity.domain), color: palette.primary),
-        title: Text(entity.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+        title: Text(entity.name, style: const TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.w600)),
         subtitle: Text(
           '${entity.entityId} · ${stale ? '状态可能过期' : _localizedEntityState(currentState)}',
-          style: TextStyle(fontSize: 11, color: stale || denied ? Colors.orange : Colors.grey),
+          style: TextStyle(fontSize: MomoTextSize.caption, color: stale || denied ? Colors.orange : Colors.grey),
         ),
         trailing: _permissionBadge(permission, denied),
         children: [
@@ -460,15 +461,15 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
               dense: true,
               contentPadding: EdgeInsets.zero,
               leading: Icon(Icons.lock_outline, size: 18),
-              title: Text('未返回此实体的权限记录', style: TextStyle(fontSize: 12)),
-              subtitle: Text('当前不会在客户端推断或扩大权限。', style: TextStyle(fontSize: 11)),
+              title: Text('未返回此实体的权限记录', style: TextStyle(fontSize: MomoTextSize.caption)),
+              subtitle: Text('当前不会在客户端推断或扩大权限。', style: TextStyle(fontSize: MomoTextSize.caption)),
             )
           else ...[
             SwitchListTile.adaptive(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              title: const Text('允许查看状态', style: TextStyle(fontSize: 12)),
-              subtitle: Text('角色：${permission.role}', style: const TextStyle(fontSize: 11)),
+              title: const Text('允许查看状态', style: TextStyle(fontSize: MomoTextSize.caption)),
+              subtitle: Text('角色：${permission.role}', style: const TextStyle(fontSize: MomoTextSize.caption)),
               value: permission.canView,
               activeThumbColor: palette.primary,
               onChanged: state.isLoading ? null : (value) => _updatePermission(permission, canView: value),
@@ -476,12 +477,12 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
             SwitchListTile.adaptive(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              title: const Text('允许控制实体', style: TextStyle(fontSize: 12)),
+              title: const Text('允许控制实体', style: TextStyle(fontSize: MomoTextSize.caption)),
               subtitle: Text(
                 permission.allowedCommands.isEmpty
                     ? '服务端未开放具体 typed command'
                     : '允许命令：${permission.allowedCommands.join('、')}',
-                style: const TextStyle(fontSize: 11),
+                style: const TextStyle(fontSize: MomoTextSize.caption),
               ),
               value: permission.canControl,
               activeThumbColor: palette.primary,
@@ -516,13 +517,13 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
         color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Text(label, style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.bold)),
+      child: Text(label, style: TextStyle(fontSize: MomoTextSize.caption, color: color, fontWeight: FontWeight.bold)),
     );
   }
 
   Widget _statusChip(String text) {
     return Chip(
-      label: Text(text, style: const TextStyle(fontSize: 10)),
+      label: Text(text, style: const TextStyle(fontSize: MomoTextSize.caption)),
       visualDensity: VisualDensity.compact,
       padding: EdgeInsets.zero,
     );
@@ -580,14 +581,14 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('安全与权限说明', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            Text('安全与权限说明', style: TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.body)),
             SizedBox(height: 6),
             Text(
               '• Home Assistant 长期访问令牌只提交给已登录的 NAS，并由 NAS 保存；本页面不会显示已保存的令牌。\n'
               '• 实体控制必须同时经过 NAS 权限和 typed command 白名单，客户端不会发送 raw service_data。\n'
               '• Home Assistant 离线、状态过期或权限不足时，页面会明确显示状态，不会伪造在线或执行成功。\n'
               '• 场景、脚本、洗衣机事件和库存自动扣减目前没有接入本页面。',
-              style: TextStyle(fontSize: 12, height: 1.5, color: Colors.grey),
+              style: TextStyle(fontSize: MomoTextSize.caption, height: 1.5, color: Colors.grey),
             ),
           ],
         ),
@@ -611,7 +612,7 @@ class _EmptyHint extends StatelessWidget {
         children: [
           Icon(icon, size: 20, color: Colors.grey),
           const SizedBox(width: 8),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 12, color: Colors.grey, height: 1.4))),
+          Expanded(child: Text(text, style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey, height: 1.4))),
         ],
       ),
     );

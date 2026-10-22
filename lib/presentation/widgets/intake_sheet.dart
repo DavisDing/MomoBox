@@ -1,3 +1,4 @@
+import '../../app/momo_typography.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -63,17 +64,21 @@ final _intakeDraft = _IntakeDraftMemory();
 
 class IntakeSheet extends ConsumerStatefulWidget {
   const IntakeSheet({
+    this.initialDraft,
     this.initialName,
     this.initialCategory,
     this.initialQuantity = 1,
+    this.beforeIntake,
     this.onIntakeSuccess,
     super.key,
   });
 
+  final IntakeDraft? initialDraft;
   final String? initialName;
   final String? initialCategory;
   final int initialQuantity;
-  final void Function(String productId)? onIntakeSuccess;
+  final Future<void> Function()? beforeIntake;
+  final FutureOr<void> Function(String productId)? onIntakeSuccess;
 
   @override
   ConsumerState<IntakeSheet> createState() => _IntakeSheetState();
@@ -116,12 +121,28 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
   @override
   void initState() {
     super.initState();
-    final restoreDraft = widget.initialName == null &&
+    final restoreDraft = widget.initialDraft == null && widget.initialName == null &&
         widget.initialCategory == null && _intakeDraft.hasContent;
     _mediaDraftId = restoreDraft
         ? (_intakeDraft.mediaDraftId ?? const Uuid().v4())
         : const Uuid().v4();
-    if (widget.initialName != null || widget.initialCategory != null) {
+    final aiDraft = widget.initialDraft;
+    if (aiDraft != null) {
+      _name.text = aiDraft.name;
+      _quantity.text = '${aiDraft.quantity}';
+      _category = _categories.contains(aiDraft.category) ? aiDraft.category : '其他物品';
+      _brand.text = aiDraft.brand ?? '';
+      _specification.text = aiDraft.specification ?? '';
+      _barcode.text = aiDraft.barcode ?? '';
+      _location.text = aiDraft.location ?? '';
+      _batchNo.text = aiDraft.batchNo ?? '';
+      _threshold.text = '${aiDraft.lowStockThreshold}';
+      _shelfLife.text = aiDraft.shelfLifeAmount?.toString() ?? '';
+      _shelfLifeUnit = aiDraft.shelfLifeUnit;
+      _productionDate = aiDraft.productionDate;
+      _expiryDate = aiDraft.expiryDate;
+      _dateSource = aiDraft.dateSource;
+    } else if (widget.initialName != null || widget.initialCategory != null) {
       _name.text = widget.initialName ?? '';
       _quantity.text = widget.initialQuantity.toString();
       if (widget.initialCategory != null && widget.initialCategory!.isNotEmpty) {
@@ -150,7 +171,9 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
   }
 
   void _saveDraft() {
-    if (_intakeCompleted) return;
+    // Assistant drafts remain in their proposal; do not overwrite a separate
+    // manual draft when opening, cancelling or completing one from chat.
+    if (_intakeCompleted || widget.initialDraft != null) return;
     // Keep the media identity even when the draft contains only photos/OCR.
     _intakeDraft.mediaDraftId = _mediaDraftId;
     _intakeDraft.name = _name.text;
@@ -435,6 +458,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
   }
 
   Future<void> _submit() async {
+    if (_saving || _intakeCompleted) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
     setState(() => _saving = true);
     try {
@@ -463,7 +487,18 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
         if (!mounted || decision.choice == _MatchChoice.cancel) return;
         if (decision.choice == _MatchChoice.merge) mergeProductId = decision.candidate!.id;
       }
+      if (!mounted) return;
+      await widget.beforeIntake?.call();
       final productId = await service.intake(draft, mergeProductId: mergeProductId);
+      _intakeCompleted = true;
+      if (widget.initialDraft == null) _intakeDraft.clear();
+      // Record committed intake even if the sheet was closed while SQLite ran.
+      String? receiptWarning;
+      try {
+        await widget.onIntakeSuccess?.call(productId);
+      } catch (_) {
+        receiptWarning = '库存已入库，但后续记录保存失败，请核实结果后再操作。';
+      }
       String? mediaWarning;
       try {
         await ref.read(mediaServiceProvider).reassignIntakeAssets(
@@ -474,12 +509,11 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
         mediaWarning = '库存已入库，但图片关联失败：$error。可稍后在设置中清理媒体缓存。';
       }
       if (!mounted) return;
-      _intakeCompleted = true;
-      _intakeDraft.clear();
-      widget.onIntakeSuccess?.call(productId);
+      final warnings = [if (receiptWarning != null) receiptWarning,
+        if (mediaWarning != null) mediaWarning].join('\n');
       Navigator.of(context).pop();
       showAppSnackBar(context,
-        SnackBar(content: Text(mediaWarning ?? '已入库。')),
+        SnackBar(content: Text(warnings.isEmpty ? '已入库。' : warnings)),
       );
     } catch (error) {
       if (!mounted) return;
@@ -706,9 +740,9 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
-                      onPressed: _saving ? null : _submit,
+                      onPressed: _saving || _intakeCompleted ? null : _submit,
                       icon: _saving ? const SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.inventory_2),
-                      label: Text(_saving ? '正在保存…' : '确认入库'),
+                      label: Text(_intakeCompleted ? '已入库' : _saving ? '正在保存…' : '确认入库'),
                     ),
                   ),
                 ],
@@ -788,7 +822,7 @@ class _MediaDraftSection extends StatelessWidget {
                                 child: Image.file(File(asset.localPath), fit: BoxFit.cover, errorBuilder: (_, __, ___) => ColoredBox(color: Theme.of(context).colorScheme.surfaceContainerHighest, child: const Icon(Icons.broken_image_outlined))),
                               ),
                             ),
-                            Positioned(left: 4, bottom: 4, child: DecoratedBox(decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)), child: Padding(padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2), child: Text(asset.type.label, style: const TextStyle(color: Colors.white, fontSize: 10))))),
+                            Positioned(left: 4, bottom: 4, child: DecoratedBox(decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)), child: Padding(padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2), child: Text(asset.type.label, style: const TextStyle(color: Colors.white, fontSize: MomoTextSize.caption))))),
                             Positioned(right: 0, top: 0, child: IconButton(style: IconButton.styleFrom(backgroundColor: Colors.black54, foregroundColor: Colors.white), iconSize: 16, onPressed: () => onDelete(asset), icon: const Icon(Icons.close))),
                             if (asset.hasOcrText) const Positioned(left: 5, top: 5, child: Icon(Icons.text_snippet, size: 18, color: Colors.white)),
                           ],
@@ -998,7 +1032,7 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen>
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: const Text('扫描商品条码', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600)),
+        title: const Text('扫描商品条码', style: TextStyle(color: Colors.white, fontSize: MomoTextSize.section, fontWeight: FontWeight.w600)),
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         elevation: 0,
@@ -1053,12 +1087,12 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen>
                                 const SizedBox(height: 14),
                                 const Text(
                                   '无法访问实时摄像头',
-                                  style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+                                  style: TextStyle(color: Colors.white, fontSize: MomoTextSize.section, fontWeight: FontWeight.bold),
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
                                   statusText,
-                                  style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 13, height: 1.4),
+                                  style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: MomoTextSize.body, height: 1.4),
                                   textAlign: TextAlign.center,
                                 ),
                                 const SizedBox(height: 20),
@@ -1141,7 +1175,7 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen>
                             children: [
                               CircularProgressIndicator(color: Colors.white),
                               SizedBox(height: 14),
-                              Text('正在解析条码…', style: TextStyle(color: Colors.white, fontSize: 14)),
+                              Text('正在解析条码…', style: TextStyle(color: Colors.white, fontSize: MomoTextSize.body)),
                             ],
                           ),
                         ),
@@ -1169,7 +1203,7 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen>
                           SizedBox(width: 6),
                           Text(
                             '对准条码自动识别',
-                            style: TextStyle(color: Colors.white, fontSize: 12),
+                            style: TextStyle(color: Colors.white, fontSize: MomoTextSize.caption),
                           ),
                         ],
                       ),
@@ -1193,7 +1227,7 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen>
                           SizedBox(width: 6),
                           Text(
                             '拍照识别',
-                            style: TextStyle(color: Colors.white, fontSize: 12),
+                            style: TextStyle(color: Colors.white, fontSize: MomoTextSize.caption),
                           ),
                         ],
                       ),

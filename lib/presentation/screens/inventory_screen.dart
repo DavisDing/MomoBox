@@ -1,3 +1,4 @@
+import '../../app/momo_typography.dart';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -53,7 +54,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('嬷嬷的小箱子', maxLines: 1, overflow: TextOverflow.ellipsis),
-                    Text('单机模式 · 本地 SQLite', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal)),
+                    Text('单机模式 · 本地 SQLite', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: MomoTextSize.caption, fontWeight: FontWeight.normal)),
                   ],
                 ),
               ),
@@ -74,7 +75,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('嬷嬷的小箱子', maxLines: 1, overflow: TextOverflow.ellipsis),
-                    Text('单机模式 · 本地 SQLite', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal)),
+                    Text('单机模式 · 本地 SQLite', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: MomoTextSize.caption, fontWeight: FontWeight.normal)),
                   ],
                 ),
               ),
@@ -102,6 +103,13 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
           return matchesQuery && matchesCategory && matchesAnomaly;
         }).toList();
         final sorted = sortInventoryItems(filtered, _sortOption);
+        final textScaler = MediaQuery.textScalerOf(context);
+        final searchHeight = 40.0 +
+            (textScaler.scale(MomoTextSize.body) - MomoTextSize.body)
+                .clamp(0.0, double.infinity) * 1.5;
+        final filterHeight = 48.0 +
+            (textScaler.scale(MomoTextSize.caption) - MomoTextSize.caption)
+                .clamp(0.0, double.infinity) * 1.4;
 
         return GestureDetector(
           behavior: HitTestBehavior.translucent,
@@ -121,11 +129,12 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                 SliverAppBar(
                   floating: true,
                   snap: true,
+                  toolbarHeight: searchHeight + 16,
                   titleSpacing: 16,
                   elevation: 0,
                   title: _searchExpanded
                       ? Container(
-                          height: 40,
+                          height: searchHeight,
                           decoration: BoxDecoration(
                             color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.85),
                             borderRadius: BorderRadius.circular(20),
@@ -136,11 +145,11 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                           child: TextField(
                             controller: _searchController,
                             focusNode: _searchFocusNode,
-                            style: const TextStyle(fontSize: 14),
+                            style: const TextStyle(fontSize: MomoTextSize.body),
                             decoration: InputDecoration(
                               isDense: true,
                               hintText: '搜索名称、品牌、位置或条码',
-                              hintStyle: TextStyle(fontSize: 13, color: Theme.of(context).hintColor),
+                              hintStyle: TextStyle(fontSize: MomoTextSize.body, color: Theme.of(context).hintColor),
                               prefixIcon: const Icon(Icons.search, size: 20),
                               suffixIcon: IconButton(
                                 icon: const Icon(Icons.clear, size: 18),
@@ -169,8 +178,8 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('嬷嬷的小箱子', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
-                                  Text('单机模式 · 本地 SQLite', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, fontWeight: FontWeight.normal)),
+                                  Text('嬷嬷的小箱子', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.section)),
+                                  Text('单机模式 · 本地 SQLite', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: MomoTextSize.caption, fontWeight: FontWeight.normal)),
                                 ],
                               ),
                             ),
@@ -234,7 +243,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                                     padding: const EdgeInsets.only(right: 6),
                                     child: ChoiceChip(
                                       visualDensity: VisualDensity.compact,
-                                      label: Text(cat, style: const TextStyle(fontSize: 12)),
+                                      label: Text(cat, style: const TextStyle(fontSize: MomoTextSize.caption)),
                                       selected: _category == cat,
                                       onSelected: (_) => setState(() => _category = cat),
                                     ),
@@ -246,7 +255,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                         ),
                       ),
                     ),
-                    height: 48,
+                    height: filterHeight,
                   ),
                 ),
                 if (sorted.isEmpty)
@@ -350,7 +359,7 @@ class _SortSelector extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     // Match the menu to the trigger, including the user's font scaling.
-    const labelStyle = TextStyle(fontSize: 12, fontWeight: FontWeight.w500);
+    const labelStyle = TextStyle(fontSize: MomoTextSize.caption, fontWeight: FontWeight.w500);
     final painter = TextPainter(
       text: TextSpan(text: current.label, style: DefaultTextStyle.of(context).style.merge(labelStyle)),
       textDirection: Directionality.of(context),
@@ -384,7 +393,7 @@ class _SortSelector extends StatelessWidget {
                     child: Text(
                       option.label,
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: MomoTextSize.caption,
                         fontWeight: option == current ? FontWeight.w600 : FontWeight.normal,
                         color: option == current ? theme.colorScheme.primary : null,
                       ),
@@ -410,7 +419,7 @@ class _SortSelector extends StatelessWidget {
             const SizedBox(width: 4),
             Text(
               current.label,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+              style: const TextStyle(fontSize: MomoTextSize.caption, fontWeight: FontWeight.w500),
             ),
           ],
         ),
@@ -474,7 +483,7 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
                           color: Theme.of(context).colorScheme.secondaryContainer,
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: Text(_categoryEmoji(item.category), style: const TextStyle(fontSize: 24)),
+                        child: Text(_categoryEmoji(item.category), style: const TextStyle(fontSize: MomoTextSize.page)),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -489,7 +498,7 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
                             ),
                             if (item.isLowStock) ...[
                               const SizedBox(height: 5),
-                              const Text('库存偏低', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 12)),
+                              const Text('库存偏低', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: MomoTextSize.caption)),
                             ],
                           ],
                         ),
@@ -530,7 +539,7 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
                                   Text(
                                     '消耗',
                                     style: TextStyle(
-                                      fontSize: 11,
+                                      fontSize: MomoTextSize.caption,
                                       fontWeight: FontWeight.w600,
                                       color: canConsume ? Theme.of(context).colorScheme.primary : Theme.of(context).disabledColor,
                                     ),
@@ -595,8 +604,8 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('消耗物品', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-                    Text(item.name, style: TextStyle(fontSize: 13, color: Theme.of(context).hintColor), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text('消耗物品', style: const TextStyle(fontSize: MomoTextSize.section, fontWeight: FontWeight.bold)),
+                    Text(item.name, style: TextStyle(fontSize: MomoTextSize.body, color: Theme.of(context).hintColor), maxLines: 1, overflow: TextOverflow.ellipsis),
                   ],
                 ),
               ),
@@ -615,13 +624,13 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('当前可用库存：', style: TextStyle(fontSize: 13)),
-                    Text('$maxAvailable ${item.unit}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    const Text('当前可用库存：', style: TextStyle(fontSize: MomoTextSize.body)),
+                    Text('$maxAvailable ${item.unit}', style: const TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.bold)),
                   ],
                 ),
               ),
               const SizedBox(height: 16),
-              const Text('消耗数量', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+              const Text('消耗数量', style: TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               Row(
                 children: [
@@ -644,7 +653,7 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
                       controller: controller,
                       keyboardType: TextInputType.number,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      style: const TextStyle(fontSize: MomoTextSize.title, fontWeight: FontWeight.bold),
                       decoration: InputDecoration(
                         isDense: true,
                         contentPadding: const EdgeInsets.symmetric(vertical: 10),
@@ -683,7 +692,7 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
               const SizedBox(height: 12),
               Text(
                 '系统将优先扣减最早到期的批次。',
-                style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
+                style: TextStyle(fontSize: MomoTextSize.caption, color: Theme.of(context).hintColor),
               ),
             ],
           ),

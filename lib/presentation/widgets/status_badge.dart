@@ -1,3 +1,4 @@
+import '../../app/momo_typography.dart';
 import 'package:flutter/material.dart';
 
 import '../../domain/inventory/expiry_rules.dart';
@@ -24,7 +25,7 @@ class StatusBadge extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 12),
+        style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: MomoTextSize.caption),
       ),
     );
   }

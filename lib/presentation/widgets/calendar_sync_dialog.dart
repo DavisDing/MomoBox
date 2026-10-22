@@ -1,3 +1,4 @@
+import '../../app/momo_typography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app_feedback.dart';
@@ -38,7 +39,7 @@ class _CalendarSyncDialogState extends ConsumerState<CalendarSyncDialog> {
         children: [
           Icon(Icons.calendar_month_rounded, color: palette.primary, size: 24),
           const SizedBox(width: 8),
-          const Text('同步提醒到日历', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const Text('同步提醒到日历', style: TextStyle(fontSize: MomoTextSize.section, fontWeight: FontWeight.bold)),
         ],
       ),
       content: SingleChildScrollView(
@@ -48,12 +49,12 @@ class _CalendarSyncDialogState extends ConsumerState<CalendarSyncDialog> {
           children: [
             Text(
               '生成标准日历日程 (.ics)，一键导入系统自带日历。支持在桌面与锁屏日程中实时掌握家中物品与家务状态。',
-              style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurfaceVariant),
+              style: TextStyle(fontSize: MomoTextSize.body, color: theme.colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: 16),
             const Text(
               '选择时间范围：',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Wrap(
@@ -68,7 +69,7 @@ class _CalendarSyncDialogState extends ConsumerState<CalendarSyncDialog> {
             const SizedBox(height: 16),
             const Text(
               '选择同步内容：',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 4),
             CheckboxListTile(
@@ -131,7 +132,7 @@ class _CalendarSyncDialogState extends ConsumerState<CalendarSyncDialog> {
     final palette = MomoPalette.fromStoredValue(ref.read(themeNameProvider).valueOrNull);
     final isSelected = _range == range;
     return ChoiceChip(
-      label: Text(range.label, style: const TextStyle(fontSize: 12)),
+      label: Text(range.label, style: const TextStyle(fontSize: MomoTextSize.caption)),
       selected: isSelected,
       selectedColor: palette.primary.withValues(alpha: 0.2),
       onSelected: (selected) {

@@ -1,3 +1,4 @@
+import '../../app/momo_typography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app_feedback.dart';
@@ -61,7 +62,7 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                   const SizedBox(width: 8),
                   const Text(
                     '周期循环提醒',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    style: TextStyle(fontSize: MomoTextSize.section, fontWeight: FontWeight.bold),
                   ),
                   const Spacer(),
                   IconButton(
@@ -109,7 +110,7 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: FilterChip(
-                      label: Text(cat, style: const TextStyle(fontSize: 12)),
+                      label: Text(cat, style: const TextStyle(fontSize: MomoTextSize.caption)),
                       selected: isSelected,
                       visualDensity: VisualDensity.compact,
                       selectedColor: palette.primary.withValues(alpha: 0.18),
@@ -201,7 +202,7 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                                       child: Text(
                                         item.category,
                                         style: TextStyle(
-                                          fontSize: 11,
+                                          fontSize: MomoTextSize.caption,
                                           fontWeight: FontWeight.bold,
                                           color: palette.primary,
                                         ),
@@ -212,7 +213,7 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                                       child: Text(
                                         item.title,
                                         style: TextStyle(
-                                          fontSize: 15,
+                                          fontSize: MomoTextSize.title,
                                           fontWeight: FontWeight.bold,
                                           decoration: item.isEnabled ? null : TextDecoration.lineThrough,
                                           color: item.isEnabled ? null : Colors.grey,
@@ -226,7 +227,7 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                                         padding: const EdgeInsets.symmetric(horizontal: 10),
                                       ),
                                       icon: const Icon(Icons.check, size: 16),
-                                      label: const Text('已完成', style: TextStyle(fontSize: 12)),
+                                      label: const Text('已完成', style: TextStyle(fontSize: MomoTextSize.caption)),
                                       onPressed: () async {
                                         await ref.read(choreServiceProvider).completeChore(item.id);
                                         if (context.mounted) {
@@ -295,7 +296,7 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                                     const SizedBox(width: 4),
                                     Text(
                                       '频率：${item.repeatDescription}',
-                                      style: TextStyle(fontSize: 12, color: theme.hintColor),
+                                      style: TextStyle(fontSize: MomoTextSize.caption, color: theme.hintColor),
                                     ),
                                     const Spacer(),
                                     Text(
@@ -303,7 +304,7 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                                           ? (days < 0 ? '已逾期 ${-days} 天' : '今日待办')
                                           : '还有 $days 天到期',
                                       style: TextStyle(
-                                        fontSize: 12,
+                                        fontSize: MomoTextSize.caption,
                                         fontWeight: FontWeight.bold,
                                         color: isDue ? Colors.redAccent : palette.primary,
                                       ),
@@ -314,7 +315,7 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                                   const SizedBox(height: 4),
                                   Text(
                                     item.notes!,
-                                    style: TextStyle(fontSize: 12, color: theme.hintColor),
+                                    style: TextStyle(fontSize: MomoTextSize.caption, color: theme.hintColor),
                                   ),
                                 ],
                               ],
@@ -378,7 +379,7 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
         builder: (context, setDialogState) => AlertDialog(
           title: Text(
             isEditing ? '编辑周期提醒' : '添加周期提醒',
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+            style: const TextStyle(fontSize: MomoTextSize.section, fontWeight: FontWeight.bold),
           ),
           content: SingleChildScrollView(
             child: Column(
@@ -458,7 +459,7 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                     ),
                     child: Text(
                       '${nextDueDate.year}-${nextDueDate.month.toString().padLeft(2, "0")}-${nextDueDate.day.toString().padLeft(2, "0")}',
-                      style: const TextStyle(fontSize: 14),
+                      style: const TextStyle(fontSize: MomoTextSize.body),
                     ),
                   ),
                 ),

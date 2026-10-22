@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -6,8 +7,8 @@ import 'package:uuid/uuid.dart';
 import '../../data/nas/nas_api_error.dart';
 import '../../data/repositories/nas_smart_home_repository.dart';
 import '../../domain/models/nas_homeassistant_models.dart';
+import '../../domain/models/ai_action.dart';
 import '../../domain/models/smart_home_models.dart';
-import '../controllers/providers.dart';
 
 const _unset = Object();
 
@@ -132,13 +133,6 @@ class SmartHomeState {
     );
   }
 }
-
-final nasSmartHomeRepositoryProvider = Provider<NasSmartHomeRepository>((ref) {
-  final connection = ref.watch(nasConnectionProvider);
-  final repository = NasSmartHomeRepository.fromBaseUrl(connection.serverUrl);
-  ref.onDispose(repository.close);
-  return repository;
-});
 
 class SmartHomeController extends StateNotifier<SmartHomeState> {
   SmartHomeController(
@@ -703,6 +697,87 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
         command: turnOn ? NasHaCommand.turnOn : NasHaCommand.turnOff,
       );
 
+  Future<String> assistantContext() async {
+    await refresh();
+    return '【当前已授权设备；只能使用列出的命令】\n${jsonEncode([
+      for (final device in state.devices)
+        {
+          'id': device.id, 'name': device.name, 'room': device.room,
+          'state': device.statusText,
+          'commands': [
+            for (final command in NasHaCommand.values)
+              if (AiInventoryAction.deviceCommands.contains(nasHaCommandValue(command)) &&
+                  commandUnavailableReason(device.id, command: command) == null)
+                nasHaCommandValue(command),
+          ],
+          'hvacModes': _entityFor(device.id)?.hvacModes,
+          'temperatureMin': _entityFor(device.id)?.temperatureMin,
+          'temperatureMax': _entityFor(device.id)?.temperatureMax,
+        },
+    ])}';
+  }
+
+  ({NasHaCommand command, NasHaCommandParameters? parameters, String description})
+      _assistantCommand(AiInventoryAction action) {
+    final command = NasHaCommand.values.firstWhere(
+      (value) => nasHaCommandValue(value) == action.string('command') &&
+          AiInventoryAction.deviceCommands.contains(nasHaCommandValue(value)),
+      orElse: () => throw StateError('不支持该设备命令。'),
+    );
+    final unavailable = commandUnavailableReason(action.id, command: command);
+    if (unavailable != null) throw StateError(unavailable);
+    final entity = _entityFor(action.id)!;
+    final value = action.arguments['value'];
+    NasHaCommandParameters? parameters;
+    switch (command) {
+      case NasHaCommand.setBrightness:
+        if (value is! int || value < 0 || value > 100) throw StateError('亮度应为 0～100。');
+        parameters = NasHaBrightnessParameters(value);
+      case NasHaCommand.setTemperature:
+        if (value is! num || !value.isFinite || value < (entity.temperatureMin ?? 16) ||
+            value > (entity.temperatureMax ?? 30)) throw StateError('温度超出设备支持范围。');
+        parameters = NasHaTemperatureParameters(value.toDouble());
+      case NasHaCommand.setHvacMode:
+        if (value is! String || !entity.hvacModes.contains(value)) throw StateError('设备不支持该模式。');
+        parameters = NasHaHvacModeParameters(value);
+      default:
+        break;
+    }
+    const labels = {'turn_on': '打开', 'turn_off': '关闭', 'set_brightness': '设置亮度',
+      'set_temperature': '设置温度', 'set_hvac_mode': '设置空调模式', 'play': '播放', 'pause': '暂停'};
+    return (command: command, parameters: parameters,
+      description: '${labels[nasHaCommandValue(command)]}「${entity.name}」'
+        '（${entity.areaName ?? '未指定房间'} / ${entity.entityId}）'
+        '${value == null ? '' : '：$value'}。\n当前状态：${state.entityStates[action.id]?.state}。');
+  }
+
+  Future<String> describeAssistantCommand(AiInventoryAction action) async =>
+      _assistantCommand(action).description;
+
+  Future<void> executeAssistantCommand(AiInventoryAction action) async {
+    final prepared = _assistantCommand(action);
+    await _sendCommandForDevice(action.id, prepared.command, parameters: prepared.parameters);
+    if (!mounted) throw StateError('设备连接已变化，请核实设备状态。');
+    if (state.commandError != null) throw StateError(state.commandError!);
+    if (state.staleEntityIds.contains(action.id)) throw StateError('命令已接受，设备状态仍待核实。');
+    final remote = state.entityStates[action.id];
+    final value = action.arguments['value'];
+    final reachedTarget = switch (prepared.command) {
+      NasHaCommand.turnOn => remote?.state == 'on' ||
+          (remote != null && !{'off', 'unknown', 'unavailable'}.contains(remote.state)),
+      NasHaCommand.turnOff => remote?.state == 'off',
+      NasHaCommand.play => remote?.state == 'playing',
+      NasHaCommand.pause => remote?.state == 'paused',
+      NasHaCommand.setHvacMode => remote?.state == value || remote?.attributes['hvac_mode'] == value,
+      NasHaCommand.setTemperature => remote?.attributes['temperature'] == value,
+      NasHaCommand.setBrightness => remote?.attributes['brightness_pct'] == value ||
+          (remote?.attributes['brightness'] is num && value is int &&
+           (((remote!.attributes['brightness'] as num) * 100 / 255).round() - value).abs() <= 1),
+      _ => false,
+    };
+    if (!reachedTarget) throw StateError('命令已接受，设备尚未返回目标状态，请核实后再操作。');
+  }
+
   /// Set an explicit target instead of assuming that every HA power entity
   /// supports toggle. A stale UI callback cannot invert the device twice.
   Future<void> setDevicePower(String id, bool turnOn) => _sendCommandForDevice(
@@ -1093,15 +1168,3 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
     state = state.copyWith(haStatus: status);
   }
 }
-
-final smartHomeControllerProvider =
-    StateNotifierProvider<SmartHomeController, SmartHomeState>((ref) {
-  final connection = ref.watch(nasConnectionProvider);
-  return SmartHomeController(
-    ref.watch(nasSmartHomeRepositoryProvider),
-    nasAddress: connection.serverUrl,
-    role: ref.watch(nasAccountProvider.select(
-      (account) => account.family.current?.membership.role,
-    )),
-  );
-});

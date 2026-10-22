@@ -1,3 +1,4 @@
+import '../../app/momo_typography.dart';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -237,7 +238,7 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
                           style: TextStyle(
                             color: palette.primary,
                             fontWeight: FontWeight.bold,
-                            fontSize: 14,
+                            fontSize: MomoTextSize.body,
                           ),
                         ),
                       ),
@@ -266,7 +267,7 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
                   child: NavigationBar(
                     backgroundColor: Colors.transparent,
                     elevation: 0,
-                    height: 64,
+                    height: 64.0 + (MediaQuery.textScalerOf(context).scale(MomoTextSize.caption) - MomoTextSize.caption).clamp(0.0, 60.0).toDouble() * 2,
                     labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
                     selectedIndex: currentIndex,
                     onDestinationSelected: (index) {

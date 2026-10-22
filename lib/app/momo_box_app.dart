@@ -17,6 +17,7 @@ import '../presentation/screens/statistics_screen.dart';
 import '../presentation/widgets/app_scaffold.dart';
 import '../presentation/widgets/app_back_guard.dart';
 import 'momo_theme.dart';
+import 'momo_typography.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
@@ -165,7 +166,7 @@ class _MomoBoxAppState extends ConsumerState<MomoBoxApp> {
         final media = MediaQuery.of(context);
         return MediaQuery(
           data: media.copyWith(
-            textScaler: TextScaler.linear(fontScale),
+            textScaler: MomoTextScaler(media.textScaler, fontScale),
           ),
           child: child ?? const SizedBox.shrink(),
         );

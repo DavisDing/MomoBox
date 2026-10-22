@@ -1,3 +1,4 @@
+import '../../app/momo_typography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -438,13 +439,13 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('NAS 协同服务', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  const Text('NAS 协同服务', style: TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.title)),
                   const SizedBox(height: 4),
                   Text(
                     state.serverUrl.isEmpty ? '配置服务地址后进行真实健康检查' : state.serverUrl,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey),
                   ),
                 ],
               ),
@@ -457,7 +458,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
               ),
               child: Text(
                 _statusTitle(state),
-                style: TextStyle(fontSize: 12, color: statusColor, fontWeight: FontWeight.bold),
+                style: TextStyle(fontSize: MomoTextSize.caption, color: statusColor, fontWeight: FontWeight.bold),
               ),
             ),
           ],
@@ -478,7 +479,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('NAS 服务端配置', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+            const Text('NAS 服务端配置', style: TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.body)),
             const SizedBox(height: 12),
             TextField(
               controller: _serverUrlController,
@@ -506,16 +507,16 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
             const SizedBox(height: 8),
             SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
-              title: const Text('局域网自动双向同步', style: TextStyle(fontSize: 14)),
-              subtitle: const Text('保存偏好；具体同步由 NAS 账户与同步协议状态决定', style: TextStyle(fontSize: 12)),
+              title: const Text('局域网自动双向同步', style: TextStyle(fontSize: MomoTextSize.body)),
+              subtitle: const Text('保存偏好；具体同步由 NAS 账户与同步协议状态决定', style: TextStyle(fontSize: MomoTextSize.caption)),
               value: _autoSync,
               activeTrackColor: palette.primary,
               onChanged: (v) => setState(() => _autoSync = v),
             ),
             SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
-              title: const Text('同步物资照片与包装原图', style: TextStyle(fontSize: 14)),
-              subtitle: const Text('保存偏好；服务端未开放媒体同步时不会上传', style: TextStyle(fontSize: 12)),
+              title: const Text('同步物资照片与包装原图', style: TextStyle(fontSize: MomoTextSize.body)),
+              subtitle: const Text('保存偏好；服务端未开放媒体同步时不会上传', style: TextStyle(fontSize: MomoTextSize.caption)),
               value: _syncImages,
               activeTrackColor: palette.primary,
               onChanged: (v) => setState(() => _syncImages = v),
@@ -534,7 +535,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
             ),
             if (state.message != null) ...[
               const SizedBox(height: 8),
-              Text(state.message!, style: TextStyle(fontSize: 12, color: _statusColor(context, state.status))),
+              Text(state.message!, style: TextStyle(fontSize: MomoTextSize.caption, color: _statusColor(context, state.status))),
             ],
           ],
         ),
@@ -563,16 +564,16 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
           children: [
             Row(
               children: [
-                const Expanded(child: Text('NAS 账号', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14))),
+                const Expanded(child: Text('NAS 账号', style: TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.body))),
                 if (isBusy) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
               ],
             ),
             const SizedBox(height: 8),
             if (!canUseAccount)
-              const Text('请先测试并保存可用的 NAS 地址，再登录或注册账号。', style: TextStyle(fontSize: 12))
+              const Text('请先测试并保存可用的 NAS 地址，再登录或注册账号。', style: TextStyle(fontSize: MomoTextSize.caption))
             else if (auth.isAuthenticated) ...[
               Text(auth.user?.nickname ?? '已登录', style: const TextStyle(fontWeight: FontWeight.bold)),
-              if (auth.user?.email != null) Text(auth.user!.email, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              if (auth.user?.email != null) Text(auth.user!.email, style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey)),
               const SizedBox(height: 10),
               Row(
                 children: [
@@ -592,7 +593,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
             ] else ...[
               Text(
                 auth.status == NasAuthStatus.error ? '登录状态异常，请重试或检查 NAS 服务。' : '未登录 NAS 账号。',
-                style: const TextStyle(fontSize: 12),
+                style: const TextStyle(fontSize: MomoTextSize.caption),
               ),
               const SizedBox(height: 10),
               Wrap(
@@ -614,7 +615,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
             ],
             if (account.errorMessage != null) ...[
               const SizedBox(height: 8),
-              Text(account.errorMessage!, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.error)),
+              Text(account.errorMessage!, style: TextStyle(fontSize: MomoTextSize.caption, color: Theme.of(context).colorScheme.error)),
             ],
           ],
         ),
@@ -637,7 +638,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
           children: [
             Row(
               children: [
-                const Expanded(child: Text('家庭与邀请码', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14))),
+                const Expanded(child: Text('家庭与邀请码', style: TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.body))),
                 if (isLoading) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
               ],
             ),
@@ -645,7 +646,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
             if (family.hasFamily) ...[
               Text(family.current!.family.name, style: const TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
-              Text('角色：${family.current!.membership.role} · 成员：${family.members.length} 人', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              Text('角色：${family.current!.membership.role} · 成员：${family.members.length} 人', style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey)),
               if (family.members.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 ...family.members.map(
@@ -676,7 +677,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
                 ],
               ),
             ] else ...[
-              const Text('当前账号还没有家庭。你可以创建新家庭，或使用上方邀请码加入已有家庭。', style: TextStyle(fontSize: 12)),
+              const Text('当前账号还没有家庭。你可以创建新家庭，或使用上方邀请码加入已有家庭。', style: TextStyle(fontSize: MomoTextSize.caption)),
               const SizedBox(height: 10),
               Wrap(
                 spacing: 8,
@@ -698,11 +699,11 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
             ],
             if (family.errorMessage != null) ...[
               const SizedBox(height: 8),
-              Text(family.errorMessage!, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.error)),
+              Text(family.errorMessage!, style: TextStyle(fontSize: MomoTextSize.caption, color: Theme.of(context).colorScheme.error)),
             ],
             if (family.membersErrorMessage != null) ...[
               const SizedBox(height: 4),
-              Text(family.membersErrorMessage!, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.error)),
+              Text(family.membersErrorMessage!, style: TextStyle(fontSize: MomoTextSize.caption, color: Theme.of(context).colorScheme.error)),
             ],
           ],
         ),
@@ -725,13 +726,13 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
           children: [
             Row(
               children: [
-                const Expanded(child: Text('已注册设备', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14))),
+                const Expanded(child: Text('已注册设备', style: TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.body))),
                 if (isLoading) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
               ],
             ),
             const SizedBox(height: 8),
             if (devices.devices.isEmpty)
-              const Text('当前家庭还没有注册设备。', style: TextStyle(fontSize: 12))
+              const Text('当前家庭还没有注册设备。', style: TextStyle(fontSize: MomoTextSize.caption))
             else
               ...devices.devices.map(
                 (device) => ListTile(
@@ -758,7 +759,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
             ),
             if (devices.errorMessage != null) ...[
               const SizedBox(height: 8),
-              Text(devices.errorMessage!, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.error)),
+              Text(devices.errorMessage!, style: TextStyle(fontSize: MomoTextSize.caption, color: Theme.of(context).colorScheme.error)),
             ],
           ],
         ),
@@ -777,15 +778,15 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('当前接入范围', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            const Text('当前接入范围', style: TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.body)),
             const SizedBox(height: 6),
             Text(
               '客户端会调用 NAS 的 /api/v1/health 进行真实可用性检测，并可在此管理账号、家庭成员邀请码和设备注册。库存同步仍由独立同步流程负责；没有登录 NAS 时，本地库存和采购功能不受影响。',
-              style: TextStyle(fontSize: 12, height: 1.5, color: Theme.of(context).textTheme.bodySmall?.color),
+              style: TextStyle(fontSize: MomoTextSize.caption, height: 1.5, color: Theme.of(context).textTheme.bodySmall?.color),
             ),
             if (state.message != null) ...[
               const SizedBox(height: 8),
-              Text(state.message!, style: TextStyle(fontSize: 12, color: statusColor)),
+              Text(state.message!, style: TextStyle(fontSize: MomoTextSize.caption, color: statusColor)),
             ],
           ],
         ),

@@ -6,6 +6,7 @@ import 'package:momo_box/domain/backup/backup_format.dart';
 void main() {
   test('设备/NAS/同步/提醒同步派生键及安全凭据不可迁移', () {
     for (final key in [
+      'ai_assistant_context_consent_v2',
       'nas_user_id',
       'nas_device_id',
       'nas_family_id',

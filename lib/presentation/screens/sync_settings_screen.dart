@@ -1,3 +1,4 @@
+import '../../app/momo_typography.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -602,7 +603,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
       alignment: Alignment.centerLeft,
       child: Padding(
         padding: const EdgeInsets.only(bottom: 6),
-        child: Text('$label：$compact', style: const TextStyle(fontSize: 12)),
+        child: Text('$label：$compact', style: const TextStyle(fontSize: MomoTextSize.caption)),
       ),
     );
   }

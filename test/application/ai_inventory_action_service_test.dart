@@ -65,7 +65,7 @@ void main() {
     expect((await inventory.watchInventory().first).single.totalStock, 5);
   });
 
-  test('默认拒绝写入；授权后复用库存事务；撤权、错误批次及超量均拒绝', () async {
+  test('默认可提议但须确认；执行复用库存事务；撤权、错误批次及超量均拒绝', () async {
     final db = AppDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final settings = SettingsRepository(db);
@@ -79,16 +79,18 @@ void main() {
       productId: id,
       quantity: 1,
     );
-    await expectLater(actions.execute(consume), throwsStateError);
+    await settings.setValue(AiInventoryActionService.permissionKey, 'false');
+    await expectLater(actions.execute(consume, confirmedDescription: ''), throwsStateError);
     expect((await inventory.watchInventory().first).single.totalStock, 3);
     await settings.setValue(AiInventoryActionService.permissionKey, 'true');
     expect(await actions.describe(consume), contains('牛奶'));
     expect((await inventory.watchInventory().first).single.totalStock, 3);
-    await actions.execute(consume);
+    await actions.execute(consume, confirmedDescription: await actions.describe(consume));
     expect((await inventory.watchInventory().first).single.totalStock, 2);
     await expectLater(
       actions.execute(
         AiInventoryAction(kind: 'consume', productId: id, quantity: 99),
+        confirmedDescription: '',
       ),
       throwsStateError,
     );
@@ -100,26 +102,20 @@ void main() {
           batchId: 'wrong',
           quantity: 1,
         ),
+        confirmedDescription: '',
       ),
       throwsStateError,
     );
     final batch =
         (await inventory.watchInventory().first).single.batches.single;
-    await actions.execute(
-      AiInventoryAction(
-        kind: 'replenish',
-        productId: id,
-        batchId: batch.id,
-        quantity: 2,
-      ),
-    );
+    final replenish = AiInventoryAction(kind: 'replenish', productId: id, batchId: batch.id, quantity: 2);
+    await actions.execute(replenish, confirmedDescription: await actions.describe(replenish));
     expect((await inventory.watchInventory().first).single.totalStock, 4);
     await settings.setValue(AiInventoryActionService.permissionKey, 'false');
-    await expectLater(actions.execute(consume), throwsStateError);
+    await expectLater(actions.execute(consume, confirmedDescription: ''), throwsStateError);
     await settings.setValue(AiInventoryActionService.permissionKey, 'true');
-    await actions.execute(
-      AiInventoryAction(kind: 'discard', productId: id, batchId: batch.id),
-    );
+    final discard = AiInventoryAction(kind: 'discard', productId: id, batchId: batch.id);
+    await actions.execute(discard, confirmedDescription: await actions.describe(discard));
     expect((await inventory.watchInventory().first).single.totalStock, 0);
     await expectLater(
       actions.execute(
@@ -129,6 +125,7 @@ void main() {
           batchId: batch.id,
           quantity: 2,
         ),
+        confirmedDescription: '',
       ),
       throwsStateError,
     );

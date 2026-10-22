@@ -1,6 +1,7 @@
 import '../../application/ai_inventory_action_service.dart';
 import '../../application/ai_fallback_executor.dart';
 import '../../application/ai_conversation_store.dart';
+import 'smart_home_controller.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
@@ -29,6 +30,7 @@ import '../../data/repositories/backup_repository.dart';
 import '../../data/repositories/barcode_cache_repository.dart';
 import '../../data/repositories/inventory_repository.dart';
 import '../../data/repositories/media_repository.dart';
+import '../../data/repositories/nas_smart_home_repository.dart';
 import '../../data/repositories/reminder_repository.dart';
 import '../../data/repositories/settings_repository.dart';
 import '../../data/repositories/shopping_repository.dart';
@@ -301,6 +303,7 @@ final aiAssistantServiceProvider = Provider<AiAssistantService>(
     ref.watch(secureSettingsServiceProvider),
     ref.watch(inventoryRepositoryProvider),
     usageService: ref.watch(aiUsageServiceProvider),
+    actionService: ref.watch(aiInventoryActionServiceProvider),
   ),
 );
 
@@ -340,7 +343,7 @@ final aiConnectionTestExecutorProvider = Provider<AiFallbackExecutor>((ref) {
 
 final aiInventoryPermissionProvider = StreamProvider<bool>((ref) => ref
     .watch(settingsServiceProvider).watchValue('ai_allow_inventory_writes')
-    .map((value) => value == 'true'));
+    .map((value) => value != 'false'));
 
 // Configured does not imply reachable: the home page must never claim online
 // based on a URL alone, nor reuse the mock smart-home status.
@@ -348,8 +351,34 @@ final aiConfigurationStatusProvider = StreamProvider<bool>((ref) => ref
     .watch(settingsServiceProvider).watchValue(AiDraftService.modelKey)
     .map((value) => value?.trim().isNotEmpty == true));
 
+final nasSmartHomeRepositoryProvider = Provider<NasSmartHomeRepository>((ref) {
+  final connection = ref.watch(nasConnectionProvider);
+  final repository = NasSmartHomeRepository.fromBaseUrl(connection.serverUrl);
+  ref.onDispose(repository.close);
+  return repository;
+});
+
+final smartHomeControllerProvider =
+    StateNotifierProvider<SmartHomeController, SmartHomeState>((ref) {
+  final connection = ref.watch(nasConnectionProvider);
+  return SmartHomeController(
+    ref.watch(nasSmartHomeRepositoryProvider),
+    nasAddress: connection.serverUrl,
+    role: ref.watch(nasAccountProvider.select(
+      (account) => account.family.current?.membership.role,
+    )),
+  );
+});
+
 final aiInventoryActionServiceProvider = Provider<AiInventoryActionService>((ref) =>
-    AiInventoryActionService(ref.watch(settingsRepositoryProvider), ref.watch(inventoryServiceProvider)));
+    AiInventoryActionService(ref.watch(settingsRepositoryProvider), ref.watch(inventoryServiceProvider),
+      shopping: ref.watch(shoppingServiceProvider),
+      chores: ref.watch(choreServiceProvider),
+      reminders: ref.watch(reminderServiceProvider),
+      deviceContext: () => ref.read(smartHomeControllerProvider.notifier).assistantContext(),
+      describeDevice: (action) => ref.read(smartHomeControllerProvider.notifier).describeAssistantCommand(action),
+      executeDevice: (action) => ref.read(smartHomeControllerProvider.notifier).executeAssistantCommand(action),
+    ));
 
 class NasConnectionController extends StateNotifier<NasConnectionState> {
   NasConnectionController(this._service)

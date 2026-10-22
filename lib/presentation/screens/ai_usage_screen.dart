@@ -1,3 +1,4 @@
+import '../../app/momo_typography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -93,7 +94,7 @@ class _AiUsageScreenState extends ConsumerState<AiUsageScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Token 消耗概览', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      const Text('Token 消耗概览', style: TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.title)),
                       Text('${summary.requestCount} 次调用', style: TextStyle(color: palette.primary, fontWeight: FontWeight.bold)),
                     ],
                   ),
@@ -120,7 +121,7 @@ class _AiUsageScreenState extends ConsumerState<AiUsageScreen> {
           const SizedBox(height: 20),
 
           // 明细列表标题
-          const Text('调用明细记录', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const Text('调用明细记录', style: TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.title)),
           const SizedBox(height: 8),
 
           Wrap(
@@ -169,11 +170,11 @@ class _AiUsageScreenState extends ConsumerState<AiUsageScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          Text(title, style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey)),
           const SizedBox(height: 4),
           Text(
             value,
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color),
+            style: TextStyle(fontSize: MomoTextSize.section, fontWeight: FontWeight.bold, color: color),
           ),
         ],
       ),
@@ -203,7 +204,7 @@ class _AiUsageScreenState extends ConsumerState<AiUsageScreen> {
                   child: Text(
                     isQa ? 'AI问答' : 'OCR草稿',
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: MomoTextSize.caption,
                       fontWeight: FontWeight.bold,
                       color: isQa ? Colors.purple : Colors.blue.shade800,
                     ),
@@ -213,11 +214,11 @@ class _AiUsageScreenState extends ConsumerState<AiUsageScreen> {
                 Expanded(
                   child: Text(
                     log.model,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.body),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                Text(timeStr, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                Text(timeStr, style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey)),
               ],
             ),
             const SizedBox(height: 8),
@@ -228,10 +229,10 @@ class _AiUsageScreenState extends ConsumerState<AiUsageScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('总消耗: ${log.effectiveTotal}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                Text('输入: ${log.promptTokens} / 输出: ${log.completionTokens}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                Text('总消耗: ${log.effectiveTotal}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.body)),
+                Text('输入: ${log.promptTokens} / 输出: ${log.completionTokens}', style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey)),
                 if (log.cachedReadTokens > 0)
-                  Text('缓存读取: ${log.cachedReadTokens}', style: const TextStyle(fontSize: 11, color: Colors.teal)),
+                  Text('缓存读取: ${log.cachedReadTokens}', style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.teal)),
               ],
             ),
           ],

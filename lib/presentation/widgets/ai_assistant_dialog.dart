@@ -1,3 +1,13 @@
+import '../../app/momo_typography.dart';
+import '../screens/alerts_screen.dart';
+import '../screens/home_assistant_settings_screen.dart';
+import '../screens/inventory_screen.dart';
+import '../screens/nas_settings_screen.dart';
+import '../screens/settings_screen.dart';
+import '../screens/shopping_screen.dart';
+import '../screens/statistics_screen.dart';
+import '../screens/sync_settings_screen.dart';
+import 'intake_sheet.dart';
 import '../../application/ai_inventory_action_service.dart';
 import '../../application/ai_conversation_store.dart';
 
@@ -55,7 +65,10 @@ class AiAssistantDialog extends ConsumerStatefulWidget {
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => const AiAssistantDialog(),
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+        child: const AiAssistantDialog(),
+      ),
     );
   }
 
@@ -72,6 +85,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
   final _scrollController = ScrollController();
 
   MixedPlanData? _currentPlan;
+  bool _checkingConsent = false;
 
   AiSession get _currentSession {
     return _sessions.firstWhere(
@@ -120,29 +134,39 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
 
   Future<void> _sendMessage([String? presetText]) async {
     final text = (presetText ?? _textController.text).trim();
-    if (text.isEmpty || _isLoading) return;
+    if (text.isEmpty || _isLoading || _checkingConsent) return;
+    _checkingConsent = true;
+    try {
+      final settings = ref.read(settingsRepositoryProvider);
+      if (await settings.getValue('ai_assistant_context_consent_v2') != 'true') {
+        if (!mounted) return;
+        final consent = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+          title: const Text('发送给你配置的 AI 服务？'), scrollable: true,
+          content: const Text('提问会携带近期对话，以及当前库存/批次、采购、待处理提醒、已保存家务和已授权设备状态。'
+            '会发送给你配置的主服务，失败时可能尝试副服务和兜底服务；不发送图片、密钥或账号凭据。'
+            '\n同意发送不代表同意操作，任何变更仍须逐次确认。此选择会保存在本机。'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('同意并发送')),
+          ],
+        ));
+        if (consent != true || !mounted) return;
+        await settings.setValue('ai_assistant_context_consent_v2', 'true');
+      }
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('发送授权保存失败，请重试。')));
+      return;
+    } finally {
+      _checkingConsent = false;
+    }
+    if (!mounted || _isLoading) return;
     _textController.clear();
     final store = _store;
     final service = ref.read(aiAssistantServiceProvider);
-    final operation = store.send(text, service, localReply: _unsupportedActionReply(text));
+    final operation = store.send(text, service, localReply: null);
     _scrollToBottom();
     await operation;
     if (mounted) _scrollToBottom();
-  }
-
-  String? _unsupportedActionReply(String text) {
-    if (!(ref.read(aiInventoryPermissionProvider).valueOrNull ?? false) &&
-        (text.contains('吃了') || text.contains('消耗') || text.contains('扣减') || text.contains('补充') || text.contains('报废'))) {
-      return '当前 AI 助手只支持查询，未扣减库存或写入记录。请在设置中开启库存操作权限，或在库存页手动确认。';
-    }
-    if (text.contains('洗衣服') || text.contains('洗涤') ||
-        text.contains('开洗衣机') || text.contains('打开电视') ||
-        text.contains('开电视') || text.contains('关闭电视') ||
-        text.contains('关电视') || text.contains('观影模式') ||
-        (text.contains('空调') && (text.contains('25') || text.contains('调到')))) {
-      return '当前版本尚未接入 Home Assistant，无法执行设备控制或混合计划。未发送设备指令，也未扣减耗材。';
-    }
-    return null;
   }
 
   Future<void> _confirmInventoryAction(ChatMessage message) async {
@@ -158,8 +182,52 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
     try {
       final description = await service.describe(action);
       if (!mounted) return;
+      if (action.kind == 'intake') {
+        await showModalBottomSheet<void>(
+          context: context, isScrollControlled: true, useSafeArea: true,
+          builder: (_) => IntakeSheet(
+            initialDraft: action.intakeDraft,
+            beforeIntake: () async {
+              if (!store.sessions.contains(origin)) throw StateError('原会话已删除，请重新提问。');
+              if (executing) throw StateError('本次入库已提交，请先核实库存。');
+              // This guard must precede any await: closing the sheet while a
+              // permission/save future is pending must not unlock the proposal.
+              executing = true;
+              try {
+                await service.checkPermission();
+                store.actionReceipts[message.id] = '执行中／中断后请核实结果，勿重复提交';
+                await store.save();
+                await service.checkPermission();
+                if (!store.sessions.contains(origin)) {
+                  throw StateError('原会话已删除，请重新提问。');
+                }
+              } catch (_) {
+                // Intake has not reached the inventory service yet. A failed
+                // preflight must remain retryable, including after dismissal.
+                executing = false;
+                store.actionReceipts.remove(message.id);
+                try { await store.save(); } catch (_) { /* storage warning */ }
+                rethrow;
+              }
+            },
+            onIntakeSuccess: (productId) async {
+              store.actionReceipts[message.id] = '已执行';
+              if (store.sessions.contains(origin)) {
+                origin.messages.add(ChatMessage(id: const Uuid().v4(), role: 'assistant',
+                  content: '已按你确认的草稿完成入库。', timestamp: DateTime.now()));
+              }
+              await store.save();
+            },
+          ),
+        );
+        if (executing && store.actionReceipts[message.id] != '已执行') {
+          store.actionReceipts[message.id] = '提交结果待核实，请先检查库存';
+        }
+        return;
+      }
       final confirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
-        title: const Text('确认库存变更'),
+        title: const Text('确认操作'),
+        scrollable: true,
         content: Text(description),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
@@ -167,23 +235,28 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
         ],
       ));
       if (confirmed != true || !store.sessions.contains(origin)) return;
-      if (await service.describe(action) != description) {
-        throw StateError('库存已变化，请重新确认。');
-      }
-      store.actionReceipts[message.id] = '执行中／中断后请核实库存，勿重复提交';
+      store.actionReceipts[message.id] = '执行中／中断后请核实结果，勿重复提交';
       await store.save();
       executing = true;
-      await service.execute(action, confirmedDescription: description);
-      store.actionReceipts[message.id] = '已执行';
-      origin.messages.add(ChatMessage(id: const Uuid().v4(), role: 'assistant',
-        content: '已完成：$description', timestamp: DateTime.now()));
+      if (action.kind == 'open_page') {
+        await service.checkPermission();
+        if (!mounted) return;
+        await Navigator.of(context).push<void>(MaterialPageRoute(
+          builder: (_) => _actionPage(action.string('page')!),
+        ));
+      } else {
+        await service.execute(action, confirmedDescription: description);
+      }
+      store.actionReceipts[message.id] = action.kind == 'open_page' ? '已打开页面' : '已执行';
+      if (store.sessions.contains(origin)) origin.messages.add(ChatMessage(id: const Uuid().v4(), role: 'assistant',
+        content: action.kind == 'open_page' ? '已打开${AiInventoryAction.pages[action.string('page')]}页面；具体操作以页面结果为准。' : '已完成：$description', timestamp: DateTime.now()));
       await store.save();
     } catch (error) {
-      if (executing && store.actionReceipts[message.id] != '已执行') {
-        store.actionReceipts[message.id] = '执行失败，请核实库存后重新提问';
+      if (executing && !{'已执行', '已打开页面'}.contains(store.actionReceipts[message.id])) {
+        store.actionReceipts[message.id] = '执行结果未确认，请核实后重新提问';
       }
       if (mounted) {
-        final detail = error is StateError ? error.message : '操作或记录保存失败，请核实库存后重试。';
+        final detail = error is StateError ? error.message : '操作或记录保存失败，请先核实实际结果。';
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(detail)));
       }
     } finally {
@@ -192,6 +265,22 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
       if (mounted) setState(() {});
     }
   }
+
+  Widget _actionPage(String page) => switch (page) {
+    'backup' => const BackupSettingsScreen(),
+    'storage' => const StorageManagementScreen(),
+    'ai_settings' => const AiSettingsScreen(),
+    'nas_settings' => const NasSettingsScreen(),
+    'ha_settings' => const HomeAssistantSettingsScreen(),
+    'sync_settings' => const SyncSettingsScreen(),
+    'notifications' => const NotificationSettingsScreen(),
+    'privacy' => const PrivacySettingsScreen(),
+    'statistics' => const StatisticsScreen(),
+    'inventory' => const InventoryScreen(),
+    'shopping' => const ShoppingScreen(),
+    'alerts' => const AlertsScreen(),
+    _ => const SettingsScreen(),
+  };
 
   void _confirmPlan() {
     if (_currentPlan == null) return;
@@ -231,7 +320,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
     final isDark = theme.brightness == Brightness.dark;
 
     return Container(
-      height: MediaQuery.sizeOf(context).height * 0.88,
+      height: (MediaQuery.sizeOf(context).height - MediaQuery.viewInsetsOf(context).bottom) * 0.92,
       decoration: BoxDecoration(
         color: theme.scaffoldBackgroundColor,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -272,30 +361,11 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Text(
-                            palette.mascotName,
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: palette.primary.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              'AI 家庭随身管家',
-                              style: TextStyle(fontSize: 10, color: palette.primary, fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        ],
-                      ),
+                      Text(palette.mascotName, style: theme.textTheme.titleMedium),
                       const SizedBox(height: 2),
                       const Text(
-                        '真实库存问答 · 库存操作须授权并确认',
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
+                        '操作前由你确认',
+                        style: TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey),
                       ),
                     ],
                   ),
@@ -335,7 +405,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(
               children: [
-                _buildQuickChip('🧺 我要洗衣服', palette),
+                _buildQuickChip('📦 入库两盒牛奶', palette),
                 const SizedBox(width: 8),
                 _buildQuickChip('📺 打开电视', palette),
                 const SizedBox(width: 8),
@@ -343,7 +413,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                 const SizedBox(width: 8),
                 _buildQuickChip('🧴 还有多少洗衣液？', palette),
                 const SizedBox(width: 8),
-                _buildQuickChip('💊 吃了两片感冒药', palette),
+                _buildQuickChip('🛒 采购三包纸巾', palette),
               ],
             ),
           ),
@@ -386,7 +456,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                         isUser ? msg.content : AiInventoryAction.displayText(msg.content),
                         style: TextStyle(
                           color: isUser ? Colors.white : theme.textTheme.bodyMedium?.color,
-                          fontSize: 14,
+                          fontSize: MomoTextSize.body,
                           height: 1.4,
                         ),
                       ),
@@ -395,7 +465,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                           onPressed: _store.actionReceipts.containsKey(msg.id) ||
                               !(ref.watch(aiInventoryPermissionProvider).valueOrNull ?? false)
                               ? null : () => _confirmInventoryAction(msg),
-                          child: Text(_store.actionReceipts[msg.id] ?? '查看并确认库存操作'),
+                          child: Text(_store.actionReceipts[msg.id] ?? '查看并确认操作'),
                         ),
                       ],),
                     ),
@@ -420,14 +490,14 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                     child: CircularProgressIndicator(strokeWidth: 2, color: palette.primary),
                   ),
                   const SizedBox(width: 8),
-                  Text('${palette.mascotName} 正在规划执行方案...', style: const TextStyle(fontSize: 12)),
+                  Text('${palette.mascotName} 正在规划执行方案...', style: const TextStyle(fontSize: MomoTextSize.caption)),
                 ],
               ),
             ),
 
           // 底部输入栏
           Container(
-            padding: EdgeInsets.fromLTRB(16, 8, 16, MediaQuery.of(context).viewInsets.bottom + 12),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.surface,
               border: Border(
@@ -442,11 +512,13 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                   child: TextField(
                     controller: _textController,
                     decoration: InputDecoration(
-                      hintText: '问问${palette.mascotName}，如：“还有多少洗衣液？”',
-                      hintStyle: const TextStyle(fontSize: 13),
+                      hintText: '查询、入库、采购或控制设备…',
+                      hintStyle: const TextStyle(fontSize: MomoTextSize.body),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       isDense: true,
                     ),
+                    minLines: 1,
+                    maxLines: 3,
                     onSubmitted: (_) => _sendMessage(),
                   ),
                 ),
@@ -466,7 +538,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
 
   Widget _buildQuickChip(String label, MomoPalette palette) {
     return ActionChip(
-      label: Text(label, style: const TextStyle(fontSize: 12)),
+      label: Text(label, style: const TextStyle(fontSize: MomoTextSize.caption)),
       backgroundColor: Theme.of(context).colorScheme.surface,
       side: BorderSide(color: palette.primary.withValues(alpha: 0.2)),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -510,7 +582,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
               Expanded(
                 child: Text(
                   plan.taskTitle,
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  style: const TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.bold),
                 ),
               ),
               Container(
@@ -522,7 +594,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                 child: Text(
                   isProposed ? '待确认计划' : (plan.status == AiPlanStatus.confirmed ? '已执行' : '已取消'),
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: MomoTextSize.caption,
                     fontWeight: FontWeight.bold,
                     color: isProposed ? Colors.orange.shade800 : Colors.green,
                   ),
@@ -531,9 +603,9 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
             ],
           ),
           const SizedBox(height: 10),
-          Text('1. 设备联动：${plan.deviceAction}', style: const TextStyle(fontSize: 13)),
+          Text('1. 设备联动：${plan.deviceAction}', style: const TextStyle(fontSize: MomoTextSize.body)),
           const SizedBox(height: 8),
-          const Text('2. 耗材扣减配方（请确认使用耗材）：', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          const Text('2. 耗材扣减配方（请确认使用耗材）：', style: TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
           ...plan.consumables.map((c) {
             final isSelected = c == plan.selectedConsumable;
@@ -560,7 +632,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                       child: Text(
                         c,
                         style: TextStyle(
-                          fontSize: 13,
+                          fontSize: MomoTextSize.body,
                           fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                         ),
                       ),
@@ -648,7 +720,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                           _createNewSession();
                         },
                         icon: const Icon(Icons.add, size: 16),
-                        label: const Text('新会话', style: TextStyle(fontSize: 12)),
+                        label: const Text('新会话', style: TextStyle(fontSize: MomoTextSize.caption)),
                       ),
                     ],
                   ),
@@ -693,7 +765,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                                         Text(
                                           session.title,
                                           style: TextStyle(
-                                            fontSize: 13,
+                                            fontSize: MomoTextSize.body,
                                             fontWeight: isCurrent ? FontWeight.bold : FontWeight.w500,
                                             color: isCurrent ? palette.primary : null,
                                           ),
@@ -703,7 +775,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                                         const SizedBox(height: 2),
                                         Text(
                                           '$timeStr · $userMessagesCount 条对话',
-                                          style: const TextStyle(fontSize: 10, color: Colors.grey),
+                                          style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey),
                                         ),
                                       ],
                                     ),

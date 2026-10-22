@@ -1,3 +1,4 @@
+import '../../app/momo_typography.dart';
 import '../../application/ai_fallback_executor.dart';
 import 'nas_settings_screen.dart';
 import 'home_assistant_settings_screen.dart';
@@ -13,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:uuid/uuid.dart';
 import '../widgets/app_feedback.dart';
 
 import '../../app/momo_theme.dart';
@@ -215,7 +217,7 @@ class SettingsScreen extends ConsumerWidget {
       child: Text(
         title,
         style: TextStyle(
-          fontSize: 13,
+          fontSize: MomoTextSize.body,
           fontWeight: FontWeight.bold,
           color: theme.colorScheme.primary,
         ),
@@ -235,8 +237,8 @@ class SettingsScreen extends ConsumerWidget {
         backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
         child: Icon(icon, color: Theme.of(context).colorScheme.primary),
       ),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.body)),
+      subtitle: Text(subtitle, style: const TextStyle(fontSize: MomoTextSize.caption)),
       trailing: const Icon(Icons.arrow_forward_ios, size: 14),
       onTap: onTap,
     );
@@ -293,7 +295,7 @@ class ThemeSettingsScreen extends ConsumerWidget {
                             children: [
                               Text(
                                 palette.label,
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.title),
                               ),
                               const SizedBox(width: 8),
                               Container(
@@ -304,7 +306,7 @@ class ThemeSettingsScreen extends ConsumerWidget {
                                 ),
                                 child: Text(
                                   palette.mascotName,
-                                  style: const TextStyle(color: Colors.white, fontSize: 10),
+                                  style: const TextStyle(color: Colors.white, fontSize: MomoTextSize.caption),
                                 ),
                               ),
                             ],
@@ -349,7 +351,7 @@ class ThemeSettingsScreen extends ConsumerWidget {
         children: [
           icon,
           const SizedBox(width: 2),
-          Text(text, style: const TextStyle(fontSize: 10, color: Colors.black87)),
+          Text(text, style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.black87)),
         ],
       ),
     );
@@ -562,7 +564,7 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
                 title: Row(
                   children: [
                     Expanded(child: Text(profile['name'] as String? ?? '', style: const TextStyle(fontWeight: FontWeight.bold))),
-                    Text(_roleLabel(profile), style: const TextStyle(fontSize: 11)),
+                    Text(_roleLabel(profile), style: const TextStyle(fontSize: MomoTextSize.caption)),
                   ],
                 ),
                 subtitle: Text(profile['endpoint'] as String? ?? '', maxLines: 2, overflow: TextOverflow.ellipsis),
@@ -903,25 +905,42 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
     }
   }
 
-  void _addOrEditProfile([Map<String, dynamic>? item]) {
-    final nameCtrl = TextEditingController(text: item?['name'] as String? ?? '');
+  Future<void> _addOrEditProfile({Map<String, dynamic>? item, bool duplicate = false}) async {
+    String copiedKey = '';
+    if (duplicate && item != null) {
+      try {
+        copiedKey = item['_apiKeyDraft'] as String? ??
+            await ref.read(secureSettingsServiceProvider)
+                .readAiApiKeyForProfile(item['id'] as String) ?? '';
+      } catch (_) {
+        if (mounted) {
+          showAppSnackBar(context, const SnackBar(content: Text('无法读取来源配置的密钥，请重试。')));
+        }
+        return;
+      }
+      if (!mounted) return;
+    }
+    final isNew = item == null || duplicate;
+    final sourceName = item?['name'] as String? ?? '';
+    final nameCtrl = TextEditingController(text: duplicate ? '$sourceName 副本'.trim() : sourceName);
     final urlCtrl = TextEditingController(text: item?['endpoint'] as String? ?? 'https://api.openai.com/v1');
     final modelCtrl = TextEditingController(text: item?['model'] as String? ?? 'gpt-4o-mini');
     final keyCtrl = TextEditingController();
     bool testing = false;
     String? testResult;
     String endpointType = item?['endpointType'] as String? ?? 'auto';
-    String fallbackRole = item?[AiDraftService.profileRoleKey] as String? ??
-        (item?['id'] == _activeId ? AiDraftService.primaryRole : AiDraftService.standbyRole);
+    String fallbackRole = duplicate ? AiDraftService.standbyRole :
+        item?[AiDraftService.profileRoleKey] as String? ??
+            (item?['id'] == _activeId ? AiDraftService.primaryRole : AiDraftService.standbyRole);
 
-    showDialog<void>(
+    final copyDraft = await showDialog<Map<String, dynamic>>(
       context: context,
       useRootNavigator: false,
       builder: (ctx) => _SwipeDismissProfileDialog(
         onDismiss: () => Navigator.pop(ctx),
         child: StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
-          title: Text(item == null ? '添加 AI 模型服务' : '编辑 AI 模型服务'),
+          title: Text(duplicate ? '复制 AI 模型服务' : isNew ? '添加 AI 模型服务' : '编辑 AI 模型服务'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -979,12 +998,22 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                 TextField(
                   controller: keyCtrl,
                   onChanged: (_) => setDialogState(() => testResult = null),
-                  decoration: const InputDecoration(labelText: 'API Key', hintText: '留空则保留已保存的密钥'),
+                  decoration: InputDecoration(
+                    labelText: 'API Key',
+                    hintText: duplicate
+                        ? (copiedKey.isEmpty ? '来源未配置密钥，请填写' : '留空则沿用来源配置的密钥')
+                        : isNew ? '请输入 API Key' : '留空则保留已保存的密钥',
+                  ),
                   obscureText: true,
                 ),
+                if (duplicate) ...[
+                  const SizedBox(height: 8),
+                  const Text('保存后新增独立配置。默认不参与调用，可调整容灾角色。',
+                      style: TextStyle(fontSize: MomoTextSize.caption)),
+                ],
                 const SizedBox(height: 8),
                 const Text('测试只发送简短验证消息，不发送库存或对话；可能产生少量调用费用。',
-                    style: TextStyle(fontSize: 12)),
+                    style: TextStyle(fontSize: MomoTextSize.caption)),
                 if (testResult != null) Text(testResult!),
               ],
             ),
@@ -1001,7 +1030,7 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                 setDialogState(() { testing = true; testResult = null; });
                 String result;
                 try {
-                  final key = enteredKey.isNotEmpty ? enteredKey
+                  final key = enteredKey.isNotEmpty ? enteredKey : duplicate ? copiedKey
                       : item?['_apiKeyDraft'] as String? ??
                           (item == null ? '' : await secure.readAiApiKeyForProfile(item['id'] as String)) ?? '';
                   if (endpoint.isEmpty || model.isEmpty || key.isEmpty) {
@@ -1029,18 +1058,31 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
               },
               child: Text(testing ? '测试中…' : '测试'),
             ),
+            if (!isNew)
+              TextButton(
+                onPressed: testing ? null : () => Navigator.pop(ctx, <String, dynamic>{
+                  ...item!,
+                  'name': nameCtrl.text.trim(),
+                  'endpoint': urlCtrl.text.trim(),
+                  'model': modelCtrl.text.trim(),
+                  'endpointType': endpointType,
+                  if (keyCtrl.text.trim().isNotEmpty) '_apiKeyDraft': keyCtrl.text.trim(),
+                }),
+                child: const Text('复制为新配置'),
+              ),
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
             FilledButton(
               onPressed: testing ? null : () {
                 final name = nameCtrl.text.trim();
                 final url = urlCtrl.text.trim();
                 final model = modelCtrl.text.trim();
-                final key = keyCtrl.text.trim();
+                final enteredKey = keyCtrl.text.trim();
+                final key = duplicate && enteredKey.isEmpty ? copiedKey : enteredKey;
                 if (name.isEmpty || url.isEmpty || model.isEmpty) return;
 
                 setState(() {
-                  if (item == null) {
-                    final newId = DateTime.now().millisecondsSinceEpoch.toString();
+                  if (isNew) {
+                    final newId = const Uuid().v4();
                     final profile = <String, dynamic>{
                       'id': newId,
                       'name': name,
@@ -1053,15 +1095,16 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                     _profiles.add(profile);
                     _assignProfileRole(profile, fallbackRole);
                   } else {
-                    item['name'] = name;
-                    item['endpoint'] = url;
-                    item['model'] = model;
+                    final profile = item!;
+                    profile['name'] = name;
+                    profile['endpoint'] = url;
+                    profile['model'] = model;
                     if (key.isNotEmpty) {
-                      item['_apiKeyDraft'] = key;
-                      item['hasApiKey'] = true;
+                      profile['_apiKeyDraft'] = key;
+                      profile['hasApiKey'] = true;
                     }
-                    item['endpointType'] = endpointType;
-                    _assignProfileRole(item, fallbackRole);
+                    profile['endpointType'] = endpointType;
+                    _assignProfileRole(profile, fallbackRole);
                   }
                 });
                 Navigator.pop(ctx);
@@ -1074,6 +1117,9 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
         ),
       ),
     );
+    if (copyDraft != null && mounted) {
+      await _addOrEditProfile(item: copyDraft, duplicate: true);
+    }
   }
 
   @override
@@ -1084,8 +1130,8 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           SwitchListTile.adaptive(
-            title: const Text('允许 AI 提议库存操作'),
-            subtitle: const Text('消耗、补充、报废均需逐次确认；关闭后只读查询。'),
+            title: const Text('允许 AI 提议应用操作'),
+            subtitle: const Text('入库、库存、采购、提醒、家务、已授权设备及显示设置均须逐次确认。禁止删库；关闭后只读。'),
             value: ref.watch(aiInventoryPermissionProvider).valueOrNull ?? false,
             onChanged: (value) async {
               try {
@@ -1094,11 +1140,6 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                 if (context.mounted) showAppSnackBar(context, const SnackBar(content: Text('权限保存失败，请重试。')));
               }
             },
-          ),
-          const SwitchListTile.adaptive(
-            title: Text('允许 AI 控制设备'),
-            subtitle: Text('需先接入真实 NAS 登录、HA 实体与设备权限；当前不可启用。'),
-            value: false, onChanged: null,
           ),
           const Divider(),
           Row(
@@ -1153,10 +1194,10 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                           ),
                           child: Text(
                             type == 'auto' ? '自动 (auto)' : type,
-                            style: TextStyle(fontSize: 10, color: badgeColor),
+                            style: TextStyle(fontSize: MomoTextSize.caption, color: badgeColor),
                           ),
                         ),
-                        Text(_roleLabel(p), style: const TextStyle(fontSize: 11)),
+                        Text(_roleLabel(p), style: const TextStyle(fontSize: MomoTextSize.caption)),
                       ],
                     ),
                   ],
@@ -1175,12 +1216,23 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.edit, size: 18),
-                      onPressed: () => _addOrEditProfile(p),
+                      tooltip: '编辑配置',
+                      onPressed: () => _addOrEditProfile(item: p),
                     ),
-                    if (_profiles.length > 1)
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline, size: 18),
-                        onPressed: () async {
+                    PopupMenuButton<String>(
+                      tooltip: '配置操作',
+                      icon: const Icon(Icons.more_vert, size: 18),
+                      itemBuilder: (_) => [
+                        const PopupMenuItem(value: 'copy', child: Text('复制配置')),
+                        if (_profiles.length > 1)
+                          const PopupMenuItem(value: 'delete', child: Text('删除配置')),
+                      ],
+                      onSelected: (action) async {
+                        if (action == 'copy') {
+                          await _addOrEditProfile(item: p, duplicate: true);
+                          return;
+                        }
+                        if (action == 'delete') {
                           await ref.read(secureSettingsServiceProvider).deleteAiApiKeyForProfile(p['id'] as String);
                           if (!mounted) return;
                           setState(() {
@@ -1192,8 +1244,9 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                             }
                           });
                           await _save();
-                        },
-                      ),
+                        }
+                      },
+                    ),
                   ],
                 ),
               ),
@@ -1384,7 +1437,7 @@ class FontScaleSettingsScreen extends ConsumerWidget {
                   Expanded(
                     child: Text(
                       '设置字体大小后将即时应用于全应用界面，方便不同视力习惯与家庭长辈轻松查看效期与库存。',
-                      style: TextStyle(fontSize: 13),
+                      style: TextStyle(fontSize: MomoTextSize.body),
                     ),
                   ),
                 ],
@@ -1411,7 +1464,7 @@ class FontScaleSettingsScreen extends ConsumerWidget {
                   foregroundColor: isSelected ? Colors.white : theme.colorScheme.onSurface,
                   child: Text(
                     '${(opt.scale * 10).round() / 10}',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.body),
                   ),
                 ),
                 title: Text(
@@ -1420,7 +1473,7 @@ class FontScaleSettingsScreen extends ConsumerWidget {
                     fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                   ),
                 ),
-                subtitle: Text(opt.desc, style: const TextStyle(fontSize: 12)),
+                subtitle: Text(opt.desc, style: const TextStyle(fontSize: MomoTextSize.caption)),
                 trailing: isSelected
                     ? Icon(Icons.check_circle, color: theme.colorScheme.primary)
                     : null,
@@ -1924,7 +1977,7 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
                   children: [
                     Text('本地数据与联网说明', style: TextStyle(fontWeight: FontWeight.bold)),
                     SizedBox(height: 8),
-                    Text('库存、批次、采购清单、提醒状态和图片默认保存在本机。启用外部条码查询或 AI 服务后，条码、OCR 文本或提问内容会发送给你配置的主服务；主服务失败时，也可能发送给副服务或兜底服务。'),
+                    Text('库存、批次、采购清单、提醒状态和图片默认保存在本机。启用外部条码查询或 AI 服务后，会按确认范围发送条码、OCR 文本，或问题、近期对话、库存/批次、采购、提醒、家务及已授权设备状态。主服务失败时，也可能尝试副服务或兜底服务。'),
                     SizedBox(height: 8),
                     Text('请只配置你信任的服务，并避免向外部 AI 服务发送不必要的个人或敏感信息。'),
                   ],
@@ -2077,7 +2130,7 @@ class _AboutSettingsScreenState extends ConsumerState<AboutSettingsScreen> {
                   ),
                   if (_updateMessage != null) ...[
                     const SizedBox(height: 4),
-                    Text(_updateMessage!, style: TextStyle(fontSize: 12, color: palette.primary)),
+                    Text(_updateMessage!, style: TextStyle(fontSize: MomoTextSize.caption, color: palette.primary)),
                   ],
                   if (release != null && _checkResult!.hasUpdate) ...[
                     const SizedBox(height: 10),
@@ -2087,7 +2140,7 @@ class _AboutSettingsScreenState extends ConsumerState<AboutSettingsScreen> {
                     ),
                     if (release.body.trim().isNotEmpty) ...[
                       const SizedBox(height: 6),
-                      Text(release.body.trim(), maxLines: 5, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+                      Text(release.body.trim(), maxLines: 5, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: MomoTextSize.caption)),
                     ],
                     const SizedBox(height: 10),
                     if (_downloading && _downloadProgress != null) LinearProgressIndicator(value: _downloadProgress),
