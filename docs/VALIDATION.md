@@ -559,3 +559,15 @@
 - 本机验证：`git diff --check` PASS；完成回执/查询合同、日期写入路径、测试断言及 import 目标的静态复核。无 UI 布局、依赖、schema、workflow、生产绑定或同步门禁变更。源码复核不能替代测试执行。
 - 环境限制：`flutter`/`dart` 不在 PATH，残缺临时 SDK 无 Dart executable；未安装工具。修改后 `flutter analyze`、受影响 5 个测试文件、完整 `flutter test`、Android debug/iOS unsigned build 均 `NOT_EXECUTED`，需新提交的完整 CI 验证。
 - 证据：`https://github.com/DavisDing/MomoBox/actions/runs/39749735487`；Flutter 测试 job `119727167709`；iOS job `119727167713`。
+
+## 2026-10-22：run #45 工作区 Widget 可点击状态与清理生命周期修复（运行待验证）
+
+- 基线：本地 HEAD 与 run #45 均为 `d3a509411cbbba8094fea9fa0091ab7d3716530b`，开始时工作区干净。run `39759449117` attempt 1 于 2026-10-22 17:57:47（Asia/Shanghai）触发；本节修改尚未提交/推送。
+- 同 SHA 远端：Prepare `119759679095`、Backend test/PostgreSQL regression/vet `119759833285`、Flutter analyze（job `119759833019`）及 iOS unsigned build `119759833073` PASS。上轮 6 项测试失败未再出现；本轮输出 `+760 -1`，但测试仍未完整结束，于 18:10:10 触发 10 分钟超时。Android debug、正式打包及发布均 SKIPPED，不能称全量测试或发布通过。
+- 本轮明确失败：`sync_workspace_provider_test.dart:173` 第二次点击“确认本机数据归属”时日志有未命中控件的 warning，随后 `:175` 找不到“确认属于此身份”弹窗按钮。上轮只等文字存在，未保证按钮已启用、可命中、归属 provider 已加载或旧弹窗退出，因此第二次弹窗没有打开。
+- 点击修复仅在测试：通过 ButtonStyleButton 的非空 onPressed 和 hitTestable finder 确认能真实点击；归属入口还要求 access 非 loading、canBind 和没有旧 AlertDialog。弹窗内容出现后也经同样控件就绪检查再点击。最终成功还须 access 刷新完成、canSync、owner 匹配当前身份及原入口/弹窗标题消失，才读取数据库。仍执行真实 tap，不直接调用回调、不忽略命中 warning，不改生产 UI/绑定/身份规则。
+- 收尾修复：两个 Widget 测试的 finally 负责卸载树、关闭 subscription/container，并在 fake zone 仍可推进时启动 db.close，有界交替真实事件循环与 pump 等待关闭。关闭错误按原错误/栈抛出，未完成则明确断言失败；共享 tearDown 不再对已由 Widget 接管的 pending close 重复无界等待。普通非 Widget 测试仍执行原有完整清理，surface size 始终恢复。
+- 生命周期依据：核对现有临时 Flutter 源码的 `flutter_test/lib/src/widget_tester.dart`、`binding.dart` 和 `finders.dart`。testWidgets 注册 binding.postTest；fake async 仅在运行阶段推进，postTest 清除当前 fake zone；故在普通 tearDown 才等待 Widget 创建的流取消/查询有挂起风险。原 run 没有具体 db.close 堆栈，精确挂起位置及修改效果仍需新 CI 确认。
+- 本机 `git diff --check` PASS，并完成控件类型/API、所有原业务断言、成功/异常清理与共享 tearDown 的静态复核。只修改该测试文件和本记录，无依赖、schema、workflow、生产代码或超时设置变化。
+- 本机 Flutter/Dart executable 仍不可用，未安装工具。修改后的 `flutter analyze`、该文件测试、完整 Flutter 测试、Android debug/iOS unsigned build 均 `NOT_EXECUTED`。
+- 证据：`https://github.com/DavisDing/MomoBox/actions/runs/39759449117`；Flutter job `119759833019`；iOS job `119759833073`。

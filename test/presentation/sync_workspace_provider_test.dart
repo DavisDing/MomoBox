@@ -55,8 +55,10 @@ void main() {
   late Account account;
   late ProviderContainer container;
   late ProviderSubscription<AsyncValue<SyncWorkspaceAccess>> subscription;
+  late bool widgetOwnsCleanup;
 
   setUp(() async {
+    widgetOwnsCleanup = false;
     db = AppDatabase.forTesting(NativeDatabase.memory());
     final settings = SettingsService(SettingsRepository(db));
     account = Account(settings)..select();
@@ -69,6 +71,8 @@ void main() {
     await container.read(localWorkspaceIdProvider.future);
   });
   tearDown(() async {
+    // Widget fixtures close while their fake async zone can still advance.
+    if (widgetOwnsCleanup) return;
     subscription.close();
     container.dispose();
     await db.close();
@@ -121,67 +125,116 @@ void main() {
     expect((await SyncWorkspaceRepository(db).readOwner())!.familyId, 'family-a');
   });
 
-  Future<void> settle(WidgetTester tester, Finder ready) async {
+  Future<void> settle(WidgetTester tester, Finder ready, {bool Function()? readyWhen}) async {
     // Drift transactions started by the UI continue in the fake async zone.
     // Advance it alongside the real event loop until the relevant UI state is
     // visible, before entering runAsync for a separate database assertion.
     for (var turn = 0; turn < 200; turn++) {
       await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 1)));
       await tester.pump(const Duration(milliseconds: 16));
-      if (ready.evaluate().length == 1) return;
+      if (ready.evaluate().length == 1 && (readyWhen?.call() ?? true)) return;
     }
     expect(ready, findsOneWidget, reason: '工作区操作未在有界等待内完成');
+    expect(readyWhen?.call() ?? true, isTrue, reason: '工作区控件尚未就绪');
+  }
+
+  Future<void> tapButton(WidgetTester tester, Finder button, {bool bindingEntry = false}) async {
+    final hittable = button.hitTestable();
+    await settle(tester, hittable, readyWhen: () {
+      if (tester.widget<ButtonStyleButton>(button).onPressed == null) return false;
+      if (!bindingEntry) return true;
+      final access = container.read(syncWorkspaceAccessProvider);
+      return !access.isLoading && access.asData?.value.canBind == true &&
+          find.byType(AlertDialog).evaluate().isEmpty;
+    });
+    await tester.tap(hittable);
+  }
+
+  Future<void> closeWidgetFixture(WidgetTester tester) async {
+    try {
+      await tester.pumpWidget(const SizedBox.shrink());
+    } finally {
+      try {
+        subscription.close();
+        container.dispose();
+        var closed = false;
+        Object? closeError;
+        StackTrace? closeStack;
+        final closing = db.close().then<void>((_) {
+          closed = true;
+        }, onError: (Object error, StackTrace stack) {
+          closeError = error;
+          closeStack = stack;
+          closed = true;
+        });
+        // Closing Drift can await cancellations created in this fake zone.
+        // Do not leave that work to tearDown after binding.postTest ends it.
+        for (var turn = 0; turn < 200 && !closed; turn++) {
+          await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 1)));
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        expect(closed, isTrue, reason: '工作区数据库关闭未在有界等待内完成');
+        await closing;
+        if (closeError != null) Error.throwWithStackTrace(closeError!, closeStack!);
+      } finally {
+        await tester.binding.setSurfaceSize(null);
+      }
+    }
   }
 
   testWidgets('数据归属确认显示完整身份，取消不写绑定、不启用同步', (tester) async {
+    widgetOwnsCleanup = true;
     try {
       await tester.binding.setSurfaceSize(const Size(600, 1200));
       await tester.pumpWidget(UncontrolledProviderScope(container: container,
           child: const MaterialApp(home: SyncSettingsScreen())));
       await settle(tester, find.text('确认本机数据归属'));
       expect(find.text('确认本机数据归属'), findsOneWidget);
-      await tester.tap(find.text('确认本机数据归属'));
-      await tester.pumpAndSettle();
+      await tapButton(tester, find.widgetWithText(OutlinedButton, '确认本机数据归属'), bindingEntry: true);
+      await settle(tester, find.byType(AlertDialog));
       expect(find.textContaining('https://nas.example/api/v1'), findsOneWidget);
       expect(find.textContaining('账号：user-a'), findsOneWidget);
-      await tester.tap(find.text('取消'));
+      await tapButton(tester, find.widgetWithText(TextButton, '取消'));
       await settle(tester, find.text('确认本机数据归属'));
       expect(await tester.runAsync(() => SyncWorkspaceRepository(db).readOwner()), isNull);
       expect(container.read(syncEngineProvider), isNull);
     } finally {
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump(Duration.zero);
-      await tester.binding.setSurfaceSize(null);
+      await closeWidgetFixture(tester);
     }
   });
 
   testWidgets('确认弹窗期间身份变化拒绝旧确认，原身份重新确认后绑定', (tester) async {
+    widgetOwnsCleanup = true;
     try {
       await tester.binding.setSurfaceSize(const Size(600, 1200));
       await tester.pumpWidget(UncontrolledProviderScope(container: container,
           child: const MaterialApp(home: SyncSettingsScreen())));
       await settle(tester, find.text('确认本机数据归属'));
-      await tester.tap(find.text('确认本机数据归属'));
-      await tester.pumpAndSettle();
+      await tapButton(tester, find.widgetWithText(OutlinedButton, '确认本机数据归属'), bindingEntry: true);
+      await settle(tester, find.byType(AlertDialog));
       account.select(user: 'user-b');
-      await tester.tap(find.text('确认属于此身份'));
+      await tapButton(tester, find.widgetWithText(FilledButton, '确认属于此身份'));
       await settle(tester, find.textContaining('数据归属确认失败'));
       expect(await tester.runAsync(() => SyncWorkspaceRepository(db).readOwner()), isNull);
       expect(find.textContaining('数据归属确认失败'), findsOneWidget);
       account.select();
       await settle(tester, find.text('确认本机数据归属'));
-      await tester.tap(find.text('确认本机数据归属'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('确认属于此身份'));
-      await settle(tester, find.textContaining('本机数据归属已确认；'));
+      await tapButton(tester, find.widgetWithText(OutlinedButton, '确认本机数据归属'), bindingEntry: true);
+      await settle(tester, find.byType(AlertDialog));
+      await tapButton(tester, find.widgetWithText(FilledButton, '确认属于此身份'));
+      await settle(tester, find.textContaining('本机数据归属已确认；'), readyWhen: () {
+        final access = container.read(syncWorkspaceAccessProvider);
+        final identity = container.read(syncWorkspaceIdentityProvider);
+        return !access.isLoading && access.asData?.value.canSync == true &&
+            identity != null && access.asData?.value.owner?.matches(identity) == true &&
+            find.text('确认本机数据归属').evaluate().isEmpty;
+      });
       final owner = await tester.runAsync(() => SyncWorkspaceRepository(db).readOwner());
       expect(owner!.userId, 'user-a');
       expect(find.text('确认本机数据归属'), findsNothing);
       expect(find.textContaining('首次同步模式仍需单独确认'), findsOneWidget);
     } finally {
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump(Duration.zero);
-      await tester.binding.setSurfaceSize(null);
+      await closeWidgetFixture(tester);
     }
   });
 }
