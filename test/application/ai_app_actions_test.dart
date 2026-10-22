@@ -94,10 +94,21 @@ void main() {
           ['已修改$field', entry.id],
         );
         await expectLater(actions.execute(proposed, confirmedDescription: description), throwsStateError);
-        final unchanged = (await shopping.watchEntries().first).single;
+        final unchanged = (await shopping.readEntries()).single;
         expect(unchanged.id, entry.id);
         expect(unchanged.targetQuantity, 2);
         expect(unchanged.isCompleted, isFalse);
+        expect(field == 'category' ? unchanged.category : unchanged.reason, '已修改$field');
+      }
+      await confirm(proposed);
+      final entries = await shopping.readEntries();
+      if (kind == 'shopping_delete') {
+        expect(entries, isEmpty);
+      } else {
+        expect(entries.single.targetQuantity, kind == 'shopping_add' ? 5 : 2);
+        expect(entries.single.isCompleted, kind == 'shopping_complete');
+        expect(entries.single.category, '已修改category');
+        expect(entries.single.reason, '已修改reason');
       }
     });
   }

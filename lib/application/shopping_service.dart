@@ -8,6 +8,8 @@ class ShoppingService {
 
   Stream<List<ShoppingEntry>> watchEntries() => _repository.watchEntries();
 
+  Future<List<ShoppingEntry>> readEntries() => _repository.readEntries();
+
   Future<void> addOrMerge({
     required String itemName,
     required int targetQuantity,

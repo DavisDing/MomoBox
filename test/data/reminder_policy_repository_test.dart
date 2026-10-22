@@ -1,12 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:momo_box/core/database/app_database.dart';
 import 'package:momo_box/data/repositories/inventory_repository.dart';
 import 'package:momo_box/data/repositories/reminder_repository.dart';
+import 'package:momo_box/domain/inventory/calendar_date.dart';
 import 'package:momo_box/domain/inventory/expiry_rules.dart';
 import 'package:momo_box/domain/inventory/reminder_rules.dart';
 import 'package:momo_box/domain/models/inventory_models.dart';
@@ -38,7 +38,7 @@ void main() {
     database = AppDatabase.forTesting(NativeDatabase.memory());
     reminders = ReminderRepository(database);
     inventory = InventoryRepository(database, syncScopeId: 'family');
-    today = ExpiryRules.dateOnly(DateTime.now());
+    today = CalendarDate.today(timeZone: 'Asia/Shanghai');
     productId = await inventory.createProductWithBatch(IntakeDraft(
       name: '牛奶',
       category: '食品',
@@ -165,11 +165,20 @@ void main() {
 
   test('家庭禁用不隐藏现存库存或过期事实但通知候选全部停止', () async {
     final batch = (await database.select(database.productBatches).get()).single;
-    await (database.update(database.productBatches)
-          ..where((row) => row.id.equals(batch.id)))
-        .write(ProductBatchesCompanion(
-      expiryDate: Value(today.subtract(const Duration(days: 1))),
-    ));
+    final expiredOn = DateTime(today.year, today.month, today.day - 1);
+    await inventory.applyRemoteProductBatch(
+      batchId: batch.id,
+      payload: {'expiry_date': CalendarDate.encode(expiredOn)},
+      version: batch.serverVersion + 1,
+      updatedAt: today.toUtc(),
+    );
+    final beforeDisable = await load();
+    expect(beforeDisable.batches.single.expiryStatus, ExpiryStatus.expired);
+    expect(
+      ReminderRules.visibleCandidates([beforeDisable], const [], today: today)
+          .map((entry) => entry.type),
+      contains(ReminderType.expired),
+    );
     await apply('default', const {
       'enabled': false,
       'expiry_warning_days': 7,

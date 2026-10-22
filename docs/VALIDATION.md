@@ -547,3 +547,15 @@
 - 本机实际执行：`git diff --check` PASS；对照全部 6 项日志和当前 diff 完成静态复核。这些检查不构成 Dart 编译或运行验证。
 - 本机 `flutter`/`dart` 不在 PATH，残缺临时 SDK 也无 Dart executable/analysis snapshot；未安装或下载工具。`flutter analyze`、`flutter test`、Android debug 与 iOS unsigned build 均为 `NOT_EXECUTED`。原 run 的 Flutter tests/debug build、正式打包和发布均为 `SKIPPED`；需后续新提交的完整 CI 确认。
 - 证据：`https://github.com/DavisDing/MomoBox/actions/runs/39743266476`；失败 jobs `119705657797`、`119705657831`；后端 job `119705657697`。
+
+## 2026-10-22：run #44 采购确认、日期夹具与工作区测试等待修复（运行待验证）
+
+- 基线：本地 HEAD 与 run #44 均为 `7f019c3e7c7199a1e4a2ecdde59c49d789324b9c`，开始时工作区干净。run `39749735487` attempt 1 于 2026-10-22 16:42:20（Asia/Shanghai）触发；本节修改尚未提交/推送，不能算该 run 已通过。
+- 同 SHA 远端结果：Prepare `119726987994`、Backend test/PostgreSQL regression/vet `119727167670`、Flutter analyze（job `119727167709` 的 Static analysis）和 iOS unsigned build `119727167713` 均为 PASS，确认上轮 6 项 analyze/编译修复已通过对应门禁。Flutter Unit tests 已输出 `+755 -6`，但仍有测试未结束，随后在 16:54:47 触发 10 分钟超时；此计数不是完整测试完成结果。Android debug、正式打包及发布均 SKIPPED。
+- 采购确认的 3 项失败：`ai_app_actions_test.dart:96` 的 add/complete/delete 在仅分类或原因被 raw SQL 修改后仍执行成功。完整快照本已包含这些字段，但 `watchEntries().first` 可读取尚未失效的 Drift 流缓存。Repository 新增直接 `select.get()` 的 `readEntries`，与原 watch 共用过滤、排序及映射；Service 透传，AI 描述/上下文/执行前指纹使用新鲜查询，原 UI stream 不变。保留 raw SQL 和旧确认必须抛错断言，另验证数据未被旧确认写入，重新审阅确认后才成功。
+- 导入阻塞夹具的 1 项失败：`initial_import_service_test.dart` 使用 10 字符 `stable-key`，先于目标场景触发现有 16～255 字符合同。仅改为合法稳定键 `stable-pending-operation-key`，保留 pending 阻塞、禁止 prepare 和没有上传预检的断言，不放宽生产校验。
+- 日期的 2 项失败：AI 入库测试将纯日历字段与 local DateTime instant 比较，现严格校验 `YYYY-MM-DD` 及实际持久 canonical 值；提醒测试只修改 legacy expiry_date，未更新已优先采用的 expiry_date_calendar，现经真实 `applyRemoteProductBatch` 构造过期批次，并按家庭 Asia/Shanghai 取今天。新增禁用前过期/有提醒的前置断言，保留禁用后库存、过期事实、可用量及无通知候选的原断言。未修改生产日期语义。
+- 超时源码诊断与修复：最后活动的是 `sync_workspace_provider_test.dart` 的身份变化/重新确认 Widget 测试。原固定 15 次零时钟推进不能保证 UI 发起的 Drift 事务完成，随后 runAsync 内 readOwner 可能等待尚需 fake zone 推进的事务。改为有界交替真实事件循环和 16ms pump，等待事务提交后才显示的绑定成功消息（旧确认则等失败消息），再读取 owner；不再无条件 pumpAndSettle 等待页面所有 loading 动画。保留身份拒绝、归属和引擎断言，未延长 CI 超时。具体挂起位置与修复效果仍需运行确认。
+- 本机验证：`git diff --check` PASS；完成回执/查询合同、日期写入路径、测试断言及 import 目标的静态复核。无 UI 布局、依赖、schema、workflow、生产绑定或同步门禁变更。源码复核不能替代测试执行。
+- 环境限制：`flutter`/`dart` 不在 PATH，残缺临时 SDK 无 Dart executable；未安装工具。修改后 `flutter analyze`、受影响 5 个测试文件、完整 `flutter test`、Android debug/iOS unsigned build 均 `NOT_EXECUTED`，需新提交的完整 CI 验证。
+- 证据：`https://github.com/DavisDing/MomoBox/actions/runs/39749735487`；Flutter 测试 job `119727167709`；iOS job `119727167713`。

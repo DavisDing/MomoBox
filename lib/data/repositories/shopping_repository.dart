@@ -31,30 +31,31 @@ class ShoppingRepository {
 
   AppDatabase get database => _database;
 
-  Stream<List<ShoppingEntry>> watchEntries() {
-    return (_database.select(_database.shoppingEntries)
+  Selectable<ShoppingEntryRecord> _activeEntries() =>
+      _database.select(_database.shoppingEntries)
           ..where((entry) => entry.deletedAt.isNull())
           ..orderBy([
             (entry) => OrderingTerm.asc(entry.isCompleted),
             (entry) => OrderingTerm.desc(entry.updatedAt),
-          ]))
-        .watch()
-        .map(
-          (entries) => entries
-              .map(
-                (entry) => ShoppingEntry(
-                  id: entry.id,
-                  productId: entry.productId,
-                  itemName: entry.itemName,
-                  category: entry.category,
-                  targetQuantity: entry.targetQuantity,
-                  reason: entry.reason,
-                  isCompleted: entry.isCompleted,
-                ),
-              )
-              .toList(growable: false),
-        );
-  }
+          ]);
+
+  static ShoppingEntry _entry(ShoppingEntryRecord entry) => ShoppingEntry(
+    id: entry.id,
+    productId: entry.productId,
+    itemName: entry.itemName,
+    category: entry.category,
+    targetQuantity: entry.targetQuantity,
+    reason: entry.reason,
+    isCompleted: entry.isCompleted,
+  );
+
+  Stream<List<ShoppingEntry>> watchEntries() => _activeEntries().watch()
+      .map((entries) => entries.map(_entry).toList(growable: false));
+
+  /// Confirmation checks need a fresh database query even when a raw SQL write
+  /// has not invalidated Drift's cached presentation stream.
+  Future<List<ShoppingEntry>> readEntries() async =>
+      (await _activeEntries().get()).map(_entry).toList(growable: false);
 
   /// Returns the persisted entry, including a soft-deleted row.
   Future<ShoppingEntryRecord?> getEntryRecord(String entryId) {

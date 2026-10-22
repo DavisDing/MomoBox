@@ -121,12 +121,16 @@ void main() {
     expect((await SyncWorkspaceRepository(db).readOwner())!.familyId, 'family-a');
   });
 
-  Future<void> settle(WidgetTester tester) async {
-    for (var turn = 0; turn < 15; turn++) {
-      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
-      await tester.pump(Duration.zero);
+  Future<void> settle(WidgetTester tester, Finder ready) async {
+    // Drift transactions started by the UI continue in the fake async zone.
+    // Advance it alongside the real event loop until the relevant UI state is
+    // visible, before entering runAsync for a separate database assertion.
+    for (var turn = 0; turn < 200; turn++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 1)));
+      await tester.pump(const Duration(milliseconds: 16));
+      if (ready.evaluate().length == 1) return;
     }
-    await tester.pumpAndSettle();
+    expect(ready, findsOneWidget, reason: '工作区操作未在有界等待内完成');
   }
 
   testWidgets('数据归属确认显示完整身份，取消不写绑定、不启用同步', (tester) async {
@@ -134,14 +138,14 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(600, 1200));
       await tester.pumpWidget(UncontrolledProviderScope(container: container,
           child: const MaterialApp(home: SyncSettingsScreen())));
-      await settle(tester);
+      await settle(tester, find.text('确认本机数据归属'));
       expect(find.text('确认本机数据归属'), findsOneWidget);
       await tester.tap(find.text('确认本机数据归属'));
       await tester.pumpAndSettle();
       expect(find.textContaining('https://nas.example/api/v1'), findsOneWidget);
       expect(find.textContaining('账号：user-a'), findsOneWidget);
       await tester.tap(find.text('取消'));
-      await settle(tester);
+      await settle(tester, find.text('确认本机数据归属'));
       expect(await tester.runAsync(() => SyncWorkspaceRepository(db).readOwner()), isNull);
       expect(container.read(syncEngineProvider), isNull);
     } finally {
@@ -156,20 +160,20 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(600, 1200));
       await tester.pumpWidget(UncontrolledProviderScope(container: container,
           child: const MaterialApp(home: SyncSettingsScreen())));
-      await settle(tester);
+      await settle(tester, find.text('确认本机数据归属'));
       await tester.tap(find.text('确认本机数据归属'));
       await tester.pumpAndSettle();
       account.select(user: 'user-b');
       await tester.tap(find.text('确认属于此身份'));
-      await settle(tester);
+      await settle(tester, find.textContaining('数据归属确认失败'));
       expect(await tester.runAsync(() => SyncWorkspaceRepository(db).readOwner()), isNull);
       expect(find.textContaining('数据归属确认失败'), findsOneWidget);
       account.select();
-      await settle(tester);
+      await settle(tester, find.text('确认本机数据归属'));
       await tester.tap(find.text('确认本机数据归属'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('确认属于此身份'));
-      await settle(tester);
+      await settle(tester, find.textContaining('本机数据归属已确认；'));
       final owner = await tester.runAsync(() => SyncWorkspaceRepository(db).readOwner());
       expect(owner!.userId, 'user-a');
       expect(find.text('确认本机数据归属'), findsNothing);

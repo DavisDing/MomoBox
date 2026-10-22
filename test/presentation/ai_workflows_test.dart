@@ -6,7 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:momo_box/application/ai_inventory_action_service.dart';
 import 'package:momo_box/application/inventory_service.dart';
 import 'package:momo_box/core/database/app_database.dart';
+import 'package:momo_box/data/repositories/calendar_date_repository.dart';
 import 'package:momo_box/data/repositories/inventory_repository.dart';
+import 'package:momo_box/domain/inventory/calendar_date.dart';
 import 'package:momo_box/domain/models/inventory_models.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -88,7 +90,12 @@ void main() {
       expect(item.name, '用户核对后的牛奶');
       expect(item.totalStock, 2);
       expect(item.location, '冰箱');
-      expect(item.batches.single.expiryDate, DateTime(2027, 1, 1));
+      final batch = item.batches.single;
+      expect(CalendarDate.encode(batch.expiryDate!), '2027-01-01');
+      expect(await CalendarDateRepository(db).read(batch.id), {
+        'produced_date': null,
+        'expiry_date': '2027-01-01',
+      });
     });
     expect(store.actionReceipts['intake-proposal'], '已执行');
     expect(find.text('已按你确认的草稿完成入库。'), findsOneWidget);

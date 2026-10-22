@@ -45,7 +45,7 @@ class AiInventoryActionService {
   Future<String> contextSnapshot() async {
     final buffer = StringBuffer();
     if (_shopping != null) {
-      final entries = await _shopping.watchEntries().first;
+      final entries = await _shopping.readEntries();
       buffer.writeln('【采购清单】');
       for (final entry in entries) {
         buffer.writeln(jsonEncode({'id': entry.id, 'name': entry.itemName,
@@ -90,7 +90,7 @@ class AiInventoryActionService {
         final product = items.where((item) => item.id == a.productId).firstOrNull;
         if (a.productId.isNotEmpty && product == null) throw StateError('关联商品已不存在。');
         if (product != null && product.name != a.string('name')) throw StateError('商品名称与 ID 不匹配，请重新提问。');
-        final entries = await _shopping.watchEntries().first;
+        final entries = await _shopping.readEntries();
         final existing = entries.where((entry) => !entry.isCompleted &&
           (a.productId.isNotEmpty ? entry.productId == a.productId :
             entry.productId == null && entry.itemName.trim().toLowerCase() == a.string('name')!.trim().toLowerCase())).firstOrNull;
@@ -101,7 +101,7 @@ class AiInventoryActionService {
       case 'shopping_complete':
       case 'shopping_delete':
         if (_shopping == null) throw StateError('采购服务不可用。');
-        final entries = await _shopping.watchEntries().first;
+        final entries = await _shopping.readEntries();
         final entry = entries.where((e) => e.id == a.id).firstOrNull;
         if (entry == null) throw StateError('采购项已不存在，请重新提问。');
         return '${a.kind == 'shopping_delete' ? '删除采购项' : a.arguments['completed'] == true ? '标记采购已完成' : '恢复为待采购'}'
@@ -181,7 +181,7 @@ class AiInventoryActionService {
         return candidate?.fingerprint ?? '';
       case 'shopping_add':
         if (_shopping == null) return '';
-        final candidates = (await _shopping.watchEntries().first).where((entry) =>
+        final candidates = (await _shopping.readEntries()).where((entry) =>
           !entry.isCompleted && (action.productId.isNotEmpty
             ? entry.productId == action.productId
             : entry.productId == null && entry.itemName.trim().toLowerCase() ==
@@ -191,7 +191,7 @@ class AiInventoryActionService {
       case 'shopping_complete':
       case 'shopping_delete':
         if (_shopping == null) return '';
-        final entry = (await _shopping.watchEntries().first)
+        final entry = (await _shopping.readEntries())
             .where((entry) => entry.id == action.id).firstOrNull;
         return jsonEncode(entry == null ? null : _shoppingEntrySnapshot(entry));
       case 'chore_update':

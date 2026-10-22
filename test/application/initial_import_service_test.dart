@@ -337,7 +337,7 @@ void main() {
   test('pending old operation is reported; preview never uploads around its gate', () async {
     await outbox.enqueue(SyncOutboxDraft(changeId: 'pending', scopeId: 'family-a',
       operation: SyncOperation.entityUpsert, entity: 'products', entityId: 'new-id',
-      idempotencyKey: 'stable-key', requestJson: '{}'));
+      idempotencyKey: 'stable-pending-operation-key', requestJson: '{}'));
     final preview = await service.preview();
     expect(preview.canPrepare, isFalse);
     await expectLater(service.prepare(preview), throwsA(isA<StateError>()));
