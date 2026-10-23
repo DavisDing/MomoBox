@@ -113,7 +113,7 @@ class AiInventoryActionService {
         final candidate = candidates.where((c) => c.key == a.id).firstOrNull;
         if (candidate == null) throw StateError('提醒已变化或已处理，请重新提问。');
         return '将「${candidate.item.name}」${const {ReminderType.expired: '过期', ReminderType.expiring: '临期', ReminderType.lowStock: '低库存'}[candidate.type]}提醒标记为已处理。'
-            '\n当前库存 ${candidate.item.totalStock} 件；最近到期 ${_dateText(candidate.item.nearestDatedBatch?.expiryDate)}。';
+            '\n当前库存 ${candidate.item.totalStock} 件；对应到期 ${_dateText((candidate.batch ?? candidate.item.nearestDatedBatch)?.expiryDate)}。';
       case 'chore_add':
       case 'chore_update':
       case 'chore_complete':
@@ -307,6 +307,7 @@ class AiInventoryActionService {
         await _reminders!.acknowledge(reminderKey: candidate.key, fingerprint: candidate.fingerprint);
       case 'chore_add':
         await _chores!.addChore(title: action.string('title')!,
+          initializePresets: false,
           category: action.string('category') ?? '家居清洁',
           repeatInterval: ChoreRepeatInterval.values.byName(action.string('repeatInterval')!),
           nextDueDate: AiInventoryAction.date(action.arguments['nextDueDate']), notes: action.string('notes'));

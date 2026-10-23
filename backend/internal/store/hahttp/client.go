@@ -36,6 +36,12 @@ func New(client *http.Client) *Client {
 		client = &http.Client{Transport: http.DefaultTransport}
 	}
 	cloned := *client
+	if cloned.Transport == nil {
+		cloned.Transport = http.DefaultTransport
+	}
+	if transport, ok := cloned.Transport.(*http.Transport); ok {
+		cloned.Transport = guardedTransport(transport)
+	}
 	if cloned.Timeout <= 0 {
 		cloned.Timeout = defaultTimeout
 	}

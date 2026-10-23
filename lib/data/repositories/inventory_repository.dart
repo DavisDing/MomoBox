@@ -208,7 +208,9 @@ class InventoryRepository {
 
   Future<List<ProductMatchCandidate>> findMatchingProducts(IntakeDraft draft) async {
     final barcode = _trimToNull(draft.barcode);
-    final products = await _database.select(_database.products).get();
+    final products = await (_database.select(_database.products)
+          ..where((product) => product.deletedAt.isNull()))
+        .get();
     return products
         .where((product) {
           if (barcode != null) return _trimToNull(product.barcode) == barcode;
@@ -246,7 +248,7 @@ class InventoryRepository {
       final existing = existingProductId == null
           ? null
           : await (_database.select(_database.products)
-                ..where((product) => product.id.equals(existingProductId)))
+                ..where((product) => product.id.equals(existingProductId) & product.deletedAt.isNull()))
               .getSingleOrNull();
       if (existingProductId != null && existing == null) {
         throw StateError('要合并的商品不存在，可能已被删除。');
@@ -584,16 +586,67 @@ class InventoryRepository {
           note: '批次报废',
           now: now,
         );
-        await _enqueueInventoryCommand(
-          command: 'discard',
-          operationId: _uuid.v4(),
-          allocations: [
-            {'batch_id': batch.id, 'quantity': batch.remainingQuantity},
-          ],
-          now: now,
-        );
       }
+      // A zero-stock discard is still a versioned state transition. The
+      // command protocol validates that authoritative quantity is also zero.
+      await _enqueueInventoryCommand(
+        command: 'discard',
+        operationId: _uuid.v4(),
+        allocations: [
+          {'batch_id': batch.id, 'quantity': batch.remainingQuantity},
+        ],
+        now: now,
+      );
     });
+  }
+
+  /// Called only after explicit rejection abandonment and a fresh snapshot
+  /// confirms the base-zero entity was never created on the server.
+  Future<void> abandonUncreatedEntity({
+    required String entity,
+    required String entityId,
+  }) async {
+    final now = DateTime.now().toUtc();
+    if (entity == 'product_batches') {
+      await (_database.update(_database.productBatches)
+            ..where((row) => row.id.equals(entityId) & row.serverVersion.equals(0)))
+          .write(ProductBatchesCompanion(deletedAt: Value(now), updatedAt: Value(now)));
+    } else if (entity == 'products') {
+      final product = await getProductRecord(entityId);
+      if (product == null || product.serverVersion > 0) return;
+      final activeChildren = await (_database.select(_database.productBatches)
+            ..where((row) => row.productId.equals(entityId) & row.deletedAt.isNull()))
+          .get();
+      if (activeChildren.isNotEmpty) {
+        throw StateError('商品仍有关联库存，无法放弃未创建的商品。');
+      }
+      await (_database.update(_database.products)
+            ..where((row) => row.id.equals(entityId) & row.serverVersion.equals(0)))
+          .write(ProductsCompanion(deletedAt: Value(now), updatedAt: Value(now)));
+    } else {
+      throw ArgumentError.value(entity, 'entity');
+    }
+  }
+
+  /// Apply an entity receipt without replacing later optimistic local edits.
+  /// Must share the caller's transaction with outbox receipt settlement.
+  Future<void> acknowledgeEntityVersion({
+    required String entity,
+    required String entityId,
+    required int version,
+  }) async {
+    if (version < 1) throw ArgumentError.value(version, 'version');
+    if (entity == 'products') {
+      await (_database.update(_database.products)
+            ..where((row) => row.id.equals(entityId) & row.serverVersion.isSmallerThanValue(version)))
+          .write(ProductsCompanion(serverVersion: Value(version)));
+    } else if (entity == 'product_batches') {
+      await (_database.update(_database.productBatches)
+            ..where((row) => row.id.equals(entityId) & row.serverVersion.isSmallerThanValue(version)))
+          .write(ProductBatchesCompanion(serverVersion: Value(version)));
+    } else {
+      throw ArgumentError.value(entity, 'entity');
+    }
   }
 
   Future<SyncRemoteApplyStatus> applyRemoteProduct({
@@ -1058,6 +1111,9 @@ class InventoryRepository {
       if (batch == null) throw StateError('找不到批次资料。');
       payload = {...payload, 'batch_no': batch.batchNo, 'is_opened': batch.isOpened};
     }
+    baseVersion = await outbox.nextEntityBaseVersion(
+      scopeId: scopeId, entity: entity, entityId: entityId, serverVersion: baseVersion,
+    );
     final changeId = _uuid.v4();
     await outbox.enqueueInCurrentTransaction(
       SyncOutboxDraft(

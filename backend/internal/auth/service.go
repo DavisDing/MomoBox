@@ -85,6 +85,9 @@ func (s *Service) Login(ctx context.Context, request LoginRequest) (AuthResponse
 	if strings.TrimSpace(request.Email) == "" || request.Password == "" {
 		return empty, newError(CodeValidation, "email and password are required")
 	}
+	if len(request.Password) > 72 {
+		return empty, newError(CodeInvalidCredentials, "email or password is invalid")
+	}
 	if request.Device != nil {
 		if err := validateDevice(*request.Device); err != nil {
 			return empty, err
@@ -257,8 +260,8 @@ func validateRegistration(request RegisterRequest) error {
 		return newError(CodeValidation, "email is invalid")
 	}
 	passwordLength := utf8.RuneCountInString(request.Password)
-	if passwordLength < 12 || passwordLength > 128 {
-		return newError(CodeValidation, "password must be 12-128 characters")
+	if passwordLength < 12 || len(request.Password) > 72 {
+		return newError(CodeValidation, "password must be at least 12 characters and at most 72 UTF-8 bytes")
 	}
 	if n := utf8.RuneCountInString(strings.TrimSpace(request.Nickname)); n < 1 || n > 80 {
 		return newError(CodeValidation, "nickname must be 1-80 characters")

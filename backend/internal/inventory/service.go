@@ -214,8 +214,9 @@ func (s *Service) plan(ctx context.Context, tx Tx, command Command) ([]Allocatio
 		if batch.Status == BatchDiscarded || batch.Quantity < 0 {
 			return nil, ErrBatchUnavailable
 		}
-		if command.Command == CommandDiscard && command.Quantity > batch.Quantity {
-			return nil, ErrInsufficientStock
+		if command.Command == CommandDiscard && command.Quantity != batch.Quantity {
+			if command.Quantity > batch.Quantity { return nil, ErrInsufficientStock }
+			return nil, fmt.Errorf("%w: discard quantity must equal the entire authoritative remainder", ErrInvalidCommand)
 		}
 		return []Allocation{{BatchID: batch.ID, Quantity: command.Quantity, BeforeQuantity: batch.Quantity, BeforeVersion: batch.Version}}, nil
 	default:
@@ -320,8 +321,12 @@ func validateCommand(command Command) error {
 		if len(command.Allocations) == 0 {
 			return ErrInvalidCommand
 		}
-	case CommandRestock, CommandDiscard:
+	case CommandRestock:
 		if strings.TrimSpace(command.BatchID) == "" || command.Quantity < 1 {
+			return ErrInvalidCommand
+		}
+	case CommandDiscard:
+		if strings.TrimSpace(command.BatchID) == "" || command.Quantity < 0 {
 			return ErrInvalidCommand
 		}
 	default:

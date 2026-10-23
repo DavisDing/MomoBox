@@ -10,10 +10,23 @@ class SyncCategoryRepository {
   String _key(String scopeId, String name) =>
       'sync_category_identity:$scopeId:${Uri.encodeComponent(name)}';
 
-  Future<String?> readId(String scopeId, String name) async =>
-      (await (database.select(database.appSettings)
-        ..where((row) => row.key.equals(_key(scopeId, name))))
+  Future<String?> readId(String scopeId, String name) async {
+    final id = (await (database.select(database.appSettings)
+      ..where((row) => row.key.equals(_key(scopeId, name))))
       .getSingleOrNull())?.value;
+    if (id == null) return null;
+    final remote = await (database.select(database.appSettings)
+      ..where((row) => row.key.equals('sync_aux:$scopeId:categories:$id')))
+      .getSingleOrNull();
+    if (remote == null) return id; // A new local category has no remote row yet.
+    final envelope = Map<String, dynamic>.from(jsonDecode(remote.value) as Map);
+    final payload = envelope['payload'];
+    if (envelope['deleted_at'] != null ||
+        (payload is Map && payload['deleted_at'] != null)) {
+      return null; // Retain audit/binding; never reference its tombstoned UUID.
+    }
+    return id;
+  }
 
   Future<List<Map<String, dynamic>>> remoteCategories(String scopeId) async {
     final prefix = 'sync_aux:$scopeId:categories:';

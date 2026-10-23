@@ -52,3 +52,16 @@ type HAClient interface {
 // Client is retained as a concise alias for adapters that prefer the generic
 // name while HAClient documents the boundary explicitly.
 type Client = HAClient
+
+// CommandExecutionRepository commits Begin before network I/O. The bool reports
+// whether this invocation exclusively created a new pending execution.
+// Pending/unknown entries must never be interpreted as permission to retry.
+type CommandExecution struct {
+	Status      string
+	Fingerprint string
+	Result      CommandDTO
+}
+type CommandExecutionRepository interface {
+	Begin(context.Context, string, string, string) (CommandExecution, bool, error)
+	Complete(context.Context, string, string, string, CommandExecution) error
+}

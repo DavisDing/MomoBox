@@ -20,6 +20,8 @@ const (
 	CodeIntegrationUnavailable ErrorCode = "HA_UNAVAILABLE"
 	CodeInvalidRole            ErrorCode = "HA_INVALID_ROLE"
 	CodeAuditFailure           ErrorCode = "HA_AUDIT_FAILURE"
+	CodeCommandUnknown         ErrorCode = "HA_COMMAND_RESULT_UNKNOWN"
+	CodeRequestReuse           ErrorCode = "HA_REQUEST_ID_REUSE"
 )
 
 // BusinessError is safe to return from an adapter. Cause is deliberately kept

@@ -2,6 +2,7 @@ import '../../app/momo_typography.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/inventory_statistics_service.dart';
@@ -177,7 +178,9 @@ class _StatisticsChart extends StatelessWidget {
               width: double.infinity,
               child: points.every((point) => point.activity == 0)
                   ? const Center(child: Text('当前范围内暂无库存变动记录。'))
-                  : CustomPaint(painter: _StatisticsChartPainter(points: points, colors: colors)),
+                  : CustomPaint(
+                      key: const Key('inventory-statistics-chart'),
+                      painter: _StatisticsChartPainter(points: points, colors: colors)),
             ),
           ],
         ),
@@ -276,6 +279,27 @@ class _StatisticsChartPainter extends CustomPainter {
       _paintText(canvas, '${points[index].date.month}/${points[index].date.day}', Offset(x - 15, chart.bottom + 6), labelStyle, width: 32);
     }
   }
+
+  @override
+  SemanticsBuilderCallback get semanticsBuilder => (size) {
+    if (points.isEmpty || size.width <= 0 || size.height <= 0) return [];
+    final width = size.width / points.length;
+    return [
+      for (var index = 0; index < points.length; index++)
+        CustomPainterSemantics(
+          rect: Rect.fromLTWH(index * width, 0, width, size.height),
+          properties: SemanticsProperties(
+            label: '${_dateText(points[index].date)}，消耗 ${points[index].consumed} 件，'
+                '入库或调整 ${points[index].intake} 件，报废 ${points[index].discarded} 件',
+            textDirection: TextDirection.ltr,
+          ),
+        ),
+    ];
+  };
+
+  @override
+  bool shouldRebuildSemantics(covariant _StatisticsChartPainter oldDelegate) =>
+      oldDelegate.points != points;
 
   @override
   bool shouldRepaint(covariant _StatisticsChartPainter oldDelegate) =>

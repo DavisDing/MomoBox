@@ -14,6 +14,11 @@ var requestIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][
 
 func RequestIDMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if existing := RequestIDFromContext(r.Context()); existing != "" {
+			w.Header().Set("X-Request-ID", existing)
+			next.ServeHTTP(w, r)
+			return
+		}
 		requestID := r.Header.Get("X-Request-ID")
 		if !requestIDPattern.MatchString(requestID) {
 			requestID = NewRequestID()

@@ -4,6 +4,19 @@ import 'package:momo_box/domain/models/inventory_models.dart';
 import 'package:momo_box/services/calendar_sync_service.dart';
 
 void main() {
+  test('同一批次到期前后导出保持同一个UID', () {
+    final item = InventoryItem(id: 'p', name: '物品', category: '日用',
+      brand: null, specification: null, barcode: null, location: null,
+      unit: '件', lowStockThreshold: 1, batches: [
+        InventoryBatch(id: 'b', productId: 'p', batchNo: null,
+          initialQuantity: 2, remainingQuantity: 2, isDiscarded: false,
+          expiryDate: DateTime(2026, 9, 15), productionDate: null)
+      ]);
+    String uid(DateTime day) => CalendarSyncService.buildIcsContent(items: [item],
+      options: const CalendarSyncOptions(), now: day).split('\r\n')
+      .singleWhere((line) => line.startsWith('UID:'));
+    expect(uid(DateTime(2026, 9, 14)), uid(DateTime(2026, 9, 16)));
+  });
   group('CalendarSyncService 生成标准 iCalendar (.ics) 日历日程', () {
     final baseToday = DateTime(2026, 9, 14);
 

@@ -38,6 +38,22 @@ func ValidateBaseURL(raw string) error {
 	if u.Path != "" && u.Path != "/" {
 		return businessError(CodeInvalidURL, "base_url must not contain a path", nil)
 	}
+	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	for _, blocked := range []string{"metadata.google.internal", "metadata.goog", "instance-data.ec2.internal"} {
+		if host == blocked {
+			return businessError(CodeInvalidURL, "cloud metadata is not a Home Assistant endpoint", nil)
+		}
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.IsUnspecified() || ip.IsMulticast() {
+			return businessError(CodeInvalidURL, "base_url contains a prohibited host", nil)
+		}
+		for _, blocked := range []string{"169.254.169.254", "169.254.170.2", "100.100.100.200", "fd00:ec2::254"} {
+			if ip.Equal(net.ParseIP(blocked)) {
+				return businessError(CodeInvalidURL, "cloud metadata is not a Home Assistant endpoint", nil)
+			}
+		}
+	}
 	if u.Hostname() == "" {
 		return businessError(CodeInvalidURL, "base_url must include a host", nil)
 	}

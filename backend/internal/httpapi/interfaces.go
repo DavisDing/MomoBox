@@ -20,6 +20,10 @@ type ClaimsVerifier interface {
 
 // Dependencies contains application services. Local interfaces make the HTTP
 // adapter easy to test and let concrete domain services satisfy it directly.
+type ClaimsAuthorizer interface {
+	AuthorizeClaims(context.Context, auth.AccessTokenClaims) (auth.AccessTokenClaims, error)
+}
+
 type Dependencies struct {
 	Auth          AuthService
 	Family        FamilyService
@@ -27,6 +31,7 @@ type Dependencies struct {
 	Sync          SyncService
 	HomeAssistant HomeAssistantService
 	Verifier      ClaimsVerifier
+	Authorizer    ClaimsAuthorizer
 	Config        Config
 }
 

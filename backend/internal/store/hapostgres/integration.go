@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/momobox/backend/internal/homeassistant"
 )
@@ -264,7 +264,7 @@ type scanner interface {
 
 func scanIntegration(row scanner) (homeassistant.Integration, error) {
 	var integration homeassistant.Integration
-	var keyVersion int64
+	var keyVersion string
 	var status string
 	err := row.Scan(
 		&integration.ID,
@@ -282,17 +282,21 @@ func scanIntegration(row scanner) (homeassistant.Integration, error) {
 	if err != nil {
 		return homeassistant.Integration{}, err
 	}
-	integration.KeyVersion = strconv.FormatInt(keyVersion, 10)
+	integration.KeyVersion = keyVersion
 	integration.Status = homeassistant.IntegrationStatus(status)
 	return integration, nil
 }
 
-func parseKeyVersion(value string) (int64, error) {
-	parsed, err := strconv.ParseInt(strings.TrimSpace(value), 10, 32)
-	if err != nil || parsed < 1 {
-		return 0, fmt.Errorf("invalid Home Assistant token key version %q", value)
+func parseKeyVersion(value string) (string, error) {
+	// Key versions are opaque AEAD identifiers. Preserve the exact bytes used
+	// as associated data; trimming or converting them would break decryption.
+	if value == "" || len(value) > 128 || strings.TrimSpace(value) != value || strings.ContainsAny(value, "\r\n\t") {
+		return "", errors.New("invalid Home Assistant token key version")
 	}
-	return parsed, nil
+	for _, r := range value {
+		if unicode.IsSpace(r) || unicode.IsControl(r) { return "", errors.New("invalid Home Assistant token key version") }
+	}
+	return value, nil
 }
 
 func requireAffected(result sql.Result, resource string) error {

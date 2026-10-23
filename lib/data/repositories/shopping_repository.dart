@@ -64,6 +64,52 @@ class ShoppingRepository {
         .getSingleOrNull();
   }
 
+  /// Intake and removal share one transaction, including their outbox writes.
+  /// Rechecking the selected row also rejects retries after a prior commit.
+  Future<String> intakeAndDelete({
+    required ShoppingEntry expectedEntry,
+    required Future<String> Function() intake,
+  }) => _database.transaction(() async {
+    final existing = await getEntryRecord(expectedEntry.id);
+    if (existing == null || existing.deletedAt != null) {
+      throw StateError('采购项已入库或删除，请刷新清单。');
+    }
+    if (existing.productId != expectedEntry.productId ||
+        existing.itemName != expectedEntry.itemName ||
+        existing.category != expectedEntry.category ||
+        existing.targetQuantity != expectedEntry.targetQuantity ||
+        existing.reason != expectedEntry.reason ||
+        existing.isCompleted != expectedEntry.isCompleted) {
+      throw StateError('采购项已变化，请重新确认入库。');
+    }
+    final productId = await intake();
+    await delete(existing.id);
+    return productId;
+  });
+
+  Future<void> abandonUncreatedEntity({
+    required String entity,
+    required String entityId,
+  }) async {
+    if (entity != 'shopping_items') throw ArgumentError.value(entity, 'entity');
+    final now = DateTime.now().toUtc();
+    await (_database.update(_database.shoppingEntries)
+          ..where((row) => row.id.equals(entityId) & row.serverVersion.equals(0)))
+        .write(ShoppingEntriesCompanion(deletedAt: Value(now), updatedAt: Value(now)));
+  }
+
+  Future<void> acknowledgeEntityVersion({
+    required String entity,
+    required String entityId,
+    required int version,
+  }) async {
+    if (entity != 'shopping_items') throw ArgumentError.value(entity, 'entity');
+    if (version < 1) throw ArgumentError.value(version, 'version');
+    await (_database.update(_database.shoppingEntries)
+          ..where((row) => row.id.equals(entityId) & row.serverVersion.isSmallerThanValue(version)))
+        .write(ShoppingEntriesCompanion(serverVersion: Value(version)));
+  }
+
   Future<void> addOrMerge({
     required String itemName,
     required int targetQuantity,
@@ -388,6 +434,9 @@ class ShoppingRepository {
         ..where((row) => row.id.equals(entryId))).getSingleOrNull();
       if (entry != null) payload = {...payload, 'category': entry.category, 'reason': entry.reason};
     }
+    baseVersion = await outbox.nextEntityBaseVersion(
+      scopeId: scopeId, entity: 'shopping_items', entityId: entryId, serverVersion: baseVersion,
+    );
     final changeId = _uuid.v4();
     final idempotencyKey = '$scopeId:$changeId';
     await outbox.enqueueInCurrentTransaction(
@@ -422,6 +471,9 @@ class ShoppingRepository {
     final scopeId = await _mutationScope();
     final outbox = _outbox;
     if (scopeId == null || scopeId.trim().isEmpty || outbox == null) return;
+    baseVersion = await outbox.nextEntityBaseVersion(
+      scopeId: scopeId, entity: 'shopping_items', entityId: entryId, serverVersion: baseVersion,
+    );
     final changeId = _uuid.v4();
     final idempotencyKey = '$scopeId:$changeId';
     await outbox.enqueueInCurrentTransaction(

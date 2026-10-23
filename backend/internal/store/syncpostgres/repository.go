@@ -20,7 +20,9 @@ const (
 SELECT d.id::text, d.family_id::text, d.user_id::text, COALESCE(fm.role, ''),
        (d.revoked_at IS NOT NULL OR d.deleted_at IS NOT NULL)
 FROM sync_devices AS d
-LEFT JOIN family_members AS fm ON fm.family_id = d.family_id
+JOIN families AS f ON f.id = d.family_id AND f.deleted_at IS NULL
+JOIN users AS u ON u.id = d.user_id AND u.deleted_at IS NULL
+JOIN family_members AS fm ON fm.family_id = d.family_id
   AND fm.user_id = d.user_id AND fm.deleted_at IS NULL
 WHERE d.id = $1::uuid`
 
@@ -855,7 +857,7 @@ WHERE family_id = $1::uuid AND id = $2::uuid`, r.familyID, entityID).Scan(&versi
 	}
 	allocations := make([]syncdomain.InventoryAllocationResult, 0, len(result.Allocations))
 	for _, allocation := range result.Allocations {
-		if allocation.BatchID == "" || allocation.Quantity <= 0 || allocation.BeforeQuantity < 0 || allocation.FinalQuantity < 0 || allocation.BeforeVersion < 1 || allocation.AfterVersion < 1 {
+		if allocation.BatchID == "" || allocation.Quantity < 0 || (allocation.Quantity == 0 && (result.Command != inventory.CommandDiscard || allocation.BeforeQuantity != 0 || allocation.FinalQuantity != 0)) || allocation.BeforeQuantity < 0 || allocation.FinalQuantity < 0 || allocation.BeforeVersion < 1 || allocation.AfterVersion < 1 {
 			return syncdomain.InventoryCommandResult{}, syncdomain.NewBusinessError("INVALID_AUTHORITATIVE_RESULT", "inventory service returned an invalid allocation", nil)
 		}
 		allocations = append(allocations, syncdomain.InventoryAllocationResult{
@@ -896,10 +898,13 @@ func (r *transactionRepository) GetIdempotency(ctx context.Context, deviceID, ke
 	}
 	var revoked bool
 	err := r.tx.QueryRowContext(ctx, `
-SELECT user_id::text, (revoked_at IS NOT NULL OR deleted_at IS NOT NULL)
-FROM sync_devices
-WHERE id = $1::uuid AND family_id = $2::uuid
-FOR UPDATE`, deviceID, r.familyID).Scan(&r.userID, &revoked)
+SELECT d.user_id::text, (d.revoked_at IS NOT NULL OR d.deleted_at IS NOT NULL)
+FROM sync_devices AS d
+JOIN family_members fm ON fm.family_id = d.family_id AND fm.user_id = d.user_id AND fm.deleted_at IS NULL
+JOIN families f ON f.id = fm.family_id AND f.deleted_at IS NULL
+JOIN users u ON u.id = fm.user_id AND u.deleted_at IS NULL
+WHERE d.id = $1::uuid AND d.family_id = $2::uuid AND fm.role IN ('owner','admin','member')
+FOR UPDATE OF d FOR SHARE OF fm, f, u`, deviceID, r.familyID).Scan(&r.userID, &revoked)
 	if errors.Is(err, sql.ErrNoRows) || revoked {
 		return syncdomain.IdempotencyRecord{}, false, syncdomain.ErrDeviceNotFound
 	}
@@ -1336,4 +1341,31 @@ func copyMap(source map[string]any) map[string]any {
 		result[key] = value
 	}
 	return result
+}
+
+// ExecuteExternalHomeAssistantCommand deliberately owns no sql.Tx. Resolve
+// current device/membership again after preflight before releasing a command.
+func (r *Repository) ExecuteExternalHomeAssistantCommand(ctx context.Context, scope syncdomain.DeviceScope, change syncdomain.SyncChange) (syncdomain.HomeAssistantCommandResult, error) {
+	current, err := r.ResolveDevice(ctx, scope.DeviceID)
+	if err != nil {
+		return syncdomain.HomeAssistantCommandResult{}, err
+	}
+	if current.Revoked || current.UserID != scope.UserID || current.FamilyID != scope.FamilyID || current.Role == "" {
+		return syncdomain.HomeAssistantCommandResult{}, syncdomain.ErrDeviceNotFound
+	}
+	if r.ha == nil {
+		return syncdomain.HomeAssistantCommandResult{}, syncdomain.NewBusinessError("HA_NOT_CONFIGURED", "Home Assistant executor is not configured", nil)
+	}
+	if scoped, ok := r.ha.(interface {
+		ExecuteHomeAssistantCommandForDevice(context.Context, string, string, string, syncdomain.SyncChange) (syncdomain.HomeAssistantCommandResult, error)
+	}); ok {
+		return scoped.ExecuteHomeAssistantCommandForDevice(ctx, scope.FamilyID, scope.UserID, scope.DeviceID, change)
+	}
+	return r.ha.ExecuteHomeAssistantCommand(ctx, scope.FamilyID, scope.UserID, change)
+}
+
+func (r *transactionRepository) SetOperationMetadata(operation syncdomain.Operation, entity, entityID string) {
+	r.operation = operation
+	r.entity = entity
+	r.entityID = entityID
 }

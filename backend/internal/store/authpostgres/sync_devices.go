@@ -105,7 +105,8 @@ func (r *SyncDeviceRepository) list(ctx context.Context, query string, args ...a
 }
 
 func (r *SyncDeviceRepository) Revoke(ctx context.Context, familyID, deviceID string, touch syncdevice.DeviceTouch) error {
-	result, err := r.db.ExecContext(ctx, `
+	return common.WithTx(ctx, r.db, nil, func(tx *sql.Tx) error {
+		result, err := tx.ExecContext(ctx, `
 		UPDATE sync_devices
 		SET revoked_at = COALESCE(revoked_at, $3),
 		    last_seen_at = GREATEST(COALESCE(last_seen_at, $3), $3),
@@ -123,7 +124,9 @@ func (r *SyncDeviceRepository) Revoke(ctx context.Context, familyID, deviceID st
 	if count == 0 {
 		return syncdevice.ErrNotFound
 	}
-	return nil
+		_, err = tx.ExecContext(ctx, `UPDATE refresh_tokens SET revoked_at = COALESCE(revoked_at, $3) WHERE family_id = $1::uuid AND device_id = $2::uuid`, familyID, deviceID, touch.SeenAt)
+		return err
+	})
 }
 
 func (r *SyncDeviceRepository) Touch(ctx context.Context, familyID, deviceID string, touch syncdevice.DeviceTouch) (syncdevice.Device, error) {

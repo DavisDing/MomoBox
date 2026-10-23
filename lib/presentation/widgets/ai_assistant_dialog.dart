@@ -102,6 +102,27 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
     _scrollToBottom();
   }
 
+  Future<void> _recoverConversationArchive() async {
+    final confirmed = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
+      title: const Text('保留原存档并重建会话？'),
+      content: const Text('损坏的原始存档会先另存到本机，再创建空白会话；不会删除库存或执行任何 AI 操作。'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('保留并重建')),
+      ],
+    ));
+    if (confirmed != true || !mounted) return;
+    try {
+      await _store.recoverCorruptArchive();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('重建失败，原存档已保留，请重试。')),
+        );
+      }
+    }
+  }
+
   void _switchSession(String sessionId) {
     _store.select(sessionId);
     setState(() => _currentPlan = null);
@@ -393,14 +414,19 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
           if (_store.storageError != null)
             ListTile(
               title: Text(_store.storageError!, style: const TextStyle(color: Colors.red)),
-              trailing: TextButton(onPressed: () async {
+              trailing: Wrap(children: [TextButton(onPressed: () async {
                 if (_store.ready) {
                   try { await _store.save(); } catch (_) { /* visible in store */ }
                 } else {
                   await _store.load();
                 }
               }, child: const Text('重试')),
+                if (_store.canRecoverArchive)
+                  TextButton(onPressed: _recoverConversationArchive,
+                    child: const Text('重建会话')),
+              ]),
             ),
+          if (_store.isRecoveringArchive) const LinearProgressIndicator(),
           // 快捷提问意图胶囊
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,

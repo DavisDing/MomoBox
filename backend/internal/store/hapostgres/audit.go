@@ -43,7 +43,7 @@ SELECT $1,
        i.id,
        e.id,
        $4,
-       NULL,
+       NULLIF($11, '')::uuid,
        $5,
        $6,
        $7::jsonb,
@@ -58,7 +58,16 @@ JOIN ha_entities AS e
  AND e.deleted_at IS NULL
 WHERE i.family_id = $1
   AND i.id = $2
-  AND i.deleted_at IS NULL`,
+  AND i.deleted_at IS NULL
+ON CONFLICT (family_id, request_id) DO UPDATE
+SET result = CASE WHEN ha_command_logs.result = 'succeeded' THEN 'succeeded' ELSE EXCLUDED.result END,
+    error_code = CASE WHEN ha_command_logs.result = 'succeeded' THEN NULL ELSE EXCLUDED.error_code END
+WHERE ha_command_logs.integration_id = EXCLUDED.integration_id
+  AND ha_command_logs.entity_id IS NOT DISTINCT FROM EXCLUDED.entity_id
+  AND ha_command_logs.requested_by_user_id = EXCLUDED.requested_by_user_id
+  AND ha_command_logs.device_id IS NOT DISTINCT FROM EXCLUDED.device_id
+  AND ha_command_logs.command = EXCLUDED.command
+  AND ha_command_logs.safe_parameters_summary = EXCLUDED.safe_parameters_summary`,
 		log.FamilyID,
 		log.IntegrationID,
 		log.EntityID,
@@ -69,6 +78,7 @@ WHERE i.family_id = $1
 		result,
 		log.ErrorCode,
 		log.CreatedAt,
+		log.DeviceID,
 	)
 	if err != nil {
 		return fmt.Errorf("append Home Assistant command audit: %w", err)

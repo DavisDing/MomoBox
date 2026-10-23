@@ -83,3 +83,36 @@ func TestReplayDoesNotWriteAgain(t *testing.T) {
 		t.Fatal("replay wrote changes")
 	}
 }
+
+func TestDiscardRequiresEntireAuthoritativeRemainder(t *testing.T) {
+	for _, test := range []struct {
+		name            string
+		stock, quantity int
+		valid           bool
+	}{
+		{"partial", 5, 2, false}, {"overdraw", 5, 6, false}, {"full", 5, 5, true}, {"empty transition", 0, 0, true}, {"zero against stock", 5, 0, false}, {"negative", 0, -1, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := &fakeStore{batches: []inventory.Batch{{ID: "b", FamilyID: "f", ProductID: "p", Quantity: test.stock, Version: 7, Status: inventory.BatchAvailable}}}
+			result, err := inventory.NewService(store).Execute(context.Background(), inventory.Command{FamilyID: "f", ActorID: "u", DeviceID: "d", OperationID: "o", IdempotencyKey: "k", BatchID: "b", Quantity: test.quantity, Command: inventory.CommandDiscard})
+			if !test.valid {
+				if err == nil || len(store.changes) != 0 || len(store.records) != 0 {
+					t.Fatalf("invalid discard wrote state: %#v %v", store, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.Allocations) != 1 || result.Allocations[0].FinalQuantity != 0 || result.Allocations[0].AfterVersion != 8 {
+				t.Fatalf("invalid authoritative result: %#v", result)
+			}
+			if len(store.changes) != 1 || store.changes[0].NewStatus == nil || *store.changes[0].NewStatus != inventory.BatchDiscarded {
+				t.Fatal("discard state transition missing")
+			}
+			if len(store.records) != 1 || store.records[0].Quantity != test.quantity {
+				t.Fatal("discard audit missing")
+			}
+		})
+	}
+}

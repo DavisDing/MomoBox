@@ -69,6 +69,15 @@ void main() {
 
     expect(item.nextDueDate, DateTime(2030, 1, 8));
   });
+
+  test('AI 确认新增仅保存该家务，不暗中初始化预设', () async {
+    final service = ChoreService(settings, clock: () => day);
+    final added = await service.addChore(title: '清洗滤网', category: '设备维护',
+        repeatInterval: ChoreRepeatInterval.weekly, initializePresets: false);
+    final saved = await service.readSavedChores();
+    expect(saved.map((c) => c.id), [added.id]);
+    expect((await service.getChores()).map((c) => c.id), [added.id]);
+  });
 }
 
 class _FailOnceSettings extends SettingsRepository {

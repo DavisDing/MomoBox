@@ -385,7 +385,7 @@ class SyncOutboxRepository {
           entry.status.equals(SyncOutboxStatus.inFlight.wireValue));
     }
     final rows = await (query
-          ..orderBy([(entry) => OrderingTerm.desc(entry.createdAt)]))
+          ..orderBy([(entry) => OrderingTerm.desc(const CustomExpression<int>('rowid'))]))
         .get();
     return rows.map(_outboxFromRecord).toList(growable: false);
   }
@@ -408,6 +408,33 @@ class SyncOutboxRepository {
           ..orderBy([(entry) => OrderingTerm.desc(entry.createdAt)]))
         .get();
     return rows.map(_outboxFromRecord).toList(growable: false);
+  }
+
+  /// Allocate a version for a newly-created immutable entity request. Pending
+  /// predecessors reserve one version each; failed predecessors remain queue
+  /// barriers until explicit settlement, so predictions never authorize sends.
+  Future<int> nextEntityBaseVersion({
+    required String scopeId,
+    required String entity,
+    required String entityId,
+    required int serverVersion,
+  }) async {
+    var version = serverVersion;
+    final entries = await listForEntity(scopeId: scopeId, entity: entity,
+      entityId: entityId, includeTerminal: true);
+    for (final entry in entries.reversed) {
+      if (entry.operation != SyncOperation.entityUpsert &&
+          entry.operation != SyncOperation.entityDelete) {
+        continue;
+      }
+      if (entry.status == SyncOutboxStatus.accepted || entry.status == SyncOutboxStatus.replayed) {
+        if ((entry.serverVersion ?? 0) > version) version = entry.serverVersion!;
+      } else if (!await _isSettledOutboxEntry(entry)) {
+        final base = entry.baseVersion;
+        if (base >= version) version = base + 1;
+      }
+    }
+    return version;
   }
 
   /// Emits only new or changed pending request content after a committed write.
@@ -474,10 +501,14 @@ class SyncOutboxRepository {
               entry.status.equals(SyncOutboxStatus.pending.wireValue) &
               (entry.nextAttemptAt.isNull() |
                   entry.nextAttemptAt.isSmallerOrEqualValue(readyAt)))
+          ..orderBy([(entry) => OrderingTerm.asc(const CustomExpression<int>('rowid'))])
           ..limit(limit * 4))
         .get();
-    final entries = rows.map(_outboxFromRecord).toList(growable: false)
-      ..sort(_compareDependencyOrder);
+    final entries = rows.map(_outboxFromRecord).toList(growable: false);
+    final order = {for (var i = 0; i < entries.length; i++) entries[i].changeId: i};
+    entries.sort((a, b) => _dependencyRank(a).compareTo(_dependencyRank(b)) != 0
+        ? _dependencyRank(a).compareTo(_dependencyRank(b))
+        : order[a.changeId]!.compareTo(order[b.changeId]!));
     return entries.take(limit).toList(growable: false);
   }
 
@@ -538,10 +569,14 @@ class SyncOutboxRepository {
               entry.status.equals(SyncOutboxStatus.pending.wireValue) &
               (entry.nextAttemptAt.isNull() |
                   entry.nextAttemptAt.isSmallerOrEqualValue(claimedAt)))
+          ..orderBy([(entry) => OrderingTerm.asc(const CustomExpression<int>('rowid'))])
           ..limit(500)).get();
       if (rows.isEmpty) return null;
-      final sorted = rows.map(_outboxFromRecord).toList(growable: false)
-        ..sort(_compareDependencyOrder);
+      final sorted = rows.map(_outboxFromRecord).toList(growable: false);
+      final order = {for (var i = 0; i < sorted.length; i++) sorted[i].changeId: i};
+      sorted.sort((a, b) => _dependencyRank(a).compareTo(_dependencyRank(b)) != 0
+          ? _dependencyRank(a).compareTo(_dependencyRank(b))
+          : order[a.changeId]!.compareTo(order[b.changeId]!));
       final selected = sorted.first;
       await (_database.update(_database.syncOutbox)
             ..where((entry) => entry.changeId.equals(selected.changeId)))
@@ -572,9 +607,11 @@ class SyncOutboxRepository {
     required DateTime now,
   }) async {
     final rows = await (_database.select(_database.syncOutbox)
-          ..where((entry) => entry.scopeId.equals(scopeId)))
+          ..where((entry) => entry.scopeId.equals(scopeId))
+          ..orderBy([(entry) => OrderingTerm.asc(const CustomExpression<int>('rowid'))]))
         .get();
     final entries = rows.map(_outboxFromRecord).toList(growable: false);
+    final queueOrder = {for (var i = 0; i < entries.length; i++) entries[i].changeId: i};
     final byEntity = <String, SyncOutboxEntry>{};
     final settled = <String>{};
     for (final entry in entries) {
@@ -588,15 +625,23 @@ class SyncOutboxRepository {
       if (entity == null || entityId == null) continue;
       final key = '$entity:$entityId';
       final previous = byEntity[key];
-      if (previous == null || entry.createdAt.isAfter(previous.createdAt)) {
+      if (previous == null || queueOrder[entry.changeId]! > queueOrder[previous.changeId]!) {
         byEntity[key] = entry;
       }
     }
     for (final entry in entries) {
-      if (settled.contains(entry.changeId)) continue;
+      if (settled.contains(entry.changeId) ||
+          (entry.status != SyncOutboxStatus.pending && entry.status != SyncOutboxStatus.blocked)) {
+        continue;
+      }
       final dependencyKeys = _dependencyKeys(entry);
-      if (dependencyKeys.isEmpty) continue;
-      final blockedBy = dependencyKeys.firstWhere(
+      final predecessors = entries.where((other) =>
+          other.changeId != entry.changeId && other.entity == entry.entity &&
+          other.entityId == entry.entityId && entry.entity != null && entry.entityId != null &&
+          queueOrder[other.changeId]! < queueOrder[entry.changeId]! && !settled.contains(other.changeId) &&
+          other.status != SyncOutboxStatus.accepted && other.status != SyncOutboxStatus.replayed);
+      final prior = predecessors.isEmpty ? null : predecessors.first;
+      final blockedBy = prior != null ? 'change:${prior.changeId}' : dependencyKeys.firstWhere(
         (key) {
           final dependency = byEntity[key];
           return dependency != null &&
@@ -811,15 +856,6 @@ class SyncOutboxRepository {
     return values;
   }
 
-  int _compareDependencyOrder(SyncOutboxEntry a, SyncOutboxEntry b) {
-    final rank = _dependencyRank(a);
-    final otherRank = _dependencyRank(b);
-    final byRank = rank.compareTo(otherRank);
-    if (byRank != 0) return byRank;
-    final byTime = a.createdAt.compareTo(b.createdAt);
-    return byTime != 0 ? byTime : a.changeId.compareTo(b.changeId);
-  }
-
   int _dependencyRank(SyncOutboxEntry entry) {
     if (entry.operation == SyncOperation.inventoryCommand) return 6;
     final entity = _entryEntity(entry, _decodedRequest(entry) ?? const <String, dynamic>{});
@@ -868,15 +904,143 @@ class SyncOutboxRepository {
     required String changeId,
     required String errorCode,
     required String errorMessage,
+    bool confirmedByNas = false,
+    bool failedBeforeFirstSend = false,
     DateTime? completedAt,
   }) async {
-    await _markTerminal(
-      changeId: changeId,
-      status: SyncOutboxStatus.rejected,
-      errorCode: errorCode,
-      errorMessage: errorMessage,
-      completedAt: completedAt,
-    );
+    await _database.transaction(() async {
+      final entry = await getByChangeId(changeId);
+      await _markTerminal(changeId: changeId, status: SyncOutboxStatus.rejected,
+        errorCode: errorCode, errorMessage: errorMessage, completedAt: completedAt);
+      if (entry != null && ((confirmedByNas && _isDefinitiveRejection(entry, errorCode)) ||
+          (failedBeforeFirstSend && entry.attemptCount == 1))) {
+        await _saveInternalSetting(_rejectionEvidenceKey(entry.scopeId, changeId), jsonEncode({
+          ..._outboxIdentity(entry),
+          'source': confirmedByNas ? 'nas_rejected' : 'never_sent',
+          'error_code': errorCode,
+          'error_message': errorMessage,
+          'recorded_at': _now().toIso8601String(),
+        }));
+      }
+    });
+  }
+
+  bool _isDefinitiveRejection(SyncOutboxEntry entry, String code) {
+    // Legacy NAS versions may classify transport/audit errors after an HA
+    // effect as rejected. Those are not proof that the physical action did
+    // not happen. Reused keys likewise cannot establish the original outcome.
+    if (code.contains('UNKNOWN') || code == 'IDEMPOTENCY_KEY_REUSE') return false;
+    if (entry.operation != SyncOperation.homeAssistantCommand) return true;
+    return const {
+      'VALIDATION_FAILED', 'UNSUPPORTED_OPERATION', 'INVALID_CURSOR',
+      'HOME_ASSISTANT_NOT_CONFIGURED', 'HA_FORBIDDEN', 'HA_INVALID_ROLE',
+      'HA_INVALID_ARGUMENT', 'HA_INVALID_COMMAND', 'HA_INVALID_PARAMETERS',
+      'HA_UNSUPPORTED_COMMAND', 'HA_NOT_FOUND',
+    }.contains(code);
+  }
+
+  String _rejectionEvidenceKey(String scopeId, String changeId) =>
+      'sync_rejection_evidence:${jsonEncode([scopeId, changeId])}';
+
+  String _rejectedSettlementKey(String scopeId, String changeId) =>
+      'sync_rejected_settlement:${jsonEncode([scopeId, changeId])}';
+
+  Map<String, dynamic> _outboxIdentity(SyncOutboxEntry entry) => {
+    'scope_id': entry.scopeId, 'outbox_change_id': entry.changeId,
+    'outbox_status': SyncOutboxStatus.rejected.wireValue,
+    'operation': entry.operation.wireValue, 'idempotency_key': entry.idempotencyKey,
+    'request_json': entry.requestJson,
+  };
+
+  Future<bool> canAbandonRejected(SyncOutboxEntry entry) async {
+    if (entry.status != SyncOutboxStatus.rejected || await _isSettledOutboxEntry(entry)) return false;
+    final evidence = await _readSettlement(_rejectionEvidenceKey(entry.scopeId, entry.changeId));
+    return evidence != null && _settlementMatchesOutbox(evidence, entry) &&
+        (evidence['source'] == 'nas_rejected' || evidence['source'] == 'never_sent') &&
+        evidence['error_code'] == entry.lastErrorCode &&
+        evidence['error_message'] == entry.lastErrorMessage;
+  }
+
+  /// Explicitly withdraw an intent with durable proof that it did not execute.
+  /// Unknown requests never enter here. The original request and refusal remain
+  /// unchanged; a fresh authoritative snapshot removes optimistic local effects.
+  Future<void> abandonRejected({required String scopeId, required String changeId}) async {
+    await _database.transaction(() async {
+      final entry = await getByChangeId(changeId);
+      if (entry != null && entry.scopeId == scopeId && await _isSettledOutboxEntry(entry) &&
+          (await _readSettlement(_rejectedSettlementKey(scopeId, changeId)))?['action'] == 'abandon_rejected') {
+        return;
+      }
+      if (entry == null || entry.scopeId != scopeId || !await canAbandonRejected(entry)) {
+        throw StateError('Missing definitive rejection evidence; the request remains protected.');
+      }
+      final linked = await (_database.select(_database.syncConflicts)
+        ..where((row) => row.scopeId.equals(scopeId) & row.outboxChangeId.equals(changeId) &
+            row.status.isIn([SyncConflictStatus.open.wireValue, SyncConflictStatus.deferred.wireValue])))
+        .get();
+      for (final row in linked) {
+        if (!_isProtectionForIntent(_conflictFromRecord(row), entry)) {
+          throw StateError('A linked conflict requires a NAS resolution receipt.');
+        }
+      }
+      final evidence = (await _readSettlement(_rejectionEvidenceKey(scopeId, changeId)))!;
+      await _saveInternalSetting(_rejectedSettlementKey(scopeId, changeId), jsonEncode({
+        ...evidence, 'action': 'abandon_rejected', 'settled_at': _now().toIso8601String(),
+      }));
+      for (final row in linked) {
+        await resolveConflict(id: row.id, status: SyncConflictStatus.rejected,
+          resolution: 'abandon_rejected');
+        await _recordProtectionRetirement(_conflictFromRecord(row), entry,
+          action: 'abandon_rejected');
+      }
+      await _saveInternalSetting(_resolutionRefreshKey(scopeId), const Uuid().v4());
+      await _refreshDependencyBlocksInCurrentTransaction(scopeId: scopeId, now: _now());
+    });
+  }
+
+  Future<List<SyncOutboxEntry>> _listRejectedEntries(String scopeId) async {
+    final rows = await (_database.select(_database.syncOutbox)
+      ..where((row) => row.scopeId.equals(scopeId) & row.status.equals(SyncOutboxStatus.rejected.wireValue))
+      ..orderBy([(row) => OrderingTerm.asc(row.createdAt)]))
+      .get();
+    return rows.map(_outboxFromRecord).toList(growable: false);
+  }
+
+  Future<List<SyncOutboxEntry>> listAbandonedRejected({required String scopeId}) async {
+    final entries = await _listRejectedEntries(scopeId);
+    final result = <SyncOutboxEntry>[];
+    for (final entry in entries) {
+      final marker = await _readSettlement(_rejectedSettlementKey(scopeId, entry.changeId));
+      final restored = await _readSettlement(_rejectedRestoredKey(scopeId, entry.changeId));
+      if (marker?['action'] == 'abandon_rejected' &&
+          (restored == null || !_settlementMatchesOutbox(restored, entry)) &&
+          await _isSettledOutboxEntry(entry)) {
+        result.add(entry);
+      }
+    }
+    return result;
+  }
+
+  String _rejectedRestoredKey(String scopeId, String changeId) =>
+      'sync_rejected_restored:${jsonEncode([scopeId, changeId])}';
+
+  /// Called only inside the authoritative business snapshot transaction. A
+  /// failed snapshot/receipt/cursor commit rolls this checkpoint back as well.
+  Future<void> markAbandonedRejectedRestored(SyncOutboxEntry entry, int serverCursor) async {
+    if (!await _isSettledOutboxEntry(entry)) throw StateError('Abandonment is no longer settled.');
+    await _saveInternalSetting(_rejectedRestoredKey(entry.scopeId, entry.changeId), jsonEncode({
+      ..._outboxIdentity(entry), 'server_cursor': serverCursor,
+      'restored_at': _now().toIso8601String(),
+    }));
+  }
+
+  Future<List<SyncOutboxEntry>> listUnsettledRejected({required String scopeId}) async {
+    final entries = await _listRejectedEntries(scopeId);
+    final result = <SyncOutboxEntry>[];
+    for (final entry in entries) {
+      if (!await _isSettledOutboxEntry(entry)) result.add(entry);
+    }
+    return result;
   }
 
   Future<void> releaseInFlight({
@@ -914,9 +1078,7 @@ class SyncOutboxRepository {
           completedAt: Value(now),
         ),
       );
-      await _database.into(_database.syncConflicts).insert(
-            _conflictCompanion(conflict, createdAt: now),
-          );
+      await recordConflict(conflict);
     });
   }
 
@@ -927,6 +1089,168 @@ class SyncOutboxRepository {
   /// explicit settlement, local resolution and fresh-snapshot intent commit
   /// together. No push/pull cursor is advanced by a resolution receipt.
   Future<void> settleOutboxConflict({
+    required int conflictId,
+    required String scopeId,
+    required String changeId,
+    required String remoteConflictId,
+    required String action,
+    required NasSyncConflictResolveResponse response,
+  }) async {
+    await _database.transaction(() async {
+      var primaryId = conflictId;
+      final selected = await getConflict(conflictId);
+      if (selected == null || selected.scopeId != scopeId) {
+        throw StateError('The selected local conflict is missing.');
+      }
+      final selectedEntry = await getByChangeId(selected.outboxChangeId ?? selected.changeId);
+      if (selected.changeId != changeId) {
+        if (selectedEntry == null || selectedEntry.changeId != changeId ||
+            !_isProtectionForIntent(selected, selectedEntry)) {
+          throw StateError('The selected conflict does not protect this immutable request.');
+        }
+        // Persist an audit of the real NAS conflict/receipt separately from
+        // a pull-side guard. Its remote version does not resolve newer pulls.
+        final existing = await getConflictByChangeId(scopeId: scopeId, changeId: changeId);
+        primaryId = existing?.id ?? await recordConflict(SyncConflictDraft(
+          scopeId: scopeId, changeId: changeId, outboxChangeId: selectedEntry.changeId,
+          entity: response.conflict.entity, entityId: response.conflict.entityId,
+          reason: response.conflict.reason, serverVersion: response.conflict.serverVersion,
+          serverPayloadJson: response.conflict.serverPayload == null ? null : jsonEncode(response.conflict.serverPayload),
+          clientPayloadJson: response.conflict.clientPayload == null ? null : jsonEncode(response.conflict.clientPayload),
+        ));
+      }
+      await _settleOneOutboxConflict(conflictId: primaryId, scopeId: scopeId,
+        changeId: changeId, remoteConflictId: remoteConflictId, action: action, response: response);
+      final primary = (await getConflict(primaryId))!;
+      final entry = await getByChangeId(primary.outboxChangeId ?? primary.changeId);
+      if (entry == null || entry.changeId != changeId) return;
+      final rows = await (_database.select(_database.syncConflicts)
+        ..where((row) => row.scopeId.equals(scopeId) & row.outboxChangeId.equals(changeId) &
+            row.status.isIn([SyncConflictStatus.open.wireValue, SyncConflictStatus.deferred.wireValue])))
+        .get();
+      for (final row in rows) {
+        final guard = _conflictFromRecord(row);
+        if (!_isProtectionForIntent(guard, entry)) continue;
+        // Only the local protection reason is retired. In particular a newer
+        // remote version is NOT described as resolved by this older receipt:
+        // the durable refresh token requires a current authoritative snapshot.
+        await resolveConflict(id: row.id, status: SyncConflictStatus.resolved,
+          resolution: 'protection_retired_after_intent_settlement');
+        await _recordProtectionRetirement(guard, entry,
+          action: action, nasConflictId: remoteConflictId);
+      }
+      await _refreshDependencyBlocksInCurrentTransaction(scopeId: scopeId, now: _now());
+    });
+  }
+
+  /// The protected local entity can differ from the observed remote entity
+  /// (a reminder policy may protect its product). Keep the actual snapshot
+  /// target and its version instead of comparing unrelated entity versions.
+  Future<void> recordProtectionSnapshotTarget({
+    required int conflictId,
+    required String scopeId,
+    required String entity,
+    required String entityId,
+    required int version,
+  }) async {
+    if (entity.trim().isEmpty || entityId.trim().isEmpty || version < 0) {
+      throw const FormatException('invalid protection snapshot target');
+    }
+    await _saveInternalSetting(_protectionTargetKey(scopeId, conflictId), jsonEncode({
+      'scope_id': scopeId, 'conflict_id': conflictId,
+      'snapshot_entity': entity, 'snapshot_entity_id': entityId,
+      'snapshot_version': version,
+    }));
+  }
+
+  String _protectionTargetKey(String scopeId, int conflictId) =>
+      'sync_protection_target:${jsonEncode([scopeId, conflictId])}';
+
+  Future<void> _recordProtectionRetirement(SyncConflictEntry guard, SyncOutboxEntry entry, {
+    required String action,
+    String? nasConflictId,
+  }) async {
+    final target = await _readSettlement(_protectionTargetKey(guard.scopeId, guard.id));
+    await _saveInternalSetting(
+      'sync_protection_retirement:${jsonEncode([guard.scopeId, guard.id])}', jsonEncode({
+        'scope_id': guard.scopeId, 'conflict_id': guard.id,
+        'outbox_change_id': entry.changeId, 'idempotency_key': entry.idempotencyKey,
+        'request_json': entry.requestJson, 'nas_conflict_id': nasConflictId,
+        'action': action, 'guard_change_id': guard.changeId,
+        'guard_server_version': guard.serverVersion,
+        // Older persisted guards did not retain a separate source target.
+        // Their recorded entity/version remains a conservative lower bound.
+        'snapshot_entity': target?['snapshot_entity'] ?? guard.entity,
+        'snapshot_entity_id': target?['snapshot_entity_id'] ?? guard.entityId,
+        'snapshot_version': target?['snapshot_version'] ?? guard.serverVersion ?? 0,
+        'requires_fresh_snapshot': true, 'retired_at': _now().toIso8601String(),
+      }),
+    );
+  }
+
+  /// Run inside the authoritative snapshot transaction, before business writes.
+  /// Every still-pending observation must be represented, including tombstones,
+  /// at its observed version or later. The completion checkpoint rolls back
+  /// with business rows and the refresh-token/cursor commit on any failure.
+  Future<void> restoreRetiredProtectionsFromSnapshot({
+    required String scopeId,
+    required List<NasSyncPullChange> snapshot,
+    required int serverCursor,
+  }) async {
+    final prefix = 'sync_protection_retirement:[${jsonEncode(scopeId)},';
+    final rows = await (_database.select(_database.appSettings)
+      ..where((row) => row.key.like('sync_protection_retirement:%'))).get();
+    for (final row in rows.where((row) => row.key.startsWith(prefix))) {
+      final marker = _mapValue(jsonDecode(row.value));
+      if (marker == null || marker['scope_id'] != scopeId) {
+        throw const FormatException('invalid protection retirement evidence');
+      }
+      if (marker['requires_fresh_snapshot'] != true) continue;
+      final conflictId = marker['conflict_id'];
+      final guard = conflictId is int ? await getConflict(conflictId) : null;
+      final changeId = marker['outbox_change_id'];
+      final entry = changeId is String ? await getByChangeId(changeId) : null;
+      if (guard == null || entry == null || !_isProtectionForIntent(guard, entry) ||
+          entry.scopeId != scopeId || marker['request_json'] != entry.requestJson ||
+          marker['idempotency_key'] != entry.idempotencyKey) {
+        throw StateError('Protection retirement no longer matches the immutable intent.');
+      }
+      final entity = marker['snapshot_entity'] ?? guard.entity;
+      final entityId = marker['snapshot_entity_id'] ?? guard.entityId;
+      final version = marker['snapshot_version'] ?? marker['guard_server_version'] ?? 0;
+      if (entity is! String || entityId is! String || version is! int || version < 0) {
+        throw const FormatException('protection retirement has no verifiable snapshot target');
+      }
+      final matching = snapshot.where((change) => change.entity == entity && change.entityId == entityId);
+      if (matching.length != 1 || (matching.single.version ?? -1) < version) {
+        throw const FormatException('fresh snapshot is older than an observed protected remote change');
+      }
+      await _saveInternalSetting(row.key, jsonEncode({
+        ...marker, 'requires_fresh_snapshot': false, 'restored_server_cursor': serverCursor,
+        'restored_at': _now().toIso8601String(),
+      }));
+    }
+  }
+
+  bool _isProtectionForIntent(SyncConflictEntry guard, SyncOutboxEntry entry) {
+    if (guard.scopeId != entry.scopeId || guard.outboxChangeId != entry.changeId ||
+        guard.changeId == entry.changeId || guard.clientPayloadJson != entry.requestJson ||
+        !const {'REMOTE_CHANGE_WITH_PENDING_LOCAL_CHANGE',
+          'REMOTE_INVENTORY_COMMAND_WITH_PENDING_LOCAL_CHANGE'}.contains(guard.reason)) {
+      return false;
+    }
+    if (entry.operation == SyncOperation.entityUpsert || entry.operation == SyncOperation.entityDelete) {
+      return guard.entity == entry.entity && guard.entityId == entry.entityId;
+    }
+    if (entry.operation == SyncOperation.inventoryCommand && guard.entity == 'product_batches') {
+      final request = _decodedRequest(entry);
+      final allocations = request?['allocations'];
+      return allocations is List && allocations.any((raw) => raw is Map && raw['batch_id'] == guard.entityId);
+    }
+    return false;
+  }
+
+  Future<void> _settleOneOutboxConflict({
     required int conflictId,
     required String scopeId,
     required String changeId,
@@ -953,6 +1277,9 @@ class SyncOutboxRepository {
       final entry = await getByChangeId(local.outboxChangeId ?? local.changeId);
       if (local.outboxChangeId != null && entry == null) {
         throw StateError('The linked outbox change is missing.');
+      }
+      if (local.changeId != changeId) {
+        throw StateError('A NAS receipt cannot directly resolve a pull protection record.');
       }
       if (entry != null &&
           (entry.scopeId != scopeId ||
@@ -1104,6 +1431,18 @@ class SyncOutboxRepository {
       marker['request_json'] == entry.requestJson;
 
   Future<bool> _isSettledOutboxEntry(SyncOutboxEntry entry) async {
+    if (entry.status == SyncOutboxStatus.rejected) {
+      final rejected = await _readSettlement(_rejectedSettlementKey(entry.scopeId, entry.changeId));
+      final evidence = await _readSettlement(_rejectionEvidenceKey(entry.scopeId, entry.changeId));
+      if (rejected != null && evidence != null &&
+          rejected['action'] == 'abandon_rejected' &&
+          (evidence['source'] == 'nas_rejected' || evidence['source'] == 'never_sent') &&
+          _settlementMatchesOutbox(rejected, entry) && _settlementMatchesOutbox(evidence, entry) &&
+          rejected['source'] == evidence['source'] &&
+          rejected['error_code'] == entry.lastErrorCode && evidence['error_code'] == entry.lastErrorCode) {
+        return !await _hasUnresolvedLinkedConflicts(entry);
+      }
+    }
     if (entry.status != SyncOutboxStatus.conflict &&
         entry.status != SyncOutboxStatus.rejected) {
       return false;
@@ -1118,13 +1457,17 @@ class SyncOutboxRepository {
         !_settlementMatchesConflict(marker, local)) {
       return false;
     }
+    return !await _hasUnresolvedLinkedConflicts(entry);
+  }
+
+  Future<bool> _hasUnresolvedLinkedConflicts(SyncOutboxEntry entry) async {
     final unresolved = await (_database.select(_database.syncConflicts)
           ..where((row) => row.scopeId.equals(entry.scopeId) &
               (row.changeId.equals(entry.changeId) | row.outboxChangeId.equals(entry.changeId)) &
               row.status.isIn([SyncConflictStatus.open.wireValue, SyncConflictStatus.deferred.wireValue]))
           ..limit(1))
         .getSingleOrNull();
-    return unresolved == null;
+    return unresolved != null;
   }
 
   Future<List<SyncOutboxEntry>> listOutbox({
@@ -1152,6 +1495,12 @@ class SyncOutboxRepository {
           ..where((row) =>
               row.scopeId.equals(conflict.scopeId) &
               row.changeId.equals(conflict.changeId) &
+              row.entity.equals(conflict.entity) &
+              (conflict.entityId == null ? row.entityId.isNull() : row.entityId.equals(conflict.entityId!)) &
+              row.reason.equals(conflict.reason) &
+              (conflict.serverVersion == null ? row.serverVersion.isNull() : row.serverVersion.equals(conflict.serverVersion!)) &
+              (conflict.clientPayloadJson == null ? row.clientPayloadJson.isNull() : row.clientPayloadJson.equals(conflict.clientPayloadJson!)) &
+              (conflict.serverPayloadJson == null ? row.serverPayloadJson.isNull() : row.serverPayloadJson.equals(conflict.serverPayloadJson!)) &
               row.status.equals(SyncConflictStatus.open.wireValue) &
               (conflict.outboxChangeId == null
                   ? row.outboxChangeId.isNull()

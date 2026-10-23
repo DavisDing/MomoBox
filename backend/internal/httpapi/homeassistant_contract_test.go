@@ -22,6 +22,7 @@ type contractHAHTTPService struct {
 	createErr error
 	commandCalls int
 	lastCommand homeassistant.CommandRequest
+	lastActor homeassistant.Actor
 }
 func (s *contractHAHTTPService) CreateIntegration(context.Context, homeassistant.Actor, homeassistant.AddIntegrationRequest) (homeassistant.IntegrationDTO, error) { return s.create, s.createErr }
 func (*contractHAHTTPService) ListIntegrations(context.Context, homeassistant.Actor) ([]homeassistant.IntegrationDTO, error) { return nil, nil }
@@ -31,7 +32,7 @@ func (*contractHAHTTPService) TestIntegration(context.Context, homeassistant.Act
 func (*contractHAHTTPService) Discover(context.Context, homeassistant.Actor, string) (homeassistant.DiscoveryDTO, error) { return homeassistant.DiscoveryDTO{}, nil }
 func (*contractHAHTTPService) ListEntities(context.Context, homeassistant.Actor, string, bool) ([]homeassistant.EntityDTO, error) { return nil, nil }
 func (*contractHAHTTPService) GetState(context.Context, homeassistant.Actor, string, string) (homeassistant.StateDTO, error) { return homeassistant.StateDTO{}, nil }
-func (s *contractHAHTTPService) ExecuteCommand(_ context.Context, _ homeassistant.Actor, _ string, _ string, request homeassistant.CommandRequest) (homeassistant.CommandDTO, error) { s.commandCalls++; s.lastCommand = request; return homeassistant.CommandDTO{}, nil }
+func (s *contractHAHTTPService) ExecuteCommand(_ context.Context, actor homeassistant.Actor, _ string, _ string, request homeassistant.CommandRequest) (homeassistant.CommandDTO, error) { s.commandCalls++; s.lastCommand = request; s.lastActor = actor; return homeassistant.CommandDTO{}, nil }
 func (*contractHAHTTPService) ListPermissions(context.Context, homeassistant.Actor) ([]homeassistant.PermissionDTO, error) { return nil, nil }
 func (*contractHAHTTPService) ListConsumableGroups(context.Context, homeassistant.Actor) ([]homeassistant.ConsumableGroup, error) { return nil, nil }
 func (*contractHAHTTPService) ListConsumableRecipes(context.Context, homeassistant.Actor) ([]homeassistant.ConsumableRecipe, error) { return nil, nil }
@@ -117,4 +118,42 @@ func TestHACommandHTTPRejectsUnknownJSONEvenWhenRequestIDIsPresent(t *testing.T)
 	if resp.Code != http.StatusBadRequest { t.Fatalf("unknown typed parameter status = %d, body=%s", resp.Code, resp.Body.String()) }
 	var payload map[string]any
 	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil { t.Fatalf("error response is not JSON: %v", err) }
+}
+
+func TestUserBearerCannotSubmitTrustedHomeAssistantEvent(t *testing.T) {
+	handler := NewRouter(Dependencies{HomeAssistant: &contractHAHTTPService{}, Verifier: contractHAVerifier{claims: contractHAClaims()}})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/home-assistant/events", strings.NewReader(`{"integration_id":"integration-1","entity_id":"switch.washer","appliance_run_id":"invented-run","state":"completed"}`))
+	req.Header.Set("Authorization", "Bearer token")
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+	if resp.Code != http.StatusForbidden || !strings.Contains(resp.Body.String(), "HA_EVENT_SOURCE_UNTRUSTED") {
+		t.Fatalf("untrusted event accepted: %d %s", resp.Code, resp.Body.String())
+	}
+}
+
+type revokedClaimsAuthorizer struct{}
+
+func (revokedClaimsAuthorizer) AuthorizeClaims(context.Context, auth.AccessTokenClaims) (auth.AccessTokenClaims, error) {
+	return auth.AccessTokenClaims{}, errors.New("revoked device")
+}
+func TestUnexpiredBearerStillRequiresCurrentAuthorization(t *testing.T) {
+	handler := NewRouter(Dependencies{HomeAssistant: &contractHAHTTPService{}, Verifier: contractHAVerifier{claims: contractHAClaims()}, Authorizer: revokedClaimsAuthorizer{}})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/home-assistant/entities", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("revoked token accepted: %d %s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestHACommandPreservesAuthenticatedDeviceIdentity(t *testing.T){
+ service:=&contractHAHTTPService{}
+ claims:=contractHAClaims();claims.DeviceID="device-1"
+ handler:=NewRouter(Dependencies{HomeAssistant:service,Verifier:contractHAVerifier{claims:claims}})
+ req:=httptest.NewRequest(http.MethodPost,"/api/v1/home-assistant/entities/light.kitchen/commands?integration_id=integration-1",strings.NewReader(`{"command":"turn_on","parameters":{},"request_id":"123e4567-e89b-12d3-a456-426614174000"}`))
+ req.Header.Set("Authorization","Bearer token");req.Header.Set("Content-Type","application/json")
+ resp:=httptest.NewRecorder();handler.ServeHTTP(resp,req)
+ if resp.Code!=http.StatusOK||service.lastActor.DeviceID!="device-1"{t.Fatalf("HTTP command lost device identity: %#v %d",service.lastActor,resp.Code)}
 }

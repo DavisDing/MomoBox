@@ -3,7 +3,9 @@ package homeassistant
 import (
 	"context"
 	cryptorand "crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -12,6 +14,7 @@ import (
 // Service contains Home Assistant business rules only. HTTP routing, JWT
 // parsing, SQL, encryption implementation, and network I/O belong elsewhere.
 type Service struct {
+	Executions   CommandExecutionRepository
 	Integrations IntegrationRepository
 	Devices      DeviceRepository
 	Entities     EntityRepository
@@ -450,8 +453,55 @@ func (s *Service) ExecuteCommand(ctx context.Context, actor Actor, integrationID
 		}
 		return CommandDTO{}, integrationErr
 	}
+	var executionFingerprint string
+	if s.Executions != nil {
+		encoded, err := json.Marshal(struct {
+			UserID, DeviceID, IntegrationID, EntityID string
+			Request                                   CommandRequest
+		}{actor.UserID, actor.DeviceID, integrationID, entityID, req})
+		if err != nil {
+			return CommandDTO{}, err
+		}
+		digest := sha256.Sum256(encoded)
+		executionFingerprint = hex.EncodeToString(digest[:])
+		execution, created, err := s.Executions.Begin(ctx, actor.FamilyID, req.RequestID, executionFingerprint)
+		if err != nil {
+			return CommandDTO{}, err
+		}
+		if !created {
+			if execution.Fingerprint != executionFingerprint {
+				return CommandDTO{}, businessError(CodeRequestReuse, "request_id was already used for a different command", nil)
+			}
+			switch execution.Status {
+			case "succeeded":
+				if auditErr := s.appendAudit(ctx,actor,entity,req,AuditSucceeded,"");auditErr != nil { return CommandDTO{},auditErr }
+				return execution.Result, nil
+			case "rejected":
+				return CommandDTO{}, businessError(CodeIntegrationUnavailable, "Home Assistant rejected the original command", nil)
+			default:
+				return CommandDTO{}, businessError(CodeCommandUnknown, "original Home Assistant command is pending or its result is unknown; verify the device before any new operation", nil)
+			}
+		}
+	}
 	invocation := CommandInvocation{EntityID: entity.EntityID, Domain: entity.Domain, Command: req.Command, Parameters: req.Parameters}
 	result, clientErr := s.Client.Execute(ctx, integration.BaseURL, token, invocation)
+	dto := CommandDTO{Accepted: result.Accepted, EntityID: entity.EntityID, Command: req.Command, ExecutedAt: s.now(), State: stateDTO(result.State)}
+	if s.Executions != nil {
+		status := "succeeded"
+		if clientErr != nil {
+			status = "unknown"
+		} else if !result.Accepted {
+			status = "rejected"
+		}
+		// Persist the receipt even if the request was cancelled after HA replied.
+		// A failed receipt write leaves pending, preventing an unsafe resend.
+		receiptCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		completeErr := s.Executions.Complete(receiptCtx, actor.FamilyID, req.RequestID, executionFingerprint, CommandExecution{Status: status, Fingerprint: executionFingerprint, Result: dto})
+		cancel()
+		if completeErr != nil {
+			return CommandDTO{}, businessError(CodeCommandUnknown, "Home Assistant execution receipt could not be saved; do not resend with a new request_id", completeErr)
+		}
+	}
 	resultKind := AuditSucceeded
 	errorCode := ""
 	if clientErr != nil {
@@ -465,12 +515,15 @@ func (s *Service) ExecuteCommand(ctx context.Context, actor Actor, integrationID
 		return CommandDTO{}, auditErr
 	}
 	if clientErr != nil {
+		if s.Executions != nil {
+			return CommandDTO{}, businessError(CodeCommandUnknown, "Home Assistant command result is unknown; verify the device before any new operation", clientErr)
+		}
 		return CommandDTO{}, businessError(CodeIntegrationUnavailable, "Home Assistant command failed", clientErr)
 	}
 	if !result.Accepted {
 		return CommandDTO{}, businessError(CodeIntegrationUnavailable, "Home Assistant rejected the command", nil)
 	}
-	return CommandDTO{Accepted: true, EntityID: entity.EntityID, Command: req.Command, ExecutedAt: s.now(), State: stateDTO(result.State)}, nil
+	return dto, nil
 }
 
 func (s *Service) ListPermissions(ctx context.Context, actor Actor) ([]PermissionDTO, error) {
@@ -535,7 +588,7 @@ func (s *Service) UpdatePermission(ctx context.Context, actor Actor, req Permiss
 }
 
 func (s *Service) appendAudit(ctx context.Context, actor Actor, entity HAEntity, req CommandRequest, result AuditResult, errorCode string) error {
-	log := CommandAuditLog{FamilyID: actor.FamilyID, IntegrationID: entity.IntegrationID, EntityID: entity.EntityID, RequestedBy: actor.UserID, Command: req.Command, SafeParametersSummary: safeParameters(req.Parameters), Result: result, ErrorCode: errorCode, CreatedAt: s.now(), RequestID: req.RequestID}
+	log := CommandAuditLog{FamilyID: actor.FamilyID, IntegrationID: entity.IntegrationID, EntityID: entity.EntityID, RequestedBy: actor.UserID, DeviceID: actor.DeviceID, Command: req.Command, SafeParametersSummary: safeParameters(req.Parameters), Result: result, ErrorCode: errorCode, CreatedAt: s.now(), RequestID: req.RequestID}
 	if err := s.Audit.Append(ctx, log); err != nil {
 		return businessError(CodeAuditFailure, "Home Assistant command audit could not be recorded", err)
 	}

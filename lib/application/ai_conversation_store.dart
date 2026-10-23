@@ -67,6 +67,10 @@ class AiConversationStore extends ChangeNotifier {
   late String currentId;
   bool ready = false;
   String? storageError;
+  String? _corruptArchive;
+  Future<void>? _recovery;
+  bool get isRecoveringArchive => _recovery != null;
+  bool get canRecoverArchive => !ready && !isRecoveringArchive && _corruptArchive != null;
   Future<void> _writes = Future.value();
   Object? _request;
   String? _requestSession;
@@ -102,8 +106,10 @@ class AiConversationStore extends ChangeNotifier {
   }
 
   Future<void> load() async {
+    if (_recovery != null) return _recovery!;
+    String? raw;
     try {
-      final raw = await _settings.getValue(storageKey);
+      raw = await _settings.getValue(storageKey);
       if (raw != null && raw.isNotEmpty) {
         final data = jsonDecode(raw) as Map<String, dynamic>;
         final saved =
@@ -113,17 +119,18 @@ class AiConversationStore extends ChangeNotifier {
                       AiSession.fromJson(Map<String, dynamic>.from(s as Map)),
                 )
                 .toList();
+        final savedCurrentId = data['currentId'] as String;
+        final receipts = Map<String, String>.from(data['receipts'] as Map? ?? {});
+        final pendingId = data['pendingSession'] as String?;
         if (saved.isNotEmpty) {
           sessions
             ..clear()
             ..addAll(saved);
-          currentId = data['currentId'] as String;
+          currentId = saved.any((session) => session.id == savedCurrentId)
+              ? savedCurrentId : saved.first.id;
         }
-        actionReceipts.addAll(
-          Map<String, String>.from(data['receipts'] as Map? ?? {}),
-        );
+        actionReceipts..clear()..addAll(receipts);
         actionReceipts.removeWhere((_, value) => value == '等待确认');
-        final pendingId = data['pendingSession'] as String?;
         final interrupted =
             sessions.where((s) => s.id == pendingId).firstOrNull;
         if (interrupted != null) {
@@ -131,16 +138,59 @@ class AiConversationStore extends ChangeNotifier {
         }
       }
       ready = true;
+      _corruptArchive = null;
       storageError = null;
-      await save();
     } catch (_) {
       ready = false;
-      storageError = '会话读取失败，原记录未覆盖。请重试。';
+      _corruptArchive = raw;
+      storageError = raw == null
+          ? '会话读取失败，原记录未覆盖。请重试。'
+          : '会话存档损坏，原记录未覆盖。可重试，或保留原存档后新建会话。';
+      _changed();
+      return;
     }
+    try { await save(); } catch (_) { /* save keeps a visible storage error */ }
     _changed();
   }
 
+  /// Called only after an explicit UI confirmation. Preserve the exact bytes
+  /// before replacing the active archive; a failed preservation must abort.
+  Future<void> recoverCorruptArchive() {
+    if (_recovery != null) return _recovery!;
+    _recovery = _recoverCorruptArchive().whenComplete(() {
+      _recovery = null;
+      _changed();
+    });
+    _changed();
+    return _recovery!;
+  }
+
+  Future<void> _recoverCorruptArchive() async {
+    final raw = _corruptArchive;
+    if (!canRecoverArchive || raw == null) throw StateError('当前会话无需重建。');
+    await _writes;
+    if (await _settings.getValue(storageKey) != raw) {
+      throw StateError('会话存档已变化，请先重试读取。');
+    }
+    await _settings.setValue('ai_conversations_quarantine:${const Uuid().v4()}', raw);
+    sessions..clear()..add(_newSession('新对话'));
+    currentId = sessions.first.id;
+    actionReceipts.clear();
+    ready = true;
+    try {
+      await save();
+      _corruptArchive = null;
+    } catch (_) {
+      ready = false;
+      storageError = '新会话保存失败，原存档已保留。请重试。';
+      rethrow;
+    } finally {
+      _changed();
+    }
+  }
+
   Future<void> save() {
+    if (!ready) return Future.error(StateError('会话尚未读取，不能覆盖存档。'));
     final snapshot = jsonEncode({
       'sessions': sessions.map((s) => s.toJson()).toList(),
       'currentId': currentId,

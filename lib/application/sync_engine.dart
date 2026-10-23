@@ -66,6 +66,7 @@ class SyncEngine {
     this.familyId,
     this.localWorkspaceId,
     this.prepareFeatureSupport,
+    this.acknowledgeEntityVersion,
   })  : _api = api,
         _repository = repository,
         _scopeId = scopeId,
@@ -142,6 +143,7 @@ class SyncEngine {
           familyId: familyId,
           localWorkspaceId: localWorkspaceId,
           prepareFeatureSupport: prepareFeatureSupport,
+          acknowledgeEntityVersion: adapter.acknowledgeEntityVersion,
           applyRemoteChange: (change) async {
             SyncRemoteChangeDeferred? deferred;
             await repository.transaction(() async {
@@ -177,6 +179,7 @@ class SyncEngine {
   final String? familyId;
   final String? localWorkspaceId;
   final Future<void> Function()? prepareFeatureSupport;
+  final Future<void> Function(SyncOutboxEntry entry, int version)? acknowledgeEntityVersion;
 
   Future<SyncRunReport>? _runInFlight;
 
@@ -674,7 +677,10 @@ class SyncEngine {
 
     final inFlight = <String>{...claimed.map((entry) => entry.changeId)};
     final handled = <String>{};
-    final retryAt = DateTime.now().toUtc().add(_backoff(1));
+    final claimedById = {for (final entry in claimed) entry.changeId: entry};
+    DateTime retryAt(String changeId) => DateTime.now().toUtc().add(
+      _backoff(claimedById[changeId]!.attemptCount),
+    );
 
     try {
       final changes = <NasSyncChange>[];
@@ -686,6 +692,7 @@ class SyncEngine {
             changeId: entry.changeId,
             errorCode: 'INVALID_LOCAL_CHANGE',
             errorMessage: error.message,
+            failedBeforeFirstSend: true,
           );
           inFlight.remove(entry.changeId);
           handled.add(entry.changeId);
@@ -725,25 +732,35 @@ class SyncEngine {
             changeId: rejected.changeId,
             errorCode: rejected.code,
             errorMessage: rejected.message,
+            confirmedByNas: true,
           );
           inFlight.remove(rejected.changeId);
           handled.add(rejected.changeId);
         }
 
         Future<void> markAccepted(NasSyncAcceptedChange accepted, {bool replayed = false}) async {
-          if (replayed) {
-            await _repository.markReplayed(
-              changeId: accepted.changeId,
-              serverCursor: accepted.serverCursor,
-              serverVersion: accepted.serverVersion,
-            );
-          } else {
-            await _repository.markAccepted(
-              changeId: accepted.changeId,
-              serverCursor: accepted.serverCursor,
-              serverVersion: accepted.serverVersion,
-            );
+          final entry = claimedById[accepted.changeId];
+          if (entry == null) return;
+          if (accepted.entityId != null && entry.entityId != null &&
+              accepted.entityId != entry.entityId &&
+              (entry.operation == SyncOperation.entityUpsert || entry.operation == SyncOperation.entityDelete)) {
+            throw const FormatException('accepted receipt entity does not match its request');
           }
+          await _repository.transaction(() async {
+            _api.assertCurrentSession();
+            if (replayed) {
+              await _repository.markReplayed(changeId: accepted.changeId,
+                serverCursor: accepted.serverCursor, serverVersion: accepted.serverVersion);
+            } else {
+              await _repository.markAccepted(changeId: accepted.changeId,
+                serverCursor: accepted.serverCursor, serverVersion: accepted.serverVersion);
+            }
+            if (accepted.serverVersion != null && accepted.serverVersion! > 0 &&
+                (entry.operation == SyncOperation.entityUpsert || entry.operation == SyncOperation.entityDelete)) {
+              await acknowledgeEntityVersion?.call(entry, accepted.serverVersion!);
+            }
+            _api.assertCurrentSession();
+          });
           inFlight.remove(accepted.changeId);
           handled.add(accepted.changeId);
         }
@@ -799,7 +816,7 @@ class SyncEngine {
         for (final changeId in inFlight.toList()) {
           await _repository.releaseInFlight(
             changeId: changeId,
-            nextAttemptAt: retryAt,
+            nextAttemptAt: retryAt(changeId),
             errorCode: 'missing_push_result',
             errorMessage: 'NAS did not return a result for the change',
           );
@@ -820,7 +837,7 @@ class SyncEngine {
       for (final changeId in inFlight.toList()) {
         await _repository.releaseInFlight(
           changeId: changeId,
-          nextAttemptAt: retryAt,
+          nextAttemptAt: retryAt(changeId),
           errorCode: 'push_failed',
           errorMessage: 'Push failed; scheduled for retry',
         );

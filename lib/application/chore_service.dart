@@ -59,19 +59,18 @@ class ChoreService {
     required ChoreRepeatInterval repeatInterval,
     DateTime? nextDueDate,
     String? notes,
+    bool initializePresets = true,
   }) async {
-    final chores = await getChores();
+    final chores = await (initializePresets ? getChores() : readSavedChores());
     final now = _clock();
-    final due = nextDueDate ?? DateTime(now.year, now.month, now.day).add(
-      Duration(
-        days: switch (repeatInterval) {
+    final due = nextDueDate ?? DateTime(now.year, now.month, now.day +
+        switch (repeatInterval) {
           ChoreRepeatInterval.daily => 1,
           ChoreRepeatInterval.weekly => 7,
           ChoreRepeatInterval.biweekly => 14,
           ChoreRepeatInterval.monthly => 30,
           ChoreRepeatInterval.quarterly => 90,
         },
-      ),
     );
 
     final item = ChoreItem(

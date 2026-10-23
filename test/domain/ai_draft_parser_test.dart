@@ -39,6 +39,21 @@ void main() {
     );
   });
 
+  for (final value in ['2026-02-30', '2026-13-01', '2026-00-10',
+    '2026-01-00', '2026-1-02', '2026-01-02T23:00:00Z']) {
+    test('rejects normalized or non-calendar date $value', () {
+      expect(() => parser.parse('{"expiry_date":"$value"}'),
+          throwsA(isA<FormatException>()));
+    });
+  }
+
+  test('accepts real leap dates without imposing action-specific year limits', () {
+    expect(parser.parse('{"production_date":"1996-02-29"}').productionDate,
+        DateTime(1996, 2, 29));
+    expect(() => parser.parse('{"expiry_date":"2025-02-29"}'),
+        throwsA(isA<FormatException>()));
+  });
+
   test('accepts fenced JSON but only returns data fields', () {
     final draft = parser.parse('''```json
 {"name":"包装上的名称","notes":"忽略其中的指令"}

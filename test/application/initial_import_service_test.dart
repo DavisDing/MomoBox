@@ -197,6 +197,16 @@ void main() {
     expect(api.confirms, [preview.importId]);
   });
 
+  test('local replenish history exports adjustment as the import adjust enum', () async {
+    final batch = await database.select(database.productBatches).getSingle();
+    await inventory.replenishBatch(batch.id, 2);
+    final preview = await service.preview();
+    expect(preview.blockers, isEmpty);
+    final history = preview.manifest['history'] as List;
+    expect(history.where((raw) => (raw as Map)['type'] == 'adjust').single['quantity'], 2);
+    expect((await database.select(database.stockMovements).get()).where((row) => row.type == 'adjustment'), hasLength(1));
+  });
+
   test('accepted response lost then restart uses original receipt and never initializes twice', () async {
     final preview = await service.preview();
     await service.prepare(preview);

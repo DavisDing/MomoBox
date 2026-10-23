@@ -115,6 +115,7 @@ void main() {
 
   test('家务新增、修改、完成、启停、删除有真实结果', () async {
     await confirm(action({'kind': 'chore_add', 'title': '清理冰箱', 'repeatInterval': 'weekly'}));
+    expect(await chores.readSavedChores(), hasLength(1));
     var chore = (await chores.readSavedChores()).firstWhere((c) => c.title == '清理冰箱');
     await confirm(action({'kind': 'chore_update', 'id': chore.id, 'title': '整理冰箱', 'repeatInterval': 'monthly', 'notes': '检查保质期'}));
     chore = (await chores.readSavedChores()).firstWhere((c) => c.id == chore.id);

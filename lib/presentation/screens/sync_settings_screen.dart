@@ -66,6 +66,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           _buildBootstrapCard(context, engine, state),
           const SizedBox(height: 12),
           _buildConflictCard(context, scopeId, conflicts, syncApi, deviceId),
+          if (scopeId != null) _buildRejectedCard(scopeId, engine, syncApi, deviceId),
           const SizedBox(height: 12),
           InitialImportCard(
             disabled: _working || _resolvingRemoteConflictId != null,
@@ -329,6 +330,81 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildRejectedCard(String scopeId, SyncEngine? engine, NasSyncApi? api, String? deviceId) {
+    final repository = SyncOutboxRepository(ref.read(databaseProvider));
+    return FutureBuilder<List<SyncOutboxEntry>>(
+      future: repository.listUnsettledRejected(scopeId: scopeId),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Card(child: Padding(
+            padding: EdgeInsets.all(16), child: Text('读取被拒绝变更失败；原同步记录仍保留。')));
+        }
+        final entries = snapshot.data ?? const <SyncOutboxEntry>[];
+        if (entries.isEmpty) return const SizedBox.shrink();
+        return Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('被拒绝的变更', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            const Text('这些变更仍阻止权威快照覆盖本机。只有具备明确未执行证据时，才可确认放弃并恢复 NAS 状态。'),
+            for (final entry in entries) FutureBuilder<bool>(
+              future: repository.canAbandonRejected(entry),
+              builder: (context, permission) => ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('${entry.entity ?? entry.operation.wireValue} · ${entry.entityId ?? entry.changeId}'),
+                subtitle: Text('${entry.lastErrorCode ?? 'rejected'}：${entry.lastErrorMessage ?? '没有错误详情'}'
+                    '${permission.data == false ? '\n缺少明确拒绝回执；请保留记录核对，不能假定未执行。' : ''}'),
+                trailing: TextButton(
+                  onPressed: permission.data != true || engine == null || api == null || deviceId == null ||
+                      _working || _importWorking || _resolvingRemoteConflictId != null
+                      ? null : () => _abandonRejected(entry, engine, api, deviceId),
+                  child: const Text('放弃此变更'),
+                ),
+              ),
+            ),
+          ],
+        )));
+      },
+    );
+  }
+
+  Future<void> _abandonRejected(SyncOutboxEntry entry, SyncEngine engine, NasSyncApi api, String deviceId) async {
+    final accepted = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
+      title: const Text('放弃被拒绝的变更？'),
+      content: const Text('已确认该请求未执行。继续将放弃这条本地意图，并获取 NAS 最新权威快照撤销相应本地变更。'
+          '其他尚未解决的操作仍会阻止覆盖；原请求和拒绝回执会保留，库存及 Home Assistant 操作不会重新执行。'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('确认放弃并恢复')),
+      ],
+    ));
+    if (accepted != true || !mounted) return;
+    if (!_isCurrentEngine(engine) || !identical(ref.read(nasSyncApiProvider), api) ||
+        ref.read(nasAccountProvider).family.familyId != entry.scopeId ||
+        ref.read(nasAccountProvider).devices.currentDeviceId != deviceId) {
+      return;
+    }
+    final repository = SyncOutboxRepository(ref.read(databaseProvider));
+    setState(() { _working = true; _message = null; });
+    try {
+      api.assertCurrentSession();
+      await repository.abandonRejected(scopeId: entry.scopeId, changeId: entry.changeId);
+      if (!_isCurrentEngine(engine)) return;
+      ref.invalidate(syncConflictsProvider(entry.scopeId));
+      setState(() => _message = '放弃确认已保存；正在恢复 NAS 最新状态。');
+      await engine.runOnce();
+      if (_isCurrentEngine(engine)) {
+        final refresh = await repository.getConflictResolutionRefreshToken(entry.scopeId);
+        setState(() => _message = refresh == null ? '已按 NAS 最新快照恢复；原拒绝记录保留供核对。'
+            : '放弃确认已保存；仍需解决其他变更或恢复网络后获取最新快照。');
+      }
+    } catch (error) {
+      if (_isCurrentEngine(engine)) setState(() => _message = '恢复尚未完成，现场已保留：$error');
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
   }
 
   Widget _buildRemoteConflictSection(
@@ -947,8 +1023,8 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
         throw StateError('NAS 会话或家庭已切换，请在原家庭重新确认结算。');
       }
       await repository.transaction(() async {
-        final local = _matchingLocalConflict(localConflicts, conflict) ??
-            await repository.getConflictByChangeId(scopeId: scopeId, changeId: changeId);
+        final local = await repository.getConflictByChangeId(scopeId: scopeId, changeId: changeId) ??
+            _matchingLocalConflict(localConflicts, conflict);
         // Remote-only conflicts still need a durable receipt and fresh snapshot.
         // This is an audit of a real NAS resolution, not a fake business apply.
         final id = local?.id ?? await repository.recordConflict(SyncConflictDraft(

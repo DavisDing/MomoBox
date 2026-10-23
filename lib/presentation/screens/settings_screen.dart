@@ -25,6 +25,7 @@ import '../../application/update_service.dart';
 import '../../data/repositories/backup_repository.dart';
 import '../../domain/backup/backup_format.dart';
 import '../../services/local_notification_service.dart';
+import '../../services/diagnostic_log_service.dart';
 import '../controllers/providers.dart';
 import 'ai_usage_screen.dart';
 
@@ -195,6 +196,16 @@ class SettingsScreen extends ConsumerWidget {
                 const Divider(height: 1, indent: 56),
                 _buildSettingsListTile(
                   context,
+                  icon: Icons.bug_report_outlined,
+                  title: '本地诊断导出',
+                  subtitle: '查看记录范围并导出脱敏错误诊断',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const DiagnosticExportScreen()),
+                  ),
+                ),
+                const Divider(height: 1, indent: 56),
+                _buildSettingsListTile(
+                  context,
                   icon: Icons.info_outline,
                   title: '关于与存储信息',
                   subtitle: '版本号、本地数据说明、存储空间管理与许可',
@@ -243,6 +254,68 @@ class SettingsScreen extends ConsumerWidget {
       onTap: onTap,
     );
   }
+}
+
+class DiagnosticExportScreen extends StatefulWidget {
+  const DiagnosticExportScreen({super.key});
+
+  @override
+  State<DiagnosticExportScreen> createState() => _DiagnosticExportScreenState();
+}
+
+class _DiagnosticExportScreenState extends State<DiagnosticExportScreen> {
+  bool _busy = false;
+
+  Future<void> _export() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    final diagnostics = DiagnosticLogService.shared;
+    try {
+      final content = await diagnostics.exportJson();
+      final temporary = await getTemporaryDirectory();
+      final directory = Directory(p.join(temporary.path, 'diagnostic-export'));
+      await directory.create(recursive: true);
+      final file = File(p.join(directory.path, 'momobox-diagnostics.json'));
+      await file.writeAsString(content, flush: true);
+      if (!mounted) return;
+      final box = context.findRenderObject() as RenderBox?;
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        subject: 'MomoBox 脱敏诊断',
+        text: 'MomoBox 本地 Dart/Flutter 错误诊断',
+        sharePositionOrigin: box == null ? null : box.localToGlobal(Offset.zero) & box.size,
+      );
+    } catch (error, stack) {
+      unawaited(diagnostics.record(DiagnosticEvent.diagnosticsExportFailed, error, stackTrace: stack));
+      if (mounted) showAppSnackBar(context, const SnackBar(content: Text('诊断导出失败，请稍后重试。')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('本地诊断导出')),
+    body: ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const Card(child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Text('诊断只记录预定义错误事件、异常类型、项目模块及行列号和时间。'
+              '不包含错误原文、库存或采购信息、AI 内容、URL、密钥或文件路径。'
+              '\n\n最多保留 3 份、每份 64 KiB 的本地记录；导出后由你选择保存或分享位置。'
+              '\n\n记录范围为 App 运行期间捕获到的 Dart/Flutter 错误，'
+              '不涵盖原生崩溃、系统终止，也不保证故障发生前的异步记录已写入。'),
+        )),
+        const SizedBox(height: 12),
+        FilledButton.icon(
+          onPressed: _busy ? null : _export,
+          icon: const Icon(Icons.ios_share),
+          label: Text(_busy ? '正在导出…' : '导出脱敏诊断'),
+        ),
+      ],
+    ),
+  );
 }
 
 class ThemeSettingsScreen extends ConsumerWidget {

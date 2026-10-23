@@ -192,13 +192,10 @@ class _ShoppingScreenState extends ConsumerState<ShoppingScreen> {
         initialName: entry.itemName,
         initialCategory: entry.category,
         initialQuantity: entry.targetQuantity,
-        onIntakeSuccess: (_) async {
-          try {
-            await ref.read(shoppingServiceProvider).delete(entry.id);
-            if (mounted) setState(() => _selectedIds.remove(entry.id));
-          } catch (error) {
-            if (mounted) showAppSnackBar(context, SnackBar(content: Text('已入库，但采购项删除失败：$error')));
-          }
+        onIntake: (draft, mergeProductId) => ref.read(shoppingServiceProvider)
+            .intakePurchasedEntry(entry, draft, mergeProductId: mergeProductId),
+        onIntakeSuccess: (_) {
+          if (mounted) setState(() => _selectedIds.remove(entry.id));
         },
       ),
     );
@@ -262,7 +259,7 @@ class _ShoppingScreenState extends ConsumerState<ShoppingScreen> {
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: const Text('确认批量入库'),
-          content: Text('将 ${plans.length} 项采购商品分别记为新批次；原有库存不会覆盖。批量入库不填写生产/到期日期，如需补充日期请逐项使用右侧编辑入库。'),
+          content: Text('将 ${plans.length} 项采购商品分别记为新批次；原有库存不会覆盖。本次批次不设置生产/到期日期，仍可参与库存和消耗，但不产生效期提醒。如需填写日期，请取消后逐项使用右侧“编辑入库”。'),
           actions: [
             TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('取消')),
             FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('确认入库')),
@@ -272,16 +269,12 @@ class _ShoppingScreenState extends ConsumerState<ShoppingScreen> {
       if (confirmed != true || !mounted) return;
       var count = 0;
       for (final plan in plans) {
-        // Each successful intake is committed separately; never delete an entry before its stock write.
-        await ref.read(inventoryServiceProvider).intake(plan.draft, mergeProductId: plan.mergeId);
+        // Commit each item separately; its stock and list removal are atomic.
+        await ref.read(shoppingServiceProvider).intakePurchasedEntry(
+          plan.entry, plan.draft, mergeProductId: plan.mergeId,
+        );
         count++;
-        try {
-          await ref.read(shoppingServiceProvider).delete(plan.entry.id);
-          if (mounted) setState(() => _selectedIds.remove(plan.entry.id));
-        } catch (error) {
-          if (mounted) showAppSnackBar(context, SnackBar(content: Text('${plan.entry.itemName} 已入库，但清单删除失败，请勿重复入库：$error')));
-          return;
-        }
+        if (mounted) setState(() => _selectedIds.remove(plan.entry.id));
       }
       if (mounted) showAppSnackBar(context, SnackBar(content: Text('已将 $count 项商品按新批次入库。')));
     } catch (error) {

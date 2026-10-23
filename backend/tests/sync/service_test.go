@@ -2,6 +2,7 @@ package sync_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -22,7 +23,7 @@ type fakeRepository struct {
 
 func newFakeRepository() *fakeRepository {
 	return &fakeRepository{
-		device:      syncmod.DeviceScope{DeviceID: "device-1", FamilyID: "family-1"},
+		device:      syncmod.DeviceScope{DeviceID: "device-1", FamilyID: "family-1", UserID: "user-1", Role: "member"},
 		entities:    map[string]syncmod.EntityRecord{},
 		idempotency: map[string]syncmod.IdempotencyRecord{},
 	}
@@ -219,5 +220,73 @@ func TestBootstrapAndPullExposeCursorContract(t *testing.T) {
 	pulled, err := service.Pull(context.Background(), syncmod.PullRequest{DeviceID: "device-1", Cursor: 7, Limit: 100})
 	if err != nil || pulled.NextCursor != 8 || len(pulled.Changes) != 1 {
 		t.Fatalf("unexpected pull: %#v, %v", pulled, err)
+	}
+}
+
+type externalHARepository struct {
+	*fakeRepository
+	inTransaction          bool
+	transactions           int
+	failSettlement         bool
+	externalCalls, effects int
+	receipts               map[string]syncmod.HomeAssistantCommandResult
+}
+
+func (f *externalHARepository) WithTransaction(ctx context.Context, familyID string, fn func(syncmod.SyncTransaction) error) error {
+	f.inTransaction = true
+	defer func() { f.inTransaction = false }()
+	f.transactions++
+	if err := fn(f.fakeRepository); err != nil {
+		return err
+	}
+	if f.failSettlement && f.transactions == 2 {
+		f.idempotency = map[string]syncmod.IdempotencyRecord{}
+		return errors.New("receipt transaction commit failed")
+	}
+	return nil
+}
+func (f *externalHARepository) ExecuteExternalHomeAssistantCommand(_ context.Context, scope syncmod.DeviceScope, change syncmod.SyncChange) (syncmod.HomeAssistantCommandResult, error) {
+	if f.inTransaction {
+		return syncmod.HomeAssistantCommandResult{}, errors.New("external HTTP executed inside DB transaction")
+	}
+	if scope.DeviceID != f.device.DeviceID {
+		return syncmod.HomeAssistantCommandResult{}, errors.New("device identity lost")
+	}
+	f.externalCalls++
+	if result, ok := f.receipts[change.ChangeID]; ok {
+		return result, nil
+	}
+	f.effects++
+	result := syncmod.HomeAssistantCommandResult{Payload: map[string]any{"accepted": true}}
+	f.receipts[change.ChangeID] = result
+	return result, nil
+}
+func TestExternalHAExecutionReleasesTransactionAndRecoversReceiptCommitFailure(t *testing.T) {
+	repository := &externalHARepository{fakeRepository: newFakeRepository(), receipts: map[string]syncmod.HomeAssistantCommandResult{}, failSettlement: true}
+	service := syncmod.NewService(repository)
+	request := syncmod.PushRequest{DeviceID: "device-1", Changes: []syncmod.SyncChange{{ChangeID: "change-1", Operation: syncmod.OperationHomeAssistantCommand, IdempotencyKey: "external-command-key", IntegrationID: "integration-1", EntityID: "light.kitchen", Command: "turn_on"}}}
+	if _, err := service.Push(context.Background(), request); err == nil {
+		t.Fatal("expected post-effect receipt failure")
+	}
+	response, err := service.Push(context.Background(), request)
+	if err != nil || len(response.Accepted) != 1 || repository.effects != 1 {
+		t.Fatalf("retry duplicated external command: %#v %v effects=%d", response, err, repository.effects)
+	}
+	response, err = service.Push(context.Background(), request)
+	if err != nil || len(response.Replayed) != 1 || repository.externalCalls != 2 || repository.effects != 1 {
+		t.Fatalf("settled receipt called external executor again: %#v %v", response, err)
+	}
+}
+func TestCurrentMembershipRequiredForOrdinarySync(t *testing.T) {
+	for _, role := range []string{"", "removed", "guest"} {
+		repository := newFakeRepository()
+		repository.device.Role = role
+		service := syncmod.NewService(repository)
+		if _, err := service.Pull(context.Background(), syncmod.PullRequest{DeviceID: "device-1"}); !errors.Is(err, syncmod.ErrDeviceNotFound) {
+			t.Fatalf("invalid role %q could pull: %v", role, err)
+		}
+		if _, err := service.Bootstrap(context.Background(), syncmod.BootstrapRequest{DeviceID: "device-1"}); !errors.Is(err, syncmod.ErrDeviceNotFound) {
+			t.Fatalf("invalid role %q could bootstrap: %v", role, err)
+		}
 	}
 }

@@ -333,7 +333,8 @@ class _AlertSection extends ConsumerWidget {
             child: Text(suggestion, style: Theme.of(context).textTheme.bodySmall),
           ),
           ...items.map((item) {
-            final batch = item.nearestDatedBatch;
+            final candidate = _candidateFor(item);
+            final batch = candidate.batch ?? item.nearestDatedBatch;
             return Card(
               child: ListTile(
                 leading: IconButton(
@@ -352,7 +353,9 @@ class _AlertSection extends ConsumerWidget {
                       onPressed: () => _addToShopping(context, ref, item),
                       icon: const Icon(Icons.add_shopping_cart_outlined),
                     ),
-                    if (!showStock) StatusBadge(status: item.overallExpiryStatus, days: batch?.daysUntilExpiry),
+                    if (!showStock) StatusBadge(
+                      status: batch?.expiryStatus ?? item.overallExpiryStatus,
+                      days: batch?.daysUntilExpiry),
                   ],
                 ),
               ),

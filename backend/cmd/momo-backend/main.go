@@ -346,6 +346,7 @@ func serve(ctx context.Context) error {
 		tokenCipher,
 		hahttp.New(nil),
 	)
+	haDomainService.Executions = hapostgres.NewCommandExecutionRepository(db)
 	haService := &attributedHomeAssistantService{service: haDomainService}
 
 	haSyncExecutor := homeassistant.NewSyncExecutor(
@@ -362,6 +363,7 @@ func serve(ctx context.Context) error {
 		Sync:          syncService,
 		HomeAssistant: haService,
 		Verifier:      issuer,
+		Authorizer:    authpostgres.NewAccessAuthorizer(db),
 		Config: httpapi.Config{
 			MaxRequestBodyBytes: cfg.MaxRequestBodyBytes,
 			Now:                 time.Now,

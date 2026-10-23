@@ -154,7 +154,15 @@ jobs:
 
       - name: Unit tests
         timeout-minutes: 10
-        run: flutter test --reporter expanded
+        run: flutter test --coverage --reporter expanded
+
+      - name: Upload Flutter coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-coverage-${{ github.sha }}
+          path: coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Android debug build
         run: flutter build apk --debug
@@ -257,7 +265,15 @@ jobs:
       - name: Test backend including PostgreSQL cursor ordering
         working-directory: backend
         timeout-minutes: 5
-        run: go test -count=1 ./...
+        run: go test -count=1 -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Upload backend coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage-${{ github.sha }}
+          path: backend/coverage.out
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Vet backend
         working-directory: backend

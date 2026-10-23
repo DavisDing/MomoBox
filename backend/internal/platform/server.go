@@ -39,7 +39,7 @@ func NewHTTPServerWithRoutes(cfg Config, db DB, businessRoutes http.Handler) *Se
 		DB:     db,
 		HTTPServer: &http.Server{
 			Addr:              cfg.HTTPAddr,
-			Handler:           requestLimitMiddleware(cfg.MaxRequestBodyBytes, mux),
+			Handler:           RequestIDMiddleware(RequestLogMiddleware(nil, requestLimitMiddleware(cfg.MaxRequestBodyBytes, RouteTemplateHandler(mux)))),
 			ReadHeaderTimeout: 5 * time.Second,
 			ReadTimeout:       15 * time.Second,
 			WriteTimeout:      15 * time.Second,

@@ -160,3 +160,24 @@ func TestImportRechecksDeviceAccountFamilyAndRole(t *testing.T) {
 		})
 	}
 }
+
+func TestImportAcceptsLegacyAdjustmentAndZeroDiscardHistory(t *testing.T) {
+	for _, kind := range []string{"adjust", "adjustment", "discard"} {
+		request := validImportFixture(t)
+		request.History[0]["type"] = kind
+		if kind == "discard" {
+			request.History[0]["quantity"] = float64(0)
+		}
+		if _, err := ValidateImport(request); err != nil {
+			t.Fatalf("%s history rejected: %v", kind, err)
+		}
+	}
+	for _, kind := range []string{"intake", "consume", "restock", "adjust", "adjustment"} {
+		request := validImportFixture(t)
+		request.History[0]["type"] = kind
+		request.History[0]["quantity"] = float64(0)
+		if _, err := ValidateImport(request); err == nil {
+			t.Fatalf("zero %s accepted outside state-only discard", kind)
+		}
+	}
+}

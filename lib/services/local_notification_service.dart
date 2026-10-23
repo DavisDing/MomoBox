@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -8,6 +9,7 @@ import 'package:timezone/timezone.dart' as tz;
 import '../domain/inventory/reminder_rules.dart';
 import '../domain/inventory/calendar_date.dart';
 import '../domain/models/inventory_models.dart';
+import 'diagnostic_log_service.dart';
 
 
 enum NotificationPermissionStatus { allowed, denied, unavailable }
@@ -16,8 +18,12 @@ class LocalNotificationService {
   LocalNotificationService({
     FlutterLocalNotificationsPlugin? plugin,
     Future<NotificationPermissionStatus> Function()? permissionStatusReader,
+    Future<String> Function()? localTimeZoneReader,
+    int? pendingNotificationLimit,
   })  : _plugin = plugin ?? FlutterLocalNotificationsPlugin(),
-        _permissionStatusReader = permissionStatusReader;
+        _permissionStatusReader = permissionStatusReader,
+        _localTimeZoneReader = localTimeZoneReader,
+        _pendingNotificationLimit = pendingNotificationLimit ?? (Platform.isIOS ? 64 : 500);
 
   static const _channelId = 'momobox_reminders';
   static const _channelName = '库存提醒';
@@ -25,19 +31,16 @@ class LocalNotificationService {
 
   final FlutterLocalNotificationsPlugin _plugin;
   final Future<NotificationPermissionStatus> Function()? _permissionStatusReader;
+  final Future<String> Function()? _localTimeZoneReader;
+  final int _pendingNotificationLimit;
+  bool _localTimeZoneAvailable = false;
   bool _initialized = false;
   Future<void> _syncTail = Future<void>.value();
 
   Future<void> initialize() async {
     if (_initialized) return;
     tz.initializeTimeZones();
-    try {
-      final dynamic timezone = await FlutterTimezone.getLocalTimezone();
-      final timezoneName = timezone is String ? timezone : timezone.name as String;
-      tz.setLocalLocation(tz.getLocation(timezoneName));
-    } catch (_) {
-      // 在不支持读取系统时区的平台上，timezone 包的默认位置仍可用于 CI 构建。
-    }
+    await _configureLocalTimeZone();
 
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     final darwin = DarwinInitializationSettings(
@@ -50,6 +53,22 @@ class LocalNotificationService {
     );
     _initialized = true;
     await requestPermission();
+  }
+
+  Future<void> _configureLocalTimeZone() async {
+    try {
+      final dynamic timezone = await (_localTimeZoneReader?.call() ??
+          FlutterTimezone.getLocalTimezone());
+      final timezoneName = timezone is String ? timezone : timezone.name as String;
+      tz.setLocalLocation(tz.getLocation(timezoneName));
+      _localTimeZoneAvailable = true;
+    } catch (error, stack) {
+      // Family timezone can still schedule correctly. Never silently schedule
+      // device-local reminders in the timezone package's default UTC zone.
+      _localTimeZoneAvailable = false;
+      unawaited(DiagnosticLogService.shared.record(DiagnosticEvent.notificationTimeZoneFailed,
+          error, stackTrace: stack));
+    }
   }
 
   /// 请求通知权限并返回结果。
@@ -152,16 +171,36 @@ class LocalNotificationService {
     // failed operation, and must not cause us to claim that scheduling worked.
     final status = await (_permissionStatusReader?.call() ?? permissionStatus());
     if (status != NotificationPermissionStatus.allowed) return;
+    if (candidates.any((candidate) => candidate.item.familyTimeZone == null)) {
+      await _configureLocalTimeZone();
+    }
 
+    if (_pendingNotificationLimit < 1) {
+      throw ArgumentError.value(_pendingNotificationLimit, 'pendingNotificationLimit');
+    }
+    final plans = candidates.map((candidate) {
+      if (candidate.item.familyTimeZone == null && !_localTimeZoneAvailable) {
+        throw StateError('无法读取设备时区，通知计划未更新，请重试或检查家庭时区。');
+      }
+      return (candidate: candidate, time: _nextNineAm(candidate.date, reference,
+          timeZone: candidate.item.familyTimeZone));
+    }).toList();
+    plans.sort((a, b) {
+      final order = a.time.compareTo(b.time);
+      if (order != 0) return order;
+      final priority = a.candidate.type.index.compareTo(b.candidate.type.index);
+      return priority != 0 ? priority : a.candidate.key.compareTo(b.candidate.key);
+    });
+    // Budget after sorting so distant dates cannot displace near-term plans.
+    // Subsequent startup/foreground/inventory recalculation replenishes it.
     await _plugin.cancelAll();
-    for (final candidate in candidates) {
-      final scheduled = _nextNineAm(candidate.date, reference,
-        timeZone: candidate.item.familyTimeZone);
+    for (final plan in plans.take(_pendingNotificationLimit)) {
+      final candidate = plan.candidate;
       await _plugin.zonedSchedule(
         _stableId(candidate.key),
         _title(candidate.type),
         _body(candidate),
-        scheduled,
+        plan.time,
         const NotificationDetails(
           android: AndroidNotificationDetails(
             _channelId,
@@ -182,11 +221,13 @@ class LocalNotificationService {
 
   tz.TZDateTime _nextNineAm(DateTime date, DateTime now, {String? timeZone}) {
     final location = timeZone == null ? tz.local : tz.getLocation(timeZone);
-    var scheduled = tz.TZDateTime(location, date.year, date.month, date.day, 9);
     final current = tz.TZDateTime.from(now, location);
+    final plannedDay = DateTime.utc(date.year, date.month, date.day);
+    final currentDay = DateTime.utc(current.year, current.month, current.day);
+    final day = plannedDay.isBefore(currentDay) ? currentDay : plannedDay;
+    var scheduled = tz.TZDateTime(location, day.year, day.month, day.day, 9);
     if (!scheduled.isAfter(current)) {
-      final next = date.add(const Duration(days: 1));
-      scheduled = tz.TZDateTime(location, next.year, next.month, next.day, 9);
+      scheduled = tz.TZDateTime(location, current.year, current.month, current.day + 1, 9);
     }
     return scheduled;
   }

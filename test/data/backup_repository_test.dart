@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:drift/drift.dart';
+import 'package:drift/drift.dart' hide isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:momo_box/core/database/app_database.dart';
@@ -68,6 +68,41 @@ void main() {
     }
     extraDatabases.clear();
   });
+
+  test('本机墓碑父商品的新有余量批次拒绝整笔导入，且不复活父商品', () async {
+    final local = backupWithInvalidReference()..['batches'] = [];
+    await repository.importJson(jsonEncode(local));
+    await InventoryRepository(database).applyRemoteProductDelete(
+      productId: 'product-1', version: 1, deletedAt: DateTime.now());
+    final incoming = backupWithInvalidReference()
+      ..['products'] = [validProduct(), {...validProduct(), 'id': 'unrelated-product'}]
+      ..['batches'] = [{...batchForUnknownProduct(), 'product_id': 'product-1'}];
+    await expectLater(repository.importJson(jsonEncode(incoming)),
+      throwsA(isA<BackupImportException>().having((error) => error.failures.single.message,
+        'failure', contains('已在本机删除'))));
+    final products = await database.select(database.products).get();
+    expect(products, hasLength(1));
+    expect(products.single.deletedAt, isNotNull);
+    expect(await database.select(database.productBatches).get(), isEmpty);
+  });
+
+  for (final kind in ['deleted', 'discarded', 'used_up']) {
+    test('本机墓碑父商品仍允许合法历史批次 $kind', () async {
+      await repository.importJson(jsonEncode(backupWithInvalidReference()..['batches'] = []));
+      await InventoryRepository(database).applyRemoteProductDelete(
+        productId: 'product-1', version: 1, deletedAt: DateTime.now());
+      final incoming = backupWithInvalidReference()..['batches'] = [{
+        ...batchForUnknownProduct(), 'product_id': 'product-1',
+        'remaining_quantity': kind == 'deleted' ? 1 : 0,
+        'is_discarded': kind == 'discarded',
+        if (kind == 'deleted') 'deleted_at': '2026-10-23T00:00:00.000Z',
+      }];
+      final report = await repository.importJson(jsonEncode(incoming));
+      expect(report.imported, 1);
+      expect(report.skipped, 1);
+      expect((await database.select(database.products).getSingle()).deletedAt, isNotNull);
+    });
+  }
 
   test('仅配置主 AI 时，空副服务和兜底设置可导出恢复', () async {
     final settings = SettingsRepository(database);

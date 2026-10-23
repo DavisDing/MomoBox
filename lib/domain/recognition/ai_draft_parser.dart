@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../inventory/expiry_rules.dart';
+import '../inventory/calendar_date.dart';
 import '../models/recognition_models.dart';
 
 class AiDraftParser {
@@ -60,8 +61,12 @@ class AiDraftParser {
   DateTime? _parseDate(Object? value) {
     final raw = stringOrNull(value);
     if (raw == null) return null;
-    final date = DateTime.tryParse(raw);
-    if (date == null) throw FormatException('AI 返回的日期无效：$raw');
+    final DateTime date;
+    try {
+      date = CalendarDate.decode(raw);
+    } on FormatException {
+      throw FormatException('AI 返回的日期无效：$raw');
+    }
     return DateTime(date.year, date.month, date.day);
   }
 }

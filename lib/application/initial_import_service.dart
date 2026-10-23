@@ -190,14 +190,18 @@ class InitialImportService {
         'updated_at': item.updatedAt.toUtc().toIso8601String()});
     }
     for (final movement in source.movements) {
-      if (!const ['intake', 'restock', 'consume', 'discard', 'adjust'].contains(movement.type) ||
+      if (!const ['intake', 'restock', 'consume', 'discard', 'adjust', 'adjustment'].contains(movement.type) ||
           movement.quantity == 0 ||
           (const ['intake', 'restock'].contains(movement.type) && movement.quantity < 0) ||
           (const ['consume', 'discard'].contains(movement.type) && movement.quantity > 0)) {
         blockers.add('历史 ${movement.id} 类型或数量符号不支持，请保留原记录核对。');
       }
       history.add({'id': movement.id, 'product_id': movement.productId,
-        'batch_id': movement.batchId, 'type': movement.type, 'quantity': movement.quantity,
+        'batch_id': movement.batchId,
+        // Local replenishment predates the import wire enum. Keep source
+        // history unchanged; only normalize its exported archive type.
+        'type': movement.type == 'adjustment' ? 'adjust' : movement.type,
+        'quantity': movement.quantity,
         'note': movement.note, 'occurred_at': movement.createdAt.toUtc().toIso8601String(),
         'source_time_zone': null});
     }

@@ -43,7 +43,7 @@ class ExpiryRules {
   }) {
     _validateAmount(amount);
     return unit == ShelfLifeUnit.days
-        ? dateOnly(startDate).add(Duration(days: amount))
+        ? addCalendarDays(startDate, amount)
         : addCalendarMonths(dateOnly(startDate), amount);
   }
 
@@ -55,7 +55,7 @@ class ExpiryRules {
     _validateAmount(amount);
     final expiry = dateOnly(expiryDate);
     if (unit == ShelfLifeUnit.days) {
-      return expiry.subtract(Duration(days: amount));
+      return addCalendarDays(expiry, -amount);
     }
 
     // 一次性定位目标月份，避免逐月截断日期导致误差：
@@ -70,6 +70,10 @@ class ExpiryRules {
     }
     return _shiftCalendarMonths(dateOnly(source), months);
   }
+
+  /// Adds calendar dates rather than elapsed 24-hour periods across DST.
+  static DateTime addCalendarDays(DateTime source, int days) =>
+      DateTime(source.year, source.month, source.day + days);
 
   static DateTime _shiftCalendarMonths(DateTime source, int months) {
     final monthIndex = source.month - 1 + months;

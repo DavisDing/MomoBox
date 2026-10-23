@@ -69,6 +69,7 @@ class IntakeSheet extends ConsumerStatefulWidget {
     this.initialCategory,
     this.initialQuantity = 1,
     this.beforeIntake,
+    this.onIntake,
     this.onIntakeSuccess,
     super.key,
   });
@@ -78,6 +79,7 @@ class IntakeSheet extends ConsumerStatefulWidget {
   final String? initialCategory;
   final int initialQuantity;
   final Future<void> Function()? beforeIntake;
+  final Future<String> Function(IntakeDraft draft, String? mergeProductId)? onIntake;
   final FutureOr<void> Function(String productId)? onIntakeSuccess;
 
   @override
@@ -489,7 +491,9 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
       }
       if (!mounted) return;
       await widget.beforeIntake?.call();
-      final productId = await service.intake(draft, mergeProductId: mergeProductId);
+      final productId = widget.onIntake == null
+          ? await service.intake(draft, mergeProductId: mergeProductId)
+          : await widget.onIntake!(draft, mergeProductId);
       _intakeCompleted = true;
       if (widget.initialDraft == null) _intakeDraft.clear();
       // Record committed intake even if the sheet was closed while SQLite ran.

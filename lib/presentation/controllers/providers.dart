@@ -91,7 +91,8 @@ final shoppingRepositoryProvider = Provider<ShoppingRepository>((ref) {
 });
 
 final shoppingServiceProvider = Provider<ShoppingService>(
-  (ref) => ShoppingService(ref.watch(shoppingRepositoryProvider)),
+  (ref) => ShoppingService(ref.watch(shoppingRepositoryProvider),
+    inventory: ref.watch(inventoryRepositoryProvider)),
 );
 
 final shoppingProvider = StreamProvider<List<ShoppingEntry>>(
@@ -255,8 +256,15 @@ final inventoryStatisticsServiceProvider = Provider<InventoryStatisticsService>(
   (ref) => InventoryStatisticsService(ref.watch(databaseProvider)),
 );
 
-final inventoryStatisticsProvider = FutureProvider.autoDispose.family<InventoryStatistics, int>(
-  (ref, days) => ref.watch(inventoryStatisticsServiceProvider).load(days: days),
+final inventoryStatisticsProvider = StreamProvider.autoDispose.family<InventoryStatistics, int>(
+  (ref, days) {
+    final database = ref.watch(databaseProvider);
+    final service = ref.watch(inventoryStatisticsServiceProvider);
+    return database.customSelect(
+      'SELECT 1',
+      readsFrom: {database.stockMovements, database.products},
+    ).watch().asyncMap((_) => service.load(days: days));
+  },
 );
 
 final mediaStorageServiceProvider = Provider<MediaStorageService>(

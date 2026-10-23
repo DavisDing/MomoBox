@@ -6,14 +6,16 @@ import (
 	"github.com/momobox/backend/internal/homeassistant"
 )
 
-func TestParseKeyVersionRequiresPositiveInteger(t *testing.T) {
+func TestParseKeyVersionPreservesOpaqueAEADIdentifier(t *testing.T) {
 	t.Parallel()
-	if got, err := parseKeyVersion(" 2 "); err != nil || got != 2 {
-		t.Fatalf("parseKeyVersion returned (%d, %v)", got, err)
+	for _, version := range []string{"1", "2", "aes256gcm-123abc", "v1"} {
+		if got, err := parseKeyVersion(version); err != nil || got != version {
+		t.Fatalf("opaque version %q changed: %q %v", version, got, err)
+		}
 	}
-	for _, invalid := range []string{"", "0", "-1", "v1", "1.5"} {
+	for _, invalid := range []string{"", " 2 ", "v1\n", "v 1", "v\x001"} {
 		if _, err := parseKeyVersion(invalid); err == nil {
-			t.Fatalf("expected key version %q to be rejected", invalid)
+			t.Fatalf("invalid version %q accepted", invalid)
 		}
 	}
 }

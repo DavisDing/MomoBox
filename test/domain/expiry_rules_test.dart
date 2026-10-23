@@ -2,6 +2,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:momo_box/domain/inventory/expiry_rules.dart';
 
 void main() {
+  for (final source in [DateTime(2026, 3, 8), DateTime(2026, 11, 1)]) {
+    test('day arithmetic preserves midnight across DST at $source', () {
+      final expiry = ExpiryRules.calculateExpiry(startDate: source, amount: 1,
+          unit: ShelfLifeUnit.days);
+      expect(expiry, DateTime(source.year, source.month, source.day + 1));
+      expect(expiry.hour, 0);
+      expect(ExpiryRules.calculateProduction(expiryDate: expiry, amount: 1,
+          unit: ShelfLifeUnit.days), source);
+    });
+  }
   group('ExpiryRules', () {
     test('到期当天仍有效且归类为临期', () {
       final today = DateTime(2026, 9, 1);

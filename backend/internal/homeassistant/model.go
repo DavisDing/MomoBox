@@ -19,6 +19,7 @@ func (r Role) CanManagePermissions() bool { return r == RoleOwner || r == RoleAd
 // Actor is the already-authenticated principal supplied by the auth layer.
 // The homeassistant package never trusts a family ID in a request DTO.
 type Actor struct {
+	DeviceID string
 	UserID   string
 	FamilyID string
 	Role     Role
@@ -203,6 +204,7 @@ const (
 )
 
 type CommandAuditLog struct {
+	DeviceID string
 	FamilyID              string
 	IntegrationID         string
 	EntityID              string

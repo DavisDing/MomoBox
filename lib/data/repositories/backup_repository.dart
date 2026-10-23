@@ -251,8 +251,10 @@ class BackupRepository {
     required List<Map<String, dynamic>> acknowledgements,
     required List<Map<String, dynamic>> barcodeCache,
   }) async {
-    final existingProducts =
-        (await _database.select(_database.products).get()).map((row) => row.id).toSet();
+    final existingProductRows = await _database.select(_database.products).get();
+    final existingProducts = existingProductRows.map((row) => row.id).toSet();
+    final existingDeletedProductIds = existingProductRows
+        .where((row) => row.deletedAt != null).map((row) => row.id).toSet();
     final existingBatches = await _database.select(_database.productBatches).get();
     final existingBatchProductById = {
       for (final row in existingBatches) row.id: row.productId,
@@ -301,6 +303,18 @@ class BackupRepository {
           section: 'batches',
           index: i + 1,
           message: '引用的商品不存在：$productId。',
+        ));
+      } else if (row['deleted_at'] == null &&
+          row['is_discarded'] != true &&
+          (row['remaining_quantity'] as int) > 0 &&
+          existingDeletedProductIds.contains(productId)) {
+        // Duplicate parents remain untouched. Refuse to hide newly restored
+        // stock under their local tombstone; archived/deleted batches and
+        // historical movements are still valid backup content.
+        failures.add(ImportFailure(
+          section: 'batches',
+          index: i + 1,
+          message: '商品 $productId 已在本机删除，无法导入其有余量批次。请先核对备份与本机数据。',
         ));
       }
     }

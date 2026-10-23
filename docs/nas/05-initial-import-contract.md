@@ -39,13 +39,13 @@
 | product_batches | id, product_id, produced_date, expiry_date, date_source(manual/barcode/ocr/ai_draft/import/sync，默认import), date_precision(day/month/year/unknown，默认day), initial_quantity, quantity, unit(默认piece), batch_no, is_opened(默认false), opened_date, expiry_after_opening_days, status(active/used_up/expired/discarded), storage_location, supplier, price |
 | shopping_items | id, product_id, name, desired_quantity(默认1，正整数), checked(默认false), checked_at, notes, category, reason(默认手动添加) |
 | reminder_settings | id, product_id, enabled(默认true), expiry_warning_days(默认30，非负), low_stock_threshold(空或正整数), opened_warning_days(本期仅null) |
-| history | id, product_id, batch_id(可空), type(intake/restock/consume/discard/adjust), quantity(有符号非零整数), note, occurred_at(必填，带偏移RFC3339), source_time_zone(可空，IANA) |
+| history | id, product_id, batch_id(可空), type(intake/restock/consume/discard/adjust，兼容旧值adjustment并规范为adjust), quantity(有符号整数，只有discard允许零), note, occurred_at(必填，带偏移RFC3339), source_time_zone(可空，IANA) |
 
 商品/批次/采购字段通过 additive migration 保留并进入现有实体快照/增量。`created_at/updated_at` 是旧资料时间，导入人、设备、接收时间另记计划/归档，不冒充旧操作执行人。原提醒确认、媒体/OCR、账号凭据和运行现场不在导入内；App 明示仅留本机，不可声称全部迁移。
 
 `initial_quantity` 与 `quantity` 均必填整数，`0 <= quantity <= initial_quantity <= 2147483647`。discarded/used_up 必须quantity=0；active必须quantity>0；expired允许正/零量。导入例如12/5直接保留12/5，不补12后扣7，不生成普通补货/消费记录。商品/批次/采购引用必须指向同计划内或同家庭已有活跃对象；history product_id/batch_id 是来源标识，不要求当前实体存在，不虚构缺失批次。
 
-intake/restock quantity>0；consume/discard quantity<0；adjust quantity!=0。history 独立追加式保存，不写 consumption_records，不增加 batch version，不参与今日入库/消耗统计。
+intake/restock quantity>0；consume quantity<0；discard quantity<=0；adjust quantity!=0。零 discard 仅表示来源数据中零库存批次的作废状态审计，不代表扣减数量。history 独立追加式保存，不写 consumption_records，不增加 batch version，不参与今日入库/消耗统计；导入和后续读取均不重新执行作废或其他库存动作。
 
 日期字段必须严格 `YYYY-MM-DD`，保留原年月日，拒绝时间戳与非法日期。事件时间使用带偏移 instant。`families.time_zone` 默认 `Asia/Shanghai`；创建家庭可传 `time_zone` 并按 IANA 校验，家庭读取/bootstrap/capabilities均返回。App 检测到非午夜等旧日期歧义时阻塞，审阅弹窗逐批列出当前保存年月日供对照原始资料；原时区/日期来源已丢失时不能保证自动识别整日偏差或还原原值，不据当前午夜值声称来源已验证。
 

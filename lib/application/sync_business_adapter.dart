@@ -38,6 +38,20 @@ class SyncBusinessAdapter {
   final SyncOutboxRepository _outbox;
   final String _scopeId;
 
+  /// An accepted ordinary entity receipt advances metadata while preserving
+  /// any newer optimistic fields. Inventory command versions arrive together
+  /// with authoritative quantities through their composite pull payload.
+  Future<void> acknowledgeEntityVersion(SyncOutboxEntry entry, int version) async {
+    final entity = entry.entity;
+    final entityId = entry.entityId;
+    if (entry.scopeId != _scopeId || entity == null || entityId == null || version < 1) return;
+    if (entity == 'products' || entity == 'product_batches') {
+      await _inventory.acknowledgeEntityVersion(entity: entity, entityId: entityId, version: version);
+    } else if (entity == 'shopping_items') {
+      await _shopping.acknowledgeEntityVersion(entity: entity, entityId: entityId, version: version);
+    }
+  }
+
   static const _snapshotOrder = [
     'categories',
     'products',
@@ -174,6 +188,9 @@ class SyncBusinessAdapter {
       // A local mutation can commit between preflight and acquiring the write
       // transaction. Recheck before the first row and before completion.
       await _assertSnapshotScopeQuiescent();
+      await _outbox.restoreRetiredProtectionsFromSnapshot(
+        scopeId: _scopeId, snapshot: orderedPlan, serverCursor: serverCursor,
+      );
       // Only this quiescent, atomic snapshot path may replace equal-version
       // optimistic data/tombstones. Incremental handlers retain their defaults.
       for (final change in orderedPlan) {
@@ -199,10 +216,61 @@ class SyncBusinessAdapter {
           );
         }
       }
+      await _restoreAbandonedIntents(orderedPlan, serverCursor);
       await _assertSnapshotScopeQuiescent();
       if (onApplied != null) await onApplied();
       await _assertSnapshotScopeQuiescent();
     });
+  }
+
+  Future<void> _restoreAbandonedIntents(List<NasSyncPullChange> snapshot, int serverCursor) async {
+    if (await _outbox.getConflictResolutionRefreshToken(_scopeId) == null) return;
+    final entries = await _outbox.listAbandonedRejected(scopeId: _scopeId);
+    final present = {for (final change in snapshot) '${change.entity}:${change.entityId}'};
+    final missing = <SyncOutboxEntry>[];
+    for (final entry in entries) {
+      if (entry.operation == SyncOperation.entityUpsert || entry.operation == SyncOperation.entityDelete) {
+        if (entry.entity == null || entry.entityId == null) {
+          throw const FormatException('abandoned entity intent has no verifiable target');
+        }
+        if (!present.contains('${entry.entity}:${entry.entityId}')) {
+          final base = entry.baseVersion;
+          if (entry.operation != SyncOperation.entityUpsert || base != 0) {
+            throw const FormatException('fresh snapshot is missing an existing abandoned entity');
+          }
+          missing.add(entry);
+        }
+      } else if (entry.operation == SyncOperation.inventoryCommand) {
+        final request = Map<String, dynamic>.from(jsonDecode(entry.requestJson) as Map);
+        final allocations = request['allocations'];
+        if (allocations is! List || allocations.any((raw) => raw is! Map ||
+            !present.contains('product_batches:${raw['batch_id']}'))) {
+          throw const FormatException('fresh snapshot cannot restore abandoned inventory allocations');
+        }
+      }
+    }
+    // A missing rejected parent may have local children. Only explicitly
+    // abandoned new children are retired first; repository guards reject any
+    // other live child, so independent history/intents cannot be hidden.
+    for (final entity in ['product_batches', 'shopping_items', 'products', 'categories']) {
+      for (final entry in missing.where((row) => row.entity == entity)) {
+        if (entity == 'shopping_items') {
+          await _shopping.abandonUncreatedEntity(entity: entity, entityId: entry.entityId!);
+        } else if (entity == 'categories') {
+          await _outbox.applyRemoteAuxiliaryEntity(scopeId: _scopeId,
+            entity: entity, entityId: entry.entityId!, payload: const {}, version: 0,
+            updatedAt: DateTime.now().toUtc(), deletedAt: DateTime.now().toUtc(), businessApplied: true);
+        } else {
+          await _inventory.abandonUncreatedEntity(entity: entity, entityId: entry.entityId!);
+        }
+      }
+    }
+    if (missing.any((entry) => !const {'product_batches', 'shopping_items', 'products', 'categories'}.contains(entry.entity))) {
+      throw const FormatException('missing abandoned entity is not safely restorable');
+    }
+    for (final entry in entries) {
+      await _outbox.markAbandonedRejectedRestored(entry, serverCursor);
+    }
   }
 
   Future<void> _assertSnapshotScopeQuiescent() async {
@@ -273,7 +341,8 @@ class SyncBusinessAdapter {
         entity: 'categories',
         entityId: categoryId,
       );
-      if (record != null && record['deleted_at'] != null) {
+      if (record != null && (record['deleted_at'] != null ||
+          (record['payload'] is Map && (record['payload'] as Map)['deleted_at'] != null))) {
         throw const FormatException('products.category_id references a deleted category');
       }
       if (record != null) {
@@ -375,15 +444,8 @@ class SyncBusinessAdapter {
     final productId = _string(payload, 'product_id');
     if (productId == null) return;
     await _protectPendingLocalChange(
-      change: NasSyncPullChange(
-        changeId: change.changeId,
-        cursor: change.cursor,
-        operation: change.operation,
-        entity: 'products',
-        entityId: productId,
-        version: change.version,
-        payload: payload,
-      ),
+      change: change,
+      protectedEntity: 'products',
       entityId: productId,
       serverPayload: payload,
     );
@@ -552,6 +614,7 @@ class SyncBusinessAdapter {
     if (!const {'restock', 'consume_fefo', 'consume_allocated', 'discard'}.contains(command)) {
       throw FormatException('unsupported inventory command result: $command');
     }
+    final validatedCommand = command!;
     if (change.cursor < 0) {
       throw const FormatException('inventory_command cursor must be non-negative');
     }
@@ -565,7 +628,7 @@ class SyncBusinessAdapter {
 
     // Validate every allocation before any write, and persist a deferred
     // conflict outside the write transaction so rollback cannot erase it.
-    await _validateInventoryAllocations(allocations);
+    await _validateInventoryAllocations(allocations, validatedCommand);
     Future<void> protectPendingChanges() async {
       for (final allocation in allocations) {
         await _protectPendingLocalChange(
@@ -573,6 +636,7 @@ class SyncBusinessAdapter {
           entityId: allocation.batchId,
           serverPayload: resultPayload,
           inventoryCommand: true,
+          observedVersion: allocation.afterVersion,
         );
       }
     }
@@ -584,7 +648,7 @@ class SyncBusinessAdapter {
         if (await _outbox.hasAppliedChange(scopeId: _scopeId, changeId: change.changeId)) {
           return;
         }
-        final productIds = await _validateInventoryAllocations(allocations);
+        final productIds = await _validateInventoryAllocations(allocations, validatedCommand);
         await protectPendingChanges();
         for (final allocation in allocations) {
           await _inventory.applyRemoteProductBatch(
@@ -622,14 +686,16 @@ class SyncBusinessAdapter {
 
   Future<Map<String, String>> _validateInventoryAllocations(
     List<NasSyncInventoryAllocation> allocations,
+    String command,
   ) async {
     final productIds = <String, String>{};
     for (final allocation in allocations) {
       if (allocation.batchId.trim().isEmpty || productIds.containsKey(allocation.batchId)) {
         throw const FormatException('inventory_command result contains empty or duplicate batch_id');
       }
-      if (allocation.quantity <= 0) {
-        throw const FormatException('inventory_command allocation quantity must be positive');
+      if (allocation.quantity < 0 ||
+          (allocation.quantity == 0 && (command != 'discard' || allocation.afterQuantity != 0))) {
+        throw const FormatException('inventory_command quantity must be positive except an empty discard');
       }
       final quantity = allocation.afterQuantity;
       final version = allocation.afterVersion;
@@ -654,7 +720,10 @@ class SyncBusinessAdapter {
     required String entityId,
     required Map<String, dynamic> serverPayload,
     bool inventoryCommand = false,
+    String? protectedEntity,
+    int? observedVersion,
   }) async {
+    final entity = protectedEntity ?? (inventoryCommand ? 'product_batches' : change.entity);
     final candidates = inventoryCommand
         ? await _outbox.listForOperation(
             scopeId: _scopeId,
@@ -663,39 +732,58 @@ class SyncBusinessAdapter {
           )
         : await _outbox.listForEntity(
             scopeId: _scopeId,
-            entity: change.entity,
+            entity: entity,
             entityId: entityId,
             includeTerminal: true,
           );
     // Dependency-blocked rows are still unsent local edits. Repository default
     // queries omit them, but that must not let a remote result overwrite them.
     final pending = candidates
-        .where((entry) =>
+        .where((entry) => (!inventoryCommand || _inventoryIntentTargetsBatch(entry, entityId)) && (
             entry.status == SyncOutboxStatus.pending ||
             entry.status == SyncOutboxStatus.inFlight ||
-            entry.status == SyncOutboxStatus.blocked)
+            entry.status == SyncOutboxStatus.blocked))
         .toList(growable: false);
     if (pending.isEmpty) return;
 
     final local = pending.first;
-    await _outbox.recordConflict(
-      SyncConflictDraft(
+    final version = observedVersion ?? change.version ?? 0;
+    await _outbox.transaction(() async {
+      final conflictId = await _outbox.recordConflict(SyncConflictDraft(
         scopeId: _scopeId,
         changeId: change.changeId,
         outboxChangeId: local.changeId,
-        entity: change.entity,
+        entity: entity,
         entityId: entityId,
         reason: inventoryCommand
             ? 'REMOTE_INVENTORY_COMMAND_WITH_PENDING_LOCAL_CHANGE'
             : 'REMOTE_CHANGE_WITH_PENDING_LOCAL_CHANGE',
-        serverVersion: change.version,
+        serverVersion: version,
         serverPayloadJson: jsonEncode(serverPayload),
         clientPayloadJson: local.requestJson,
-      ),
-    );
+      ));
+      await _outbox.recordProtectionSnapshotTarget(
+        conflictId: conflictId, scopeId: _scopeId,
+        entity: inventoryCommand ? 'product_batches' : change.entity,
+        entityId: inventoryCommand ? entityId : _requiredEntityId(change),
+        version: version,
+      );
+    });
     throw SyncRemoteChangeDeferred(
       'remote change ${change.changeId} conflicts with pending local change $entityId',
     );
+  }
+
+  bool _inventoryIntentTargetsBatch(SyncOutboxEntry entry, String batchId) {
+    try {
+      final request = jsonDecode(entry.requestJson);
+      final allocations = request is Map ? request['allocations'] : null;
+      // Unknown malformed local intent stays protected until its own explicit
+      // rejection flow. A valid allocation list protects only its own targets.
+      return allocations is! List || allocations.any((raw) => raw is Map && raw['batch_id'] == batchId);
+    } on FormatException {
+      return true;
+    }
   }
 
   DateTime _updatedAtFromPayload(Map<String, dynamic> payload) {

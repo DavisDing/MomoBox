@@ -412,7 +412,7 @@ INSERT INTO imported_stock_history(
     note,occurred_at,source_time_zone,imported_by_user_id,imported_by_device_id)
 VALUES($1::uuid,($5::jsonb->>'id')::uuid,$2::uuid,$3,
        ($5::jsonb->>'product_id')::uuid,($5::jsonb->>'batch_id')::uuid,
-       $5::jsonb->>'type',($5::jsonb->>'quantity')::integer,$5::jsonb->>'note',
+       CASE WHEN $5::jsonb->>'type'='adjustment' THEN 'adjust' ELSE $5::jsonb->>'type' END,($5::jsonb->>'quantity')::integer,$5::jsonb->>'note',
        ($5::jsonb->>'occurred_at')::timestamptz,$5::jsonb->>'source_time_zone',
        $4::uuid,$6::uuid)`, actor.FamilyID, id, manifest.LocalWorkspaceID, actor.UserID, raw, actor.DeviceID)
 		if err != nil {

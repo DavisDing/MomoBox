@@ -34,6 +34,10 @@ func NewSyncExecutor(service SyncCommandService, roles SyncRoleResolver) *SyncEx
 // command shape accepted by sync. It deliberately has no raw domain, service,
 // or service_data escape hatch.
 func (e *SyncExecutor) ExecuteHomeAssistantCommand(ctx context.Context, familyID, userID string, change sync.SyncChange) (sync.HomeAssistantCommandResult, error) {
+	return e.ExecuteHomeAssistantCommandForDevice(ctx, familyID, userID, "", change)
+}
+
+func (e *SyncExecutor) ExecuteHomeAssistantCommandForDevice(ctx context.Context, familyID, userID, deviceID string, change sync.SyncChange) (sync.HomeAssistantCommandResult, error) {
 	if change.Operation != sync.OperationHomeAssistantCommand {
 		return sync.HomeAssistantCommandResult{}, businessError(CodeInvalidArgument, "sync change is not a Home Assistant command", nil)
 	}
@@ -59,7 +63,7 @@ func (e *SyncExecutor) ExecuteHomeAssistantCommand(ctx context.Context, familyID
 	if err != nil {
 		return sync.HomeAssistantCommandResult{}, err
 	}
-	actor := Actor{FamilyID: familyID, UserID: userID, Role: role}
+	actor := Actor{FamilyID: familyID, UserID: userID, Role: role, DeviceID: deviceID}
 	dto, err := e.service.ExecuteCommand(ctx, actor, integrationID, entityID, request)
 	if err != nil {
 		return sync.HomeAssistantCommandResult{}, err

@@ -10,6 +10,7 @@ class ReminderCandidate {
     required this.item,
     required this.date,
     required this.fingerprint,
+    this.batch,
   });
 
   final String key;
@@ -17,6 +18,7 @@ class ReminderCandidate {
   final InventoryItem item;
   final DateTime date;
   final String fingerprint;
+  final InventoryBatch? batch;
 }
 
 class ReminderRules {
@@ -38,11 +40,30 @@ class ReminderRules {
       for (final entry in acknowledgements)
         '${entry.reminderKey}|${entry.fingerprint}',
     };
-    return candidates(items, today: reference, expiringDays: expiringDays)
+    final all = candidates(items, today: reference, expiringDays: expiringDays);
+    final result = all
         .where(
           (candidate) => !acknowledged.contains('${candidate.key}|${candidate.fingerprint}'),
         )
-        .toList(growable: false);
+        .toList();
+    // An acknowledged old expired batch must not consume the single expired
+    // notification slot needed by the next still-valid batch.
+    for (final candidate in all.where((c) => c.type == ReminderType.expired)) {
+      if (!acknowledged.contains('${candidate.key}|${candidate.fingerprint}') ||
+          candidate.batch == null ||
+          ExpiryRules.daysUntil(candidate.batch!.expiryDate, today: reference)! >= 0) {
+        continue;
+      }
+      final upcoming = _nearestBatch(candidate.item, reference, expired: false);
+      if (upcoming == null) continue;
+      final warningDays = expiringDays ?? candidate.item.reminderPolicy.expiryWarningDays;
+      final fingerprint = _expiryFingerprint(upcoming, warningDays);
+      if (acknowledged.contains('${candidate.key}|$fingerprint')) continue;
+      result.add(ReminderCandidate(key: candidate.key, type: ReminderType.expired,
+        item: candidate.item, batch: upcoming, fingerprint: fingerprint,
+        date: ExpiryRules.addCalendarDays(upcoming.expiryDate!, 1)));
+    }
+    return result;
   }
 
   /// Returns the reminders that should be displayed as pending today.
@@ -74,10 +95,10 @@ class ReminderRules {
       if (typeComparison != 0) return typeComparison;
 
       final urgencyComparison = switch (left.type) {
-        ReminderType.expired => _overdueDays(right.item, today: today)
-            .compareTo(_overdueDays(left.item, today: today)),
-        ReminderType.expiring => _daysUntil(left.item, today: today)
-            .compareTo(_daysUntil(right.item, today: today)),
+        ReminderType.expired => _daysUntil(left, today: today)
+            .compareTo(_daysUntil(right, today: today)),
+        ReminderType.expiring => _daysUntil(left, today: today)
+            .compareTo(_daysUntil(right, today: today)),
         ReminderType.lowStock => _stockRatio(left.item).compareTo(_stockRatio(right.item)),
       };
       return urgencyComparison != 0
@@ -93,13 +114,32 @@ class ReminderRules {
         ReminderType.lowStock => 2,
       };
 
-  static int _overdueDays(InventoryItem item, {DateTime? today}) =>
-      -(_daysUntil(item, today: today));
+  static int _daysUntil(ReminderCandidate candidate, {DateTime? today}) {
+    final reference = today ?? candidate.item.calendarToday;
+    final batch = candidate.batch ?? _nearestBatch(candidate.item, reference,
+        expired: candidate.type == ReminderType.expired);
+    return ExpiryRules.daysUntil(batch?.expiryDate, today: reference) ??
+        ExpiryRules.expiringDays + 1;
+  }
 
-  static int _daysUntil(InventoryItem item, {DateTime? today}) =>
-      ExpiryRules.daysUntil(item.nearestDatedBatch?.expiryDate, today: today ?? item.calendarToday) ??
-      ExpiryRules.expiringDays +
-          1;
+  static InventoryBatch? _nearestBatch(
+    InventoryItem item, DateTime today, {required bool expired}
+  ) {
+    final previousAnchor = item.nearestDatedBatch;
+    if (previousAnchor != null &&
+        (ExpiryRules.daysUntil(previousAnchor.expiryDate, today: today)! < 0) == expired) {
+      return previousAnchor;
+    }
+    final batches = item.activeBatches.where((batch) => batch.expiryDate != null &&
+        (ExpiryRules.daysUntil(batch.expiryDate, today: today)! < 0) == expired)
+        .toList();
+    batches.sort((a, b) {
+      final comparison = ExpiryRules.daysUntil(a.expiryDate, today: today)!
+          .compareTo(ExpiryRules.daysUntil(b.expiryDate, today: today)!);
+      return comparison != 0 ? comparison : a.expiryDate!.compareTo(b.expiryDate!);
+    });
+    return batches.firstOrNull;
+  }
 
   static double _stockRatio(InventoryItem item) =>
       item.totalStock / item.lowStockThreshold;
@@ -131,54 +171,55 @@ class ReminderRules {
         );
       }
 
-      final expiry = item.nearestDatedBatch?.expiryDate;
-      if (expiry == null) continue;
-      final expiryDay = ExpiryRules.dateOnly(expiry);
-      final status = ExpiryRules.statusFor(
-        expiryDay,
-        today: reference,
-        expiringDays: warningDays,
-      );
-      if (status == ExpiryStatus.expired) {
+      // Keep the confirmed product + type identity, but select each type's
+      // batch independently. Old expired stock must not hide newer expiry.
+      final expiredBatch = _nearestBatch(item, reference, expired: true);
+      final upcomingBatch = _nearestBatch(item, reference, expired: false);
+      if (expiredBatch != null) {
         result.add(
           ReminderCandidate(
             key: '${item.id}:expired',
-            fingerprint: _expiryFingerprint(item, warningDays),
+            fingerprint: _expiryFingerprint(expiredBatch, warningDays),
+            batch: expiredBatch,
             type: ReminderType.expired,
             item: item,
             date: reference,
           ),
         );
-        continue;
       }
 
-      final expiringDay = expiryDay.subtract(Duration(days: warningDays));
+      if (upcomingBatch == null) continue;
+      final expiryDay = ExpiryRules.dateOnly(upcomingBatch.expiryDate!);
+      final expiringDay = ExpiryRules.addCalendarDays(expiryDay, -warningDays);
       result.add(
         ReminderCandidate(
           key: '${item.id}:expiring',
-          fingerprint: _expiryFingerprint(item, warningDays),
+          fingerprint: _expiryFingerprint(upcomingBatch, warningDays),
+          batch: upcomingBatch,
           type: ReminderType.expiring,
           item: item,
           date: expiringDay.isBefore(reference) ? reference : expiringDay,
         ),
       );
       // 过期提醒必须在临期期间就注册，否则用户不开 App 就会错过状态转换。
-      result.add(
-        ReminderCandidate(
-          key: '${item.id}:expired',
-          fingerprint: _expiryFingerprint(item, warningDays),
-          type: ReminderType.expired,
-          item: item,
-          date: expiryDay.add(const Duration(days: 1)),
-        ),
-      );
+      if (expiredBatch == null) {
+        result.add(
+          ReminderCandidate(
+            key: '${item.id}:expired',
+            fingerprint: _expiryFingerprint(upcomingBatch, warningDays),
+            batch: upcomingBatch,
+            type: ReminderType.expired,
+            item: item,
+            date: ExpiryRules.addCalendarDays(expiryDay, 1),
+          ),
+        );
+      }
     }
     return result;
   }
 
-  static String _expiryFingerprint(InventoryItem item, int warningDays) {
-    final batch = item.nearestDatedBatch;
-    final base = '${batch?.id}:${batch?.expiryDate?.toIso8601String()}';
+  static String _expiryFingerprint(InventoryBatch batch, int warningDays) {
+    final base = '${batch.id}:${batch.expiryDate?.toIso8601String()}';
     // Preserve existing acknowledgements at the default window, but reschedule
     // when a different effective window replaces the acknowledged policy.
     return warningDays == ExpiryRules.expiringDays

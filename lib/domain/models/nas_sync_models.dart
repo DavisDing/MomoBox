@@ -217,8 +217,8 @@ class NasSyncChange {
           throw const FormatException('inventory_command contains entity fields');
         }
         for (final allocation in allocations) {
-          if (allocation.quantity < 1) {
-            throw const FormatException('inventory allocation quantity must be positive');
+          if (allocation.quantity < 0 || (allocation.quantity == 0 && command != 'discard')) {
+            throw const FormatException('inventory allocation quantity must be positive except an empty discard');
           }
         }
         return;

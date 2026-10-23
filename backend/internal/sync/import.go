@@ -361,7 +361,7 @@ func validateImportRow(entity string, row map[string]any) error {
 	}
 	if entity == "history" {
 		quantity, valid := ImportInteger(row["quantity"])
-		if text("product_id") == "" || text("occurred_at") == "" || !valid || quantity == 0 {
+		if text("product_id") == "" || text("occurred_at") == "" || !valid || (quantity == 0 && text("type") != "discard") {
 			return fmt.Errorf("history requires product, occurrence time and nonzero quantity")
 		}
 		switch text("type") {
@@ -373,7 +373,7 @@ func validateImportRow(entity string, row map[string]any) error {
 			if quantity > 0 {
 				return fmt.Errorf("consume/discard must be negative")
 			}
-		case "adjust":
+		case "adjust", "adjustment":
 		default:
 			return fmt.Errorf("unsupported history type")
 		}

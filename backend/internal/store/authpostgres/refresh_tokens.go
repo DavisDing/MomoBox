@@ -24,7 +24,14 @@ func (r *RefreshTokenRepository) FindByHash(ctx context.Context, tokenHash strin
 		       COALESCE(rt.replaced_by_token_id::text, '')
 		FROM refresh_tokens AS rt
 		JOIN users AS u ON u.id = rt.user_id AND u.deleted_at IS NULL
-		WHERE rt.token_hash = $1::bytea`, []byte(tokenHash)))
+		WHERE rt.token_hash = $1::bytea
+          AND (rt.device_id IS NULL OR EXISTS (
+              SELECT 1 FROM sync_devices d
+              JOIN family_members fm ON fm.family_id = d.family_id AND fm.user_id = d.user_id AND fm.deleted_at IS NULL
+              JOIN families f ON f.id = d.family_id AND f.deleted_at IS NULL
+              WHERE d.id = rt.device_id AND d.family_id = rt.family_id
+                AND d.user_id = rt.user_id AND d.deleted_at IS NULL AND d.revoked_at IS NULL
+          ))`, []byte(tokenHash)))
 }
 
 func (r *RefreshTokenRepository) Create(ctx context.Context, record auth.RefreshTokenRecord) error {
@@ -68,7 +75,29 @@ func (r *RefreshTokenRepository) Rotate(ctx context.Context, oldHash string, rep
 		var oldID, userID string
 		var familyID, deviceID, currentFamilyID sql.NullString
 		var revokedAt sql.NullTime
-		err := tx.QueryRowContext(ctx, `
+		// Read immutable token scope first; lock the device before the token,
+		// matching device revocation's lock order and avoiding a rotation/revoke
+		// deadlock. The token itself is re-read under lock below.
+		err := tx.QueryRowContext(ctx, `SELECT user_id::text, family_id::text, device_id::text FROM refresh_tokens WHERE token_hash=$1::bytea`, []byte(oldHash)).Scan(&userID, &familyID, &deviceID)
+		if err != nil {
+			return err
+		}
+		if deviceID.Valid {
+			var activeID string
+			err := tx.QueryRowContext(ctx, `
+SELECT d.id::text FROM sync_devices d
+JOIN family_members fm ON fm.family_id = d.family_id AND fm.user_id = d.user_id AND fm.deleted_at IS NULL
+JOIN families f ON f.id = d.family_id AND f.deleted_at IS NULL
+WHERE d.id=$1::uuid AND d.family_id=$2::uuid AND d.user_id=$3::uuid AND d.revoked_at IS NULL AND d.deleted_at IS NULL
+FOR SHARE OF d,fm,f`, deviceID.String, familyID.String, userID).Scan(&activeID)
+			if err == sql.ErrNoRows {
+				return &auth.ServiceError{Code: auth.CodeRefreshRevoked, Message: "refresh token device is revoked or membership is inactive"}
+			}
+			if err != nil {
+				return err
+			}
+		}
+		err = tx.QueryRowContext(ctx, `
 			SELECT rt.id::text, rt.user_id::text, rt.family_id::text,
 			       rt.device_id::text, rt.revoked_at, u.current_family_id::text
 			FROM refresh_tokens AS rt

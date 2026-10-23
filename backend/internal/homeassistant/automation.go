@@ -253,7 +253,26 @@ func (s *Service) ProcessHAEvent(ctx context.Context, actor Actor, event HAEvent
 	var err error
 	event, err = NormalizeHAEvent(event)
 	if err != nil { return EventProcessResult{}, businessError(CodeInvalidArgument, err.Error(), err) }
-	repo, err := s.automationRepository(); if err != nil { return EventProcessResult{}, err }
+	if err := validateTrustedEvent(ctx, actor, event, s.now()); err != nil {
+		return EventProcessResult{}, err
+	}
+	if err := s.readyFor(true, false, true, false, false, false, false); err != nil { return EventProcessResult{},err }
+	integration, err := s.Integrations.Get(ctx, actor.FamilyID, event.IntegrationID)
+	if err != nil {
+		return EventProcessResult{}, err
+	}
+	if integration.FamilyID != actor.FamilyID || !integration.Enabled {
+		return EventProcessResult{}, businessError(CodeForbidden, "event integration is unavailable", nil)
+	}
+	entity, err := s.Entities.Get(ctx, actor.FamilyID, event.IntegrationID, event.EntityID)
+	if err != nil {
+		return EventProcessResult{}, err
+	}
+	if entity.FamilyID != actor.FamilyID || entity.IntegrationID != event.IntegrationID || entity.Domain != event.Domain {
+		return EventProcessResult{}, businessError(CodeForbidden, "event entity is outside the trusted integration", nil)
+	}
+	repo, err := s.automationRepository()
+	if err != nil { return EventProcessResult{}, err }
 	return repo.ProcessEvent(ctx, actor.FamilyID, event, s.now())
 }
 

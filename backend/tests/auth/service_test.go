@@ -3,6 +3,7 @@ package auth_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -357,4 +358,41 @@ func assertServiceCode(t *testing.T, err error, code auth.ErrorCode) {
 	if !errors.As(err, &serviceErr) || serviceErr.Code != code {
 		t.Fatalf("error = %v, want code %s", err, code)
 	}
+}
+
+func TestRegistrationMatchesBcryptUTF8ByteLimit(t *testing.T) {
+	for _, test := range []struct {
+		name, password string
+		valid          bool
+	}{
+		{"ASCII boundary", strings.Repeat("a", 72), true},
+		{"ASCII over", strings.Repeat("a", 73), false},
+		{"UTF8 boundary", strings.Repeat("家", 24), true},
+		{"UTF8 over", strings.Repeat("家", 25), false},
+		{"short", strings.Repeat("家", 11), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			users := &userRepo{users: map[string]auth.StoredUser{}}
+			refresh := &refreshRepo{records: map[string]auth.RefreshTokenRecord{}}
+			fixture := newAuthFixture(t, users, refresh, auth.RegistrationOpen)
+			_, err := fixture.service.Register(context.Background(), auth.RegisterRequest{Email: "test@example.com", Password: test.password, Nickname: "Momo"})
+			if test.valid && err != nil {
+				t.Fatal(err)
+			}
+			if !test.valid {
+				var serviceErr *auth.ServiceError
+				if !errors.As(err, &serviceErr) || serviceErr.Code != auth.CodeValidation || len(users.users) != 0 {
+					t.Fatalf("expected validation before write, got %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestLoginRejectsPasswordBeyondBcryptByteLimit(t *testing.T){
+ users:=&userRepo{users:map[string]auth.StoredUser{}}
+ fixture:=newAuthFixture(t,users,&refreshRepo{records:map[string]auth.RefreshTokenRecord{}},auth.RegistrationOpen)
+ _,err:=fixture.service.Login(context.Background(),auth.LoginRequest{Email:"test@example.com",Password:strings.Repeat("a",73)})
+ var serviceErr *auth.ServiceError
+ if !errors.As(err,&serviceErr)||serviceErr.Code!=auth.CodeInvalidCredentials{t.Fatalf("unexpected overlong login result: %v",err)}
 }

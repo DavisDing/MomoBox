@@ -323,7 +323,8 @@ ReminderAcknowledgement _acknowledge(InventoryItem item) {
 // Fake only permission/platform boundaries; scheduling and filtering stay real.
 class _PermissionService extends LocalNotificationService {
   _PermissionService(_RecordingPlugin plugin)
-      : super(plugin: plugin, permissionStatusReader: () async => NotificationPermissionStatus.allowed);
+      : super(plugin: plugin, localTimeZoneReader: () async => 'UTC',
+          permissionStatusReader: () async => NotificationPermissionStatus.allowed);
 
   NotificationPermissionStatus status = NotificationPermissionStatus.denied;
   bool permissionResult = false;

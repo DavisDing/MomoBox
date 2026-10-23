@@ -87,3 +87,14 @@ type SyncTransaction interface {
 	ChangeLogRepository
 	ConflictRepository
 }
+
+// ExternalHomeAssistantRepository executes only after the sync preflight has
+// committed, so no database connection or device lock spans an HTTP call.
+// Implementations must persist execution identity before any external effect.
+type ExternalHomeAssistantRepository interface {
+	ExecuteExternalHomeAssistantCommand(context.Context, DeviceScope, SyncChange) (HomeAssistantCommandResult, error)
+}
+
+// OperationMetadataWriter identifies a receipt settled after external work.
+// It changes transaction metadata only and cannot execute an external action.
+type OperationMetadataWriter interface { SetOperationMetadata(Operation, string, string) }

@@ -4,6 +4,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../domain/models/chore_models.dart';
 import '../domain/models/inventory_models.dart';
+import '../domain/inventory/expiry_rules.dart';
 
 /// 日历同步选项
 enum CalendarSyncRange {
@@ -43,7 +44,7 @@ class CalendarSyncService {
   }) {
     final reference = now ?? DateTime.now();
     final today = DateTime(reference.year, reference.month, reference.day);
-    final limitDate = today.add(Duration(days: options.range.days));
+    final limitDate = ExpiryRules.addCalendarDays(today, options.range.days);
 
     final buffer = StringBuffer();
     buffer.writeln('BEGIN:VCALENDAR');
@@ -54,16 +55,16 @@ class CalendarSyncService {
     buffer.writeln('X-WR-CALNAME:嬷嬷的小箱子备忘');
     buffer.writeln('X-WR-TIMEZONE:Asia/Shanghai');
 
-    final dtStamp = _formatUtc(DateTime.now().toUtc());
+    final dtStamp = _formatUtc(reference.toUtc());
 
     // 1. 处理库存商品的临期、过期与低库存
     for (final item in items) {
       // (1) 低库存补充提醒
       if (options.includeLowStock && item.isLowStock) {
         final uid = 'momobox-lowstock-${item.id}@momobox.local';
-        final tomorrow = today.add(const Duration(days: 1));
+        final tomorrow = ExpiryRules.addCalendarDays(today, 1);
         final dateStr = _formatDateOnly(tomorrow);
-        final nextDateStr = _formatDateOnly(tomorrow.add(const Duration(days: 1)));
+        final nextDateStr = _formatDateOnly(ExpiryRules.addCalendarDays(tomorrow, 1));
 
         buffer.writeln('BEGIN:VEVENT');
         _writeTextProperty(buffer, 'UID', uid);
@@ -110,9 +111,9 @@ class CalendarSyncService {
         // 已过期事项
         if (isExpired) {
           if (!options.includeExpired) continue;
-          final uid = 'momobox-expired-${batch.id}@momobox.local';
+          final uid = 'momobox-expiring-${batch.id}@momobox.local';
           final dateStr = _formatDateOnly(today);
-          final nextDateStr = _formatDateOnly(today.add(const Duration(days: 1)));
+          final nextDateStr = _formatDateOnly(ExpiryRules.addCalendarDays(today, 1));
 
           buffer.writeln('BEGIN:VEVENT');
           _writeTextProperty(buffer, 'UID', uid);
@@ -146,7 +147,7 @@ class CalendarSyncService {
           if (!options.includeExpiring) continue;
           final uid = 'momobox-expiring-${batch.id}@momobox.local';
           final dateStr = _formatDateOnly(expiryDay);
-          final nextDateStr = _formatDateOnly(expiryDay.add(const Duration(days: 1)));
+          final nextDateStr = _formatDateOnly(ExpiryRules.addCalendarDays(expiryDay, 1));
 
           buffer.writeln('BEGIN:VEVENT');
           _writeTextProperty(buffer, 'UID', uid);
@@ -194,7 +195,7 @@ class CalendarSyncService {
           chore.nextDueDate.day,
         );
         final dateStr = _formatDateOnly(dueDate);
-        final nextDateStr = _formatDateOnly(dueDate.add(const Duration(days: 1)));
+        final nextDateStr = _formatDateOnly(ExpiryRules.addCalendarDays(dueDate, 1));
 
         buffer.writeln('BEGIN:VEVENT');
         _writeTextProperty(buffer, 'UID', uid);

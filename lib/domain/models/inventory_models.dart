@@ -232,17 +232,16 @@ class ReminderSummary {
 
   int get expiryAlertCount => expired.length + expiring.length;
 
-  /// Includes products whose nearest usable batch expires today through the
-  /// requested number of days from today. Expired products are counted
-  /// separately and are intentionally excluded.
+  /// A product may have expired stock and another batch expiring soon. Count
+  /// it once when any usable batch expires in the requested calendar window.
   int expiringWithinDays(int days, {DateTime? today}) {
     if (days < 0) return 0;
     return expiring.where((item) {
-      final remainingDays = ExpiryRules.daysUntil(
-        item.nearestDatedBatch?.expiryDate,
-        today: today ?? item.calendarToday,
-      );
-      return remainingDays != null && remainingDays >= 0 && remainingDays <= days;
+      return item.activeBatches.any((batch) {
+        final remainingDays = ExpiryRules.daysUntil(batch.expiryDate,
+          today: today ?? item.calendarToday);
+        return remainingDays != null && remainingDays >= 0 && remainingDays <= days;
+      });
     }).length;
   }
 }

@@ -1,9 +1,11 @@
 package homeassistant
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 )
 
 var applianceRunIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$`)
@@ -67,4 +69,23 @@ func NormalizeHAEvent(event HAEvent) (HAEvent, error) {
 		}
 	}
 	return event, nil
+}
+
+// TrustedEventContext is for a server-side adapter after authenticating the
+// integration. HTTP request fields and user bearer claims never populate it.
+type trustedEventKey struct{}
+type trustedEventSource struct{ familyID, integrationID string }
+
+func TrustedEventContext(ctx context.Context, familyID, integrationID string) context.Context {
+	return context.WithValue(ctx, trustedEventKey{}, trustedEventSource{familyID, integrationID})
+}
+func validateTrustedEvent(ctx context.Context, actor Actor, event HAEvent, now time.Time) error {
+	source, ok := ctx.Value(trustedEventKey{}).(trustedEventSource)
+	if !ok || source.familyID != actor.FamilyID || source.integrationID != event.IntegrationID {
+		return businessError(CodeForbidden, "Home Assistant events require a trusted integration adapter", nil)
+	}
+	if event.OccurredAt.IsZero() || event.OccurredAt.Before(now.Add(-5*time.Minute)) || event.OccurredAt.After(now.Add(time.Minute)) {
+		return businessError(CodeInvalidArgument, "Home Assistant event timestamp is outside the accepted delivery window", nil)
+	}
+	return nil
 }

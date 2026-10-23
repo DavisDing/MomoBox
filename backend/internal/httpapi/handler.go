@@ -78,7 +78,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/home-assistant/events", h.processHAEvent)
 	mux.HandleFunc("/api/v1/home-assistant/permissions", h.permissionsRoute)
 	mux.Handle("/api/v1/", http.HandlerFunc(h.notFound))
-	return platform.RequestIDMiddleware(h.withBodyLimit(mux))
+	return platform.RequestIDMiddleware(h.withBodyLimit(platform.RouteTemplateHandler(mux)))
 }
 
 func (h *Handler) withBodyLimit(next http.Handler) http.Handler {
@@ -119,6 +119,13 @@ func (h *Handler) requireAuth(w http.ResponseWriter, r *http.Request) (auth.Acce
 	if err != nil || claims.UserID == "" || !claims.ExpiresAt.After(now) {
 		writeError(w, r, http.StatusUnauthorized, "AUTH_INVALID_TOKEN", "access token is invalid", nil)
 		return auth.AccessTokenClaims{}, "", false
+	}
+	if h.deps.Authorizer != nil && claims.FamilyID != "" {
+		claims, err = h.deps.Authorizer.AuthorizeClaims(r.Context(), claims)
+		if err != nil {
+			writeError(w, r, http.StatusUnauthorized, "AUTH_INVALID_TOKEN", "current family membership and device authorization are required", nil)
+			return auth.AccessTokenClaims{}, "", false
+		}
 	}
 	return claims, token, true
 }
@@ -166,7 +173,7 @@ func bearerToken(r *http.Request) string {
 }
 
 func (h *Handler) actor(claims auth.AccessTokenClaims) (syncdevice.Actor, homeassistant.Actor) {
-	return syncdevice.Actor{UserID: claims.UserID, FamilyID: claims.FamilyID, Role: syncdevice.Role(claims.Role), DeviceID: claims.DeviceID}, homeassistant.Actor{UserID: claims.UserID, FamilyID: claims.FamilyID, Role: homeassistant.Role(claims.Role)}
+	return syncdevice.Actor{UserID: claims.UserID, FamilyID: claims.FamilyID, Role: syncdevice.Role(claims.Role), DeviceID: claims.DeviceID}, homeassistant.Actor{UserID: claims.UserID, FamilyID: claims.FamilyID, Role: homeassistant.Role(claims.Role), DeviceID: claims.DeviceID}
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

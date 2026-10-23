@@ -708,9 +708,10 @@ func (h *Handler) resolveLinkageSuggestion(w http.ResponseWriter, r *http.Reques
 func (h *Handler) linkageSuggestionsRoute(w http.ResponseWriter, r *http.Request) { h.listLinkageSuggestions(w, r) }
 
 func (h *Handler) processHAEvent(w http.ResponseWriter, r *http.Request) {
-	if !h.method(w, r, http.MethodPost) || !h.requireService(w, r, "home_assistant", h.deps.HomeAssistant) { return }
-	actor, ok := h.haActor(w, r); if !ok { return }
-	var input haEventJSON; if !h.decodeJSON(w, r, &input) { return }
-	value, err := h.deps.HomeAssistant.ProcessHAEvent(r.Context(), actor, homeassistant.HAEvent{IntegrationID: input.IntegrationID, EntityID: input.EntityID, ApplianceRunID: input.ApplianceRunID, Domain: input.Domain, State: input.State, PreviousState: input.PreviousState, OccurredAt: input.OccurredAt, Attributes: input.Attributes}); if err != nil { h.serviceError(w, r, err); return }
-	writeJSON(w, http.StatusOK, eventProcessResponse(value))
+	if !h.method(w, r, http.MethodPost) { return }
+	if _, ok := h.haActor(w, r); !ok { return }
+	// A MomoBox member credential does not authenticate an appliance event.
+	// No public webhook is enabled until a separately authenticated integration
+	// adapter is configured; never turn client supplied events into inventory.
+	writeError(w, r, http.StatusForbidden, "HA_EVENT_SOURCE_UNTRUSTED", "Home Assistant events require a trusted integration adapter", nil)
 }

@@ -1,7 +1,7 @@
 # MomoBox NAS 安全与权限基线
 
 - 文档版本：v0.1
-- 更新时间：2026-09-20
+- 更新时间：2026-10-23
 - 适用范围：NAS 后端 MVP、PostgreSQL 和 Home Assistant 集成
 
 ## 1. 安全目标
@@ -53,7 +53,7 @@ REGISTRATION_MODE=first_setup|invite_only|open
 
 - 使用 bcrypt，cost 12；
 - 不保存明文密码；
-- 密码长度 12-128 个字符；
+- 注册密码至少 12 个字符，UTF-8 编码不超过 bcrypt 的 72 字节上限；登录时超长密码统一返回无效凭据；
 - 登录错误返回统一的 `AUTH_INVALID_CREDENTIALS`，不能区分邮箱不存在或密码错误；
 - 注册邮箱统一规范化后再做唯一性校验。
 
@@ -64,6 +64,8 @@ REGISTRATION_MODE=first_setup|invite_only|open
 - 签名密钥来自 `JWT_SECRET`；
 - 不在日志中输出完整 Token；
 - 只包含 user、family、role、device 和过期时间等最小声明。
+
+生产请求还会重新读取当前家庭成员角色，并校验声明中的设备仍属于该用户和家庭且未撤销；旧 JWT 不能保留已移除成员、旧角色或已撤销设备的权限。设备撤销同时撤销关联 refresh token，refresh 查询及轮换也复查原设备和当前成员关系。
 
 ### Refresh Token
 
@@ -127,6 +129,7 @@ HA_TOKEN_ENCRYPTION_KEY
 要求：
 
 - 加密密钥不得提交 Git；
+- `key_version` 以 TEXT 原样保存非空、不含空白或控制字符的 opaque 标识（例如 `aes256gcm-...`），不能转为整数或替换为默认版本；迁移保留已有整数版本的文本值；
 - Token 只在调用 HA 时短暂解密；
 - Token 不写入普通日志、错误详情或审计 payload；
 - 返回给 Flutter 的 `HAIntegration` 永远不包含 Token；
@@ -173,6 +176,10 @@ created_at
 ```
 
 不得记录 Token 或完整 Authorization Header。
+
+生产控制流程在外部请求前独立提交 `ha_command_executions` 的 `pending` 记录，按家庭和原 `request_id` 保存命令身份摘要。调用完成后保存 `succeeded`/`rejected`/`unknown`；同步事务不跨越 HA 网络调用。成功结果可在审计或同步提交失败后按原请求恢复，身份摘要不同的请求 ID 复用返回 `HA_REQUEST_ID_REUSE`（409）。`pending`/`unknown` 返回 `HA_COMMAND_RESULT_UNKNOWN`（409），保留原标识，不自动重发外部动作，也不把未知结果标记成功；需核实设备状态后再决定后续操作。该台账不推断历史请求的实际执行结果。
+
+HA 运行事件必须来自后端已认证并绑定家庭/集成的可信适配器，不能用普通家庭成员身份伪造。当前 `/home-assistant/events` 对普通 bearer 请求统一返回 `HA_EVENT_SOURCE_UNTRUSTED`（403）。领域入口检查来源绑定、启用状态、实体/领域归属和事件时间窗（过去 5 分钟至未来 1 分钟）。可信 HA 监听或 webhook 适配器尚未接通，不能把该入口校验视为真实 HA 事件链路已验收。
 
 ## 8. 网络与 HTTP
 

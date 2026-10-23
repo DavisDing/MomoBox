@@ -1,8 +1,10 @@
+import 'dart:convert';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:momo_box/core/database/app_database.dart';
 import 'package:momo_box/application/inventory_service.dart';
 import 'package:momo_box/data/repositories/inventory_repository.dart';
+import 'package:momo_box/data/repositories/sync_outbox_repository.dart';
 import 'package:momo_box/domain/inventory/expiry_rules.dart';
 import 'package:momo_box/domain/models/inventory_models.dart';
 
@@ -38,6 +40,69 @@ void main() {
     expect(batches.single.isDiscarded, isTrue);
     expect(movements.map((movement) => movement.quantity), everyElement(isNot(0)));
     expect(movements.where((movement) => movement.type == 'discard'), isEmpty);
+  });
+
+  test('软删除商品不返回合并候选，旧确认也不能新增隐藏批次', () async {
+    const draft = IntakeDraft(name: '已删商品', category: '其他物品',
+      quantity: 2, barcode: 'deleted-barcode');
+    final productId = await repository.createProductWithBatch(draft);
+    expect(await repository.findMatchingProducts(draft), hasLength(1));
+    await repository.applyRemoteProductDelete(productId: productId,
+      version: 1, deletedAt: DateTime.now());
+    expect(await repository.findMatchingProducts(draft), isEmpty);
+    await expectLater(service.intake(draft, mergeProductId: productId),
+      throwsA(isA<StateError>()));
+    expect(await database.select(database.productBatches).get(), hasLength(1));
+    expect(await database.select(database.stockMovements).get(), hasLength(1));
+  });
+
+  test('零余量报废仍发送 discard 状态命令，保留零流水限制', () async {
+    final synced = InventoryRepository(database, outbox: SyncOutboxRepository(database),
+      syncScopeId: 'family-a');
+    final productId = await synced.createProductWithBatch(const IntakeDraft(
+      name: '已耗尽', category: '其他物品', quantity: 1));
+    final batch = await database.select(database.productBatches).getSingle();
+    await synced.consumeBatch(productId, batch.id, 1);
+    await synced.discardBatch(batch.id);
+    final requests = (await database.select(database.syncOutbox).get())
+        .map((row) => jsonDecode(row.requestJson) as Map<String, dynamic>)
+        .where((request) => request['command'] == 'discard').toList();
+    expect(requests, hasLength(1));
+    expect(requests.single['allocations'], [{'batch_id': batch.id, 'quantity': 0}]);
+    expect((await database.select(database.stockMovements).get())
+      .where((row) => row.quantity == 0), isEmpty);
+    await expectLater(synced.discardBatch(batch.id), throwsA(isA<StateError>()));
+    expect((await database.select(database.syncOutbox).get())
+      .where((row) => (jsonDecode(row.requestJson) as Map)['command'] == 'discard'), hasLength(1));
+  });
+
+  test('accepted 实体版本只升不降且保留后续乐观库存', () async {
+    final id = await repository.createProductWithBatch(const IntakeDraft(
+      name: '本地新编辑', category: '其他物品', quantity: 3));
+    final batch = await database.select(database.productBatches).getSingle();
+    await repository.acknowledgeEntityVersion(entity: 'products', entityId: id, version: 4);
+    await repository.acknowledgeEntityVersion(entity: 'products', entityId: id, version: 2);
+    await repository.acknowledgeEntityVersion(entity: 'product_batches', entityId: batch.id, version: 5);
+    expect((await repository.getProductRecord(id))!.serverVersion, 4);
+    final updated = (await repository.getBatchRecord(batch.id))!;
+    expect(updated.serverVersion, 5);
+    expect(updated.remainingQuantity, 3);
+    expect(updated.initialQuantity, 3);
+  });
+
+  test('放弃未创建商品不会隐藏仍有库存的子批次或已同步商品', () async {
+    final id = await repository.createProductWithBatch(const IntakeDraft(
+      name: '受保护的库存', category: '其他物品', quantity: 3));
+    final batch = await database.select(database.productBatches).getSingle();
+    await expectLater(repository.abandonUncreatedEntity(entity: 'products', entityId: id),
+      throwsA(isA<StateError>()));
+    expect((await repository.getProductRecord(id))!.deletedAt, isNull);
+    await repository.acknowledgeEntityVersion(entity: 'product_batches', entityId: batch.id, version: 2);
+    await repository.abandonUncreatedEntity(entity: 'product_batches', entityId: batch.id);
+    expect((await repository.getBatchRecord(batch.id))!.deletedAt, isNull);
+    await repository.acknowledgeEntityVersion(entity: 'products', entityId: id, version: 2);
+    await repository.abandonUncreatedEntity(entity: 'products', entityId: id);
+    expect((await repository.getProductRecord(id))!.deletedAt, isNull);
   });
 
   test('相似商品只返回候选，默认新建且显式选择后才合并', () async {

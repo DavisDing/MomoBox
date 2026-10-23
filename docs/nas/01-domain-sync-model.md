@@ -112,7 +112,9 @@ HA 设备和实体属于 HA 的状态域，不作为 `sync_devices` 或普通库
 - `consume_fefo`：服务端根据当前库存执行 FEFO，并返回实际分配。
 - `consume_allocated`：客户端指定批次，服务端校验后执行。
 - `restock`：向指定批次补充正整数数量。
-- `discard`：报废指定批次或指定数量，需符合状态规则。
+- `discard`：整批作废，提交数量必须等于服务端锁定后的剩余库存；正库存不接受部分作废。仅权威剩余库存为零时允许 `quantity: 0`，用于把尚未作废的批次转为 `discarded`，不减少库存。
+
+`discard` 的状态更新、版本递增、追加式操作记录、`change_log` 和幂等回执在同一事务提交。零库存作废同样保留数量为零的 discard 审计与权威快照；普通实体 upsert 仍不能覆盖库存数量或绕过状态转换。
 
 Home Assistant 控制命令不进入库存同步流。字段位于变更顶层，`change_id` 同时作为 HA 命令审计 `request_id`；不得把命令包装进 `payload`，也不得混用 `entity`、`base_version`、`operation_id` 或 `allocations`：
 
@@ -130,7 +132,7 @@ Home Assistant 控制命令不进入库存同步流。字段位于变更顶层�
 
 ## 5. Push 处理规则
 
-服务端在一个数据库事务中处理每条可写变更：
+服务端在一个数据库事务中处理每条普通实体或库存变更：
 
 1. 验证 access token、家庭成员关系和设备归属；
 2. 校验实体归属的 `family_id`；
@@ -144,6 +146,8 @@ Home Assistant 控制命令不进入库存同步流。字段位于变更顶层�
 10. 提交事务并返回 server cursor。
 
 重复幂等键必须返回第一次处理的等价结果，不得再次修改数据。
+
+`home_assistant_command` 使用独立流程：先在短事务中校验当前成员、设备和幂等状态，释放数据库连接后，在独立提交的执行台账中预留原 `change_id`/`request_id`，再调用 HA，最后以短事务结算同步回执。外部网络调用不持有同步事务或连接。台账已成功时重试复用已保存结果；`pending`/`unknown` 返回 `HA_COMMAND_RESULT_UNKNOWN`（409），保留原请求标识且不再次调用 HA。未知结果须核实设备状态，不能自动换新请求重发。
 
 ## 6. 冲突语义
 
@@ -166,7 +170,7 @@ Home Assistant 控制命令不进入库存同步流。字段位于变更顶层�
 - `BATCH_EXPIRED`：批次已过期；
 - `BATCH_DISCARDED`：批次已报废；
 - `BATCH_NOT_FOUND`：批次不存在；
-- `INVALID_QUANTITY`：数量非正整数。
+- `INVALID_QUANTITY`：数量不符合命令约束；除权威零库存的整批 `discard` 状态转换外，数量必须为正整数，且 discard 数量必须等于当前剩余库存。
 
 客户端应拉取最新快照或 change log 后刷新本地状态。
 

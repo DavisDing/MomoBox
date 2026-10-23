@@ -2,7 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:momo_box/domain/inventory/reminder_rules.dart';
 import 'package:momo_box/domain/models/inventory_models.dart';
 
-InventoryItem item(String id, {int stock = 3, DateTime? expiry, int threshold = 1}) => InventoryItem(
+InventoryItem item(String id, {int stock = 3, DateTime? expiry, int threshold = 1,
+  List<InventoryBatch>? batches}) => InventoryItem(
       id: id,
       name: id,
       category: '其他物品',
@@ -12,7 +13,7 @@ InventoryItem item(String id, {int stock = 3, DateTime? expiry, int threshold = 
       location: null,
       unit: '件',
       lowStockThreshold: threshold,
-      batches: [
+      batches: batches ?? [
         InventoryBatch(
           id: '$id-batch',
           productId: id,
@@ -28,6 +29,35 @@ InventoryItem item(String id, {int stock = 3, DateTime? expiry, int threshold = 
 
 void main() {
   final today = DateTime(2026, 9, 1);
+
+  test('expired stock cannot mask a newer expiring batch or its acknowledgement', () {
+    final old = item('mixed', expiry: DateTime(2026, 8, 20)).batches.single;
+    final fresh = InventoryBatch(id: 'fresh', productId: 'mixed', batchNo: null,
+        initialQuantity: 3, remainingQuantity: 3, isDiscarded: false,
+        expiryDate: DateTime(2026, 9, 5), productionDate: null);
+    final target = item('mixed', batches: [old, fresh]);
+    final candidates = ReminderRules.visibleCandidates([target], [], today: today);
+    expect(candidates.map((c) => c.type), containsAll([
+      ReminderType.expired, ReminderType.expiring]));
+    expect(candidates.map((c) => c.key).toSet(), hasLength(candidates.length));
+    final expiring = candidates.singleWhere((c) => c.type == ReminderType.expiring);
+    expect(expiring.fingerprint, startsWith('fresh:'));
+    final after = ReminderRules.visibleCandidates([target], [
+      ReminderAcknowledgement(reminderKey: expiring.key,
+          fingerprint: expiring.fingerprint, acknowledgedAt: today)
+    ], today: today);
+    expect(after.map((c) => c.type), [ReminderType.expired]);
+    expect(ReminderSummary(expired: [target], expiring: [target], lowStock: [])
+        .expiringWithinDays(7, today: today), 1);
+    final expired = candidates.singleWhere((c) => c.type == ReminderType.expired);
+    final scheduled = ReminderRules.unacknowledgedCandidates([target], [
+      ReminderAcknowledgement(reminderKey: expired.key,
+          fingerprint: expired.fingerprint, acknowledgedAt: today)
+    ], today: today);
+    final nextExpired = scheduled.singleWhere((c) => c.type == ReminderType.expired);
+    expect(nextExpired.batch?.id, 'fresh');
+    expect(nextExpired.date, DateTime(2026, 9, 6));
+  });
 
   test('未来效期会生成临期和过期两个计划', () {
     final candidates = ReminderRules.candidates(

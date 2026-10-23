@@ -61,7 +61,7 @@ func (s *Service) Bootstrap(ctx context.Context, request BootstrapRequest) (Boot
 	if err != nil {
 		return BootstrapResponse{}, err
 	}
-	if scope.Revoked {
+	if scope.Revoked || !validCurrentRole(scope.Role) {
 		return BootstrapResponse{}, ErrDeviceNotFound
 	}
 	var snapshot BootstrapSnapshot
@@ -98,7 +98,7 @@ func (s *Service) ConfirmBootstrap(ctx context.Context, request BootstrapConfirm
 	if err != nil {
 		return BootstrapConfirmResponse{}, err
 	}
-	if scope.Revoked {
+	if scope.Revoked || !validCurrentRole(scope.Role) {
 		return BootstrapConfirmResponse{}, ErrDeviceNotFound
 	}
 	confirmation, err := s.repository.ConfirmBootstrap(ctx, scope.FamilyID, request)
@@ -118,7 +118,7 @@ func (s *Service) ListConflicts(ctx context.Context, request ConflictListRequest
 	if err := validateDeviceID(request.DeviceID); err != nil { return ConflictListResponse{}, err }
 	scope, err := s.repository.ResolveDevice(ctx, request.DeviceID)
 	if err != nil { return ConflictListResponse{}, err }
-	if scope.Revoked { return ConflictListResponse{}, ErrDeviceNotFound }
+	if scope.Revoked || !validCurrentRole(scope.Role) { return ConflictListResponse{}, ErrDeviceNotFound }
 	query, ok := s.repository.(ConflictQueryRepository)
 	if !ok { return ConflictListResponse{}, errors.New("sync conflict repository is not configured") }
 	request.Limit = minConflictLimit(request.Limit)
@@ -133,7 +133,7 @@ func (s *Service) GetConflict(ctx context.Context, deviceID, conflictID string) 
 	if err := validateDeviceID(deviceID); err != nil { return SyncConflict{}, err }
 	if strings.TrimSpace(conflictID) == "" { return SyncConflict{}, fmt.Errorf("%w: conflict_id is required", ErrInvalidRequest) }
 	scope, err := s.repository.ResolveDevice(ctx, deviceID); if err != nil { return SyncConflict{}, err }
-	if scope.Revoked { return SyncConflict{}, ErrDeviceNotFound }
+	if scope.Revoked || !validCurrentRole(scope.Role) { return SyncConflict{}, ErrDeviceNotFound }
 	query, ok := s.repository.(ConflictQueryRepository); if !ok { return SyncConflict{}, errors.New("sync conflict repository is not configured") }
 	if scoped, ok := s.repository.(ScopedConflictQueryRepository); ok {
 		return scoped.GetConflictForScope(ctx, conflictID, scope)
@@ -144,7 +144,7 @@ func (s *Service) GetConflict(ctx context.Context, deviceID, conflictID string) 
 func (s *Service) ResolveConflict(ctx context.Context, request ConflictResolveRequest) (ConflictResolveResponse, error) {
 	if err := validateConflictResolve(request); err != nil { return ConflictResolveResponse{}, err }
 	scope, err := s.repository.ResolveDevice(ctx, request.DeviceID); if err != nil { return ConflictResolveResponse{}, err }
-	if scope.Revoked { return ConflictResolveResponse{}, ErrDeviceNotFound }
+	if scope.Revoked || !validCurrentRole(scope.Role) { return ConflictResolveResponse{}, ErrDeviceNotFound }
 	if !canResolveConflict(scope.Role) { return ConflictResolveResponse{}, NewBusinessError("FORBIDDEN", "only family owner or admin can resolve sync conflicts", nil) }
 	query, ok := s.repository.(ConflictQueryRepository); if !ok { return ConflictResolveResponse{}, errors.New("sync conflict repository is not configured") }
 	return query.ResolveConflict(ctx, request, scope)
@@ -158,7 +158,7 @@ func (s *Service) Pull(ctx context.Context, request PullRequest) (PullResponse, 
 	if err != nil {
 		return PullResponse{}, err
 	}
-	if scope.Revoked {
+	if scope.Revoked || !validCurrentRole(scope.Role) {
 		return PullResponse{}, ErrDeviceNotFound
 	}
 	limit := request.Limit
@@ -187,7 +187,7 @@ func (s *Service) Push(ctx context.Context, request PushRequest) (PushResponse, 
 	if err != nil {
 		return PushResponse{}, err
 	}
-	if scope.Revoked {
+	if scope.Revoked || !validCurrentRole(scope.Role) {
 		return PushResponse{}, ErrDeviceNotFound
 	}
 
@@ -213,6 +213,11 @@ func (s *Service) Push(ctx context.Context, request PushRequest) (PushResponse, 
 }
 
 func (s *Service) processChange(ctx context.Context, scope DeviceScope, baseCursor int64, change SyncChange) (StoredOutcome, error) {
+	if change.Operation == OperationHomeAssistantCommand {
+		if external, ok := s.repository.(ExternalHomeAssistantRepository); ok {
+			return s.processExternalHomeAssistantChange(ctx, scope, baseCursor, change, external)
+		}
+	}
 	fingerprint, err := fingerprint(scope.DeviceID, change)
 	if err != nil {
 		return StoredOutcome{}, err
@@ -684,8 +689,8 @@ func validateInventoryCommand(change SyncChange) error {
 			return fmt.Errorf("%s requires allocations", change.Command)
 		}
 		for _, allocation := range allocations {
-			if strings.TrimSpace(allocation.BatchID) == "" || allocation.Quantity <= 0 {
-				return fmt.Errorf("allocations require a batch_id and positive quantity")
+			if strings.TrimSpace(allocation.BatchID) == "" || (allocation.Quantity < 0 || (allocation.Quantity == 0 && change.Command != InventoryCommandDiscard)) {
+				return fmt.Errorf("allocations require a batch_id and positive quantity (zero is allowed only for discard)")
 			}
 		}
 	}
@@ -766,4 +771,88 @@ func valueOrDefault(value, fallback int) int {
 		return fallback
 	}
 	return value
+}
+
+func validCurrentRole(role string) bool {
+	return role == "owner" || role == "admin" || role == "member"
+}
+
+// Preflight and receipt settlement use short transactions. The external call
+// happens between them, with a separate durable HA execution ledger.
+func (s *Service) processExternalHomeAssistantChange(ctx context.Context, scope DeviceScope, baseCursor int64, change SyncChange, executor ExternalHomeAssistantRepository) (StoredOutcome, error) {
+	requestFingerprint, err := fingerprint(scope.DeviceID, change)
+	if err != nil {
+		return StoredOutcome{}, err
+	}
+	var outcome StoredOutcome
+	stop := false
+	readReplay := func(tx SyncTransaction) (bool, error) {
+		if metadata, ok := tx.(OperationMetadataWriter); ok {
+			metadata.SetOperationMetadata(OperationHomeAssistantCommand, "", "")
+		}
+		record, found, err := tx.GetIdempotency(ctx, scope.DeviceID, change.IdempotencyKey)
+		if err != nil {
+			return false, err
+		}
+		if !found {
+			return false, nil
+		}
+		cursor, err := tx.CurrentCursor(ctx)
+		if err != nil {
+			return false, err
+		}
+		if record.Fingerprint != requestFingerprint {
+			outcome = rejectedOutcome(change, "IDEMPOTENCY_KEY_REUSE", "幂等键已用于不同请求", nil, baseCursor)
+			return true, nil
+		}
+		outcome = cloneOutcome(record.Outcome)
+		outcome.OriginalStatus = outcome.Status
+		outcome.Status = PushStatusReplayed
+		outcome.ServerCursor = cursor
+		return true, nil
+	}
+	err = s.repository.WithTransaction(ctx, scope.FamilyID, func(tx SyncTransaction) error {
+		var err error
+		stop, err = readReplay(tx)
+		if err != nil || stop {
+			return err
+		}
+		cursor, err := tx.CurrentCursor(ctx)
+		if err != nil {
+			return err
+		}
+		if baseCursor > cursor {
+			outcome = rejectedOutcome(change, "INVALID_CURSOR", "客户端 cursor 超过服务端当前 cursor", map[string]any{"server_cursor": cursor}, cursor)
+			stop = true
+		} else if err := validateChange(change); err != nil {
+			outcome = rejectedOutcome(change, "VALIDATION_FAILED", err.Error(), nil, cursor)
+			stop = true
+		}
+		if stop {
+			return tx.PutIdempotency(ctx, scope.DeviceID, change.IdempotencyKey, IdempotencyRecord{Fingerprint: requestFingerprint, Outcome: outcome})
+		}
+		return nil
+	})
+	if err != nil || stop {
+		return outcome, err
+	}
+	result, err := executor.ExecuteExternalHomeAssistantCommand(ctx, scope, change)
+	// In-progress/unknown receipts are not stored as permanent sync rejection;
+	// retries retain the original IDs and query the durable execution ledger.
+	if err != nil {
+		return StoredOutcome{}, err
+	}
+	err = s.repository.WithTransaction(ctx, scope.FamilyID, func(tx SyncTransaction) error {
+		found, err := readReplay(tx)
+		if err != nil || found {
+			return err
+		}
+		cursor, err := tx.CurrentCursor(ctx)
+		if err != nil {
+			return err
+		}
+		outcome = StoredOutcome{Status: PushStatusAccepted, Accepted: &AcceptedChange{ChangeID: change.ChangeID, ServerCursor: cursor, Result: cloneMap(result.Payload), Status: PushStatusAccepted}, ServerCursor: cursor}
+		return tx.PutIdempotency(ctx, scope.DeviceID, change.IdempotencyKey, IdempotencyRecord{Fingerprint: requestFingerprint, Outcome: outcome})
+	})
+	return outcome, err
 }
