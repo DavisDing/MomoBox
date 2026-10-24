@@ -11,17 +11,22 @@ class StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = scheme.brightness == Brightness.dark;
+    final highContrast = MediaQuery.highContrastOf(context);
     final (label, color) = switch (status) {
-      ExpiryStatus.safe => ('效期充足', Colors.green),
-      ExpiryStatus.expiring => (days == 0 ? '今日到期' : '$days 天内到期', Colors.orange),
-      ExpiryStatus.expired => ('已过期', Colors.red),
-      ExpiryStatus.noExpiry => ('未设置效期', Colors.blueGrey),
+      ExpiryStatus.safe => ('效期充足', isDark ? Colors.green.shade300 : Colors.green.shade800),
+      ExpiryStatus.expiring => (days == 0 ? '今日到期' : '$days 天内到期', isDark ? Colors.orange.shade300 : Colors.orange.shade900),
+      ExpiryStatus.expired => ('已过期', scheme.error),
+      ExpiryStatus.noExpiry => ('未设置效期', scheme.onSurfaceVariant),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
+      decoration: ShapeDecoration(
+        color: highContrast ? scheme.surface : color.withValues(alpha: 0.1),
+        shape: StadiumBorder(
+          side: BorderSide(color: color.withValues(alpha: highContrast ? 1 : 0.2), width: 0.5),
+        ),
       ),
       child: Text(
         label,

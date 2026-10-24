@@ -1,3 +1,4 @@
+import '../widgets/momo_glass_components.dart';
 import '../../app/momo_typography.dart';
 import 'dart:math' as math;
 
@@ -25,7 +26,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
   Widget build(BuildContext context) {
     final statistics = ref.watch(inventoryStatisticsProvider(_days));
     return Scaffold(
-      appBar: AppBar(
+      appBar: MomoGlassAppBar(
         title: const Text('库存统计'),
         actions: [
           IconButton(
@@ -102,18 +103,35 @@ class _SummaryCards extends StatelessWidget {
   final InventoryStatistics statistics;
 
   @override
-  Widget build(BuildContext context) => GridView.count(
-        crossAxisCount: 3,
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
-        childAspectRatio: 1.35,
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final scale =
+          MediaQuery.textScalerOf(context).scale(MomoTextSize.body) /
+          MomoTextSize.body;
+      final columns =
+          constraints.maxWidth >= 520 && scale <= 1.5
+              ? 3
+              : (constraints.maxWidth >= 280 && scale <= 1.3 ? 2 : 1);
+      final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
+      return Wrap(
+        spacing: 12,
+        runSpacing: 12,
         children: [
-          _SummaryCard(label: '消耗', value: statistics.consumed, icon: Icons.remove_circle_outline, color: Colors.blue),
-          _SummaryCard(label: '入库/调整', value: statistics.intake, icon: Icons.add_circle_outline, color: Colors.green),
-          _SummaryCard(label: '报废', value: statistics.discarded, icon: Icons.delete_outline, color: Colors.orange),
+          SizedBox(
+            width: width,
+            child: _SummaryCard(label: '消耗', value: statistics.consumed, icon: Icons.remove_circle_outline, color: Colors.blue),
+          ),
+          SizedBox(
+            width: width,
+            child: _SummaryCard(label: '入库/调整', value: statistics.intake, icon: Icons.add_circle_outline, color: Colors.green),
+          ),
+          SizedBox(
+            width: width,
+            child: _SummaryCard(label: '报废', value: statistics.discarded, icon: Icons.delete_outline, color: Colors.orange),
+          ),
         ],
+      );
+    },
       );
 }
 
@@ -126,19 +144,17 @@ class _SummaryCard extends StatelessWidget {
   final Color color;
 
   @override
-  Widget build(BuildContext context) => Card(
+  Widget build(BuildContext context) => MomoGlassCard(
         margin: EdgeInsets.zero,
-        child: Padding(
-          padding: const EdgeInsets.all(10),
+    padding: const EdgeInsets.all(10),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(icon, size: 20, color: color),
-              const Spacer(),
+              const SizedBox(height: 16),
               Text('$value', style: Theme.of(context).textTheme.titleLarge),
               Text(label, style: Theme.of(context).textTheme.bodySmall),
             ],
-          ),
         ),
       );
 }
@@ -155,9 +171,9 @@ class _StatisticsChart extends StatelessWidget {
       Colors.green,
       Colors.orange,
     ];
-    return Card(
-      child: Padding(
+    return MomoGlassCard(
         padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      margin: EdgeInsets.zero,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -183,7 +199,6 @@ class _StatisticsChart extends StatelessWidget {
                       painter: _StatisticsChartPainter(points: points, colors: colors)),
             ),
           ],
-        ),
       ),
     );
   }
@@ -321,9 +336,9 @@ class _TopConsumedProducts extends StatelessWidget {
   final List<InventoryProductStatistic> products;
 
   @override
-  Widget build(BuildContext context) => Card(
-        child: Padding(
+  Widget build(BuildContext context) => MomoGlassCard(
           padding: const EdgeInsets.all(14),
+    margin: EdgeInsets.zero,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -340,7 +355,6 @@ class _TopConsumedProducts extends StatelessWidget {
                 ),
             ],
           ),
-        ),
       );
 }
 
@@ -364,7 +378,10 @@ class _StatisticsMessage extends StatelessWidget {
               Text(message, textAlign: TextAlign.center),
               if (actionLabel != null && onAction != null) ...[
                 const SizedBox(height: 12),
-                OutlinedButton(onPressed: onAction, child: Text(actionLabel!)),
+            MomoCapsuleButton(onPressed: onAction,
+              label: actionLabel!,
+              isPrimary: false,
+            ),
               ],
             ],
           ),

@@ -6,6 +6,7 @@ import '../../domain/models/initial_import_models.dart';
 import '../controllers/providers.dart';
 import 'initial_import_history_dialog.dart';
 import 'initial_import_review_dialog.dart';
+import 'momo_glass_components.dart';
 
 /// Explicit first-import controls. Building the card never uploads a manifest.
 class InitialImportCard extends ConsumerStatefulWidget {
@@ -30,31 +31,29 @@ class _InitialImportCardState extends ConsumerState<InitialImportCard> {
   Widget build(BuildContext context) {
     final service = ref.watch(initialImportServiceProvider);
     final progress = ref.watch(initialImportProgressProvider);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('导入既有库存与历史', style: Theme.of(context).textTheme.titleMedium),
+    return MomoGlassCard(
+      frosted: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('导入既有库存与历史', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          const Text('保留当前库存量，旧历史独立归档。先审阅分类和覆盖范围，再明确确认导入；登录和绑定不会自动上传。'),
+          if (service == null) ...[
             const SizedBox(height: 8),
-            const Text('保留当前库存量，旧历史独立归档。先审阅分类和覆盖范围，再明确确认导入；登录和绑定不会自动上传。'),
-            if (service == null) ...[
-              const SizedBox(height: 8),
-              const Text('请先完成登录、家庭、设备和本机数据归属确认。'),
-            ],
-            const SizedBox(height: 8),
-            progress.when(
-              loading: () => const LinearProgressIndicator(),
-              error: (error, _) => Text('读取导入计划失败：$error'),
-              data: (value) => _buildProgress(context, service, value),
-            ),
-            if (_notice != null) ...[
-              const SizedBox(height: 8),
-              Text(_notice!),
-            ],
+            const Text('请先完成登录、家庭、设备和本机数据归属确认。'),
           ],
-        ),
+          const SizedBox(height: 8),
+          progress.when(
+            loading: () => const LinearProgressIndicator(),
+            error: (error, _) => Text('读取导入计划失败：$error'),
+            data: (value) => _buildProgress(context, service, value),
+          ),
+          if (_notice != null) ...[
+            const SizedBox(height: 8),
+            Text(_notice!),
+          ],
+        ],
       ),
     );
   }

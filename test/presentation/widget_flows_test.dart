@@ -19,6 +19,8 @@ import 'package:momo_box/presentation/screens/shopping_screen.dart';
 import 'package:momo_box/presentation/screens/inventory_screen.dart';
 import 'package:momo_box/presentation/screens/settings_screen.dart';
 import 'package:momo_box/presentation/widgets/intake_sheet.dart';
+import 'package:momo_box/presentation/widgets/ai_assistant_dialog.dart';
+import 'package:momo_box/presentation/widgets/momo_floating_dock.dart';
 
 void main() {
   late AppDatabase database;
@@ -52,6 +54,76 @@ void main() {
     expect(find.text('未配置'), findsOneWidget);
     await tester.tap(find.text('入库'));
     await _pumpUntilFound(tester, find.byType(IntakeSheet));
+    expect(tester.takeException(), isNull);
+    await _disposeWidgetTree(tester);
+  });
+
+  testWidgets('Dock中央入口打开AI助手并保留当前页面，不打开入库', (tester) async {
+    await _pumpApp(tester, database);
+    await _pumpUntilFound(tester, find.byType(NavigationBar));
+    final central = find
+        .descendant(
+          of: find.byType(NavigationBar),
+          matching: find.byType(NavigationDestination),
+        )
+        .at(2);
+    expect(tester.getSemantics(central).label, contains('AI 助手'));
+    await tester.tap(central);
+    await _pumpUntilFound(tester, find.byType(AiAssistantDialog));
+    expect(find.byType(IntakeSheet), findsNothing);
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      0,
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MomoBoxApp)),
+    );
+    expect(
+      container.read(appRouterProvider).routeInformationProvider.value.uri.path,
+      '/',
+    );
+    await _disposeWidgetTree(tester);
+  });
+
+  testWidgets('我的末项在Dock上方可点击，原生push页继续继承动态占位', (tester) async {
+    addTearDown(tester.view.reset);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.padding = const FakeViewPadding(bottom: 34);
+    tester.view.viewPadding = const FakeViewPadding(bottom: 34);
+    await SettingsRepository(database).setValue('font_scale', '1.3');
+    await _pumpApp(tester, database);
+    await _pumpUntilFound(tester, find.byType(NavigationBar));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text('我的'),
+      ),
+    );
+    await _pumpUntilFound(tester, find.text('系统设置'));
+    await _pumpForUi(tester);
+    final last = find.text('关于与存储信息');
+    final settingsScroll = find.descendant(
+      of: find.byType(SettingsScreen),
+      matching: find.byType(Scrollable),
+    ).first;
+    await tester.scrollUntilVisible(last, 240, scrollable: settingsScroll);
+    final scrollable = tester.state<ScrollableState>(
+      settingsScroll,
+    );
+    scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
+    await tester.pump();
+    final tile = find.ancestor(of: last, matching: find.byType(ListTile)).first;
+    expect(
+      tester.getBottomLeft(tile).dy,
+      lessThan(tester.getTopLeft(find.byType(MomoFloatingCapsuleDock)).dy),
+    );
+    await tester.tap(last);
+    await _pumpUntilFound(tester, find.byType(AboutSettingsScreen));
+    expect(
+      MomoDockInsets.bottomOf(tester.element(find.byType(AboutSettingsScreen))),
+      greaterThan(0),
+    );
     expect(tester.takeException(), isNull);
     await _disposeWidgetTree(tester);
   });

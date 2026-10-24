@@ -1,3 +1,4 @@
+import '../widgets/momo_glass_components.dart';
 import '../../app/momo_typography.dart';
 import 'dart:io';
 
@@ -22,7 +23,7 @@ class ProductDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final inventory = ref.watch(inventoryProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('商品详情')),
+      appBar: MomoGlassAppBar(title: const Text('商品详情')),
       body: inventory.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _DetailMessage(
@@ -80,7 +81,7 @@ class _ProductDetailBody extends ConsumerWidget {
         const SizedBox(height: 12),
         _ManualQaSection(item: item),
         const SizedBox(height: 16),
-        FilledButton.icon(
+        MomoCapsuleButton(
           onPressed: fefoAvailableQuantity == 0
               ? null
               : () => _consumeByFefo(
@@ -88,8 +89,8 @@ class _ProductDetailBody extends ConsumerWidget {
                     ref,
                     maxQuantity: fefoAvailableQuantity,
                   ),
+          label: '按最早到期优先消耗（最多 $fefoAvailableQuantity ${item.unit}）',
           icon: const Icon(Icons.remove),
-          label: Text('按最早到期优先消耗（最多 $fefoAvailableQuantity ${item.unit}）'),
         ),
         const SizedBox(height: 24),
         _SectionTitle(
@@ -164,9 +165,9 @@ class _ProductOverview extends StatelessWidget {
   Widget build(BuildContext context) {
     final nearestBatch = item.nearestDatedBatch;
     final theme = Theme.of(context);
-    return Card(
-      child: Padding(
+    return MomoGlassCard(
         padding: const EdgeInsets.all(16),
+      margin: EdgeInsets.zero,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -213,7 +214,6 @@ class _ProductOverview extends StatelessWidget {
             _InfoRow(label: '计量单位', value: item.unit),
             _InfoRow(label: '低库存阈值', value: '${item.lowStockThreshold} ${item.unit}'),
           ],
-        ),
       ),
     );
   }
@@ -286,9 +286,9 @@ class _BatchCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final canConsume = batch.isAvailable && batch.expiryStatus != ExpiryStatus.expired;
     final canReplenish = !batch.isDiscarded;
-    return Card(
-      child: Padding(
+    return MomoGlassCard(
         padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+      margin: EdgeInsets.zero,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -330,8 +330,7 @@ class _BatchCard extends ConsumerWidget {
             ),
           ],
         ),
-      ),
-    );
+      );
   }
 
   Future<void> _performAction(
@@ -352,7 +351,9 @@ class _BatchCard extends ConsumerWidget {
           );
           if (quantity == null || !context.mounted) return;
           await ref.read(inventoryServiceProvider).consumeBatch(item.id, batch.id, quantity);
-          if (context.mounted) _showMessage(context, '已消耗 $quantity ${item.unit}。');
+          if (context.mounted) {
+            _showMessage(context, '已消耗 $quantity ${item.unit}。');
+          }
           return;
         case _BatchAction.replenish:
           final quantity = await _showQuantityDialog(
@@ -364,7 +365,9 @@ class _BatchCard extends ConsumerWidget {
           );
           if (quantity == null || !context.mounted) return;
           await ref.read(inventoryServiceProvider).replenishBatch(batch.id, quantity);
-          if (context.mounted) _showMessage(context, '已补充 $quantity ${item.unit}。');
+          if (context.mounted) {
+            _showMessage(context, '已补充 $quantity ${item.unit}。');
+          }
           return;
         case _BatchAction.discard:
           final confirmed = await _showDiscardConfirmationDialog(
@@ -460,9 +463,9 @@ class _ManualQaSectionState extends ConsumerState<_ManualQaSection> {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
+    return MomoGlassCard(
         padding: const EdgeInsets.all(14),
+      margin: EdgeInsets.zero,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -478,17 +481,17 @@ class _ManualQaSectionState extends ConsumerState<_ManualQaSection> {
                   const SizedBox(height: 10),
                   Align(
                     alignment: Alignment.centerLeft,
-                    child: FilledButton.tonalIcon(
+                    child: MomoCapsuleButton(
                       onPressed: _openQuestionDialog,
+                    label: '询问说明书',
+                    isPrimary: false,
                       icon: const Icon(Icons.question_answer_outlined),
-                      label: const Text('询问说明书'),
                     ),
                   ),
                 ],
               ),
             ),
           ],
-        ),
       ),
     );
   }
@@ -562,7 +565,9 @@ class _ManualQaDialogState extends State<_ManualQaDialog> {
             content: const Text('将仅发送问题和本地检索到的 OCR 文字片段给你自行配置的 AI 服务，不会上传原图。是否继续？'),
             actions: [
               TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
-              FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('继续询问')),
+                  MomoCapsuleButton(onPressed: () => Navigator.pop(context, true),
+                    label: '继续询问',
+                  ),
             ],
           ),
         ) ??
@@ -616,19 +621,21 @@ class _ManualQaDialogState extends State<_ManualQaDialog> {
                 onSubmitted: (_) => _searchLocally(),
               ),
               const SizedBox(height: 8),
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
                 children: [
-                  FilledButton.icon(
+                  MomoCapsuleButton(
                     onPressed: _loading ? null : _searchLocally,
+                    label: '先查本地 OCR',
                     icon: const Icon(Icons.search),
-                    label: const Text('先查本地 OCR'),
                   ),
                   if (_sources.isNotEmpty) ...[
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
+                    MomoCapsuleButton(
                       onPressed: _loading ? null : _askConfiguredAi,
+                      label: '让已配置 AI 回答',
+                      isPrimary: false,
                       icon: const Icon(Icons.auto_awesome_outlined),
-                      label: const Text('让已配置 AI 回答'),
                     ),
                   ],
                 ],
@@ -760,7 +767,10 @@ class _DetailMessage extends StatelessWidget {
               Text(message, textAlign: TextAlign.center),
               if (actionLabel != null && onAction != null) ...[
                 const SizedBox(height: 12),
-                OutlinedButton(onPressed: onAction, child: Text(actionLabel!)),
+            MomoCapsuleButton(onPressed: onAction,
+              label: actionLabel!,
+              isPrimary: false,
+            ),
               ],
             ],
           ),
@@ -800,7 +810,7 @@ Future<int?> _showQuantityDialog(
               onPressed: () => Navigator.pop(context),
               child: const Text('取消'),
             ),
-            FilledButton(
+                MomoCapsuleButton(
               onPressed: () {
                 final quantity = int.tryParse(quantityText.trim());
                 if (quantity == null || quantity < 1) {
@@ -813,7 +823,7 @@ Future<int?> _showQuantityDialog(
                 }
                 Navigator.pop(context, quantity);
               },
-              child: Text(confirmLabel),
+                  label: confirmLabel,
             ),
           ],
         ),
@@ -839,9 +849,10 @@ Future<bool> _showDiscardConfirmationDialog(
             onPressed: () => Navigator.pop(context, false),
             child: const Text('取消'),
           ),
-          FilledButton.tonal(
+              MomoCapsuleButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('确认报废'),
+                label: '确认报废',
+                isPrimary: false,
           ),
         ],
       ),
@@ -970,9 +981,9 @@ class _ProductMediaSectionState extends ConsumerState<_ProductMediaSection> {
   Widget build(BuildContext context) {
     final media = ref.watch(mediaAssetsProvider((entityType: 'product', entityId: widget.item.id)));
     final assets = media.valueOrNull ?? const <MediaAsset>[];
-    return Card(
-      child: Padding(
+    return MomoGlassCard(
         padding: const EdgeInsets.all(14),
+      margin: EdgeInsets.zero,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1013,9 +1024,18 @@ class _ProductMediaSectionState extends ConsumerState<_ProductMediaSection> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                OutlinedButton.icon(onPressed: _addInstructionImage, icon: const Icon(Icons.description_outlined), label: const Text('添加说明书图片')),
-                FilledButton.tonalIcon(onPressed: _ocrRunning ? null : () => _ocr(assets), icon: _ocrRunning ? const SizedBox.square(dimension: 14, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.document_scanner_outlined), label: Text(_ocrRunning ? '识别中…' : '本地 OCR')),
-                OutlinedButton.icon(onPressed: () => _openManualSearch(context, widget.item), icon: const Icon(Icons.open_in_browser_outlined), label: const Text('外部搜索说明书')),
+              MomoCapsuleButton(onPressed: _addInstructionImage,
+                label: '添加说明书图片',
+                isPrimary: false, icon: const Icon(Icons.description_outlined),
+              ),
+              MomoCapsuleButton(onPressed: _ocrRunning ? null : () => _ocr(assets),
+                label: _ocrRunning ? '识别中…' : '本地 OCR',
+                isPrimary: false, icon: _ocrRunning ? const SizedBox.square(dimension: 14, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.document_scanner_outlined),
+              ),
+              MomoCapsuleButton(onPressed: () => _openManualSearch(context, widget.item),
+                label: '外部搜索说明书',
+                isPrimary: false,
+                icon: const Icon(Icons.open_in_browser_outlined)),
               ],
             ),
             for (final asset in assets.where((asset) => asset.hasOcrText)) ...[
@@ -1023,7 +1043,6 @@ class _ProductMediaSectionState extends ConsumerState<_ProductMediaSection> {
               ExpansionTile(title: Text('${asset.type.label} OCR 文本'), children: [Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 12), child: SelectableText(asset.ocrText!))]),
             ],
           ],
-        ),
       ),
     );
   }

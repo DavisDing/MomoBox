@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app_feedback.dart';
 
-import '../../app/momo_theme.dart';
 import '../../services/calendar_sync_service.dart';
 import '../controllers/providers.dart';
 
@@ -31,15 +30,14 @@ class _CalendarSyncDialogState extends ConsumerState<CalendarSyncDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
     final theme = Theme.of(context);
 
     return AlertDialog(
       title: Row(
         children: [
-          Icon(Icons.calendar_month_rounded, color: palette.primary, size: 24),
+          Icon(Icons.calendar_month_rounded, color: theme.colorScheme.primary, size: 24),
           const SizedBox(width: 8),
-          const Text('同步提醒到日历', style: TextStyle(fontSize: MomoTextSize.section, fontWeight: FontWeight.bold)),
+          const Expanded(child: Text('同步提醒到日历')),
         ],
       ),
       content: SingleChildScrollView(
@@ -77,7 +75,6 @@ class _CalendarSyncDialogState extends ConsumerState<CalendarSyncDialog> {
               contentPadding: EdgeInsets.zero,
               title: const Text('临期物品预警 (到期前及当天提醒)'),
               value: _includeExpiring,
-              activeColor: palette.primary,
               onChanged: (val) => setState(() => _includeExpiring = val ?? true),
             ),
             CheckboxListTile(
@@ -85,7 +82,6 @@ class _CalendarSyncDialogState extends ConsumerState<CalendarSyncDialog> {
               contentPadding: EdgeInsets.zero,
               title: const Text('已过期物品待清理'),
               value: _includeExpired,
-              activeColor: palette.primary,
               onChanged: (val) => setState(() => _includeExpired = val ?? true),
             ),
             CheckboxListTile(
@@ -93,7 +89,6 @@ class _CalendarSyncDialogState extends ConsumerState<CalendarSyncDialog> {
               contentPadding: EdgeInsets.zero,
               title: const Text('低库存需补充物品'),
               value: _includeLowStock,
-              activeColor: palette.primary,
               onChanged: (val) => setState(() => _includeLowStock = val ?? true),
             ),
             CheckboxListTile(
@@ -101,7 +96,6 @@ class _CalendarSyncDialogState extends ConsumerState<CalendarSyncDialog> {
               contentPadding: EdgeInsets.zero,
               title: const Text('周期循环家务 (床单/浴巾/滤芯等)'),
               value: _includeChores,
-              activeColor: palette.primary,
               onChanged: (val) => setState(() => _includeChores = val ?? true),
             ),
           ],
@@ -113,13 +107,12 @@ class _CalendarSyncDialogState extends ConsumerState<CalendarSyncDialog> {
           child: const Text('取消'),
         ),
         FilledButton.icon(
-          style: FilledButton.styleFrom(backgroundColor: palette.primary),
           onPressed: _isExporting ? null : _handleSync,
           icon: _isExporting
               ? const SizedBox(
                   width: 16,
                   height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.sync_alt_rounded, size: 18),
           label: Text(_isExporting ? '生成中...' : '导出并加入日历'),
@@ -129,12 +122,10 @@ class _CalendarSyncDialogState extends ConsumerState<CalendarSyncDialog> {
   }
 
   Widget _buildRangeChip(CalendarSyncRange range) {
-    final palette = MomoPalette.fromStoredValue(ref.read(themeNameProvider).valueOrNull);
     final isSelected = _range == range;
     return ChoiceChip(
       label: Text(range.label, style: const TextStyle(fontSize: MomoTextSize.caption)),
       selected: isSelected,
-      selectedColor: palette.primary.withValues(alpha: 0.2),
       onSelected: (selected) {
         if (selected) {
           setState(() => _range = range);

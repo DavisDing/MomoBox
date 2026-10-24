@@ -1,10 +1,13 @@
 import '../support/memory_settings_repository.dart';
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:momo_box/app/momo_theme.dart';
+import 'package:momo_box/application/ai_draft_service.dart';
+import 'package:momo_box/application/ai_fallback_executor.dart';
 import 'package:momo_box/application/storage_management_service.dart';
 import 'package:momo_box/application/settings_service.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -13,8 +16,263 @@ import 'package:momo_box/presentation/controllers/providers.dart';
 import 'package:momo_box/presentation/screens/ai_usage_screen.dart';
 import 'package:momo_box/presentation/screens/settings_screen.dart';
 import 'package:momo_box/presentation/widgets/ai_assistant_dialog.dart';
+import 'package:momo_box/services/secure_settings_service.dart';
 
 void main() {
+  testWidgets('首次模型配置与新增服务默认自动适配，保存后仍为 auto', (tester) async {
+    final settings = MemorySettingsRepository();
+    addTearDown(settings.close);
+    await _pumpAiSettings(tester, settings, _ControlledAiExecutor());
+    expect(find.text('OpenAI（自动适配）'), findsOneWidget);
+    await tester.tap(find.byTooltip('编辑配置'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<DropdownButtonFormField<String>>(
+      find.byType(DropdownButtonFormField<String>).last).initialValue, 'auto');
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
+    expect(settings.values[AiDraftService.endpointTypeKey], 'auto');
+
+    await tester.tap(find.text('添加配置'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<DropdownButtonFormField<String>>(
+      find.byType(DropdownButtonFormField<String>).last).initialValue, 'auto');
+    await tester.enterText(find.byType(TextField).first, '新增自动服务');
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
+    final profiles = (jsonDecode(settings.values[AiDraftService.profilesKey]!) as List);
+    expect(profiles.singleWhere((p) => p['name'] == '新增自动服务')['endpointType'], 'auto');
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final entry in <String?, String>{
+    null: 'auto',
+    '': 'auto',
+    ' \t\n ': 'auto',
+    'auto': 'auto',
+    'chat': 'chat',
+    'responses': 'responses',
+    ' chat ': 'chat',
+    'unexpected': 'auto',
+  }.entries) {
+    final protocol = entry.key;
+    final expected = entry.value;
+    testWidgets('已有模型协议 ${jsonEncode(protocol)} 读入编辑保存为 $expected', (tester) async {
+      final settings = _aiSettings(protocol: protocol);
+      addTearDown(settings.close);
+      await _pumpAiSettings(tester, settings, _ControlledAiExecutor());
+      final loadedProfiles = jsonDecode(settings.values[AiDraftService.profilesKey]!) as List;
+      expect(loadedProfiles.single['endpointType'], expected);
+      await tester.tap(find.byTooltip('编辑配置'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<DropdownButtonFormField<String>>(
+        find.byType(DropdownButtonFormField<String>).last).initialValue, expected);
+      await tester.tap(find.text('确定'));
+      await tester.pumpAndSettle();
+      expect(settings.values[AiDraftService.endpointTypeKey], expected);
+      final profiles = jsonDecode(settings.values[AiDraftService.profilesKey]!) as List;
+      expect(profiles.single['endpointType'], expected);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final entry in {'': 'auto', ' \t\n ': 'auto', 'chat': 'chat', 'responses': 'responses'}.entries) {
+    testWidgets('旧版主副兜底协议 ${jsonEncode(entry.key)} 迁移编辑保存为 ${entry.value}', (tester) async {
+      final settings = MemorySettingsRepository()..values.addAll({
+        AiDraftService.endpointKey: 'https://model.example/v1',
+        AiDraftService.modelKey: 'primary-model',
+        AiDraftService.endpointTypeKey: entry.key,
+        AiDraftService.secondaryEndpointKey: 'https://secondary.example/v1',
+        AiDraftService.secondaryModelKey: 'secondary-model',
+        AiDraftService.secondaryTypeKey: entry.key,
+        AiDraftService.fallbackEndpointKey: 'https://fallback.example/v1',
+        AiDraftService.fallbackModelKey: 'fallback-model',
+        AiDraftService.fallbackTypeKey: entry.key,
+      });
+      addTearDown(settings.close);
+      await _pumpAiSettings(tester, settings, _ControlledAiExecutor());
+      final profiles = jsonDecode(settings.values[AiDraftService.profilesKey]!) as List;
+      expect(profiles, hasLength(3));
+      expect(profiles.map((profile) => profile['endpointType']), everyElement(entry.value));
+      await tester.tap(find.byTooltip('编辑配置').first);
+      await tester.pumpAndSettle();
+      expect(tester.widget<DropdownButtonFormField<String>>(
+        find.byType(DropdownButtonFormField<String>).last).initialValue, entry.value);
+      await tester.tap(find.text('确定'));
+      await tester.pumpAndSettle();
+      for (final key in [AiDraftService.endpointTypeKey, AiDraftService.secondaryTypeKey, AiDraftService.fallbackTypeKey]) {
+        expect(settings.values[key], entry.value);
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('新增模型缺少密钥时就地提示失败，不发送请求', (tester) async {
+    final settings = _aiSettings();
+    final executor = _ControlledAiExecutor();
+    addTearDown(settings.close);
+    await _pumpAiSettings(tester, settings, executor);
+    final before = Map<String, String>.of(settings.values);
+    await tester.tap(find.text('添加配置'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('测试'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('测试失败：请填写'), findsOneWidget);
+    expect(find.byIcon(Icons.error_outline), findsOneWidget);
+    expect(executor.configs, isEmpty);
+    expect(settings.values, before);
+    expect(tester.widget<TextButton>(find.widgetWithText(TextButton, '测试')).onPressed, isNotNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final success in [true, false]) {
+    testWidgets('模型测试${success ? '成功' : '失败'}在窄屏键盘上方固定反馈且不保存', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(320, 720));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      tester.view.physicalSize = const Size(320, 720);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final settings = _aiSettings();
+      final executor = _ControlledAiExecutor();
+      addTearDown(settings.close);
+      await _pumpAiSettings(tester, settings, executor, textScale: 1.3);
+      await tester.tap(find.byTooltip('编辑配置'));
+      await tester.pumpAndSettle();
+      final before = Map<String, String>.of(settings.values);
+      final keysBefore = await const FlutterSecureStorage().readAll();
+      tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('测试'));
+      await tester.pump();
+      expect(executor.configs, hasLength(1));
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '确定')).onPressed, isNull);
+      expect(tester.widget<TextButton>(find.widgetWithText(TextButton, '测试中…')).onPressed, isNull);
+      final feedback = find.byKey(const ValueKey('ai-connection-test-feedback'));
+      expect(find.ancestor(of: feedback, matching: find.byType(SingleChildScrollView)), findsNothing);
+      _expectFeedbackAboveKeyboard(tester, feedback);
+      // Scroll to the top while the request is pending. Feedback must stay
+      // visible without any scroll-to-result side effect on completion.
+      await tester.drag(find.descendant(of: find.byType(AlertDialog),
+        matching: find.byType(SingleChildScrollView)).first, const Offset(0, 600));
+      await tester.pump();
+      executor.complete(0, success: success);
+      await tester.pumpAndSettle();
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.textContaining(success ? '测试通过' : '测试失败'), findsOneWidget);
+      expect(find.byIcon(success ? Icons.check_circle_outline : Icons.error_outline), findsOneWidget);
+      _expectFeedbackAboveKeyboard(tester, feedback);
+      expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '确定')).onPressed, isNotNull);
+      expect(settings.values, before);
+      expect(await const FlutterSecureStorage().readAll(), keysBefore);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final oldSuccess in [true, false]) {
+    testWidgets('修改后还原参数并重测，旧${oldSuccess ? '成功' : '失败'}不覆盖新请求', (tester) async {
+      final settings = _aiSettings();
+      final executor = _ControlledAiExecutor();
+      addTearDown(settings.close);
+      await _pumpAiSettings(tester, settings, executor);
+      await tester.tap(find.byTooltip('编辑配置'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('测试'));
+      await tester.pump();
+      final model = find.byType(TextField).at(2);
+      await tester.enterText(model, 'changed-model');
+      await tester.enterText(model, 'test-model');
+      await tester.pump();
+      expect(find.text('配置已变化，请重新测试。'), findsOneWidget);
+      await tester.tap(find.text('测试'));
+      await tester.pump();
+      expect(executor.configs, hasLength(2));
+      executor.complete(0, success: oldSuccess);
+      await tester.pump();
+      expect(find.text('正在测试当前配置…'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.textContaining('测试通过'), findsNothing);
+      expect(find.textContaining('测试失败'), findsNothing);
+      executor.complete(1, success: !oldSuccess);
+      await tester.pumpAndSettle();
+      expect(find.textContaining(oldSuccess ? '测试失败' : '测试通过'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('新测试完成后旧请求才返回，也不覆盖当前结果', (tester) async {
+    final settings = _aiSettings();
+    final executor = _ControlledAiExecutor();
+    addTearDown(settings.close);
+    await _pumpAiSettings(tester, settings, executor);
+    await tester.tap(find.byTooltip('编辑配置'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('测试'));
+    await tester.pump();
+    await tester.enterText(find.byType(TextField).at(2), 'new-model');
+    await tester.pump();
+    await tester.tap(find.text('测试'));
+    await tester.pump();
+    executor.complete(1);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('测试通过'), findsOneWidget);
+    executor.complete(0, success: false);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('测试通过'), findsOneWidget);
+    expect(find.textContaining('测试失败'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('关闭测试弹窗再打开，晚到结果不污染新弹窗', (tester) async {
+    final settings = _aiSettings();
+    final executor = _ControlledAiExecutor();
+    addTearDown(settings.close);
+    await _pumpAiSettings(tester, settings, executor);
+    await tester.tap(find.byTooltip('编辑配置'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('测试'));
+    await tester.pump();
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('编辑配置'));
+    await tester.pumpAndSettle();
+    executor.complete(0);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('ai-connection-test-feedback')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('读取密钥期间关闭或修改配置，不再发送旧测试请求', (tester) async {
+    final settings = _aiSettings();
+    final executor = _ControlledAiExecutor();
+    final secure = _DelayedProfileKeyService();
+    addTearDown(settings.close);
+    await _pumpAiSettings(tester, settings, executor, secure: secure);
+    for (final close in [false, true]) {
+      await tester.tap(find.byTooltip('编辑配置'));
+      await tester.pumpAndSettle();
+      secure.pendingRead = Completer<String?>();
+      await tester.tap(find.text('测试'));
+      await tester.pump();
+      if (close) {
+        await tester.tap(find.text('取消'));
+      } else {
+        await tester.enterText(find.byType(TextField).at(2), 'changed-model');
+      }
+      secure.pendingRead!.complete('test-key');
+      await tester.pumpAndSettle();
+      secure.pendingRead = null;
+      expect(executor.configs, isEmpty);
+      if (!close) {
+        expect(find.text('配置已变化，请重新测试。'), findsOneWidget);
+        await tester.tap(find.text('取消'));
+        await tester.pumpAndSettle();
+      }
+      expect(tester.takeException(), isNull);
+    }
+  });
+
   testWidgets('窄屏 AI 周期选择不显示勾选，不发生溢出', (tester) async {
     await tester.binding.setSurfaceSize(const Size(320, 720));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -81,8 +339,11 @@ void main() {
         if (color.a > 0.8) expect(color.computeLuminance(), lessThan(0.5));
       }
     }
-    for (final chip in tester.widgetList<ActionChip>(find.byType(ActionChip))) {
-      expect(chip.backgroundColor, darkTheme.colorScheme.surface);
+    for (final element in find.byType(ActionChip).evaluate()) {
+      final chip = element.widget as ActionChip;
+      // Shared UI now supplies the same dark surface through ChipTheme.
+      expect(chip.backgroundColor ?? ChipTheme.of(element).backgroundColor,
+          darkTheme.colorScheme.surface);
     }
     expect(tester.takeException(), isNull);
   });
@@ -235,6 +496,112 @@ Future<void> _pumpStorage(
     ),
   );
   await tester.pumpAndSettle();
+}
+
+MemorySettingsRepository _aiSettings({String? protocol}) {
+  return MemorySettingsRepository()..values.addAll({
+    AiDraftService.activeProfileKey: 'source',
+    AiDraftService.endpointKey: 'https://model.example/v1',
+    AiDraftService.modelKey: 'test-model',
+    if (protocol != null) AiDraftService.endpointTypeKey: protocol,
+    AiDraftService.profilesKey: jsonEncode([
+      {
+        'id': 'source',
+        'name': '已配置模型',
+        'endpoint': 'https://model.example/v1',
+        'model': 'test-model',
+        if (protocol != null) 'endpointType': protocol,
+        AiDraftService.profileRoleKey: AiDraftService.primaryRole,
+      },
+    ]),
+  });
+}
+
+Future<void> _pumpAiSettings(
+  WidgetTester tester,
+  MemorySettingsRepository settings,
+  _ControlledAiExecutor executor, {
+  double textScale = 1,
+  SecureSettingsService? secure,
+}) async {
+  FlutterSecureStorage.setMockInitialValues({'ai_api_key_profile_source': 'test-key'});
+  await tester.pumpWidget(ProviderScope(
+    overrides: [
+      settingsRepositoryProvider.overrideWithValue(settings),
+      aiConnectionTestExecutorProvider.overrideWithValue(executor),
+      if (secure != null) secureSettingsServiceProvider.overrideWithValue(secure),
+    ],
+    child: MaterialApp(
+      theme: buildMomoTheme(MomoPalette.defaultPalette, Brightness.light),
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale)),
+        child: child!,
+      ),
+      home: const AiSettingsScreen(),
+    ),
+  ));
+  await tester.pumpAndSettle();
+}
+
+void _expectFeedbackAboveKeyboard(WidgetTester tester, Finder feedback) {
+  final rect = tester.getRect(feedback);
+  final keyboardTop = (tester.view.physicalSize.height - tester.view.viewInsets.bottom) /
+      tester.view.devicePixelRatio;
+  expect(rect.top, greaterThanOrEqualTo(0));
+  expect(rect.bottom, lessThan(keyboardTop));
+  expect(feedback.hitTestable(), findsOneWidget);
+}
+
+class _ControlledAiExecutor implements AiFallbackExecutor {
+  final configs = <AiEndpointConfig>[];
+  final results = <Completer<AiFallbackResponse>>[];
+
+  @override
+  Future<AiFallbackResponse> execute({
+    required List<AiEndpointConfig> configs,
+    required String systemPrompt,
+    required String userPrompt,
+    List<Map<String, String>> chatHistory = const [],
+    double temperature = 0.2,
+  }) {
+    this.configs.add(configs.single);
+    final result = Completer<AiFallbackResponse>();
+    results.add(result);
+    return result.future;
+  }
+
+  void complete(int index, {bool success = true}) {
+    if (!success) {
+      results[index].completeError(TimeoutException('offline test failure'));
+      return;
+    }
+    final config = configs[index];
+    results[index].complete(AiFallbackResponse(
+      content: 'OK',
+      rawDecoded: const {},
+      usedLevel: config.level,
+      usedConfig: config,
+      actualProtocol: 'responses',
+      traceLogs: [AiExecutionAttemptLog(
+        level: config.level,
+        model: config.model,
+        endpoint: config.endpoint,
+        durationMs: 15,
+        isSuccess: true,
+      )],
+    ));
+  }
+
+  @override
+  void close() {}
+}
+
+class _DelayedProfileKeyService extends SecureSettingsService {
+  Completer<String?>? pendingRead;
+
+  @override
+  Future<String?> readAiApiKeyForProfile(String profileId) =>
+      pendingRead?.future ?? super.readAiApiKeyForProfile(profileId);
 }
 
 class _ControlledStorage implements StorageManagementService {

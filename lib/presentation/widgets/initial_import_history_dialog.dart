@@ -89,9 +89,8 @@ class _InitialImportHistoryDialogState extends State<InitialImportHistoryDialog>
       title: const Text('NAS 独立历史归档'),
       content: SizedBox(
         width: 480,
-        height: 420,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        height: (MediaQuery.sizeOf(context).height * 0.6).clamp(160.0, 420.0),
+        child: ListView(
           children: [
             Text('家庭：${widget.familyId}'),
             const Text('这是旧记录的独立归档，查看不会再次扣减库存。来源操作人和时区未记录时不作推断。'),
@@ -100,15 +99,16 @@ class _InitialImportHistoryDialogState extends State<InitialImportHistoryDialog>
             if (_error != null) Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
             if (page != null) ...[
               Text('第 $_pageNumber 页 · 截止游标 ${page.until}'),
-              Expanded(
-                child: page.records.isEmpty
-                    ? const Center(child: Text('当前没有已归档的旧历史。'))
-                    : ListView.separated(
-                        itemCount: page.records.length,
-                        separatorBuilder: (_, _) => const Divider(),
-                        itemBuilder: (_, index) => _record(page.records[index]),
-                      ),
-              ),
+              if (page.records.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(child: Text('当前没有已归档的旧历史。')),
+                )
+              else
+                for (var index = 0; index < page.records.length; index++) ...[
+                  if (index > 0) const Divider(),
+                  _record(page.records[index]),
+                ],
             ],
           ],
         ),

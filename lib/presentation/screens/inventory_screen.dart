@@ -1,3 +1,5 @@
+import '../widgets/momo_floating_dock.dart';
+import '../widgets/momo_glass_components.dart';
 import '../../app/momo_typography.dart';
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -43,7 +45,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
     final summary = ref.watch(reminderSummaryProvider);
     return inventory.when(
       loading: () => Scaffold(
-        appBar: AppBar(
+        appBar: MomoGlassAppBar(
           title: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -64,7 +66,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
         body: const Center(child: CircularProgressIndicator()),
       ),
       error: (error, _) => Scaffold(
-        appBar: AppBar(
+        appBar: MomoGlassAppBar(
           title: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -104,6 +106,8 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
         }).toList();
         final sorted = sortInventoryItems(filtered, _sortOption);
         final textScaler = MediaQuery.textScalerOf(context);
+        final largeText =
+            textScaler.scale(MomoTextSize.body) > MomoTextSize.body * 1.5;
         final searchHeight = 40.0 +
             (textScaler.scale(MomoTextSize.body) - MomoTextSize.body)
                 .clamp(0.0, double.infinity) * 1.5;
@@ -132,27 +136,20 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                   toolbarHeight: searchHeight + 16,
                   titleSpacing: 16,
                   elevation: 0,
-                  title: _searchExpanded
-                      ? Container(
-                          height: searchHeight,
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.85),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
-                            ),
-                          ),
-                          child: TextField(
-                            controller: _searchController,
+                  title:
+                        largeText
+                            ? null
+                            : (_searchExpanded
+                      ? MomoGlassSearchBar(
+                                  hintText: '搜索名称、品牌、位置或条码',
+                                  controller: _searchController,
                             focusNode: _searchFocusNode,
-                            style: const TextStyle(fontSize: MomoTextSize.body),
-                            decoration: InputDecoration(
-                              isDense: true,
-                              hintText: '搜索名称、品牌、位置或条码',
-                              hintStyle: TextStyle(fontSize: MomoTextSize.body, color: Theme.of(context).hintColor),
-                              prefixIcon: const Icon(Icons.search, size: 20),
+                                  palette: palette,
+                                  onChanged:
+                                      (value) => setState(() => _query = value),
                               suffixIcon: IconButton(
-                                icon: const Icon(Icons.clear, size: 18),
+                                    tooltip: '清除搜索',
+                                    icon: const Icon(Icons.clear, size: 18),
                                 onPressed: () {
                                   _searchController.clear();
                                   setState(() {
@@ -160,14 +157,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                                     _searchExpanded = false;
                                   });
                                 },
-                              ),
-                              border: InputBorder.none,
-                              enabledBorder: InputBorder.none,
-                              focusedBorder: InputBorder.none,
-                              contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                            ),
-                            onChanged: (value) => setState(() => _query = value),
-                          ),
+                                  ),
                         )
                       : Row(
                           mainAxisSize: MainAxisSize.min,
@@ -184,8 +174,8 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                               ),
                             ),
                           ],
-                        ),
-                  actions: [
+                        )),
+                    actions: [
                     if (!_searchExpanded)
                       IconButton(
                         tooltip: '搜索物品',
@@ -201,7 +191,35 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                     ),
                     const SizedBox(width: 8),
                   ],
-                ),
+                  ),
+                  if (largeText)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                        child:
+                            _searchExpanded
+                                ? MomoGlassSearchBar(
+                                  hintText: '搜索名称、品牌、位置或条码',
+                                  controller: _searchController,
+                                  focusNode: _searchFocusNode,
+                                  palette: palette,
+                                  onChanged:
+                                      (value) => setState(() => _query = value),
+                                  suffixIcon: IconButton(
+                                    tooltip: '清除搜索',
+                                    icon: const Icon(Icons.clear, size: 18),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setState(() {
+                                        _query = '';
+                                        _searchExpanded = false;
+                                      });
+                                    },
+                                  ),
+                                )
+                                : const Text('嬷嬷的小箱子'),
+                      ),
+                    ),
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
@@ -274,7 +292,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                   )
                 else
                   SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 120),
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
                     sliver: SliverList(
                       delegate: SliverChildBuilderDelegate(
                         (context, index) => Padding(
@@ -282,7 +300,12 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                           child: _InventoryCard(item: sorted[index]),
                         ),
                         childCount: sorted.length,
+                        ),
                       ),
+                    ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: 16 + MomoDockInsets.bottomOf(context),
                     ),
                   ),
               ],
@@ -324,13 +347,11 @@ class _SummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      color: theme.colorScheme.primaryContainer,
-      child: InkWell(
+    return MomoGlassCard(
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
+      padding: const EdgeInsets.all(16),
+      margin: EdgeInsets.zero,
+      child: Row(
           children: [
             const Text('📦', style: TextStyle(fontSize: 36)),
             const SizedBox(width: 12),
@@ -341,8 +362,6 @@ class _SummaryCard extends StatelessWidget {
               ),
             ),
           ],
-          ),
-        ),
       ),
     );
   }
@@ -365,7 +384,10 @@ class _SortSelector extends StatelessWidget {
       textDirection: Directionality.of(context),
       textScaler: MediaQuery.textScalerOf(context),
     )..layout();
-    final triggerWidth = painter.width.ceilToDouble() + 18 + 4 + 20 + 2;
+    final triggerWidth = (painter.width.ceilToDouble() + 18 + 4 + 20 + 2).clamp(
+      48.0,
+      MediaQuery.sizeOf(context).width - 96.0,
+    );
     painter.dispose();
     return PopupMenuButton<InventorySortOption>(
       tooltip: '排序：${current.label}',
@@ -417,9 +439,12 @@ class _SortSelector extends StatelessWidget {
           children: [
             const Icon(Icons.swap_vert_rounded, size: 18),
             const SizedBox(width: 4),
-            Text(
+            Flexible(
+              child: Text(
               current.label,
-              style: const TextStyle(fontSize: MomoTextSize.caption, fontWeight: FontWeight.w500),
+              style: const TextStyle(fontSize: MomoTextSize.caption, fontWeight: FontWeight.w500,
+                ),
+              ),
             ),
           ],
         ),
@@ -461,9 +486,7 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
       child: Row(
         children: [
           Expanded(
-            child: Card(
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
+            child: MomoGlassCard(
                 onTap: () {
                   if (_actionsVisible) {
                     setState(() => _actionsVisible = false);
@@ -471,17 +494,17 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
                   }
                   context.push('/inventory/${item.id}');
                 },
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Row(
+              padding: const EdgeInsets.all(14),
+              margin: EdgeInsets.zero,
+              child: _InventoryFlowRow(
                     children: [
                       Container(
                         width: 48,
                         height: 48,
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.secondaryContainer,
-                          borderRadius: BorderRadius.circular(12),
+                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(_categoryEmoji(item.category), style: const TextStyle(fontSize: MomoTextSize.page)),
                       ),
@@ -510,49 +533,18 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
                         children: [
                           StatusBadge(status: item.overallExpiryStatus, days: batch?.daysUntilExpiry),
                           const SizedBox(height: 6),
-                          InkWell(
-                            borderRadius: BorderRadius.circular(12),
-                            onTap: canConsume ? () => _showConsumeDialog(context) : null,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: canConsume
-                                    ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.08)
-                                    : Theme.of(context).disabledColor.withValues(alpha: 0.05),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: canConsume
-                                      ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.28)
-                                      : Theme.of(context).disabledColor.withValues(alpha: 0.15),
-                                  width: 0.8,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
+                      MomoCapsuleButton(
+                        onPressed: canConsume ? () => _showConsumeDialog(context) : null,
+                        label: '消耗',
+                        isPrimary: false,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        icon: const Icon(
                                     Icons.remove_circle_outline,
-                                    size: 13,
-                                    color: canConsume ? Theme.of(context).colorScheme.primary : Theme.of(context).disabledColor,
-                                  ),
-                                  const SizedBox(width: 3),
-                                  Text(
-                                    '消耗',
-                                    style: TextStyle(
-                                      fontSize: MomoTextSize.caption,
-                                      fontWeight: FontWeight.w600,
-                                      color: canConsume ? Theme.of(context).colorScheme.primary : Theme.of(context).disabledColor,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                                    size: 18),
                           ),
                         ],
                       ),
                     ],
-                  ),
-                ),
               ),
             ),
           ),
@@ -701,7 +693,7 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
               onPressed: () => Navigator.pop(dialogContext),
               child: const Text('取消'),
             ),
-            FilledButton(
+                    MomoCapsuleButton(
               onPressed: () {
                 final qty = int.tryParse(controller.text.trim());
                 if (qty == null || qty < 1) {
@@ -714,8 +706,8 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
                 }
                 Navigator.pop(dialogContext, qty);
               },
-              child: const Text('确认消耗'),
-            ),
+                      label: '确认消耗',
+                    ),
           ],
         ),
       ),
@@ -835,10 +827,9 @@ class _QuickActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Card(
+    return MomoGlassCard(
       margin: EdgeInsets.zero,
-      color: colorScheme.surfaceContainerHighest,
+      padding: EdgeInsets.zero,
       child: SizedBox(
         width: 156,
         child: Row(
@@ -914,10 +905,10 @@ class _EmptyInventory extends StatelessWidget {
             Text(hasItems ? '没有符合筛选条件的物品' : '箱中空空如也'),
             if (!hasItems && onAdd != null) ...[
               const SizedBox(height: 12),
-              FilledButton.icon(
+          MomoCapsuleButton(
                 onPressed: onAdd,
-                icon: const Icon(Icons.add_box_outlined),
-                label: const Text('开始入库'),
+            label: '开始入库',
+            icon: const Icon(Icons.add_box_outlined),
               ),
             ],
           ],
@@ -939,10 +930,11 @@ class _ErrorState extends StatelessWidget {
             children: [
               Text(message, textAlign: TextAlign.center),
               const SizedBox(height: 12),
-              OutlinedButton.icon(
+          MomoCapsuleButton(
                 onPressed: onRetry,
-                icon: const Icon(Icons.refresh),
-                label: const Text('重试'),
+            label: '重试',
+            isPrimary: false,
+            icon: const Icon(Icons.refresh),
               ),
             ],
           ),
@@ -959,3 +951,26 @@ String _categoryEmoji(String category) => switch (category) {
     };
 
 String _dateText(DateTime date) => '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+class _InventoryFlowRow extends StatelessWidget {
+  const _InventoryFlowRow({required this.children});
+  final List<Widget> children;
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.textScalerOf(context).scale(MomoTextSize.body) <=
+        MomoTextSize.body * 1.5) {
+      return Row(children: children);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children:
+          children.map((child) {
+            if (child is Flexible) return child.child;
+            if (child is SizedBox && child.width != null && child.child == null) {
+              return SizedBox(height: child.width);
+            }
+            return child;
+          }).toList(),
+    );
+  }
+}

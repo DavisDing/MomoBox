@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:uuid/uuid.dart';
 import 'app_feedback.dart';
+import 'momo_glass_components.dart';
 
 import '../../domain/inventory/expiry_rules.dart';
 import '../../domain/models/inventory_models.dart';
@@ -620,7 +621,9 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
         minChildSize: 0.55,
         maxChildSize: 0.96,
         builder: (context, controller) => Material(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          shape: Theme.of(context).bottomSheetTheme.shape,
+          color: Theme.of(context).bottomSheetTheme.backgroundColor,
+          clipBehavior: Clip.antiAlias,
           child: SafeArea(
             top: false,
             child: Form(
@@ -786,58 +789,57 @@ class _MediaDraftSection extends StatelessWidget {
   final ValueChanged<MediaAsset> onDelete;
 
   @override
-  Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('图片与本地识别', style: Theme.of(context).textTheme.titleSmall),
-              const SizedBox(height: 4),
-              const Text('图片压缩后仅保存到本机。OCR 默认在设备本地执行；AI 只读取你确认上传的 OCR 文本。'),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  OutlinedButton.icon(onPressed: onAddInstruction, icon: const Icon(Icons.description_outlined), label: const Text('图片')),
-                  FilledButton.tonalIcon(onPressed: recognizing ? null : onOcr, icon: recognizing ? const SizedBox.square(dimension: 14, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.document_scanner_outlined), label: Text(recognizing ? '识别中…' : 'OCR')),
-                  FilledButton.tonalIcon(onPressed: parsingAi ? null : onAi, icon: parsingAi ? const SizedBox.square(dimension: 14, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.auto_awesome_outlined), label: Text(parsingAi ? '解析中…' : 'AI解析')),
-                ],
-              ),
-              if (loading) const Padding(padding: EdgeInsets.only(top: 10), child: LinearProgressIndicator()),
-              if (assets.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                SizedBox(
-                  height: 104,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: assets.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 8),
-                    itemBuilder: (context, index) {
-                      final asset = assets[index];
-                      return SizedBox(
-                        width: 128,
-                        child: Stack(
-                          children: [
-                            Positioned.fill(
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(10),
-                                child: Image.file(File(asset.localPath), fit: BoxFit.cover, errorBuilder: (_, __, ___) => ColoredBox(color: Theme.of(context).colorScheme.surfaceContainerHighest, child: const Icon(Icons.broken_image_outlined))),
-                              ),
-                            ),
-                            Positioned(left: 4, bottom: 4, child: DecoratedBox(decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)), child: Padding(padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2), child: Text(asset.type.label, style: const TextStyle(color: Colors.white, fontSize: MomoTextSize.caption))))),
-                            Positioned(right: 0, top: 0, child: IconButton(style: IconButton.styleFrom(backgroundColor: Colors.black54, foregroundColor: Colors.white), iconSize: 16, onPressed: () => onDelete(asset), icon: const Icon(Icons.close))),
-                            if (asset.hasOcrText) const Positioned(left: 5, top: 5, child: Icon(Icons.text_snippet, size: 18, color: Colors.white)),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
+  Widget build(BuildContext context) => MomoGlassCard(
+        padding: const EdgeInsets.all(12),
+        frosted: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('图片与本地识别', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 4),
+            const Text('图片压缩后仅保存到本机。OCR 默认在设备本地执行；AI 只读取你确认上传的 OCR 文本。'),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(onPressed: onAddInstruction, icon: const Icon(Icons.description_outlined), label: const Text('图片')),
+                FilledButton.tonalIcon(onPressed: recognizing ? null : onOcr, icon: recognizing ? const SizedBox.square(dimension: 14, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.document_scanner_outlined), label: Text(recognizing ? '识别中…' : 'OCR')),
+                FilledButton.tonalIcon(onPressed: parsingAi ? null : onAi, icon: parsingAi ? const SizedBox.square(dimension: 14, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.auto_awesome_outlined), label: Text(parsingAi ? '解析中…' : 'AI解析')),
               ],
+            ),
+            if (loading) const Padding(padding: EdgeInsets.only(top: 10), child: LinearProgressIndicator()),
+            if (assets.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 104,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: assets.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) {
+                    final asset = assets[index];
+                    return SizedBox(
+                      width: 128,
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: Image.file(File(asset.localPath), fit: BoxFit.cover, errorBuilder: (_, __, ___) => ColoredBox(color: Theme.of(context).colorScheme.surfaceContainerHighest, child: const Icon(Icons.broken_image_outlined))),
+                            ),
+                          ),
+                          Positioned(left: 4, bottom: 4, child: DecoratedBox(decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)), child: Padding(padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2), child: Text(asset.type.label, style: const TextStyle(color: Colors.white, fontSize: MomoTextSize.caption))))),
+                          Positioned(right: 0, top: 0, child: IconButton(style: IconButton.styleFrom(backgroundColor: Colors.black54, foregroundColor: Colors.white), iconSize: 16, onPressed: () => onDelete(asset), icon: const Icon(Icons.close))),
+                          if (asset.hasOcrText) const Positioned(left: 5, top: 5, child: Icon(Icons.text_snippet, size: 18, color: Colors.white)),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
             ],
-          ),
+          ],
         ),
       );
 }
@@ -1034,30 +1036,26 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        title: const Text('扫描商品条码', style: TextStyle(color: Colors.white, fontSize: MomoTextSize.section, fontWeight: FontWeight.w600)),
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        elevation: 0,
+      appBar: MomoGlassAppBar(
+        title: const Text('扫描商品条码'),
         leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.white),
+          icon: const Icon(Icons.close),
           tooltip: '关闭',
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.photo_library_outlined, color: Colors.white),
+            icon: const Icon(Icons.photo_library_outlined),
             tooltip: '从相册选择识别',
             onPressed: _isBusy ? null : () => _scanFromImage(ImageSource.gallery),
           ),
           IconButton(
-            icon: const Icon(Icons.camera_alt_outlined, color: Colors.white),
+            icon: const Icon(Icons.camera_alt_outlined),
             tooltip: '拍照识别条码',
             onPressed: _isBusy ? null : () => _scanFromImage(ImageSource.camera),
           ),
           IconButton(
-            icon: Icon(_torchOn ? Icons.flash_on : Icons.flash_off, color: Colors.white),
+            icon: Icon(_torchOn ? Icons.flash_on : Icons.flash_off),
             tooltip: '开关手电筒',
             onPressed: _isBusy ? null : _toggleTorch,
           ),
@@ -1072,6 +1070,7 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen>
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
+                    const ColoredBox(color: Colors.black),
                     MobileScanner(
                       controller: _controller,
                       onDetect: null,
@@ -1081,69 +1080,57 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen>
                         final statusText = errorDetails == null || errorDetails.isEmpty
                             ? '状态：$errorName\n实时预览未能启动。请点击下方“重试启动”；如仍失败，可使用“拍照识别”继续完成入库。'
                             : '状态：$errorName\n$errorDetails\n可点击下方“重试启动”；如仍失败，可使用“拍照识别”继续完成入库。';
-                        return Center(
-                          child: SingleChildScrollView(
-                            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.videocam_off_outlined, color: Colors.white70, size: 48),
-                                const SizedBox(height: 14),
-                                const Text(
-                                  '无法访问实时摄像头',
-                                  style: TextStyle(color: Colors.white, fontSize: MomoTextSize.section, fontWeight: FontWeight.bold),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  statusText,
-                                  style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: MomoTextSize.body, height: 1.4),
-                                  textAlign: TextAlign.center,
-                                ),
-                                const SizedBox(height: 20),
-                                Wrap(
-                                  spacing: 10,
-                                  runSpacing: 10,
-                                  alignment: WrapAlignment.center,
-                                  children: [
-                                    FilledButton.icon(
-                                      style: FilledButton.styleFrom(
-                                        backgroundColor: theme.colorScheme.primary,
-                                        foregroundColor: Colors.white,
-                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        return ColoredBox(
+                          color: theme.colorScheme.surface,
+                          child: Center(
+                            child: SingleChildScrollView(
+                              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.videocam_off_outlined, color: theme.colorScheme.onSurfaceVariant, size: 48),
+                                  const SizedBox(height: 14),
+                                  Text(
+                                    '无法访问实时摄像头',
+                                    style: TextStyle(color: theme.colorScheme.onSurface, fontSize: MomoTextSize.section, fontWeight: FontWeight.bold),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    statusText,
+                                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: MomoTextSize.body, height: 1.4),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 20),
+                                  Wrap(
+                                    spacing: 10,
+                                    runSpacing: 10,
+                                    alignment: WrapAlignment.center,
+                                    children: [
+                                      FilledButton.icon(
+                                        onPressed: _isBusy ? null : _retryCamera,
+                                        icon: const Icon(Icons.refresh, size: 18),
+                                        label: const Text('重试开启'),
                                       ),
-                                      onPressed: _isBusy ? null : _retryCamera,
-                                      icon: const Icon(Icons.refresh, size: 18),
-                                      label: const Text('重试开启'),
-                                    ),
-                                    FilledButton.tonalIcon(
-                                      style: FilledButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                      FilledButton.tonalIcon(
+                                        onPressed: _isBusy ? null : () => _scanFromImage(ImageSource.camera),
+                                        icon: const Icon(Icons.camera_alt, size: 18),
+                                        label: const Text('拍照识别'),
                                       ),
-                                      onPressed: _isBusy ? null : () => _scanFromImage(ImageSource.camera),
-                                      icon: const Icon(Icons.camera_alt, size: 18),
-                                      label: const Text('拍照识别'),
-                                    ),
-                                    FilledButton.tonalIcon(
-                                      style: FilledButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                      FilledButton.tonalIcon(
+                                        onPressed: _isBusy ? null : () => _scanFromImage(ImageSource.gallery),
+                                        icon: const Icon(Icons.photo_library, size: 18),
+                                        label: const Text('相册识别'),
                                       ),
-                                      onPressed: _isBusy ? null : () => _scanFromImage(ImageSource.gallery),
-                                      icon: const Icon(Icons.photo_library, size: 18),
-                                      label: const Text('相册识别'),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                TextButton.icon(
-                                  style: TextButton.styleFrom(foregroundColor: Colors.white70),
-                                  onPressed: () => Navigator.of(context).pop(),
-                                  icon: const Icon(Icons.edit_note, size: 18),
-                                  label: const Text('返回手动填写'),
-                                ),
-                              ],
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  TextButton.icon(
+                                    onPressed: () => Navigator.of(context).pop(),
+                                    icon: const Icon(Icons.edit_note, size: 18),
+                                    label: const Text('返回手动填写'),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         );
@@ -1190,52 +1177,30 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen>
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
-              child: Row(
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-                      ),
-                      child: const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.center_focus_strong, color: Colors.white70, size: 16),
-                          SizedBox(width: 6),
-                          Text(
-                            '对准条码自动识别',
-                            style: TextStyle(color: Colors.white, fontSize: MomoTextSize.caption),
-                          ),
-                        ],
-                      ),
+                  MomoGlassCard(
+                    margin: EdgeInsets.zero,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.center_focus_strong, color: theme.colorScheme.onSurfaceVariant, size: 16),
+                        const SizedBox(width: 6),
+                        const Flexible(
+                          child: Text('对准条码自动识别', style: TextStyle(fontSize: MomoTextSize.caption)),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  InkWell(
-                    borderRadius: BorderRadius.circular(16),
-                    onTap: _isBusy ? null : () => _scanFromImage(ImageSource.camera),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.camera_alt, color: Colors.white70, size: 16),
-                          SizedBox(width: 6),
-                          Text(
-                            '拍照识别',
-                            style: TextStyle(color: Colors.white, fontSize: MomoTextSize.caption),
-                          ),
-                        ],
-                      ),
-                    ),
+                  OutlinedButton.icon(
+                    onPressed: _isBusy ? null : () => _scanFromImage(ImageSource.camera),
+                    icon: const Icon(Icons.camera_alt, size: 16),
+                    label: const Text('拍照识别'),
                   ),
                 ],
               ),

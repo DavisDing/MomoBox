@@ -137,7 +137,7 @@ class AiDraftService {
         ? null
         : await secureSettings.readAiApiKeyForProfile(activeProfileId);
     final primaryApiKey = profileKey ?? await secureSettings.readAiApiKey();
-    final primaryType = (await settings.getValue(endpointTypeKey)) ?? 'auto';
+    final primaryType = AiClientHelper.normalizeEndpointType(await settings.getValue(endpointTypeKey));
 
     if (primaryEndpoint != null && primaryModel != null && primaryApiKey != null) {
       configs.add(
@@ -161,7 +161,7 @@ class AiDraftService {
     final secApiKey = await secureSettings.readAiApiKeyForProfile(
       secondaryProfileId?.isNotEmpty == true ? secondaryProfileId! : 'secondary_profile',
     );
-    final secType = (await settings.getValue(secondaryTypeKey)) ?? 'auto';
+    final secType = AiClientHelper.normalizeEndpointType(await settings.getValue(secondaryTypeKey));
     if (secEndpoint != null && secModel != null && secApiKey != null) {
       configs.add(
         AiEndpointConfig(
@@ -184,7 +184,7 @@ class AiDraftService {
     final fallbackApiKey = await secureSettings.readAiApiKeyForProfile(
       fallbackProfileId?.isNotEmpty == true ? fallbackProfileId! : 'fallback_profile',
     );
-    final fallbackType = (await settings.getValue(fallbackTypeKey)) ?? 'auto';
+    final fallbackType = AiClientHelper.normalizeEndpointType(await settings.getValue(fallbackTypeKey));
     if (fallbackEndpoint != null && fallbackModel != null && fallbackApiKey != null) {
       configs.add(
         AiEndpointConfig(

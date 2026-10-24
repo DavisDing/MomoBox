@@ -13,6 +13,8 @@ import '../../domain/models/nas_sync_models.dart';
 import '../../domain/models/sync_models.dart';
 import '../controllers/nas_account_controller.dart';
 import '../controllers/providers.dart';
+import '../widgets/momo_glass_components.dart';
+import '../widgets/momo_floating_dock.dart';
 import '../widgets/initial_import_card.dart';
 
 /// Sync controls intentionally remain explicit: the user must choose a
@@ -57,9 +59,9 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           ]);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('同步设置')),
+      appBar: MomoGlassAppBar(title: const Text('同步设置')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+        padding: EdgeInsets.fromLTRB(16, 12, 16, 32 + MomoDockInsets.bottomOf(context)),
         children: [
           _buildOverviewCard(context, account, engine, state),
           const SizedBox(height: 12),
@@ -91,85 +93,83 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     final enabled = engine != null;
     final workspaceAccess = ref.watch(syncWorkspaceAccessProvider);
     final access = workspaceAccess.asData?.value;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.sync_outlined),
-                const SizedBox(width: 10),
-                Text('NAS 双向同步', style: Theme.of(context).textTheme.titleMedium),
-                const Spacer(),
-                Chip(
-                  label: Text(enabled ? _statusLabel(state?.bootstrapStatus) : '未就绪'),
-                  avatar: Icon(enabled ? Icons.cloud_done_outlined : Icons.cloud_off_outlined, size: 18),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              enabled
-                  ? '同步只在已登录、已加入家庭并注册当前设备后启用。'
-                  : '请先在 NAS 协同管理中完成地址、登录、家庭和设备配置。',
-            ),
-            if (familyId != null) ...[
-              const SizedBox(height: 8),
-              Text('同步范围：$familyId', style: Theme.of(context).textTheme.bodySmall),
-              if (family != null) ...[
-                const SizedBox(height: 4),
-                Text('家庭时区：${family.timeZone} · 到期日当天仍有效',
-                  style: Theme.of(context).textTheme.bodySmall),
-              ],
-            ],
-            if (workspace != null) ...[
-              const SizedBox(height: 4),
-              Text('本地工作区：$workspace', style: Theme.of(context).textTheme.bodySmall),
-            ],
-            if (workspaceAccess.hasError || access?.message != null) ...[
-              const SizedBox(height: 8),
-              Text(workspaceAccess.hasError
-                  ? '读取本机数据归属失败，同步已暂停；请保留数据后重试。'
-                  : access!.message!),
-            ],
-            if (access?.owner != null) ...[
-              const SizedBox(height: 4),
-              Text('本机数据所属家庭：${access!.owner!.familyId}', style: Theme.of(context).textTheme.bodySmall),
-            ],
-            if (access?.canBind == true) ...[
-              const SizedBox(height: 8),
-              OutlinedButton(
-                onPressed: _working || _importWorking ? null : _bindWorkspace,
-                child: const Text('确认本机数据归属'),
+    return MomoGlassCard(
+      frosted: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.sync_outlined),
+              const SizedBox(width: 10),
+              Text('NAS 双向同步', style: Theme.of(context).textTheme.titleMedium),
+              const Spacer(),
+              Chip(
+                label: Text(enabled ? _statusLabel(state?.bootstrapStatus) : '未就绪'),
+                avatar: Icon(enabled ? Icons.cloud_done_outlined : Icons.cloud_off_outlined, size: 18),
               ),
             ],
-            if (state?.lastSuccessAt != null) ...[
-              const SizedBox(height: 8),
-              Text('最近成功：${_formatDate(state!.lastSuccessAt!)}'),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            enabled
+                ? '同步只在已登录、已加入家庭并注册当前设备后启用。'
+                : '请先在 NAS 协同管理中完成地址、登录、家庭和设备配置。',
+          ),
+          if (familyId != null) ...[
+            const SizedBox(height: 8),
+            Text('同步范围：$familyId', style: Theme.of(context).textTheme.bodySmall),
+            if (family != null) ...[
+              const SizedBox(height: 4),
+              Text('家庭时区：${family.timeZone} · 到期日当天仍有效',
+                style: Theme.of(context).textTheme.bodySmall),
             ],
-            if (state?.lastErrorMessage != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                '最近错误：${state!.lastErrorMessage}',
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ],
-            if (_message != null) ...[
-              const SizedBox(height: 8),
-              Text(_message!, style: TextStyle(color: Theme.of(context).colorScheme.primary)),
-            ],
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              onPressed: !enabled || _working || _importWorking ? null : () => _runSync(engine),
-              icon: _working
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.sync),
-              label: const Text('立即同步'),
+          ],
+          if (workspace != null) ...[
+            const SizedBox(height: 4),
+            Text('本地工作区：$workspace', style: Theme.of(context).textTheme.bodySmall),
+          ],
+          if (workspaceAccess.hasError || access?.message != null) ...[
+            const SizedBox(height: 8),
+            Text(workspaceAccess.hasError
+                ? '读取本机数据归属失败，同步已暂停；请保留数据后重试。'
+                : access!.message!),
+          ],
+          if (access?.owner != null) ...[
+            const SizedBox(height: 4),
+            Text('本机数据所属家庭：${access!.owner!.familyId}', style: Theme.of(context).textTheme.bodySmall),
+          ],
+          if (access?.canBind == true) ...[
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: _working || _importWorking ? null : _bindWorkspace,
+              child: const Text('确认本机数据归属'),
             ),
           ],
-        ),
+          if (state?.lastSuccessAt != null) ...[
+            const SizedBox(height: 8),
+            Text('最近成功：${_formatDate(state!.lastSuccessAt!)}'),
+          ],
+          if (state?.lastErrorMessage != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              '最近错误：${state!.lastErrorMessage}',
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+          if (_message != null) ...[
+            const SizedBox(height: 8),
+            Text(_message!, style: TextStyle(color: Theme.of(context).colorScheme.primary)),
+          ],
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: !enabled || _working || _importWorking ? null : () => _runSync(engine),
+            icon: _working
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.sync),
+            label: const Text('立即同步'),
+          ),
+        ],
       ),
     );
   }

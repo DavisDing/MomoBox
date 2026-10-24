@@ -2,9 +2,10 @@ import '../../app/momo_typography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../app/momo_theme.dart';
 import '../../domain/models/ai_usage_models.dart';
 import '../controllers/providers.dart';
+import '../widgets/momo_glass_components.dart';
+import '../widgets/momo_floating_dock.dart';
 
 class AiUsageScreen extends ConsumerStatefulWidget {
   const AiUsageScreen({super.key});
@@ -20,7 +21,7 @@ class _AiUsageScreenState extends ConsumerState<AiUsageScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
+    final scheme = Theme.of(context).colorScheme;
     final usageLogs = ref.watch(aiUsageLogsProvider).valueOrNull ?? const <AiUsageRecord>[];
     final filteredLogs = _filterLogs(usageLogs, _selectedFilterIndex);
     final pageCount = (filteredLogs.length / _pageSize).ceil().clamp(1, 1000000);
@@ -29,7 +30,7 @@ class _AiUsageScreenState extends ConsumerState<AiUsageScreen> {
     final summary = AiUsageSummary.aggregate(filteredLogs);
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: MomoGlassAppBar(
         title: const Text('AI 用量统计与日志'),
         actions: [
           if (usageLogs.isNotEmpty)
@@ -45,7 +46,7 @@ class _AiUsageScreenState extends ConsumerState<AiUsageScreen> {
                       TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
                       TextButton(
                         onPressed: () => Navigator.pop(ctx, true),
-                        child: const Text('清空', style: TextStyle(color: Colors.red)),
+                        child: Text('清空', style: TextStyle(color: scheme.error)),
                       ),
                     ],
                   ),
@@ -58,64 +59,62 @@ class _AiUsageScreenState extends ConsumerState<AiUsageScreen> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
         children: [
           // 时间段切换 Tab
-          SegmentedButton<int>(
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment(value: 0, label: Text('当日')),
-              ButtonSegment(value: 1, label: Text('近7天')),
-              ButtonSegment(value: 2, label: Text('近30天')),
-              ButtonSegment(value: 3, label: Text('全部')),
-            ],
-            selected: {_selectedFilterIndex},
-            onSelectionChanged: (set) {
-              setState(() {
-                _selectedFilterIndex = set.first;
-                _page = 0;
-              });
-            },
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SegmentedButton<int>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: 0, label: Text('当日')),
+                ButtonSegment(value: 1, label: Text('近7天')),
+                ButtonSegment(value: 2, label: Text('近30天')),
+                ButtonSegment(value: 3, label: Text('全部')),
+              ],
+              selected: {_selectedFilterIndex},
+              onSelectionChanged: (set) {
+                setState(() {
+                  _selectedFilterIndex = set.first;
+                  _page = 0;
+                });
+              },
+            ),
           ),
           const SizedBox(height: 16),
 
           // 核心汇总数据卡片
-          Card(
-            color: palette.primary.withValues(alpha: 0.08),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(color: palette.primary.withValues(alpha: 0.2)),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Token 消耗概览', style: TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.title)),
-                      Text('${summary.requestCount} 次调用', style: TextStyle(color: palette.primary, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      _buildStatMetric('总 Token', summary.totalTokens.toString(), palette.primary),
-                      _buildStatMetric('输入 Token', summary.promptTokens.toString(), Colors.blueGrey),
-                      _buildStatMetric('输出 Token', summary.completionTokens.toString(), Colors.indigo),
-                    ],
-                  ),
-                  const Divider(height: 24),
-                  Row(
-                    children: [
-                      _buildStatMetric('缓存读取', summary.cachedReadTokens.toString(), Colors.teal),
-                      _buildStatMetric('缓存写入', summary.cachedWriteTokens.toString(), Colors.amber.shade800),
-                      _buildStatMetric('缓存占比', '${(summary.cacheRatio * 100).toStringAsFixed(1)}%', Colors.purple),
-                    ],
-                  ),
-                ],
-              ),
+          MomoGlassCard(
+            frosted: false,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 16,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    const Text('Token 消耗概览', style: TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.title)),
+                    Text('${summary.requestCount} 次调用', style: TextStyle(color: scheme.primary, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    _buildStatMetric('总 Token', summary.totalTokens.toString(), scheme.primary),
+                    _buildStatMetric('输入 Token', summary.promptTokens.toString(), scheme.onSurface),
+                    _buildStatMetric('输出 Token', summary.completionTokens.toString(), scheme.onSurface),
+                  ],
+                ),
+                const Divider(height: 24),
+                Row(
+                  children: [
+                    _buildStatMetric('缓存读取', summary.cachedReadTokens.toString(), scheme.onSurface),
+                    _buildStatMetric('缓存写入', summary.cachedWriteTokens.toString(), scheme.onSurface),
+                    _buildStatMetric('缓存占比', '${(summary.cacheRatio * 100).toStringAsFixed(1)}%', scheme.onSurface),
+                  ],
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 20),
@@ -149,16 +148,16 @@ class _AiUsageScreenState extends ConsumerState<AiUsageScreen> {
                 child: Center(
                   child: Column(
                     children: [
-                      Icon(Icons.query_builder, size: 48, color: Colors.grey.shade400),
+                      Icon(Icons.query_builder, size: 48, color: scheme.onSurfaceVariant),
                       const SizedBox(height: 8),
-                      const Text('该时间段内暂无 AI 调用记录', style: TextStyle(color: Colors.grey)),
+                      Text('该时间段内暂无 AI 调用记录', style: TextStyle(color: scheme.onSurfaceVariant)),
                     ],
                   ),
                 ),
               ),
             )
           else
-            ...pageLogs.map((log) => _buildLogCard(log, palette)),
+            ...pageLogs.map((log) => _buildLogCard(log, scheme)),
 
         ],
       ),
@@ -170,7 +169,7 @@ class _AiUsageScreenState extends ConsumerState<AiUsageScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey)),
+          Text(title, style: TextStyle(fontSize: MomoTextSize.caption, color: Theme.of(context).colorScheme.onSurfaceVariant)),
           const SizedBox(height: 4),
           Text(
             value,
@@ -181,62 +180,62 @@ class _AiUsageScreenState extends ConsumerState<AiUsageScreen> {
     );
   }
 
-  Widget _buildLogCard(AiUsageRecord log, MomoPalette palette) {
+  Widget _buildLogCard(AiUsageRecord log, ColorScheme scheme) {
     final timeStr = '${log.timestamp.month.toString().padLeft(2, '0')}-${log.timestamp.day.toString().padLeft(2, '0')} ${log.timestamp.hour.toString().padLeft(2, '0')}:${log.timestamp.minute.toString().padLeft(2, '0')}:${log.timestamp.second.toString().padLeft(2, '0')}';
     final isQa = log.purpose == 'qa';
 
-    return Card(
+    return MomoGlassCard(
       key: ValueKey('ai-log-${log.id}'),
       margin: const EdgeInsets.only(bottom: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: (isQa ? Colors.purple : Colors.blue).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    isQa ? 'AI问答' : 'OCR草稿',
-                    style: TextStyle(
-                      fontSize: MomoTextSize.caption,
-                      fontWeight: FontWeight.bold,
-                      color: isQa ? Colors.purple : Colors.blue.shade800,
-                    ),
+      padding: const EdgeInsets.all(12),
+      frosted: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: scheme.onSurface.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  isQa ? 'AI问答' : 'OCR草稿',
+                  style: TextStyle(
+                    fontSize: MomoTextSize.caption,
+                    fontWeight: FontWeight.bold,
+                    color: scheme.onSurface,
                   ),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    log.model,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.body),
-                    overflow: TextOverflow.ellipsis,
-                  ),
+              ),
+              Text(
+                  log.model,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.body),
+                  overflow: TextOverflow.ellipsis,
                 ),
-                Text(timeStr, style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey)),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text('${log.status == 'failure' ? '失败' : '成功'} · ${log.endpointType} · '
-                '${log.providerLevel ?? 'primary'} · ${log.elapsedMs} ms'),
-            if (log.status == 'failure')
-              Text(log.failureReason ?? '请求失败', style: const TextStyle(color: Colors.red)),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('总消耗: ${log.effectiveTotal}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.body)),
-                Text('输入: ${log.promptTokens} / 输出: ${log.completionTokens}', style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey)),
-                if (log.cachedReadTokens > 0)
-                  Text('缓存读取: ${log.cachedReadTokens}', style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.teal)),
-              ],
-            ),
-          ],
-        ),
+              Text(timeStr, style: TextStyle(fontSize: MomoTextSize.caption, color: scheme.onSurfaceVariant)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text('${log.status == 'failure' ? '失败' : '成功'} · ${log.endpointType} · '
+              '${log.providerLevel ?? 'primary'} · ${log.elapsedMs} ms'),
+          if (log.status == 'failure')
+            Text(log.failureReason ?? '请求失败', style: TextStyle(color: scheme.error)),
+          Wrap(
+            spacing: 12,
+            runSpacing: 4,
+            children: [
+              Text('总消耗: ${log.effectiveTotal}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.body)),
+              Text('输入: ${log.promptTokens} / 输出: ${log.completionTokens}', style: TextStyle(fontSize: MomoTextSize.caption, color: scheme.onSurfaceVariant)),
+              if (log.cachedReadTokens > 0)
+                Text('缓存读取: ${log.cachedReadTokens}', style: TextStyle(fontSize: MomoTextSize.caption, color: scheme.onSurfaceVariant)),
+            ],
+          ),
+        ],
       ),
     );
   }

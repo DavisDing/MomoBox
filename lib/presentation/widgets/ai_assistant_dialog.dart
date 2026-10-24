@@ -8,6 +8,7 @@ import '../screens/shopping_screen.dart';
 import '../screens/statistics_screen.dart';
 import '../screens/sync_settings_screen.dart';
 import 'intake_sheet.dart';
+import 'momo_glass_components.dart';
 import '../../application/ai_inventory_action_service.dart';
 import '../../application/ai_conversation_store.dart';
 
@@ -340,226 +341,219 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
     ref.watch(aiInventoryPermissionProvider);
     final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
-    return Container(
+    return SizedBox(
       height: (MediaQuery.sizeOf(context).height - MediaQuery.viewInsetsOf(context).bottom) * 0.92,
-      decoration: BoxDecoration(
-        color: theme.scaffoldBackgroundColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        boxShadow: const [
-          BoxShadow(
-            color: Colors.black26,
-            blurRadius: 20,
-            offset: Offset(0, -6),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          // 顶部标题栏
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-              border: Border(
-                bottom: BorderSide(
-                  color: (isDark ? Colors.white.withValues(alpha: 0.08) : palette.primary.withValues(alpha: 0.1)),
+      child: MomoGlassCard(
+        frosted: true,
+        margin: EdgeInsets.zero,
+        padding: EdgeInsets.zero,
+        child: SafeArea(
+          top: false,
+          child: Column(
+            children: [
+              // 顶部标题栏
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                  border: Border(
+                    bottom: BorderSide(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
+                    ),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: palette.primary.withValues(alpha: 0.18),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(palette.mascot, style: const TextStyle(fontSize: 22)),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(palette.mascotName, style: theme.textTheme.titleMedium),
+                          const SizedBox(height: 2),
+                          const Text(
+                            '操作前由你确认',
+                            style: TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: '新建会话',
+                      icon: const Icon(Icons.add_comment_outlined, size: 20),
+                      onPressed: _createNewSession,
+                    ),
+                    IconButton(
+                      tooltip: '历史会话',
+                      icon: const Icon(Icons.history_rounded, size: 20),
+                      onPressed: () => _showHistorySessionsSheet(context, palette),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ],
                 ),
               ),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: palette.primary.withValues(alpha: 0.18),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Text(palette.mascot, style: const TextStyle(fontSize: 22)),
+
+              if (_store.storageError != null)
+                ListTile(
+                  title: Text(_store.storageError!, style: const TextStyle(color: Colors.red)),
+                  trailing: Wrap(children: [TextButton(onPressed: () async {
+                    if (_store.ready) {
+                      try { await _store.save(); } catch (_) { /* visible in store */ }
+                    } else {
+                      await _store.load();
+                    }
+                  }, child: const Text('重试')),
+                    if (_store.canRecoverArchive)
+                      TextButton(onPressed: _recoverConversationArchive,
+                        child: const Text('重建会话')),
+                  ]),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+              if (_store.isRecoveringArchive) const LinearProgressIndicator(),
+              // 快捷提问意图胶囊
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  children: [
+                    _buildQuickChip('📦 入库两盒牛奶', palette),
+                    const SizedBox(width: 8),
+                    _buildQuickChip('📺 打开电视', palette),
+                    const SizedBox(width: 8),
+                    _buildQuickChip('❄️ 空调调到 25 度', palette),
+                    const SizedBox(width: 8),
+                    _buildQuickChip('🧴 还有多少洗衣液？', palette),
+                    const SizedBox(width: 8),
+                    _buildQuickChip('🛒 采购三包纸巾', palette),
+                  ],
+                ),
+              ),
+
+              // 对话列表
+              Expanded(
+                child: ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _messages.length + (_currentPlan != null ? 1 : 0),
+                  itemBuilder: (context, index) {
+                    if (index < _messages.length) {
+                      final msg = _messages[index];
+                      final isUser = msg.role == 'user';
+                      return Align(
+                        alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.82),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: isUser ? theme.colorScheme.surfaceContainerHighest : theme.colorScheme.surface,
+                            borderRadius: BorderRadius.only(
+                              topLeft: const Radius.circular(16),
+                              topRight: const Radius.circular(16),
+                              bottomLeft: Radius.circular(isUser ? 16 : 4),
+                              bottomRight: Radius.circular(isUser ? 4 : 16),
+                            ),
+                            border: isUser
+                                ? null
+                                : Border.all(
+                                    color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
+                                  ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [SelectableText(
+                            isUser ? msg.content : AiInventoryAction.displayText(msg.content),
+                            style: TextStyle(
+                              color: theme.colorScheme.onSurface,
+                              fontSize: MomoTextSize.body,
+                              height: 1.4,
+                            ),
+                          ),
+                          if (!isUser && AiInventoryAction.parse(msg.content) != null)
+                            TextButton(
+                              onPressed: _store.actionReceipts.containsKey(msg.id) ||
+                                  !(ref.watch(aiInventoryPermissionProvider).valueOrNull ?? false)
+                                  ? null : () => _confirmInventoryAction(msg),
+                              child: Text(_store.actionReceipts[msg.id] ?? '查看并确认操作'),
+                            ),
+                          ],),
+                        ),
+                      );
+                    } else {
+                      // 渲染混合任务确认卡片
+                      return _buildPlanConfirmCard(palette);
+                    }
+                  },
+                ),
+              ),
+
+              if (_isLoading && _store.storageError == null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(palette.mascotName, style: theme.textTheme.titleMedium),
-                      const SizedBox(height: 2),
-                      const Text(
-                        '操作前由你确认',
-                        style: TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey),
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: palette.primary),
                       ),
+                      const SizedBox(width: 8),
+                      Text('${palette.mascotName} 正在规划执行方案...', style: const TextStyle(fontSize: MomoTextSize.caption)),
                     ],
                   ),
                 ),
-                IconButton(
-                  tooltip: '新建会话',
-                  icon: const Icon(Icons.add_comment_outlined, size: 20),
-                  onPressed: _createNewSession,
-                ),
-                IconButton(
-                  tooltip: '历史会话',
-                  icon: const Icon(Icons.history_rounded, size: 20),
-                  onPressed: () => _showHistorySessionsSheet(context, palette),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close_rounded),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
-          ),
 
-          if (_store.storageError != null)
-            ListTile(
-              title: Text(_store.storageError!, style: const TextStyle(color: Colors.red)),
-              trailing: Wrap(children: [TextButton(onPressed: () async {
-                if (_store.ready) {
-                  try { await _store.save(); } catch (_) { /* visible in store */ }
-                } else {
-                  await _store.load();
-                }
-              }, child: const Text('重试')),
-                if (_store.canRecoverArchive)
-                  TextButton(onPressed: _recoverConversationArchive,
-                    child: const Text('重建会话')),
-              ]),
-            ),
-          if (_store.isRecoveringArchive) const LinearProgressIndicator(),
-          // 快捷提问意图胶囊
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              children: [
-                _buildQuickChip('📦 入库两盒牛奶', palette),
-                const SizedBox(width: 8),
-                _buildQuickChip('📺 打开电视', palette),
-                const SizedBox(width: 8),
-                _buildQuickChip('❄️ 空调调到 25 度', palette),
-                const SizedBox(width: 8),
-                _buildQuickChip('🧴 还有多少洗衣液？', palette),
-                const SizedBox(width: 8),
-                _buildQuickChip('🛒 采购三包纸巾', palette),
-              ],
-            ),
-          ),
-
-          // 对话列表
-          Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.all(16),
-              itemCount: _messages.length + (_currentPlan != null ? 1 : 0),
-              itemBuilder: (context, index) {
-                if (index < _messages.length) {
-                  final msg = _messages[index];
-                  final isUser = msg.role == 'user';
-                  return Align(
-                    alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.82),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: isUser ? palette.primary : theme.colorScheme.surface,
-                        borderRadius: BorderRadius.only(
-                          topLeft: const Radius.circular(16),
-                          topRight: const Radius.circular(16),
-                          bottomLeft: Radius.circular(isUser ? 16 : 4),
-                          bottomRight: Radius.circular(isUser ? 4 : 16),
-                        ),
-                        border: isUser
-                            ? null
-                            : Border.all(
-                                color: (isDark
-                                    ? Colors.white.withValues(alpha: 0.08)
-                                    : palette.primary.withValues(alpha: 0.12)),
-                              ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [SelectableText(
-                        isUser ? msg.content : AiInventoryAction.displayText(msg.content),
-                        style: TextStyle(
-                          color: isUser ? Colors.white : theme.textTheme.bodyMedium?.color,
-                          fontSize: MomoTextSize.body,
-                          height: 1.4,
-                        ),
-                      ),
-                      if (!isUser && AiInventoryAction.parse(msg.content) != null)
-                        TextButton(
-                          onPressed: _store.actionReceipts.containsKey(msg.id) ||
-                              !(ref.watch(aiInventoryPermissionProvider).valueOrNull ?? false)
-                              ? null : () => _confirmInventoryAction(msg),
-                          child: Text(_store.actionReceipts[msg.id] ?? '查看并确认操作'),
-                        ),
-                      ],),
+              // 底部输入栏
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  border: Border(
+                    top: BorderSide(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
                     ),
-                  );
-                } else {
-                  // 渲染混合任务确认卡片
-                  return _buildPlanConfirmCard(palette);
-                }
-              },
-            ),
-          ),
-
-          if (_isLoading && _store.storageError == null)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: palette.primary),
-                  ),
-                  const SizedBox(width: 8),
-                  Text('${palette.mascotName} 正在规划执行方案...', style: const TextStyle(fontSize: MomoTextSize.caption)),
-                ],
-              ),
-            ),
-
-          // 底部输入栏
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              border: Border(
-                top: BorderSide(
-                  color: (isDark ? Colors.white.withValues(alpha: 0.08) : palette.primary.withValues(alpha: 0.1)),
-                ),
-              ),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _textController,
-                    decoration: InputDecoration(
-                      hintText: '查询、入库、采购或控制设备…',
-                      hintStyle: const TextStyle(fontSize: MomoTextSize.body),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      isDense: true,
-                    ),
-                    minLines: 1,
-                    maxLines: 3,
-                    onSubmitted: (_) => _sendMessage(),
                   ),
                 ),
-                const SizedBox(width: 8),
-                IconButton.filled(
-                  icon: const Icon(Icons.send_rounded, size: 20),
-                  style: IconButton.styleFrom(backgroundColor: palette.primary),
-                  onPressed: _isLoading ? null : () => _sendMessage(),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _textController,
+                        decoration: InputDecoration(
+                          hintText: '查询、入库、采购或控制设备…',
+                          hintStyle: const TextStyle(fontSize: MomoTextSize.body),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          isDense: true,
+                        ),
+                        minLines: 1,
+                        maxLines: 3,
+                        onSubmitted: (_) => _sendMessage(),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton.filled(
+                      icon: const Icon(Icons.send_rounded, size: 20),
+                      onPressed: _isLoading ? null : () => _sendMessage(),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -567,9 +561,6 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
   Widget _buildQuickChip(String label, MomoPalette palette) {
     return ActionChip(
       label: Text(label, style: const TextStyle(fontSize: MomoTextSize.caption)),
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      side: BorderSide(color: palette.primary.withValues(alpha: 0.2)),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       onPressed: _isLoading ? null : () => _sendMessage(label.replaceAll(RegExp(r'^[^\s]+\s+'), '')),
     );
   }
@@ -578,28 +569,11 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
     final plan = _currentPlan;
     if (plan == null) return const SizedBox.shrink();
 
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     final isProposed = plan.status == AiPlanStatus.proposed;
 
-    return Container(
+    return MomoGlassCard(
       margin: const EdgeInsets.symmetric(vertical: 8),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: (isDark ? const Color(0xFF1E293B) : palette.surface),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isProposed ? palette.primary : Colors.grey.withValues(alpha: 0.3),
-          width: isProposed ? 1.5 : 1.0,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: palette.primary.withValues(alpha: 0.08),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+      frosted: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -672,16 +646,16 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
           }),
           if (isProposed) ...[
             const SizedBox(height: 14),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 12,
+              runSpacing: 8,
               children: [
                 OutlinedButton(
                   onPressed: _cancelPlan,
                   child: const Text('取消'),
                 ),
-                const SizedBox(width: 12),
                 FilledButton.icon(
-                  style: FilledButton.styleFrom(backgroundColor: palette.primary),
                   onPressed: _confirmPlan,
                   icon: const Icon(Icons.check_rounded, size: 18),
                   label: const Text('确认执行计划'),
@@ -696,15 +670,11 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
 
   void _showHistorySessionsSheet(BuildContext context, MomoPalette palette) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+      useSafeArea: true,
       builder: (sheetCtx) {
         return StatefulBuilder(
           builder: (ctx, setSheetState) {
@@ -732,17 +702,13 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                     children: [
                       const Icon(Icons.history_rounded, size: 20),
                       const SizedBox(width: 8),
-                      Text(
-                        '对话历史与会话列表',
-                        style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-                      ),
-                      const Spacer(),
-                      FilledButton.tonalIcon(
-                        style: FilledButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      Expanded(
+                        child: Text(
+                          '对话历史与会话列表',
+                          style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
                         ),
+                      ),
+                      FilledButton.tonalIcon(
                         onPressed: () {
                           Navigator.of(sheetCtx).pop();
                           _createNewSession();
@@ -768,7 +734,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                         return Material(
                           color: isCurrent
                               ? palette.primary.withValues(alpha: 0.12)
-                              : (isDark ? Colors.white.withValues(alpha: 0.04) : Colors.black.withValues(alpha: 0.02)),
+                              : theme.colorScheme.surface,
                           borderRadius: BorderRadius.circular(14),
                           child: InkWell(
                             borderRadius: BorderRadius.circular(14),

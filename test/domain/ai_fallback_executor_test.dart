@@ -6,6 +6,37 @@ import 'package:http/testing.dart';
 import 'package:momo_box/application/ai_fallback_executor.dart';
 
 void main() {
+  for (final protocol in ['auto', 'chat', 'responses']) {
+    test('协议 $protocol 只在自动适配时从 Chat 404 切换到 Responses', () async {
+      final paths = <String>[];
+      final executor = AiFallbackExecutor(client: MockClient((request) async {
+        paths.add(request.url.path);
+        if (request.url.path.endsWith('/chat/completions')) {
+          return http.Response('unsupported path', 404);
+        }
+        return http.Response(jsonEncode({'output_text': 'OK'}), 200);
+      }));
+      addTearDown(executor.close);
+      final config = AiEndpointConfig(
+        level: AiApiLevel.primary,
+        endpoint: 'https://protocol.example/v1',
+        model: 'test-model',
+        apiKey: 'offline-test-key',
+        endpointType: protocol,
+      );
+      final result = executor.execute(configs: [config], systemPrompt: 'test', userPrompt: 'OK');
+      if (protocol == 'chat') {
+        await expectLater(result, throwsA(isA<AiFallbackException>()));
+        expect(paths, ['/v1/chat/completions']);
+      } else {
+        final response = await result;
+        expect(response.actualProtocol, 'responses');
+        expect(paths, protocol == 'auto'
+            ? ['/v1/chat/completions', '/v1/responses'] : ['/v1/responses']);
+      }
+    });
+  }
+
   group('AiFallbackExecutor Tests', () {
     const primaryConfig = AiEndpointConfig(
       level: AiApiLevel.primary,

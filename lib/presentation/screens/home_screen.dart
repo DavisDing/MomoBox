@@ -1,3 +1,5 @@
+import '../widgets/momo_floating_dock.dart';
+import '../widgets/momo_glass_components.dart';
 import '../../app/momo_typography.dart';
 import '../widgets/calendar_sync_dialog.dart';
 import '../widgets/chores_sheet.dart';
@@ -21,7 +23,6 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
     final inventoryAsync = ref.watch(inventoryProvider);
     final summary = ref.watch(reminderSummaryProvider);
@@ -38,11 +39,12 @@ class HomeScreen extends ConsumerWidget {
             children: [
               Text('加载首页数据失败：$error'),
               const SizedBox(height: 12),
-              OutlinedButton.icon(
+                  MomoCapsuleButton(
                 onPressed: () => ref.invalidate(inventoryProvider),
-                icon: const Icon(Icons.refresh),
-                label: const Text('重试'),
-              ),
+                    isPrimary: false,
+                    icon: const Icon(Icons.refresh),
+                label: '重试',
+                  ),
             ],
           ),
         ),
@@ -68,7 +70,7 @@ class HomeScreen extends ConsumerWidget {
 
           return CustomScrollView(
             slivers: [
-              // 顶部渐变与家庭状态栏
+              // 家庭状态栏，主题色仅用于标识点缀
               SliverToBoxAdapter(
                 child: Container(
                   padding: EdgeInsets.fromLTRB(
@@ -76,16 +78,6 @@ class HomeScreen extends ConsumerWidget {
                     MediaQuery.of(context).padding.top + 12,
                     16,
                     12,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        palette.primary.withValues(alpha: isDark ? 0.25 : 0.15),
-                        theme.scaffoldBackgroundColor,
-                      ],
-                    ),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -96,7 +88,7 @@ class HomeScreen extends ConsumerWidget {
                           Container(
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
-                              color: palette.primary.withValues(alpha: 0.18),
+                              color: palette.primary.withValues(alpha: 0.08),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Icon(palette.appLogoIcon, color: palette.primary, size: 24),
@@ -153,7 +145,7 @@ class HomeScreen extends ConsumerWidget {
                 );
               }),
 
-              const SliverToBoxAdapter(child: SizedBox(height: 110)),
+              SliverToBoxAdapter(child: SizedBox(height: 16 + MomoDockInsets.bottomOf(context))),
             ],
           );
         },
@@ -173,19 +165,28 @@ class HomeScreen extends ConsumerWidget {
         style: TextStyle(
           fontSize: MomoTextSize.caption,
           fontWeight: FontWeight.w600,
-          color: isNas ? Colors.green.shade700 : Colors.blueGrey.shade700,
+          color: isNas ? (Theme.of(context).brightness == Brightness.dark
+                      ? Colors.green.shade300
+                      : Colors.green.shade800)
+                  : Theme.of(context).colorScheme.onSurfaceVariant,
         ),
       ),
     );
   }
 
-  Widget _buildStatusDot({
+  Widget _buildStatusDot(
+    BuildContext context, {
     required String label,
     required String detail,
     required bool isConnected,
   }) {
     final statusColor = isConnected ? Colors.green : Colors.blueGrey.shade400;
-    final detailColor = isConnected ? Colors.green.shade700 : Colors.blueGrey.shade700;
+    final scheme = Theme.of(context).colorScheme;
+    final detailColor = isConnected
+            ? (Theme.of(context).brightness == Brightness.dark
+                ? Colors.green.shade300
+                : Colors.green.shade800)
+            : scheme.onSurfaceVariant;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
@@ -233,41 +234,63 @@ class HomeScreen extends ConsumerWidget {
     final aiConfigured = ref.watch(aiConfigurationStatusProvider).valueOrNull == true;
     final nasState = ref.watch(nasConnectionProvider);
     final homeState = ref.watch(smartHomeControllerProvider);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(children: [
-          Expanded(child: _buildQuickActionBtn(context,
-            icon: Icons.qr_code_scanner, label: '入库', color: palette.primary,
-            onTap: () => showModalBottomSheet<void>(context: context,
+    final intake = _buildQuickActionBtn(context,
+            icon: Icons.qr_code_scanner, label: '入库',
+      onTap: () => showModalBottomSheet<void>(context: context,
               isScrollControlled: true, useSafeArea: true,
               builder: (_) => const IntakeSheet()),
-          )),
-          const SizedBox(width: 12),
-          Expanded(flex: 2, child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.45)),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Column(mainAxisSize: MainAxisSize.min,
+          );
+    final status = MomoGlassCard(
+            padding: const EdgeInsets.all(12),
+              borderRadius: 16,
+      child: Column(mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text('服务状态', style: Theme.of(context).textTheme.titleSmall),
                 const SizedBox(height: 4),
-                _buildStatusDot(label: 'NAS服务', isConnected: nasState.isConnected,
+                _buildStatusDot(
+            context,
+            label: 'NAS服务', isConnected: nasState.isConnected,
                   detail: _nasStatusLabel(nasState.status)),
-                Divider(height: 1, color: Theme.of(context).dividerColor.withValues(alpha: 0.35)),
-                _buildStatusDot(label: 'HA服务',
+          const Divider(height: 8),
+                _buildStatusDot(
+            context,
+            label: 'HA服务',
                   isConnected: homeState.nasOnline && homeState.haStatus == HaConnectionStatus.online && !homeState.isLoading,
                   detail: _haStatusLabel(homeState)),
-                Divider(height: 1, color: Theme.of(context).dividerColor.withValues(alpha: 0.35)),
-                _buildStatusDot(label: 'AI服务', isConnected: false,
+          const Divider(height: 8),
+                _buildStatusDot(
+            context,
+            label: 'AI服务', isConnected: false,
                   detail: aiConfigured ? '待验证' : '未配置'),
               ],
             ),
-          )),
-        ]),
+          );
+    return MomoGlassCard(
+      palette: palette,
+      padding: const EdgeInsets.all(12),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final largeText =
+              MediaQuery.textScalerOf(context).scale(MomoTextSize.body) >
+              MomoTextSize.body * 1.2;
+          if (largeText) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Align(alignment: Alignment.centerLeft, child: intake),
+                const SizedBox(height: 12),
+                status,
+              ],
+            );
+          }
+          return Row(
+            children: [
+              SizedBox(width: 104, child: intake),
+              const SizedBox(width: 12),
+              Expanded(flex: 2, child: status),
+        ]);
+        },
       ),
     );
   }
@@ -276,38 +299,13 @@ class HomeScreen extends ConsumerWidget {
     BuildContext context, {
     required IconData icon,
     required String label,
-    required Color color,
     required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(7),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: color, size: 18),
-            ),
-            const SizedBox(height: 7),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.w600),
-            ),
-          ],
-        ),
-      ),
+  }) => MomoCapsuleButton(
+    onPressed: onTap,
+    label: label,
+    icon: Icon(icon, size: 24),
+    padding: const EdgeInsets.symmetric(horizontal: 12),
     );
-  }
 
   Widget _buildAlertSummaryCard(BuildContext context, ReminderSummary summary, MomoPalette palette) {
     final theme = Theme.of(context);
@@ -316,13 +314,13 @@ class HomeScreen extends ConsumerWidget {
     final expiring30 = summary.expiring.length;
     final lowStockCount = summary.lowStock.length;
 
-    return Card(
-      child: Padding(
+    return MomoGlassCard(
         padding: const EdgeInsets.all(16),
-        child: Column(
+      margin: EdgeInsets.zero,
+      child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+          _HomeFlowRow(
               children: [
                 Icon(palette.alertIcon, color: palette.primary, size: 20),
                 const SizedBox(width: 8),
@@ -350,7 +348,7 @@ class HomeScreen extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 10),
-            Row(
+          _HomeFlowRow(
               children: [
                 Expanded(
                   child: _buildSummaryGridItem(
@@ -376,7 +374,7 @@ class HomeScreen extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 10),
-            Row(
+          _HomeFlowRow(
               children: [
                 Expanded(
                   child: _buildSummaryGridItem(
@@ -403,8 +401,7 @@ class HomeScreen extends ConsumerWidget {
             ),
           ],
         ),
-      ),
-    );
+      );
   }
 
   Widget _buildSummaryGridItem(
@@ -416,28 +413,13 @@ class HomeScreen extends ConsumerWidget {
     required VoidCallback onTap,
   }) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    return InkWell(
+    return MomoGlassCard(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: isDark ? 0.14 : 0.07),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withValues(alpha: 0.22), width: 0.8),
-        ),
-        child: Row(
+      borderRadius: 16,
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+      child: _HomeFlowRow(
           children: [
-            Container(
-              padding: const EdgeInsets.all(7),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.16),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, size: 18, color: color),
-            ),
+          Icon(icon, size: 20, color: color),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -446,29 +428,15 @@ class HomeScreen extends ConsumerWidget {
                 children: [
                   Text(
                     '$count',
-                    style: TextStyle(
-                      fontSize: MomoTextSize.section,
-                      fontWeight: FontWeight.bold,
-                      color: color,
-                      height: 1.1,
-                    ),
-                  ),
+                    style: theme.textTheme.titleLarge),
                   const SizedBox(height: 2),
                   Text(
                     label,
-                    style: TextStyle(
-                      fontSize: MomoTextSize.caption,
-                      color: theme.textTheme.bodySmall?.color,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                    style: theme.textTheme.bodySmall),
                 ],
               ),
             ),
           ],
-        ),
       ),
     );
   }
@@ -481,21 +449,22 @@ class HomeScreen extends ConsumerWidget {
   ) {
     final theme = Theme.of(context);
 
-    return Card(
-      child: Padding(
+    return MomoGlassCard(
         padding: const EdgeInsets.all(16),
-        child: Column(
+      margin: EdgeInsets.zero,
+      child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+          _HomeFlowRow(
               children: [
                 Icon(palette.shoppingIcon, color: palette.primary, size: 20),
                 const SizedBox(width: 8),
-                Text(
+              Expanded(
+                child: Text(
                   '采买速览清单',
                   style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
                 ),
-                const Spacer(),
+              ),
                 TextButton(
                   onPressed: () => context.push('/shopping'),
                   child: const Text('查看完整清单 >', style: TextStyle(fontSize: MomoTextSize.caption)),
@@ -511,7 +480,7 @@ class HomeScreen extends ConsumerWidget {
                 if (pending.isEmpty) {
                   return Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Row(
+                    child: _HomeFlowRow(
                       children: [
                         const Text('🛒 ', style: TextStyle(fontSize: 18)),
                         Expanded(
@@ -531,7 +500,7 @@ class HomeScreen extends ConsumerWidget {
                   children: [
                     ...pending.take(3).map((entry) => Padding(
                           padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Row(
+                          child: _HomeFlowRow(
                             children: [
                               Container(
                                 width: 6,
@@ -572,8 +541,7 @@ class HomeScreen extends ConsumerWidget {
             ),
           ],
         ),
-      ),
-    );
+      );
   }
 
   Widget _buildSmartHomeQuickSection(
@@ -583,7 +551,6 @@ class HomeScreen extends ConsumerWidget {
     MomoPalette palette,
   ) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
     // 取前两个常用场景 + 前两个常用设备
     final quickScenes = homeState.scenes.take(2).toList();
@@ -599,13 +566,13 @@ class HomeScreen extends ConsumerWidget {
         .toList();
     final controller = ref.read(smartHomeControllerProvider.notifier);
 
-    return Card(
-      child: Padding(
+    return MomoGlassCard(
         padding: const EdgeInsets.all(16),
-        child: Column(
+      margin: EdgeInsets.zero,
+      child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+          _HomeFlowRow(
               children: [
                 const Icon(Icons.home_outlined, size: 20),
                 const SizedBox(width: 8),
@@ -626,16 +593,30 @@ class HomeScreen extends ConsumerWidget {
             const SizedBox(height: 10),
 
             // 常用场景胶囊
-            Row(
-              children: quickScenes.map((scene) {
-                return Expanded(
-                  child: Padding(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final scale =
+                  MediaQuery.textScalerOf(context).scale(MomoTextSize.body) /
+                  MomoTextSize.body;
+              final columns =
+                  constraints.maxWidth >= 480 && scale <= 1.3 ? 2 : 1;
+              final itemWidth =
+                  (constraints.maxWidth - (columns - 1) * 8) / columns;
+              return Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: quickScenes.map((scene) {
+                return SizedBox(
+                        width: itemWidth,
+                        child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        side: BorderSide(color: palette.primary.withValues(alpha: 0.3)),
+                    child: MomoCapsuleButton(
+                            isPrimary: false,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            label: scene.name,
+                            icon: Text(
+                              scene.icon,
+                              style: const TextStyle(fontSize: 16),
                       ),
                       onPressed: homeState.isLoading || homeState.isCommandLoading
                           ? null
@@ -646,39 +627,41 @@ class HomeScreen extends ConsumerWidget {
                                 content: Text('场景快捷执行尚未接入，未执行【${scene.name}】。'),
                               ));
                             },
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(scene.icon, style: const TextStyle(fontSize: 16)),
-                          const SizedBox(width: 6),
-                          Text(scene.name, style: const TextStyle(fontSize: MomoTextSize.caption, fontWeight: FontWeight.bold)),
-                        ],
-                      ),
-                    ),
+                          ),
                   ),
                 );
               }).toList(),
-            ),
+            );
+            },
+          ),
 
-            const SizedBox(height: 12),
+          const SizedBox(height: 12),
 
             // 常用设备小开关
-            Row(
-              children: quickDevices.map((device) {
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final scale =
+                  MediaQuery.textScalerOf(context).scale(MomoTextSize.body) /
+                  MomoTextSize.body;
+              final columns =
+                  constraints.maxWidth >= 480 && scale <= 1.3 ? 2 : 1;
+              final itemWidth =
+                  (constraints.maxWidth - (columns - 1) * 8) / columns;
+              return Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: quickDevices.map((device) {
                 final unavailable = controller.powerUnavailableReason(
                   device.id, turnOn: !device.isOn,
                 );
                 final isExecuting = homeState.isCommandLoading &&
                     homeState.commandDeviceId == device.id;
-                return Expanded(
-                  child: Container(
+                return SizedBox(
+                        width: itemWidth,
+                        child: MomoGlassCard(
                     margin: const EdgeInsets.symmetric(horizontal: 4),
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: isDark ? Colors.white.withValues(alpha: 0.04) : Colors.black.withValues(alpha: 0.03),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
+                          child: _HomeFlowRow(
                       children: [
                         Expanded(
                           child: Column(
@@ -710,8 +693,10 @@ class HomeScreen extends ConsumerWidget {
                               // The controller rechecks at submission time and
                               // changes state only from a matching NAS response.
                               await controller.setDevicePower(device.id, turnOn);
-                              if (!context.mounted || !controller.mounted) return;
-                              if (!identical(
+                              if (!context.mounted || !controller.mounted) {
+                                              return;
+                                            }
+                                            if (!identical(
                                 ref.read(smartHomeControllerProvider.notifier), controller,
                               )) {
                                 return;
@@ -728,7 +713,9 @@ class HomeScreen extends ConsumerWidget {
                   ),
                 );
               }).toList(),
-            ),
+              );
+            },
+          ),
             if (homeState.isLoading) const LinearProgressIndicator(),
             if (homeState.message != null || homeState.commandError != null ||
                 (quickDevices.isEmpty && quickScenes.isEmpty))
@@ -741,21 +728,20 @@ class HomeScreen extends ConsumerWidget {
               ),
           ],
         ),
-      ),
-    );
+      );
   }
 
   Widget _buildChoresCard(BuildContext context, WidgetRef ref, MomoPalette palette) {
     final theme = Theme.of(context);
     final choresAsync = ref.watch(choresProvider);
 
-    return Card(
-      child: Padding(
+    return MomoGlassCard(
         padding: const EdgeInsets.all(16),
-        child: Column(
+      margin: EdgeInsets.zero,
+      child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+          _HomeFlowRow(
               children: [
                 Icon(Icons.repeat_rounded, color: palette.primary, size: 20),
                 const SizedBox(width: 8),
@@ -787,7 +773,7 @@ class HomeScreen extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(8),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(
+                      child: _HomeFlowRow(
                         children: [
                           Icon(Icons.add_circle_outline_rounded, size: 16, color: palette.primary),
                           const SizedBox(width: 6),
@@ -810,7 +796,7 @@ class HomeScreen extends ConsumerWidget {
                       final days = chore.daysUntil();
                       return Padding(
                         padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
+                        child: _HomeFlowRow(
                           children: [
                             Container(
                               width: 8,
@@ -868,8 +854,7 @@ class HomeScreen extends ConsumerWidget {
             ),
           ],
         ),
-      ),
-    );
+      );
   }
 
   void _showHomeOrderDialog(BuildContext context, WidgetRef ref, List<String> currentOrder) {
@@ -903,8 +888,10 @@ class HomeScreen extends ConsumerWidget {
                     TextButton(
                       onPressed: () async {
                         await ref.read(settingsServiceProvider).setValue(homeSectionOrderKey, order.join(','));
-                        if (sheetContext.mounted) Navigator.pop(sheetContext);
-                      },
+                        if (sheetContext.mounted) {
+                                  Navigator.pop(sheetContext);
+                                }
+                              },
                       child: const Text('保存'),
                     ),
                   ],
@@ -939,6 +926,35 @@ class HomeScreen extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Preserve the compact layout while allowing accessibility text to flow.
+class _HomeFlowRow extends StatelessWidget {
+  const _HomeFlowRow({required this.children});
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.textScalerOf(context).scale(MomoTextSize.body) <=
+        MomoTextSize.body * 1.5) {
+      return Row(children: children);
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children:
+          children.map((child) {
+            if (child is Flexible) return child.child;
+            if (child is Spacer) return const SizedBox(height: 8);
+            if (child is SizedBox &&
+                child.width != null &&
+                child.child == null) {
+              return SizedBox(height: child.width);
+            }
+            return child;
+          }).toList(),
     );
   }
 }

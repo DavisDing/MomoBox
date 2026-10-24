@@ -1,3 +1,4 @@
+import '../widgets/momo_glass_components.dart';
 import '../../app/momo_typography.dart';
 import '../widgets/calendar_sync_dialog.dart';
 import 'package:flutter/material.dart';
@@ -34,7 +35,7 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
     final summary = ref.watch(reminderSummaryProvider);
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: MomoGlassAppBar(
         title: const Text('效期与库存提醒'),
         actions: [
           IconButton(
@@ -52,10 +53,11 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
             children: [
               Text('提醒数据加载失败：$error', textAlign: TextAlign.center),
               const SizedBox(height: 12),
-              OutlinedButton.icon(
+                  MomoCapsuleButton(
                 onPressed: () => ref.invalidate(inventoryProvider),
-                icon: const Icon(Icons.refresh),
-                label: const Text('重试'),
+                    label: '重试',
+                    isPrimary: false,
+                    icon: const Icon(Icons.refresh),
               ),
             ],
           ),
@@ -181,16 +183,15 @@ class _AlertDashboard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final expiringSoon = summary.expiringWithinDays(3);
-    final (mascot, message, color) = switch ((summary.expired.isNotEmpty, expiringSoon > 0)) {
+    final (mascot, message, _) = switch ((summary.expired.isNotEmpty, expiringSoon > 0)) {
       (true, _) => ('🚨', '发现过期物品，请优先处理。', theme.colorScheme.error),
       (false, true) => ('⏰', '有物品即将到期，记得优先使用。', Colors.orange),
       _ => ('🧺', '留意库存，按需补货即可。', theme.colorScheme.primary),
     };
 
-    return Card(
-      color: theme.colorScheme.surfaceContainerHighest,
-      child: Padding(
+    return MomoGlassCard(
         padding: const EdgeInsets.all(16),
+      margin: EdgeInsets.zero,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -201,8 +202,7 @@ class _AlertDashboard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     message,
-                    style: theme.textTheme.titleMedium?.copyWith(color: color),
-                  ),
+                    style: theme.textTheme.titleMedium),
                 ),
               ],
             ),
@@ -242,8 +242,7 @@ class _AlertDashboard extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
+      );
   }
 }
 
@@ -264,16 +263,14 @@ class _StatTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return MomoGlassCard(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? color.withValues(alpha: 0.15) : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-          border: isSelected ? Border.all(color: color.withValues(alpha: 0.4)) : null,
-        ),
+      color:
+          isSelected
+              ? Theme.of(context).colorScheme.surfaceContainerHighest
+              : null,
+      borderRadius: 16,
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
         child: Column(
           children: [
             Text(
@@ -286,7 +283,6 @@ class _StatTile extends StatelessWidget {
             const SizedBox(height: 4),
             Text(label, style: Theme.of(context).textTheme.bodySmall),
           ],
-        ),
       ),
     );
   }
@@ -335,7 +331,9 @@ class _AlertSection extends ConsumerWidget {
           ...items.map((item) {
             final candidate = _candidateFor(item);
             final batch = candidate.batch ?? item.nearestDatedBatch;
-            return Card(
+            return MomoGlassCard(
+              padding: EdgeInsets.zero,
+              margin: EdgeInsets.zero,
               child: ListTile(
                 leading: IconButton(
                   tooltip: '标记已处理',
@@ -367,7 +365,9 @@ class _AlertSection extends ConsumerWidget {
   }
 
   String _itemSuggestion(InventoryItem item, InventoryBatch? batch) {
-    if (showStock) return '剩余 ${item.totalStock}，阈值 ${item.lowStockThreshold}；建议补货。';
+    if (showStock) {
+      return '剩余 ${item.totalStock}，阈值 ${item.lowStockThreshold}；建议补货。';
+    }
     final days = batch?.daysUntilExpiry;
     if (days == null) return '请核对最近批次的效期。';
     if (days < 0) return '已于 ${_dateText(batch!.expiryDate!)} 到期；建议尽快处理。';

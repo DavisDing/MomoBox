@@ -2,6 +2,13 @@
 class AiClientHelper {
   const AiClientHelper._();
 
+  /// Keep persisted, editable and runtime protocol values in the same domain.
+  static String normalizeEndpointType(String? value) => switch (value?.trim()) {
+        'chat' => 'chat',
+        'responses' => 'responses',
+        _ => 'auto',
+      };
+
   /// 根据 endpoint 与配置的 endpointType 推断应使用的协议及 URI
   ///
   /// 如果 endpoint 显式以 `/responses` 结尾，则判定为 responses；
@@ -15,10 +22,7 @@ class AiClientHelper {
     if (clean.endsWith('/chat/completions')) {
       return 'chat';
     }
-    if (configuredType == 'responses' || configuredType == 'chat') {
-      return configuredType;
-    }
-    return 'auto';
+    return normalizeEndpointType(configuredType);
   }
 
   static Uri chatCompletionUri(String endpoint) {

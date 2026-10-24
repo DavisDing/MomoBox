@@ -1,21 +1,127 @@
+import 'dart:math' as math;
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
+
 import '../../app/momo_theme.dart';
 import '../../app/momo_typography.dart';
 
-/// 悬浮毛玻璃胶囊底栏容器（Momo Floating Capsule Dock）
-/// 严格遵循 HyperOS × iOS 融合风格通用玻璃拟态规范：
-/// 1. 悬浮浮空形态：左右留外边距（16~24dp），不贴边，圆角胶囊形（圆角 32~36dp）
-/// 2. 通透玻璃拟态：BackdropFilter 高斯模糊（sigma 20~24）+ 75%~85% 表面半透明 + 1px 细微光描边 + 柔和环境扩散投影
-/// 3. 主题与调色板接入：严格引用 MomoPalette（primary、surface、text、skin），支持 5 套皮肤实时换肤，绝不硬编码色彩
-/// 4. 动态字号与字体缩放：高度基于 MomoTextSize.caption 和系统 textScaler 动态计算，杜绝大字体溢出
-/// 5. 无障碍支持：内部使用原生 NavigationBar，具备完整的 Semantics 与无障碍读屏支持
+/// Space a page must include at the end of its scrollable content, including
+/// the default inventory FAB where present (dragged positions are user owned).
+///
+/// Unlike MediaQuery.padding, this survives nested Scaffolds and SafeAreas.
+/// Explicit ListView padding and CustomScrollView slivers must consume it;
+/// publishing the inset alone does not add any scroll extent.
+class MomoDockInsets extends InheritedWidget {
+  const MomoDockInsets({required this.bottom, required super.child, super.key});
+
+  final double bottom;
+
+  static double bottomOf(BuildContext context) {
+    // Shell sheets use its Navigator but occupy their own surface above the
+    // dock. Regular pages pushed into that Navigator still need the inset.
+    if (ModalRoute.of(context) is PopupRoute) {
+      return 0;
+    }
+    return context
+            .dependOnInheritedWidgetOfExactType<MomoDockInsets>()
+            ?.bottom ??
+        0;
+  }
+
+  @override
+  bool updateShouldNotify(MomoDockInsets oldWidget) =>
+      bottom != oldWidget.bottom;
+}
+
+/// Shared by the shell's content inset and the dock's actual layout.
+@immutable
+class MomoDockLayout {
+  const MomoDockLayout._({
+    required this.barHeight,
+    required this.bottomSpacing,
+    required this.horizontalMargin,
+    required this.innerPadding,
+    required this.destinationWidth,
+    required this.labelFontSize,
+  });
+
+  static const topSpacing = 8.0;
+  static const labelGap = 4.0;
+  static const labelHorizontalPadding = 2.0;
+
+  final double barHeight;
+  final double bottomSpacing;
+  final double horizontalMargin;
+  final double innerPadding;
+  final double destinationWidth;
+  final double labelFontSize;
+
+  double get occupiedHeight => topSpacing + barHeight + bottomSpacing;
+
+  factory MomoDockLayout.resolve(
+    BuildContext context,
+    List<NavigationDestination> destinations, {
+    required double availableWidth,
+  }) {
+    // Keep 48dp targets before spending width on the floating margins.
+    final spareWidth = math.max(
+      0.0,
+      availableWidth - destinations.length * kMinInteractiveDimension,
+    );
+    final innerPadding = math.min(4.0, spareWidth / 2);
+    final horizontalMargin = math.min(
+      24.0,
+      math.max(0.0, (spareWidth - innerPadding * 2) / 2),
+    );
+    final destinationWidth =
+        (availableWidth - (horizontalMargin + innerPadding) * 2) /
+        destinations.length;
+    final labelFontSize = MediaQuery.textScalerOf(
+      context,
+    ).scale(MomoTextSize.caption);
+    var labelHeight = 0.0;
+    for (final destination in destinations) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: destination.label,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+            fontSize: labelFontSize,
+            height: 1.3,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        textDirection: Directionality.of(context),
+        locale: Localizations.maybeLocaleOf(context),
+      )..layout(
+        maxWidth: math.max(1.0, destinationWidth - labelHorizontalPadding * 2),
+      );
+      labelHeight = math.max(labelHeight, painter.height);
+      painter.dispose();
+    }
+    return MomoDockLayout._(
+      // Native indicators are 32dp high; leave 7dp above and below the group.
+      barHeight: math.max(
+        66.0,
+        (32 + labelGap + labelHeight + 14).ceilToDouble(),
+      ),
+      bottomSpacing: math.max(20.0, MediaQuery.viewPaddingOf(context).bottom),
+      horizontalMargin: horizontalMargin,
+      innerPadding: innerPadding,
+      destinationWidth: destinationWidth,
+      labelFontSize: labelFontSize,
+    );
+  }
+}
+
+/// Floating glass chrome with native NavigationBar destinations and semantics.
 class MomoFloatingCapsuleDock extends StatelessWidget {
   const MomoFloatingCapsuleDock({
     required this.selectedIndex,
     required this.onDestinationSelected,
     required this.destinations,
     required this.palette,
+    this.layout,
     super.key,
   });
 
@@ -23,68 +129,193 @@ class MomoFloatingCapsuleDock extends StatelessWidget {
   final ValueChanged<int> onDestinationSelected;
   final List<NavigationDestination> destinations;
   final MomoPalette palette;
+  final MomoDockLayout? layout;
 
   @override
   Widget build(BuildContext context) {
+    if (MediaQuery.viewInsetsOf(context).bottom > 0) {
+      return const SizedBox.shrink();
+    }
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-
-    // 动态缩放高度：根据系统文字缩放因子与规范字号自适应计算，防止 RenderFlex overflow
-    final textScaler = MediaQuery.textScalerOf(context);
-    final scaledCaption = textScaler.scale(MomoTextSize.caption);
-    final captionDelta = (scaledCaption - MomoTextSize.caption).clamp(0.0, 48.0);
-    final barHeight = 64.0 + captionDelta * 1.6;
-
-    // 适配调色板半透明毛玻璃背景
-    final baseSurface = isDark ? const Color(0xFF0F172A) : palette.surface;
-    final glassBg = baseSurface.withValues(alpha: isDark ? 0.82 : 0.85);
-
-    // 1px 极细微光描边
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.12)
-        : Colors.black.withValues(alpha: 0.08);
-
-    // 柔和大扩散环境投影
-    final shadowColor = isDark
-        ? Colors.black.withValues(alpha: 0.40)
-        : palette.primary.withValues(alpha: 0.12);
+    final highContrast = MediaQuery.highContrastOf(context);
+    final baseSurface = isDark ? theme.colorScheme.surface : palette.surface;
+    final borderColor =
+        isDark
+            ? Colors.white.withValues(alpha: 0.12)
+            : Colors.black.withValues(alpha: 0.08);
 
     return SafeArea(
       top: false,
-      minimum: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(36),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Container(
+      bottom: false,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final geometry =
+              layout ??
+              MomoDockLayout.resolve(
+                context,
+                destinations,
+                availableWidth: constraints.maxWidth,
+              );
+          final radius = BorderRadius.circular(
+            math.min(36, geometry.barHeight / 2),
+          );
+          final indicatorShape = _DockIndicatorBorder(
+            maxWidth: math.max(0, geometry.destinationWidth - 8),
+          );
+          final labelStyle = WidgetStateProperty.resolveWith<TextStyle>((
+            states,
+          ) {
+            final selected = states.contains(WidgetState.selected);
+            return (theme.textTheme.labelMedium ?? const TextStyle()).copyWith(
+              fontSize: geometry.labelFontSize,
+              height: 1.3,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              color:
+                  states.contains(WidgetState.disabled)
+                      ? theme.colorScheme.onSurface.withValues(alpha: 0.38)
+                      : selected
+                      ? theme.colorScheme.onSurface
+                      : theme.colorScheme.onSurfaceVariant,
+            );
+          });
+
+          return Padding(
+            padding: EdgeInsets.fromLTRB(
+              geometry.horizontalMargin,
+              MomoDockLayout.topSpacing,
+              geometry.horizontalMargin,
+              geometry.bottomSpacing,
+            ),
+            // Paint the shadow outside the clipping used by the blur/content.
+            child: DecoratedBox(
               decoration: BoxDecoration(
-                color: glassBg,
-                borderRadius: BorderRadius.circular(36),
-                border: Border.all(color: borderColor, width: 1.0),
+                borderRadius: radius,
                 boxShadow: [
                   BoxShadow(
-                    color: shadowColor,
+                    color:
+                        isDark
+                            ? Colors.black.withValues(alpha: 0.40)
+                            : palette.primary.withValues(alpha: 0.12),
                     blurRadius: 24,
                     offset: const Offset(0, 8),
                     spreadRadius: -2,
                   ),
                 ],
               ),
-              child: NavigationBar(
-                backgroundColor: Colors.transparent,
-                elevation: 0,
-                height: barHeight,
-                labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-                selectedIndex: selectedIndex,
-                onDestinationSelected: onDestinationSelected,
-                destinations: destinations,
+              child: ClipRRect(
+                borderRadius: radius,
+                child: BackdropFilter(
+                  enabled: !highContrast,
+                  filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: baseSurface.withValues(
+                        alpha:
+                            highContrast
+                                ? 1
+                                : isDark
+                                ? 0.82
+                                : 0.85,
+                      ),
+                      borderRadius: radius,
+                      border: Border.all(
+                        color:
+                            highContrast
+                                ? theme.colorScheme.onSurface
+                                : borderColor,
+                      ),
+                    ),
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: geometry.innerPadding,
+                      ),
+                      // Safe insets are owned by the outer dock, once. Labels
+                      // are scaled above so NavigationDestination's native 1.3x
+                      // cap cannot discard the app/system accessibility scale.
+                      child: MediaQuery.removePadding(
+                        context: context,
+                        removeTop: true,
+                        removeBottom: true,
+                        removeLeft: true,
+                        removeRight: true,
+                        child: MediaQuery.withNoTextScaling(
+                          child: NavigationBar(
+                            backgroundColor: Colors.transparent,
+                            surfaceTintColor: Colors.transparent,
+                            elevation: 0,
+                            height: geometry.barHeight,
+                            animationDuration:
+                                MediaQuery.disableAnimationsOf(context)
+                                    ? Duration.zero
+                                    : const Duration(milliseconds: 250),
+                            indicatorColor: palette.primary.withValues(
+                              alpha: isDark ? 0.32 : 0.18,
+                            ),
+                            indicatorShape: indicatorShape,
+                            labelTextStyle: labelStyle,
+                            labelPadding: const EdgeInsets.only(
+                              top: MomoDockLayout.labelGap,
+                              left: MomoDockLayout.labelHorizontalPadding,
+                              right: MomoDockLayout.labelHorizontalPadding,
+                            ),
+                            labelBehavior:
+                                NavigationDestinationLabelBehavior.alwaysShow,
+                            selectedIndex: selectedIndex,
+                            onDestinationSelected: onDestinationSelected,
+                            destinations: destinations,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
+}
+
+/// NavigationBar fixes its indicator at 64dp. Bound the painted shape and ink
+/// to the destination's actual width without replacing its native semantics.
+class _DockIndicatorBorder extends ShapeBorder {
+  const _DockIndicatorBorder({required this.maxWidth});
+
+  final double maxWidth;
+
+  @override
+  EdgeInsetsGeometry get dimensions => EdgeInsets.zero;
+
+  @override
+  ShapeBorder scale(double t) => _DockIndicatorBorder(maxWidth: maxWidth * t);
+
+  @override
+  Path getOuterPath(Rect rect, {TextDirection? textDirection}) =>
+      Path()..addRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: rect.center,
+            width: math.min(rect.width, maxWidth),
+            height: rect.height,
+          ),
+          const Radius.circular(16),
+        ),
+      );
+
+  @override
+  Path getInnerPath(Rect rect, {TextDirection? textDirection}) =>
+      getOuterPath(rect, textDirection: textDirection);
+
+  @override
+  void paint(Canvas canvas, Rect rect, {TextDirection? textDirection}) {}
+
+  @override
+  bool operator ==(Object other) =>
+      other is _DockIndicatorBorder && maxWidth == other.maxWidth;
+
+  @override
+  int get hashCode => maxWidth.hashCode;
 }

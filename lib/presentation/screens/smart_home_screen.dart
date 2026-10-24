@@ -1,3 +1,5 @@
+import '../widgets/momo_floating_dock.dart';
+import '../widgets/momo_glass_components.dart';
 import '../../app/momo_typography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,13 +21,15 @@ class SmartHomeScreen extends ConsumerWidget {
     final controller = ref.read(smartHomeControllerProvider.notifier);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Row(
+      appBar: MomoGlassAppBar(
+        toolbarHeight:
+            56 +
+            MediaQuery.textScalerOf(context).scale(MomoTextSize.caption) * 2,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.home_outlined, size: 24),
-            const SizedBox(width: 8),
             const Text('智能家居'),
-            const Spacer(),
             _buildHaBadge(context, homeState.haStatus),
           ],
         ),
@@ -53,7 +57,11 @@ class SmartHomeScreen extends ConsumerWidget {
           : RefreshIndicator(
               onRefresh: () => controller.refresh(),
               child: ListView(
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.fromLTRB(16,
+                    16,
+                    16,
+                    16 + MomoDockInsets.bottomOf(context),
+                  ),
                 children: [
                   if (homeState.message != null || homeState.commandError != null || homeState.linkageError != null)
                     _buildStateNotice(context, homeState),
@@ -90,8 +98,6 @@ class SmartHomeScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 10),
                   _buildRoomsAndDevices(context, ref, homeState.devices, palette),
-
-                  const SizedBox(height: 48),
                 ],
               ),
             ),
@@ -103,11 +109,9 @@ class SmartHomeScreen extends ConsumerWidget {
     final text = error ?? state.message!;
     final isError = error != null || state.haStatus == HaConnectionStatus.offline;
     final color = isError ? Colors.red : Colors.amber.shade800;
-    return Card(
+    return MomoGlassCard(
       margin: const EdgeInsets.only(bottom: 16),
-      color: color.withValues(alpha: 0.08),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(12),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -115,7 +119,6 @@ class SmartHomeScreen extends ConsumerWidget {
             const SizedBox(width: 8),
             Expanded(child: Text(text, style: TextStyle(fontSize: MomoTextSize.caption, color: color))),
           ],
-        ),
       ),
     );
   }
@@ -168,10 +171,10 @@ class SmartHomeScreen extends ConsumerWidget {
               style: TextStyle(fontSize: MomoTextSize.body, color: Colors.grey),
             ),
             const SizedBox(height: 20),
-            FilledButton.icon(
+            MomoCapsuleButton(
               onPressed: () => context.push('/settings'),
+              label: '打开连接配置',
               icon: const Icon(Icons.settings),
-              label: const Text('打开连接配置'),
             ),
           ],
         ),
@@ -190,12 +193,14 @@ class SmartHomeScreen extends ConsumerWidget {
       children: [
         Icon(icon, size: 20, color: theme.colorScheme.primary),
         const SizedBox(width: 8),
-        Column(
+        Expanded(
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(title, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
             Text(subtitle, style: theme.textTheme.bodySmall?.copyWith(fontSize: MomoTextSize.caption, color: Colors.grey)),
           ],
+        ),
         ),
       ],
     );
@@ -203,83 +208,43 @@ class SmartHomeScreen extends ConsumerWidget {
 
   Widget _buildScenesRow(BuildContext context, List<SmartScene> scenes, MomoPalette palette) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    // 展示常用4个场景为两行各两个网格
     final displayScenes = scenes.take(4).toList();
 
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        mainAxisSpacing: 10,
-        crossAxisSpacing: 10,
-        mainAxisExtent: 80,
-      ),
-      itemCount: displayScenes.length,
-      itemBuilder: (context, index) {
-        final scene = displayScenes[index];
-        return Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 480 ? 2 : 1;
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: displayScenes.map(
+                    (scene) => SizedBox(
+                      width: (constraints.maxWidth - (columns - 1) * 12) / columns,
+          child: MomoGlassCard(
+                        palette: palette,
+                        padding: const EdgeInsets.all(16),
+                        onTap: () {
               showAppSnackBar(context,
                 SnackBar(
                   content: Text('场景快捷执行尚未接入，未执行【${scene.name}】。'),
                 ),
               );
             },
-            borderRadius: BorderRadius.circular(16),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: isDark ? Colors.white.withValues(alpha: 0.05) : palette.surface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: isDark ? Colors.white.withValues(alpha: 0.08) : palette.primary.withValues(alpha: 0.15),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Row(
+                        child: Row(
                 children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: palette.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(scene.icon, style: const TextStyle(fontSize: 22)),
-                  ),
-                  const SizedBox(width: 10),
+                            Text(scene.icon, style: const TextStyle(fontSize: 22)),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
+                                children: [
                         Text(
                           scene.name,
-                          style: const TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.bold),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall,
                         ),
-                        const SizedBox(height: 2),
+                        const SizedBox(height: 4),
                         Text(
                           scene.description,
-                          style: TextStyle(
-                            fontSize: MomoTextSize.caption,
-                            color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.7),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall,
                         ),
                       ],
                     ),
@@ -287,7 +252,9 @@ class SmartHomeScreen extends ConsumerWidget {
                 ],
               ),
             ),
-          ),
+                    ),
+                  )
+                  .toList(),
         );
       },
     );
@@ -300,23 +267,21 @@ class SmartHomeScreen extends ConsumerWidget {
     MomoPalette palette,
   ) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     final controller = ref.read(smartHomeControllerProvider.notifier);
     if (logs.isEmpty) {
-      return Card(
-        child: Padding(
+      return MomoGlassCard(
           padding: const EdgeInsets.all(16),
+        margin: EdgeInsets.zero,
           child: Text(
             '暂无耗材联动建议。建议、库存扣减和采购提示均由 NAS 服务端返回。',
             style: theme.textTheme.bodySmall,
           ),
-        ),
-      );
+        );
     }
 
-    return Card(
-      child: Padding(
+    return MomoGlassCard(
         padding: const EdgeInsets.all(16),
+      margin: EdgeInsets.zero,
         child: Column(
           children: logs.map((log) {
             final isPending = log.status == ConsumableActionStatus.pending;
@@ -332,18 +297,10 @@ class SmartHomeScreen extends ConsumerWidget {
                     ? '已扣减'
                     : (isInsufficient ? '库存不足' : '已忽略'));
 
-            return Container(
+            return MomoGlassCard(
               margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: isPending || isInsufficient
-                    ? (isDark ? statusColor.withValues(alpha: 0.1) : statusColor.withValues(alpha: 0.08))
-                    : (isDark ? Colors.white.withValues(alpha: 0.02) : Colors.grey.withValues(alpha: 0.05)),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: isPending || isInsufficient ? statusColor.withValues(alpha: 0.3) : Colors.transparent,
-                ),
-              ),
+                borderRadius: 16,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -402,16 +359,13 @@ class SmartHomeScreen extends ConsumerWidget {
                   ],
                   if (isPending) ...[
                     const SizedBox(height: 10),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
+                      Wrap(
+                        alignment: WrapAlignment.end,
+                        spacing: 8,
+                        runSpacing: 8,
                       children: [
-                        OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          onPressed: isActing
+                          MomoCapsuleButton(
+                            onPressed: isActing
                               ? null
                               : () async {
                                   await controller.ignoreConsumableLog(log.id);
@@ -423,16 +377,12 @@ class SmartHomeScreen extends ConsumerWidget {
                                     );
                                   }
                                 },
-                          child: const Text('忽略', style: TextStyle(fontSize: MomoTextSize.caption)),
+                            label: '忽略',
+                            isPrimary: false,
                         ),
-                        const SizedBox(width: 8),
-                        FilledButton(
-                          style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          onPressed: isActing
+
+                          MomoCapsuleButton(
+                            onPressed: isActing
                               ? null
                               : () async {
                                   await controller.confirmConsumableLog(log.id);
@@ -444,9 +394,9 @@ class SmartHomeScreen extends ConsumerWidget {
                                     );
                                   }
                                 },
-                          child: isActing
-                              ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                              : const Text('确认扣减', style: TextStyle(fontSize: MomoTextSize.caption)),
+                            label: '确认扣减',
+                            isLoading: isActing,
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
                         ),
                       ],
                     ),
@@ -455,7 +405,6 @@ class SmartHomeScreen extends ConsumerWidget {
               ),
             );
           }).toList(),
-        ),
       ),
     );
   }
@@ -518,13 +467,10 @@ class SmartHomeScreen extends ConsumerWidget {
       DeviceType.switchDevice => Icons.power_settings_new_rounded,
     };
 
-    return Card(
+    return MomoGlassCard(
       margin: const EdgeInsets.symmetric(vertical: 4),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
         onTap: () => _showDeviceControlSheet(context, device, palette),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Column(
             children: [
               Row(
@@ -548,9 +494,12 @@ class SmartHomeScreen extends ConsumerWidget {
                       children: [
                         Row(
                           children: [
-                            Text(
+                        Flexible(
+                          child: Text(
                               device.name,
-                              style: const TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.bold),
+                              style: const TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.bold,
+                            ),
+                          ),
                             ),
                             const SizedBox(width: 6),
                             const Icon(Icons.tune_rounded, size: 14, color: Colors.grey),
@@ -645,9 +594,7 @@ class SmartHomeScreen extends ConsumerWidget {
               ],
             ],
           ),
-        ),
-      ),
-    );
+        );
   }
 
   /// 弹出设备精细化操作弹窗 (BottomSheet)
@@ -657,13 +604,11 @@ class SmartHomeScreen extends ConsumerWidget {
     MomoPalette palette,
   ) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
     var closeScheduled = false;
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -750,8 +695,10 @@ class SmartHomeScreen extends ConsumerWidget {
                         ? null
                         : (val) async {
                             await controller.setDevicePower(latestDevice.id, val);
-                            if (!sheetCtx.mounted || !controller.mounted) return;
-                            if (!identical(
+                            if (!sheetCtx.mounted || !controller.mounted) {
+                                return;
+                              }
+                              if (!identical(
                               modalRef.read(smartHomeControllerProvider.notifier),
                               controller,
                             )) {
@@ -779,8 +726,10 @@ class SmartHomeScreen extends ConsumerWidget {
                           selectedColor: palette.primary.withValues(alpha: 0.18),
                           onSelected: latestDevice.isOn
                               ? (sel) {
-                                  if (sel) controller.setClimateMode(latestDevice.id, m);
-                                }
+                                  if (sel) {
+                                          controller.setClimateMode(latestDevice.id, m);
+                                        }
+                                      }
                               : null,
                         );
                       }).toList(),
@@ -798,8 +747,10 @@ class SmartHomeScreen extends ConsumerWidget {
                           selectedColor: palette.primary.withValues(alpha: 0.18),
                           onSelected: latestDevice.isOn
                               ? (sel) {
-                                  if (sel) controller.setClimateWindSpeed(latestDevice.id, s);
-                                }
+                                  if (sel) {
+                                          controller.setClimateWindSpeed(latestDevice.id, s);
+                                        }
+                                      }
                               : null,
                         );
                       }).toList(),
@@ -865,32 +816,35 @@ class SmartHomeScreen extends ConsumerWidget {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
-                        OutlinedButton.icon(
+                        MomoCapsuleButton(
                           onPressed: latestDevice.isOn
                               ? () => showAppSnackBar(context,
                                     const SnackBar(content: Text('当前 NAS 安全命令协议未开放音量控制，未发送请求。')),
                                   )
                               : null,
+                          label: '音量 -',
+                          isPrimary: false,
                           icon: const Icon(Icons.volume_down),
-                          label: const Text('音量 -'),
                         ),
-                        OutlinedButton.icon(
+                        MomoCapsuleButton(
                           onPressed: latestDevice.isOn
                               ? () => showAppSnackBar(context,
                                     const SnackBar(content: Text('当前 NAS 安全命令协议未开放音量控制，未发送请求。')),
                                   )
                               : null,
+                          label: '音量 +',
+                          isPrimary: false,
                           icon: const Icon(Icons.volume_up),
-                          label: const Text('音量 +'),
                         ),
-                        OutlinedButton.icon(
+                        MomoCapsuleButton(
                           onPressed: latestDevice.isOn
                               ? () => showAppSnackBar(context,
                                     const SnackBar(content: Text('当前 NAS 安全命令协议未开放静音控制，未发送请求。')),
                                   )
                               : null,
+                          label: '静音',
+                          isPrimary: false,
                           icon: const Icon(Icons.volume_mute),
-                          label: const Text('静音'),
                         ),
                       ],
                     ),

@@ -16,9 +16,12 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:uuid/uuid.dart';
 import '../widgets/app_feedback.dart';
+import '../widgets/momo_glass_components.dart';
+import '../widgets/momo_floating_dock.dart';
 
 import '../../app/momo_theme.dart';
 import '../../application/ai_draft_service.dart';
+import '../../application/ai_client_helper.dart';
 import '../../application/barcode_lookup_service.dart';
 import '../../application/storage_management_service.dart';
 import '../../application/update_service.dart';
@@ -37,11 +40,11 @@ class SettingsScreen extends ConsumerWidget {
     final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: MomoGlassAppBar(
         title: const Text('系统设置'),
       ),
       body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + MomoDockInsets.bottomOf(context)),
         children: [
           _buildSectionHeader(context, '外观与个性化'),
           Card(
@@ -295,9 +298,9 @@ class _DiagnosticExportScreenState extends State<DiagnosticExportScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('本地诊断导出')),
+    appBar: MomoGlassAppBar(title: const Text('本地诊断导出')),
     body: ListView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
       children: [
         const Card(child: Padding(
           padding: EdgeInsets.all(16),
@@ -326,9 +329,9 @@ class ThemeSettingsScreen extends ConsumerWidget {
     final currentTheme = ref.watch(themeNameProvider).valueOrNull;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('主题中心')),
+      appBar: MomoGlassAppBar(title: const Text('主题中心')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
         children: MomoPalette.allPalettes.map((palette) {
           final isSelected = (currentTheme ?? 'default') == palette.storedValue;
           return Card(
@@ -601,9 +604,9 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('外部条码 API')),
+      appBar: MomoGlassAppBar(title: const Text('外部条码 API')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
         children: [
           SwitchListTile(
             title: const Text('启用外部条码查询'),
@@ -700,16 +703,16 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
     final defaultEndpoint = await settings.getValue(AiDraftService.endpointKey) ?? '';
     final defaultModel = await settings.getValue(AiDraftService.modelKey) ?? '';
     final defaultApiKey = await secureSettings.readAiApiKey() ?? '';
-    final defaultType = await settings.getValue(AiDraftService.endpointTypeKey) ?? 'auto';
+    final defaultType = AiClientHelper.normalizeEndpointType(await settings.getValue(AiDraftService.endpointTypeKey));
     final storedActiveId = await settings.getValue(AiDraftService.activeProfileKey);
     final storedSecondaryId = await settings.getValue(AiDraftService.secondaryProfileIdKey);
     final storedFallbackId = await settings.getValue(AiDraftService.fallbackProfileIdKey);
     final secondaryEndpoint = await settings.getValue(AiDraftService.secondaryEndpointKey);
     final secondaryModel = await settings.getValue(AiDraftService.secondaryModelKey);
-    final secondaryType = await settings.getValue(AiDraftService.secondaryTypeKey) ?? 'auto';
+    final secondaryType = AiClientHelper.normalizeEndpointType(await settings.getValue(AiDraftService.secondaryTypeKey));
     final fallbackEndpoint = await settings.getValue(AiDraftService.fallbackEndpointKey);
     final fallbackModel = await settings.getValue(AiDraftService.fallbackModelKey);
-    final fallbackType = await settings.getValue(AiDraftService.fallbackTypeKey) ?? 'auto';
+    final fallbackType = AiClientHelper.normalizeEndpointType(await settings.getValue(AiDraftService.fallbackTypeKey));
 
     List<Map<String, dynamic>> parsedProfiles = [];
     if (profilesRaw != null && profilesRaw.isNotEmpty) {
@@ -734,18 +737,11 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
     } else if (parsedProfiles.isEmpty) {
       parsedProfiles = [
         {
-          'id': 'openai_chat',
-          'name': 'OpenAI Chat Completions',
+          'id': 'openai_auto',
+          'name': 'OpenAI（自动适配）',
           'endpoint': 'https://api.openai.com/v1',
           'model': 'gpt-4o-mini',
-          'endpointType': 'chat',
-        },
-        {
-          'id': 'openai_responses',
-          'name': 'OpenAI Responses API',
-          'endpoint': 'https://api.openai.com/v1',
-          'model': 'gpt-4o-mini',
-          'endpointType': 'responses',
+          'endpointType': 'auto',
         },
       ];
     }
@@ -792,6 +788,11 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
 
     for (final profile in parsedProfiles) {
       final id = profile['id'] as String;
+      final type = AiClientHelper.normalizeEndpointType(profile['endpointType'] as String?);
+      if (profile['endpointType'] != type) {
+        profile['endpointType'] = type;
+        shouldSanitizeProfiles = true;
+      }
       // Migrate a legacy plaintext profile key into platform secure storage,
       // then ensure it will not be written back to SQLite.
       final legacyKey = profile.remove('apiKey') as String?;
@@ -889,6 +890,7 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
     final persisted = <Map<String, dynamic>>[];
     for (final profile in _profiles) {
       final id = profile['id'] as String;
+      profile['endpointType'] = AiClientHelper.normalizeEndpointType(profile['endpointType'] as String?);
       final draftKey = profile.remove('_apiKeyDraft') as String?;
       if (draftKey != null) {
         await secureSettings.writeAiApiKeyForProfile(id, draftKey);
@@ -903,19 +905,19 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
 
     await settings.setValue(AiDraftService.endpointKey, current['endpoint'] as String? ?? '');
     await settings.setValue(AiDraftService.modelKey, current['model'] as String? ?? '');
-    await settings.setValue(AiDraftService.endpointTypeKey, current['endpointType'] as String? ?? 'chat');
+    await settings.setValue(AiDraftService.endpointTypeKey, AiClientHelper.normalizeEndpointType(current['endpointType'] as String?));
     await settings.setValue(AiDraftService.activeProfileKey, current['id'] as String);
 
     final secondary = _profileWithRole(AiDraftService.secondaryRole);
     await settings.setValue(AiDraftService.secondaryEndpointKey, secondary?['endpoint'] as String? ?? '');
     await settings.setValue(AiDraftService.secondaryModelKey, secondary?['model'] as String? ?? '');
-    await settings.setValue(AiDraftService.secondaryTypeKey, secondary?['endpointType'] as String? ?? 'auto');
+    await settings.setValue(AiDraftService.secondaryTypeKey, AiClientHelper.normalizeEndpointType(secondary?['endpointType'] as String?));
     await settings.setValue(AiDraftService.secondaryProfileIdKey, secondary?['id'] as String? ?? '');
 
     final fallback = _profileWithRole(AiDraftService.fallbackRole);
     await settings.setValue(AiDraftService.fallbackEndpointKey, fallback?['endpoint'] as String? ?? '');
     await settings.setValue(AiDraftService.fallbackModelKey, fallback?['model'] as String? ?? '');
-    await settings.setValue(AiDraftService.fallbackTypeKey, fallback?['endpointType'] as String? ?? 'auto');
+    await settings.setValue(AiDraftService.fallbackTypeKey, AiClientHelper.normalizeEndpointType(fallback?['endpointType'] as String?));
     await settings.setValue(AiDraftService.fallbackProfileIdKey, fallback?['id'] as String? ?? '');
 
     // All current keys are profile-scoped. Remove the old shared key after
@@ -978,16 +980,25 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
     }
   }
 
-  Future<void> _addOrEditProfile({Map<String, dynamic>? item, bool duplicate = false}) async {
+  Future<void> _addOrEditProfile({
+    Map<String, dynamic>? item,
+    bool duplicate = false,
+  }) async {
     String copiedKey = '';
     if (duplicate && item != null) {
       try {
-        copiedKey = item['_apiKeyDraft'] as String? ??
-            await ref.read(secureSettingsServiceProvider)
-                .readAiApiKeyForProfile(item['id'] as String) ?? '';
+        copiedKey =
+            item['_apiKeyDraft'] as String? ??
+            await ref
+                .read(secureSettingsServiceProvider)
+                .readAiApiKeyForProfile(item['id'] as String) ??
+            '';
       } catch (_) {
         if (mounted) {
-          showAppSnackBar(context, const SnackBar(content: Text('无法读取来源配置的密钥，请重试。')));
+          showAppSnackBar(
+            context,
+            const SnackBar(content: Text('无法读取来源配置的密钥，请重试。')),
+          );
         }
         return;
       }
@@ -995,197 +1006,408 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
     }
     final isNew = item == null || duplicate;
     final sourceName = item?['name'] as String? ?? '';
-    final nameCtrl = TextEditingController(text: duplicate ? '$sourceName 副本'.trim() : sourceName);
-    final urlCtrl = TextEditingController(text: item?['endpoint'] as String? ?? 'https://api.openai.com/v1');
-    final modelCtrl = TextEditingController(text: item?['model'] as String? ?? 'gpt-4o-mini');
+    final nameCtrl = TextEditingController(
+      text: duplicate ? '$sourceName 副本'.trim() : sourceName,
+    );
+    final urlCtrl = TextEditingController(
+      text: item?['endpoint'] as String? ?? 'https://api.openai.com/v1',
+    );
+    final modelCtrl = TextEditingController(
+      text: item?['model'] as String? ?? 'gpt-4o-mini',
+    );
     final keyCtrl = TextEditingController();
     bool testing = false;
     String? testResult;
-    String endpointType = item?['endpointType'] as String? ?? 'auto';
-    String fallbackRole = duplicate ? AiDraftService.standbyRole :
-        item?[AiDraftService.profileRoleKey] as String? ??
-            (item?['id'] == _activeId ? AiDraftService.primaryRole : AiDraftService.standbyRole);
+    bool? testSucceeded;
+    var testRevision = 0;
+    var dialogOpen = true;
+    String endpointType = AiClientHelper.normalizeEndpointType(item?['endpointType'] as String?);
+    String fallbackRole = duplicate
+        ? AiDraftService.standbyRole
+        : item?[AiDraftService.profileRoleKey] as String? ??
+              (item?['id'] == _activeId
+                  ? AiDraftService.primaryRole
+                  : AiDraftService.standbyRole);
+
+    void invalidateTest(StateSetter setDialogState) {
+      setDialogState(() {
+        testRevision++;
+        if (testing || testResult != null) {
+          testResult = '配置已变化，请重新测试。';
+        }
+        testing = false;
+        testSucceeded = null;
+      });
+    }
 
     await showDialog<void>(
       context: context,
       useRootNavigator: false,
-      builder: (ctx) => _SwipeDismissProfileDialog(
-        onDismiss: () => Navigator.pop(ctx),
-        child: StatefulBuilder(
-          builder: (context, setDialogState) => AlertDialog(
-          title: Text(duplicate ? '复制 AI 模型服务' : isNew ? '添加 AI 模型服务' : '编辑 AI 模型服务'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: '配置名称（如：主力模型）')),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  isExpanded: true,
-                  initialValue: fallbackRole,
-                  isDense: true,
-                  decoration: const InputDecoration(labelText: '容灾角色'),
-                  items: const [
-                    DropdownMenuItem(value: AiDraftService.primaryRole, child: Text('主服务（优先调用）', overflow: TextOverflow.ellipsis)),
-                    DropdownMenuItem(value: AiDraftService.secondaryRole, child: Text('副服务（主服务失败时调用）', overflow: TextOverflow.ellipsis)),
-                    DropdownMenuItem(value: AiDraftService.fallbackRole, child: Text('兜底服务（前两者失败时调用）', overflow: TextOverflow.ellipsis)),
-                    DropdownMenuItem(value: AiDraftService.standbyRole, child: Text('仅保存，不参与调用', overflow: TextOverflow.ellipsis)),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) setDialogState(() => fallbackRole = value);
-                  },
-                ),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  initialValue: endpointType,
-                  isDense: true,
-                  isExpanded: true,
-                  menuMaxHeight: 280,
-                  borderRadius: BorderRadius.circular(16),
-                  decoration: const InputDecoration(labelText: '接口协议类型'),
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'auto',
-                      child: Text('自动判断 (Auto 推荐)', overflow: TextOverflow.ellipsis),
+      builder: (ctx) => PopScope<void>(
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop) {
+            dialogOpen = false;
+            testRevision++;
+          }
+        },
+        child: _SwipeDismissProfileDialog(
+          onDismiss: () => Navigator.pop(ctx),
+          child: StatefulBuilder(
+            builder: (context, setDialogState) => AlertDialog(
+              title: Text(
+                duplicate
+                    ? '复制 AI 模型服务'
+                    : isNew
+                    ? '添加 AI 模型服务'
+                    : '编辑 AI 模型服务',
+              ),
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 16,
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          TextField(
+                            controller: nameCtrl,
+                            decoration: const InputDecoration(
+                              labelText: '配置名称（如：主力模型）',
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          DropdownButtonFormField<String>(
+                            isExpanded: true,
+                            initialValue: fallbackRole,
+                            isDense: true,
+                            decoration: const InputDecoration(
+                              labelText: '容灾角色',
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: AiDraftService.primaryRole,
+                                child: Text(
+                                  '主服务（优先调用）',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: AiDraftService.secondaryRole,
+                                child: Text(
+                                  '副服务（主服务失败时调用）',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: AiDraftService.fallbackRole,
+                                child: Text(
+                                  '兜底服务（前两者失败时调用）',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: AiDraftService.standbyRole,
+                                child: Text(
+                                  '仅保存，不参与调用',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                            onChanged: (value) {
+                              if (value != null) {
+                                setDialogState(() => fallbackRole = value);
+                              }
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                          DropdownButtonFormField<String>(
+                            initialValue: endpointType,
+                            isDense: true,
+                            isExpanded: true,
+                            menuMaxHeight: 280,
+                            borderRadius: BorderRadius.circular(16),
+                            decoration: const InputDecoration(
+                              labelText: '接口协议类型',
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'auto',
+                                child: Text(
+                                  '自动适配 (Auto 推荐)',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: 'chat',
+                                child: Text(
+                                  'Chat Completions (/v1/chat/completions)',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: 'responses',
+                                child: Text(
+                                  'Responses API (/v1/responses)',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                            onChanged: (val) {
+                              if (val != null) {
+                                endpointType = val;
+                                invalidateTest(setDialogState);
+                              }
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: urlCtrl,
+                            onChanged: (_) => invalidateTest(setDialogState),
+                            decoration: const InputDecoration(
+                              labelText: 'API 地址 (Base URL)',
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: modelCtrl,
+                            onChanged: (_) => invalidateTest(setDialogState),
+                            decoration: const InputDecoration(
+                              labelText: '模型名称 (Model)',
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: keyCtrl,
+                            onChanged: (_) => invalidateTest(setDialogState),
+                            decoration: InputDecoration(
+                              labelText: 'API Key',
+                              hintText: duplicate
+                                  ? (copiedKey.isEmpty
+                                        ? '来源未配置密钥，请填写'
+                                        : '留空则沿用来源配置的密钥')
+                                  : isNew
+                                  ? '请输入 API Key'
+                                  : '留空则保留已保存的密钥',
+                            ),
+                            obscureText: true,
+                          ),
+                          if (duplicate) ...[
+                            const SizedBox(height: 8),
+                            const Text(
+                              '保存后新增独立配置。默认不参与调用，可调整容灾角色。',
+                              style: TextStyle(fontSize: MomoTextSize.caption),
+                            ),
+                          ],
+                          const SizedBox(height: 8),
+                          const Text(
+                            '测试只发送简短验证消息，不发送库存或对话；可能产生少量调用费用。',
+                            style: TextStyle(fontSize: MomoTextSize.caption),
+                          ),
+                        ],
+                      ),
                     ),
-                    DropdownMenuItem(
-                      value: 'chat',
-                      child: Text('Chat Completions (/v1/chat/completions)', overflow: TextOverflow.ellipsis),
-                    ),
-                    DropdownMenuItem(
-                      value: 'responses',
-                      child: Text('Responses API (/v1/responses)', overflow: TextOverflow.ellipsis),
-                    ),
-                  ],
-                  onChanged: (val) {
-                    if (val != null) {
-                      setDialogState(() { endpointType = val; testResult = null; });
-                    }
-                  },
-                ),
-                const SizedBox(height: 8),
-                TextField(controller: urlCtrl, onChanged: (_) => setDialogState(() => testResult = null), decoration: const InputDecoration(labelText: 'API 地址 (Base URL)')),
-                const SizedBox(height: 8),
-                TextField(controller: modelCtrl, onChanged: (_) => setDialogState(() => testResult = null), decoration: const InputDecoration(labelText: '模型名称 (Model)')),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: keyCtrl,
-                  onChanged: (_) => setDialogState(() => testResult = null),
-                  decoration: InputDecoration(
-                    labelText: 'API Key',
-                    hintText: duplicate
-                        ? (copiedKey.isEmpty ? '来源未配置密钥，请填写' : '留空则沿用来源配置的密钥')
-                        : isNew ? '请输入 API Key' : '留空则保留已保存的密钥',
                   ),
-                  obscureText: true,
-                ),
-                if (duplicate) ...[
-                  const SizedBox(height: 8),
-                  const Text('保存后新增独立配置。默认不参与调用，可调整容灾角色。',
-                      style: TextStyle(fontSize: MomoTextSize.caption)),
+                  if (testing || testResult != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Semantics(
+                        liveRegion: true,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (!testing) ...[
+                              Icon(
+                                testSucceeded == true
+                                    ? Icons.check_circle_outline
+                                    : testSucceeded == false
+                                    ? Icons.error_outline
+                                    : Icons.info_outline,
+                                size: 20,
+                                color: testSucceeded == false
+                                    ? Theme.of(context).colorScheme.error
+                                    : null,
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                            Expanded(
+                              child: Text(
+                                testing ? '正在测试当前配置…' : testResult!,
+                                key: const ValueKey(
+                                  'ai-connection-test-feedback',
+                                ),
+                                style: const TextStyle(
+                                  fontSize: MomoTextSize.caption,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                 ],
-                const SizedBox(height: 8),
-                const Text('测试只发送简短验证消息，不发送库存或对话；可能产生少量调用费用。',
-                    style: TextStyle(fontSize: MomoTextSize.caption)),
-                if (testResult != null) Text(testResult!),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: testing
+                      ? null
+                      : () async {
+                          // Parameter edits invalidate this attempt even if the user
+                          // later restores the same values or starts another test.
+                          final revision = ++testRevision;
+                          bool isCurrent() =>
+                              dialogOpen &&
+                              context.mounted &&
+                              revision == testRevision;
+                          final endpoint = urlCtrl.text.trim();
+                          final model = modelCtrl.text.trim();
+                          final protocol = endpointType;
+                          final enteredKey = keyCtrl.text.trim();
+                          final secure = ref.read(
+                            secureSettingsServiceProvider,
+                          );
+                          final executor = ref.read(
+                            aiConnectionTestExecutorProvider,
+                          );
+                          FocusScope.of(context).unfocus();
+                          setDialogState(() {
+                            testing = true;
+                            testResult = null;
+                            testSucceeded = null;
+                          });
+                          String result;
+                          var succeeded = false;
+                          try {
+                            final key = enteredKey.isNotEmpty
+                                ? enteredKey
+                                : duplicate
+                                ? copiedKey
+                                : item?['_apiKeyDraft'] as String? ??
+                                      (item == null
+                                          ? ''
+                                          : await secure.readAiApiKeyForProfile(
+                                              item['id'] as String,
+                                            )) ??
+                                      '';
+                            if (!isCurrent()) return;
+                            if (endpoint.isEmpty ||
+                                model.isEmpty ||
+                                key.isEmpty) {
+                              result = '测试失败：请填写 API 地址、模型和 API Key 后测试。';
+                            } else {
+                              final response = await executor.execute(
+                                configs: [
+                                  AiEndpointConfig(
+                                    level: AiApiLevel.primary,
+                                    endpoint: endpoint,
+                                    model: model,
+                                    apiKey: key,
+                                    endpointType: protocol,
+                                  ),
+                                ],
+                                systemPrompt: 'This is a connectivity test. Reply briefly.',
+                                userPrompt: 'Reply OK.',
+                              );
+                              succeeded = true;
+                              result =
+                                  '测试通过 · ${response.actualProtocol} · '
+                                  '${response.traceLogs.last.durationMs} ms（尚未保存）';
+                            }
+                          } catch (error) {
+                            result = '测试失败：${aiFailureMessage(error)}';
+                          }
+                          if (!isCurrent()) return;
+                          setDialogState(() {
+                            testing = false;
+                            testResult = result;
+                            testSucceeded = succeeded;
+                          });
+                        },
+                  child: testing
+                      ? const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            SizedBox(width: 8),
+                            Text('测试中…'),
+                          ],
+                        )
+                      : const Text('测试'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: testing
+                      ? null
+                      : () {
+                          final name = nameCtrl.text.trim();
+                          final url = urlCtrl.text.trim();
+                          final model = modelCtrl.text.trim();
+                          final enteredKey = keyCtrl.text.trim();
+                          final key = duplicate && enteredKey.isEmpty
+                              ? copiedKey
+                              : enteredKey;
+                          if (name.isEmpty || url.isEmpty || model.isEmpty) {
+                            return;
+                          }
+
+                          setState(() {
+                            if (isNew) {
+                              final newId = const Uuid().v4();
+                              final profile = <String, dynamic>{
+                                'id': newId,
+                                'name': name,
+                                'endpoint': url,
+                                'model': model,
+                                '_apiKeyDraft': key,
+                                'hasApiKey': key.isNotEmpty,
+                                'endpointType': endpointType,
+                              };
+                              _profiles.add(profile);
+                              _assignProfileRole(profile, fallbackRole);
+                            } else {
+                              final profile = item;
+                              profile['name'] = name;
+                              profile['endpoint'] = url;
+                              profile['model'] = model;
+                              if (key.isNotEmpty) {
+                                profile['_apiKeyDraft'] = key;
+                                profile['hasApiKey'] = true;
+                              }
+                              profile['endpointType'] = endpointType;
+                              _assignProfileRole(profile, fallbackRole);
+                            }
+                          });
+                          Navigator.pop(ctx);
+                          _save();
+                        },
+                  child: const Text('确定'),
+                ),
               ],
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: testing ? null : () async {
-                final endpoint = urlCtrl.text.trim();
-                final model = modelCtrl.text.trim();
-                final protocol = endpointType;
-                final enteredKey = keyCtrl.text.trim();
-                final secure = ref.read(secureSettingsServiceProvider);
-                final executor = ref.read(aiConnectionTestExecutorProvider);
-                setDialogState(() { testing = true; testResult = null; });
-                String result;
-                try {
-                  final key = enteredKey.isNotEmpty ? enteredKey : duplicate ? copiedKey
-                      : item?['_apiKeyDraft'] as String? ??
-                          (item == null ? '' : await secure.readAiApiKeyForProfile(item['id'] as String)) ?? '';
-                  if (endpoint.isEmpty || model.isEmpty || key.isEmpty) {
-                    result = '请填写 API 地址、模型和 API Key 后测试。';
-                  } else {
-                    final response = await executor.execute(
-                      configs: [AiEndpointConfig(level: AiApiLevel.primary,
-                          endpoint: endpoint, model: model, apiKey: key, endpointType: protocol)],
-                      systemPrompt: 'This is a connectivity test. Reply briefly.',
-                      userPrompt: 'Reply OK.',
-                    );
-                    result = '测试通过 · $model · ${response.actualProtocol} · '
-                        '${response.traceLogs.last.durationMs} ms（尚未保存）';
-                  }
-                } catch (error) {
-                  result = '测试失败：${aiFailureMessage(error)}';
-                }
-                if (!context.mounted) return;
-                setDialogState(() {
-                  testing = false;
-                  testResult = endpoint == urlCtrl.text.trim() && model == modelCtrl.text.trim() &&
-                      protocol == endpointType && enteredKey == keyCtrl.text.trim()
-                      ? result : '配置已变化，请重新测试。';
-                });
-              },
-              child: Text(testing ? '测试中…' : '测试'),
-            ),
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-            FilledButton(
-              onPressed: testing ? null : () {
-                final name = nameCtrl.text.trim();
-                final url = urlCtrl.text.trim();
-                final model = modelCtrl.text.trim();
-                final enteredKey = keyCtrl.text.trim();
-                final key = duplicate && enteredKey.isEmpty ? copiedKey : enteredKey;
-                if (name.isEmpty || url.isEmpty || model.isEmpty) return;
-
-                setState(() {
-                  if (isNew) {
-                    final newId = const Uuid().v4();
-                    final profile = <String, dynamic>{
-                      'id': newId,
-                      'name': name,
-                      'endpoint': url,
-                      'model': model,
-                      '_apiKeyDraft': key,
-                      'hasApiKey': key.isNotEmpty,
-                      'endpointType': endpointType,
-                    };
-                    _profiles.add(profile);
-                    _assignProfileRole(profile, fallbackRole);
-                  } else {
-                    final profile = item;
-                    profile['name'] = name;
-                    profile['endpoint'] = url;
-                    profile['model'] = model;
-                    if (key.isNotEmpty) {
-                      profile['_apiKeyDraft'] = key;
-                      profile['hasApiKey'] = true;
-                    }
-                    profile['endpointType'] = endpointType;
-                    _assignProfileRole(profile, fallbackRole);
-                  }
-                });
-                Navigator.pop(ctx);
-                _save();
-              },
-              child: const Text('确定'),
-            ),
-          ],
           ),
         ),
       ),
     );
+    dialogOpen = false;
+    testRevision++;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('AI 解析与模型配置')),
+      appBar: MomoGlassAppBar(title: const Text('AI 解析与模型配置')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
         children: [
           SwitchListTile.adaptive(
             title: const Text('允许 AI 提议应用操作'),
@@ -1219,7 +1441,7 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
           const SizedBox(height: 8),
           ..._profiles.map((p) {
             final isDefault = p['id'] == _activeId;
-            final type = p['endpointType'] as String? ?? 'auto';
+            final type = AiClientHelper.normalizeEndpointType(p['endpointType'] as String?);
             final Color badgeColor = type == 'responses'
                 ? Colors.purple
                 : (type == 'chat' ? Colors.blue : Colors.teal);
@@ -1433,9 +1655,9 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('数据备份与迁移')),
+        appBar: MomoGlassAppBar(title: const Text('数据备份与迁移')),
         body: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
           children: [
             Card(
               child: ListTile(
@@ -1479,9 +1701,9 @@ class FontScaleSettingsScreen extends ConsumerWidget {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('字体大小设置')),
+      appBar: MomoGlassAppBar(title: const Text('字体大小设置')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
         children: [
           Card(
             margin: const EdgeInsets.only(bottom: 20),
@@ -1691,9 +1913,9 @@ class _NotificationSettingsScreenState extends ConsumerState<NotificationSetting
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('提醒与通知')),
+        appBar: MomoGlassAppBar(title: const Text('提醒与通知')),
         body: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
           children: [
             Card(
               child: ListTile(
@@ -1855,12 +2077,12 @@ class _StorageManagementScreenState extends ConsumerState<StorageManagementScree
   Widget build(BuildContext context) {
     final usage = _usage;
     return Scaffold(
-      appBar: AppBar(
+      appBar: MomoGlassAppBar(
         title: const Text('数据与存储空间'),
         actions: [IconButton(onPressed: _busy ? null : _reload, icon: const Icon(Icons.refresh), tooltip: '刷新')],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
         children: [
           Card(
             child: Padding(
@@ -2015,9 +2237,9 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('隐私与密钥')),
+        appBar: MomoGlassAppBar(title: const Text('隐私与密钥')),
         body: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
           children: [
             Card(
               child: ListTile(
@@ -2143,9 +2365,9 @@ class _AboutSettingsScreenState extends ConsumerState<AboutSettingsScreen> {
     final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
     final release = _checkResult?.release;
     return Scaffold(
-      appBar: AppBar(title: const Text('关于嬷嬷的小箱子')),
+      appBar: MomoGlassAppBar(title: const Text('关于嬷嬷的小箱子')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
         children: [
           Card(
             child: ListTile(

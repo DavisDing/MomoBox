@@ -7,6 +7,8 @@ import '../../application/nas_connection_service.dart';
 import '../../domain/models/nas_homeassistant_models.dart';
 import '../../domain/models/smart_home_models.dart';
 import '../controllers/providers.dart';
+import '../widgets/momo_glass_components.dart';
+import '../widgets/momo_floating_dock.dart';
 import '../controllers/smart_home_controller.dart';
 
 class HomeAssistantSettingsScreen extends ConsumerStatefulWidget {
@@ -142,7 +144,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
     _hydrateFromState(homeState);
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: MomoGlassAppBar(
         title: const Text('Home Assistant 连接配置'),
         actions: [
           IconButton(
@@ -153,7 +155,9 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(
+          16, 16, 16, 16 + MomoDockInsets.bottomOf(context),
+        ),
         children: [
           _buildStatusCard(homeState, nasState),
           const SizedBox(height: 12),
@@ -174,54 +178,52 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
     final status = _statusPresentation(state, nasState);
     final integration = state.integrations.firstOrNull;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: status.color.withValues(alpha: 0.15),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.hub_rounded, color: status.color, size: 22),
+    return MomoGlassCard(
+      frosted: false,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: status.color.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Home Assistant 集成', style: TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.body)),
-                  const SizedBox(height: 4),
-                  Text(status.description, style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey)),
-                  if (integration != null) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      '${integration.name} · ${integration.baseUrl}',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: MomoTextSize.caption),
-                    ),
-                  ],
+            child: Icon(Icons.hub_rounded, color: status.color, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Home Assistant 集成', style: TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.body)),
+                const SizedBox(height: 4),
+                Text(status.description, style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey)),
+                if (integration != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    '${integration.name} · ${integration.baseUrl}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: MomoTextSize.caption),
+                  ),
                 ],
-              ),
+              ],
             ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: status.color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                status.label,
-                style: TextStyle(fontSize: MomoTextSize.caption, color: status.color, fontWeight: FontWeight.bold),
-              ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: status.color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
             ),
-          ],
-        ),
+            child: Text(
+              status.label,
+              style: TextStyle(fontSize: MomoTextSize.caption, color: status.color, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -255,14 +257,13 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
     final isError = state.commandError != null || state.haStatus == HaConnectionStatus.offline;
     final text = state.commandError ?? state.message!;
     return Card(
-      color: (isError ? Colors.red : Colors.blue).withValues(alpha: 0.08),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(isError ? Icons.error_outline_rounded : Icons.info_outline_rounded,
-                size: 20, color: isError ? Colors.red : Colors.blue),
+                size: 20, color: isError ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.primary),
             const SizedBox(width: 8),
             Expanded(child: Text(text, style: const TextStyle(fontSize: MomoTextSize.caption, height: 1.4))),
           ],
@@ -345,13 +346,12 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
                 children: [
                   Expanded(
                     child: FilledButton.icon(
-                      style: FilledButton.styleFrom(backgroundColor: palette.primary),
                       onPressed: isLoading ? null : _saveIntegration,
                       icon: isLoading
                           ? const SizedBox(
                               width: 16,
                               height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.save_outlined),
                       label: const Text('保存配置'),

@@ -1,3 +1,4 @@
+import '../widgets/momo_glass_components.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -31,7 +32,7 @@ class _ShoppingScreenState extends ConsumerState<ShoppingScreen> {
   Widget build(BuildContext context) {
     final shopping = ref.watch(shoppingProvider);
     return Scaffold(
-      appBar: AppBar(
+      appBar: MomoGlassAppBar(
         title: const Text('待采买清单'),
         actions: [
           IconButton(
@@ -49,10 +50,11 @@ class _ShoppingScreenState extends ConsumerState<ShoppingScreen> {
             children: [
               Text('采购清单加载失败：$error', textAlign: TextAlign.center),
               const SizedBox(height: 12),
-              OutlinedButton.icon(
+                  MomoCapsuleButton(
                 onPressed: () => ref.invalidate(shoppingProvider),
-                icon: const Icon(Icons.refresh),
-                label: const Text('重试'),
+                    label: '重试',
+                    isPrimary: false,
+                    icon: const Icon(Icons.refresh),
               ),
             ],
           ),
@@ -98,9 +100,12 @@ class _ShoppingScreenState extends ConsumerState<ShoppingScreen> {
                   top: false,
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                    child: Row(
+                    child: Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      spacing: 12,
+                      runSpacing: 8,
                       children: [
-                        OutlinedButton(
+                        MomoCapsuleButton(
                           onPressed: _busy ? null : () {
                             setState(() {
                               final ids = visible.map((e) => e.id).toSet();
@@ -111,13 +116,15 @@ class _ShoppingScreenState extends ConsumerState<ShoppingScreen> {
                               }
                             });
                           },
-                          child: Text(visible.every((e) => _selectedIds.contains(e.id)) ? '取消全选' : '全选'),
+                          label:
+                              visible.every((e) => _selectedIds.contains(e.id)) ? '取消全选' : '全选',
+                          isPrimary: false,
                         ),
-                        const Spacer(),
-                        FilledButton.icon(
+
+                        MomoCapsuleButton(
                           onPressed: _busy ? null : () => _intakeSelected(selected),
+                          label: _busy ? '入库中' : '入库（${selected.length}）',
                           icon: const Icon(Icons.inventory_2_outlined),
-                          label: Text(_busy ? '入库中' : '入库（${selected.length}）'),
                         ),
                       ],
                     ),
@@ -139,8 +146,10 @@ class _ShoppingScreenState extends ConsumerState<ShoppingScreen> {
         children: [
           Text(title, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 6),
-          ...entries.map((entry) => Card(
-            child: ListTile(
+          ...entries.map((entry) => MomoGlassCard(
+              padding: EdgeInsets.zero,
+              margin: const EdgeInsets.only(bottom: 8),
+              child: ListTile(
               contentPadding: const EdgeInsets.only(left: 4, right: 4),
               leading: Checkbox(
                 value: _selectedIds.contains(entry.id),
@@ -167,10 +176,14 @@ class _ShoppingScreenState extends ConsumerState<ShoppingScreen> {
                     onPressed: _busy ? null : () async {
                       try {
                         await ref.read(shoppingServiceProvider).delete(entry.id);
-                        if (mounted) setState(() => _selectedIds.remove(entry.id));
-                      } catch (error) {
-                        if (mounted) showAppSnackBar(context, SnackBar(content: Text('删除失败：$error')));
+                        if (mounted) {
+                                    setState(() => _selectedIds.remove(entry.id));
                       }
+                                } catch (error) {
+                        if (mounted) {
+                                    showAppSnackBar(context, SnackBar(content: Text('删除失败：$error')));
+                                  }
+                                }
                     },
                     icon: const Icon(Icons.delete_outline),
                   ),
@@ -262,7 +275,9 @@ class _ShoppingScreenState extends ConsumerState<ShoppingScreen> {
           content: Text('将 ${plans.length} 项采购商品分别记为新批次；原有库存不会覆盖。本次批次不设置生产/到期日期，仍可参与库存和消耗，但不产生效期提醒。如需填写日期，请取消后逐项使用右侧“编辑入库”。'),
           actions: [
             TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('取消')),
-            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('确认入库')),
+                MomoCapsuleButton(onPressed: () => Navigator.pop(dialogContext, true),
+                  label: '确认入库',
+                ),
           ],
         ),
       );
@@ -276,9 +291,13 @@ class _ShoppingScreenState extends ConsumerState<ShoppingScreen> {
         count++;
         if (mounted) setState(() => _selectedIds.remove(plan.entry.id));
       }
-      if (mounted) showAppSnackBar(context, SnackBar(content: Text('已将 $count 项商品按新批次入库。')));
+      if (mounted) {
+        showAppSnackBar(context, SnackBar(content: Text('已将 $count 项商品按新批次入库。')));
+    }
     } catch (error) {
-      if (mounted) showAppSnackBar(context, SnackBar(content: Text('入库中断，已成功的项目不回滚；请检查剩余清单：$error')));
+      if (mounted) {
+        showAppSnackBar(context, SnackBar(content: Text('入库中断，已成功的项目不回滚；请检查剩余清单：$error')));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -315,7 +334,7 @@ class _ShoppingScreenState extends ConsumerState<ShoppingScreen> {
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('取消')),
-            FilledButton(
+                    MomoCapsuleButton(
               onPressed: () async {
                 try {
                   await ref.read(shoppingServiceProvider).addOrMerge(
@@ -324,12 +343,16 @@ class _ShoppingScreenState extends ConsumerState<ShoppingScreen> {
                     reason: reason.text,
                     category: category,
                   );
-                  if (dialogContext.mounted) Navigator.pop(dialogContext);
-                } catch (error) {
-                  if (dialogContext.mounted) showAppSnackBar(dialogContext, SnackBar(content: Text('$error')));
+                  if (dialogContext.mounted) {
+                            Navigator.pop(dialogContext);
+                          }
+                        } catch (error) {
+                  if (dialogContext.mounted) {
+                            showAppSnackBar(dialogContext, SnackBar(content: Text('$error')));
                 }
-              },
-              child: const Text('添加'),
+              }
+                      },
+                      label: '添加',
             ),
           ],
         ),

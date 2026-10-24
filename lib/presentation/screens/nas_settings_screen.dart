@@ -9,6 +9,8 @@ import '../../domain/models/nas_family_device_models.dart';
 import '../../domain/models/nas_models.dart';
 import '../controllers/nas_account_controller.dart';
 import '../controllers/providers.dart';
+import '../widgets/momo_glass_components.dart';
+import '../widgets/momo_floating_dock.dart';
 import '../widgets/app_feedback.dart';
 
 class NasSettingsScreen extends ConsumerStatefulWidget {
@@ -392,9 +394,11 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('NAS 协同与家庭共享')),
+      appBar: MomoGlassAppBar(title: const Text('NAS 协同与家庭共享')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(
+          16, 16, 16, 16 + MomoDockInsets.bottomOf(context),
+        ),
         children: [
           _buildConnectionSummary(context, connection, statusColor),
           const SizedBox(height: 12),
@@ -421,48 +425,46 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
     NasConnectionState state,
     Color statusColor,
   ) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: statusColor.withValues(alpha: 0.15),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.dns_rounded, color: statusColor, size: 24),
+    return MomoGlassCard(
+      frosted: false,
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('NAS 协同服务', style: TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.title)),
-                  const SizedBox(height: 4),
-                  Text(
-                    state.serverUrl.isEmpty ? '配置服务地址后进行真实健康检查' : state.serverUrl,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey),
-                  ),
-                ],
-              ),
+            child: Icon(Icons.dns_rounded, color: statusColor, size: 24),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('NAS 协同服务', style: TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.title)),
+                const SizedBox(height: 4),
+                Text(
+                  state.serverUrl.isEmpty ? '配置服务地址后进行真实健康检查' : state.serverUrl,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey),
+                ),
+              ],
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: statusColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                _statusTitle(state),
-                style: TextStyle(fontSize: MomoTextSize.caption, color: statusColor, fontWeight: FontWeight.bold),
-              ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
             ),
-          ],
-        ),
+            child: Text(
+              _statusTitle(state),
+              style: TextStyle(fontSize: MomoTextSize.caption, color: statusColor, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -525,10 +527,9 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
-                style: FilledButton.styleFrom(backgroundColor: palette.primary),
                 onPressed: isChecking ? null : _testConnection,
                 icon: isChecking
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                     : const Icon(Icons.network_check_rounded),
                 label: Text(isChecking ? '检测中…' : '测试并保存 NAS 连接'),
               ),
@@ -664,7 +665,6 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
                 runSpacing: 8,
                 children: [
                   FilledButton.icon(
-                    style: FilledButton.styleFrom(backgroundColor: palette.primary),
                     onPressed: isLoading ? null : _createInvite,
                     icon: const Icon(Icons.qr_code_2, size: 18),
                     label: const Text('生成邀请码'),
@@ -684,7 +684,6 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
                 runSpacing: 8,
                 children: [
                   FilledButton.icon(
-                    style: FilledButton.styleFrom(backgroundColor: palette.primary),
                     onPressed: isLoading ? null : _createFamily,
                     icon: const Icon(Icons.add_home_work_outlined, size: 18),
                     label: const Text('创建家庭'),

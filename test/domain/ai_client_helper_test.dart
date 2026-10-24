@@ -2,6 +2,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:momo_box/application/ai_client_helper.dart';
 
 void main() {
+  test('protocol normalization treats missing, blank and unknown values as auto', () {
+    for (final value in [null, '', ' \t\n ', 'unexpected']) {
+      expect(AiClientHelper.normalizeEndpointType(value), 'auto');
+    }
+    for (final protocol in ['auto', 'chat', 'responses']) {
+      expect(AiClientHelper.normalizeEndpointType(protocol), protocol);
+      expect(AiClientHelper.normalizeEndpointType(' $protocol '), protocol);
+      expect(AiClientHelper.resolveProtocol('https://example.com/v1', ' $protocol '), protocol);
+    }
+  });
+
   test('Responses skips reasoning and joins all message text parts', () {
     expect(AiClientHelper.extractResponseText({
       'output': [
