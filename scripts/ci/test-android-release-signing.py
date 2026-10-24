@@ -54,6 +54,11 @@ class SigningTests(unittest.TestCase):
         self.gradle.write_text(KOTLIN)
         self.cert = b'fixture certificate (not a real key)'
         self.pin = hashlib.sha256(self.cert).hexdigest()
+        self.baseline = self.root / 'release-cert.sha256'
+        self.baseline.write_text(self.pin + '\n')
+        baseline_patch = patch.object(signing, 'RELEASE_CERTIFICATE', self.baseline)
+        baseline_patch.start()
+        self.addCleanup(baseline_patch.stop)
         self.env = dict(zip(signing.FIELDS, (base64.b64encode(b'fixture keystore').decode(),
                                            'store-secret', 'key-secret', 'fixture-alias', self.pin)))
 
@@ -82,6 +87,45 @@ class SigningTests(unittest.TestCase):
                 env = dict(self.env, **{field: value})
                 with self.assertRaises(signing.SigningError): signing.prepare(self.root, env)
                 self.assert_no_material()
+
+    def test_replacing_key_and_secret_pin_together_cannot_change_release_identity(self):
+        new_cert = b'different certificate with its own matching secret pin'
+        env = dict(self.env, ANDROID_SIGNING_CERT_SHA256=hashlib.sha256(new_cert).hexdigest(),
+                   ANDROID_SIGNING_KEYSTORE_BASE64=base64.b64encode(b'different keystore').decode())
+        with patch.object(signing, 'run', return_value=new_cert) as call:
+            with self.assertRaisesRegex(signing.SigningError, 'committed release identity'):
+                signing.prepare(self.root, env)
+            # Check before even exporting a certificate or writing a key.
+            call.assert_not_called()
+        self.assert_no_material()
+        self.assertEqual(self.gradle.read_text(), KOTLIN)
+
+    def test_artifact_verification_also_rejects_replaced_secret_pin(self):
+        env = dict(self.env, ANDROID_SIGNING_CERT_SHA256='0' * 64)
+        with patch.object(signing, 'run') as call:
+            for verify in (lambda: signing.verify(Path('a.apk'), Path('a.aab'), env, self.root),
+                           lambda: signing.verify_aab(Path('a.aab'), env, self.root)):
+                with self.assertRaisesRegex(signing.SigningError, 'committed release identity'):
+                    verify()
+            call.assert_not_called()
+
+    def test_missing_invalid_or_unreadable_baseline_fails_closed(self):
+        for value in (b'', b'0' * 63, b'0' * 64 + b'\n' + b'1' * 64, b'\xff'):
+            with self.subTest(value=value):
+                self.baseline.write_bytes(value)
+                with self.assertRaisesRegex(signing.SigningError, 'invalid or unavailable'):
+                    signing.prepare(self.root, self.env)
+                self.assert_no_material()
+                self.assertEqual(self.gradle.read_text(), KOTLIN)
+        self.baseline.unlink()
+        with self.assertRaisesRegex(signing.SigningError, 'invalid or unavailable'):
+            signing.prepare(self.root, self.env)
+        self.assert_no_material()
+
+    def test_baseline_and_secret_allow_equivalent_fingerprint_formatting(self):
+        self.baseline.write_text(':'.join(self.pin[i:i + 2] for i in range(0, 64, 2)).upper() + '\n')
+        self.assertEqual(signing.release_pin(self.env), self.pin)
+        self.assertEqual(signing.release_pin(dict(self.env, ANDROID_SIGNING_CERT_SHA256=self.pin.upper())), self.pin)
 
     def test_kotlin_and_groovy_patch_preserve_debug_and_original(self):
         for name, text in [('build.gradle.kts', KOTLIN), ('build.gradle', GROOVY)]:
@@ -237,6 +281,8 @@ class SigningTests(unittest.TestCase):
                             '-storepass:env', 'ANDROID_SIGNING_STORE_PASSWORD'], env)
         env['ANDROID_SIGNING_CERT_SHA256'] = hashlib.sha256(cert).hexdigest()
         env['ANDROID_SIGNING_KEYSTORE_BASE64'] = base64.b64encode(fixture.read_bytes()).decode()
+        # Isolated fixture identity, never the committed production baseline.
+        self.baseline.write_text(env['ANDROID_SIGNING_CERT_SHA256'] + '\n')
         signing.prepare(self.root, env)
         jar = self.root / 'signed-test.jar'
         with zipfile.ZipFile(jar, 'w') as archive:

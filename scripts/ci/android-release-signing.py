@@ -17,6 +17,7 @@ FIELDS = (
     'ANDROID_SIGNING_CERT_SHA256',
 )
 MARKER = '// MomoBox fixed release signing'
+RELEASE_CERTIFICATE = Path(__file__).with_name('android-release-cert.sha256')
 
 
 class SigningError(Exception):
@@ -30,11 +31,28 @@ def fingerprint(value):
     return result
 
 
+def release_pin(env):
+    pin = fingerprint(env.get('ANDROID_SIGNING_CERT_SHA256', ''))
+    # Secrets can be replaced together. Anchor normal releases to the public
+    # certificate already distributed, so a new key + matching secret pin
+    # cannot silently break upgrades. Deliberate key rotation needs a separate
+    # migration design and a reviewed change to this repository baseline.
+    try:
+        baseline = fingerprint(RELEASE_CERTIFICATE.read_text(encoding='ascii'))
+    except (OSError, UnicodeError, SigningError):
+        raise SigningError('Committed release certificate SHA-256 is invalid or unavailable.') from None
+    if pin != baseline:
+        raise SigningError(
+            'Configured signing certificate differs from the committed release identity. '
+            'Restore the existing release key; replacing the key and secret pin breaks installed-app upgrades.')
+    return pin
+
+
 def config(env):
     missing = [key for key in FIELDS if not env.get(key)]
     if missing:
         raise SigningError('Missing required signing configuration: ' + ', '.join(missing))
-    pin = fingerprint(env['ANDROID_SIGNING_CERT_SHA256'])
+    pin = release_pin(env)
     try:
         key = base64.b64decode(env['ANDROID_SIGNING_KEYSTORE_BASE64'], validate=True)
     except (ValueError, base64.binascii.Error):
@@ -205,7 +223,7 @@ def verify_apk_certificate(output, pin):
 
 
 def verify(apk, aab, env, root=None):
-    pin = fingerprint(env.get('ANDROID_SIGNING_CERT_SHA256', ''))
+    pin = release_pin(env)
     sdk = Path(env.get('ANDROID_HOME') or env.get('ANDROID_SDK_ROOT') or '/nonexistent')
     tools = sorted((sdk / 'build-tools').glob('*/apksigner'), key=lambda path: tuple(int(n) for n in re.findall(r'\d+', path.parent.name)))
     if not tools:
@@ -216,7 +234,7 @@ def verify(apk, aab, env, root=None):
 
 
 def verify_aab(aab, env, root=None):
-    pin = fingerprint(env.get('ANDROID_SIGNING_CERT_SHA256', ''))
+    pin = release_pin(env)
     _, private = paths(root or Path.cwd())
     key_file = private / 'release.keystore'
     if not key_file.is_file() or key_file.is_symlink():

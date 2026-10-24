@@ -153,7 +153,7 @@ class HomeScreen extends ConsumerWidget {
                 );
               }),
 
-              const SliverToBoxAdapter(child: SizedBox(height: 80)),
+              const SliverToBoxAdapter(child: SizedBox(height: 110)),
             ],
           );
         },

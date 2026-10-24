@@ -20,7 +20,7 @@
 
 ## 当前链路与保护
 
-1. 生成Android平台后执行 `scripts/ci/android-release-signing.py prepare`。检查5项完整、base64及指纹格式，用keytool导出证书并核对pin，然后仅替换已识别的release签名块。模板改变则失败，不猜测、不回退debug。
+1. 生成Android平台后执行 `scripts/ci/android-release-signing.py prepare`。检查5项完整、base64及指纹格式；指纹须匹配仓库内 `scripts/ci/android-release-cert.sha256` 的公开发布证书基线，再用keytool导出证书并核对pin，然后仅替换已识别的release签名块。模板改变则失败，不猜测、不回退debug。
 2. keystore仅临时存在于忽略的Android目录 `.momo-release-signing`，目录0700、文件0600；密码通过环境变量传给Gradle/工具，不写入key.properties或命令参数、不输出底层错误或秘密。
 3. APK用apksigner验证签名及单一证书；AAB用jarsigner strict验证（信任已核对的key/alias，非零结果全部拒绝）并再次核对单一证书SHA-256。两者成功后才复制发布包、计算校验和和上传制品。
 4. job收尾的always步骤清理密钥并还原Gradle签名补丁，prepare失败也清理；硬终止runner不保证执行收尾，依赖临时runner销毁，勿在持久自托管runner直接启用而没有独立清理措施。
@@ -62,3 +62,29 @@ run #33（`38120748993`，SHA `dfffb506358f4df391432d181f984583714a7beb`）正�
 校验脚本补齐Android官方apksigner的SDK-range标签，保留编号标签，要求恰好一个有效signer且所有报告的应用证书都匹配同一pin；不同轮换证书仍拒绝，Source Stamp不当作应用身份。错误区分未报告指纹、格式未知、signer数量/输出歧义、真正pin不匹配，不打印底层输出、证书或密码。
 
 CI在debug构建后用临时测试key重签一份APK副本，执行实际apksigner/JDK校验、错pin及篡改失败路径；不触碰发布key、不覆盖debug制品。这项新增CI验证本机无JDK/Android SDK而未执行，远端需新提交跑通后确认。若新日志明确pin不匹配，必须检查实际构建使用的固定key，不能更改可信pin或用debug/跳过门禁掩盖。
+
+## 2026-10-23：覆盖安装失败调查及签名连续性保护
+
+用户反馈从 GitHub Release 安装时需要先删除旧应用，记忆中的错误码为 `-7`，原始提示未保留。Android 的 `INSTALL_FAILED_UPDATE_INCOMPATIBLE = -7` 表示同包名的既有安装与新 APK 签名不兼容。**NEEDS_CONFIRMATION**：设备上原安装的版本与证书，以及准确错误码；不能由记忆中的错误码断言该设备的唯一原因。
+
+本次通过公开 Release API 核对附件大小，并用严格检查 HTTP 206 / Content-Range / 长度的有界读取提取 APK v2 签名块中的证书 DER，计算 SHA-256：
+
+| GitHub Release | APK 证书 SHA-256 |
+| --- | --- |
+| v0.12.31 | `0dc9ed6406a50207d476a488fc2a0bf7456a2b3229dc60dae746a98cf0dc120f` |
+| v0.12.40 | `2389e7a45e4a507b56ccb5bf25afb8a9645e49789e73f116bf486648032e80bf` |
+| v0.12.46 | 同 v0.12.40 |
+| v0.12.47 | 同 v0.12.40 |
+
+这证明所检查的最近三版证书一致，而 v0.12.31 的证书不同；并未穷举所有历史版本。旧文档已记录从临时 debug 签名转为长期 release key 的决策；“来自 Release”并不保证早期 APK 已使用当前 key。若设备安装的是这种历史签名，修改新版业务代码无法让不同证书直接覆盖安装，也不能从旧 APK 中恢复私钥。不要通过新建 key、换包名、放宽校验或要求卸载来掩盖问题；应保留既有应用和数据，另行核对是否持有原私钥及数据保护方案。核心 JSON 不包含媒体、OCR、凭据或同步现场，不能当作完整迁移。
+
+新增保护针对后续发布：公开基线登记最近三版共同使用的证书，`prepare`、APK `verify` 和 AAB `verify_aab` 均要求 Secret pin 匹配该基线。过去同时替换 keystore 和 Secret pin 仍能通过“当前配置自洽”的校验；现在会在写入临时 key / 调用签名工具之前拒绝。文件缺失、无效或不可读也拒绝。不新增环境变量或命令行绕过，cleanup 无须签名配置。普通升级保留这份基线及现有私钥；计划轮换必须另行设计兼容与迁移，不能看到失败就更新基线。
+
+验证与证据边界：
+
+- `python3 scripts/ci/test-android-release-signing.py`：17 项，16 通过，1 因本机无 JDK 跳过。新增用例覆盖同时替换 key/pin、直接验证入口换 pin、基线缺失/损坏及等价指纹格式。所有测试使用临时夹具身份，不使用生产 key。
+- `bash scripts/ci/test-prepare-flutter-platforms.sh` 与 `git diff --check`：通过；平台脚本未修改。
+- 远端既有 run #47 `39915271971` 对提交 `3bd9d0741970327b02865aeb75295ad8df0ee3c0` 成功，v0.12.47 发布于 `2026-10-23T07:22:14Z`。它是修改前的发布证据，不证明新增门禁已经在远端执行。
+- 上述有界读取只检查证书元数据，不是本地完整 APK 密码学签名验证。当前修改的真实 APK/AAB 构建、远端 CI、设备覆盖升级及数据保留验收均为 `NOT_EXECUTED`；未修改 Secrets、操作设备、提交、推送或发布。
+
+AI_CONTEXT 更新建议：新提交通过远端签名链及同证书真机覆盖安装后，登记公开证书基线及验收证据索引；不记录任何私钥或密码。

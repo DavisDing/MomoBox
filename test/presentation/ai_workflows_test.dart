@@ -271,9 +271,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  for (final fromEditor in [false, true]) {
-    testWidgets('${fromEditor ? '编辑弹窗' : '配置列表'}复制模型可取消，保存独立密钥并显式调整角色', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(600, 1100));
+  for (final overrideKey in [false, true]) {
+    testWidgets('配置列表复制模型可取消，${overrideKey ? '替换' : '继承'}独立密钥并显式调整角色', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 1000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       FlutterSecureStorage.setMockInitialValues({
         'ai_api_key_profile_source': 'source-test-secret',
@@ -299,17 +299,23 @@ void main() {
       final before = Map<String, String>.of(settings.values);
       final keysBefore = await const FlutterSecureStorage().readAll();
 
+      await tester.tap(find.byTooltip('编辑配置'));
+      await tester.pumpAndSettle();
+      expect(find.text('复制为新配置'), findsNothing);
+      expect(find.text('测试'), findsOneWidget);
+      expect(find.text('取消'), findsOneWidget);
+      expect(find.text('确定'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.enterText(find.byType(TextField).at(0), '未保存的修改');
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(settings.values, before);
+      expect(await const FlutterSecureStorage().readAll(), keysBefore);
+
       Future<void> openCopy() async {
-        if (fromEditor) {
-          await tester.tap(find.byTooltip('编辑配置'));
-          await tester.pumpAndSettle();
-          await tester.enterText(find.byType(TextField).at(0), '调整中的服务');
-          await tester.tap(find.text('复制为新配置'));
-        } else {
-          await tester.tap(find.byTooltip('配置操作'));
-          await tester.pumpAndSettle();
-          await tester.tap(find.text('复制配置'));
-        }
+        await tester.tap(find.byTooltip('配置操作'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('复制配置'));
         await tester.pumpAndSettle();
         expect(find.text('复制 AI 模型服务'), findsOneWidget);
       }
@@ -317,7 +323,7 @@ void main() {
       await openCopy();
       final fields = find.byType(TextField);
       expect(tester.widget<TextField>(fields.at(0)).controller!.text,
-          fromEditor ? '调整中的服务 副本' : '已配置服务 副本');
+          '已配置服务 副本');
       expect(tester.widget<TextField>(fields.at(1)).controller!.text, source['endpoint']);
       expect(tester.widget<TextField>(fields.at(2)).controller!.text, source['model']);
       expect(tester.widget<TextField>(fields.at(3)).controller!.text, isEmpty);
@@ -334,7 +340,7 @@ void main() {
 
       await openCopy();
       await tester.enterText(find.byType(TextField).at(0), '复制的副服务');
-      if (fromEditor) {
+      if (overrideKey) {
         await tester.enterText(find.byType(TextField).at(3), 'copy-test-secret');
       }
       await tester.tap(find.byType(DropdownButtonFormField<String>).first);
@@ -359,7 +365,7 @@ void main() {
       final keys = await const FlutterSecureStorage().readAll();
       expect(keys['ai_api_key_profile_source'], 'source-test-secret');
       expect(keys['ai_api_key_profile_${copy['id']}'],
-          fromEditor ? 'copy-test-secret' : 'source-test-secret');
+          overrideKey ? 'copy-test-secret' : 'source-test-secret');
       expect(settings.values.values.any((value) => value.contains('test-secret')), isFalse);
       expect(copy.containsKey('_apiKeyDraft'), isFalse);
       expect(copy.containsKey('apiKey'), isFalse);

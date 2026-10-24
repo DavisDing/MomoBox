@@ -1006,7 +1006,7 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
         item?[AiDraftService.profileRoleKey] as String? ??
             (item?['id'] == _activeId ? AiDraftService.primaryRole : AiDraftService.standbyRole);
 
-    final copyDraft = await showDialog<Map<String, dynamic>>(
+    await showDialog<void>(
       context: context,
       useRootNavigator: false,
       builder: (ctx) => _SwipeDismissProfileDialog(
@@ -1131,18 +1131,6 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
               },
               child: Text(testing ? '测试中…' : '测试'),
             ),
-            if (!isNew)
-              TextButton(
-                onPressed: testing ? null : () => Navigator.pop(ctx, <String, dynamic>{
-                  ...item,
-                  'name': nameCtrl.text.trim(),
-                  'endpoint': urlCtrl.text.trim(),
-                  'model': modelCtrl.text.trim(),
-                  'endpointType': endpointType,
-                  if (keyCtrl.text.trim().isNotEmpty) '_apiKeyDraft': keyCtrl.text.trim(),
-                }),
-                child: const Text('复制为新配置'),
-              ),
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
             FilledButton(
               onPressed: testing ? null : () {
@@ -1190,9 +1178,6 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
         ),
       ),
     );
-    if (copyDraft != null && mounted) {
-      await _addOrEditProfile(item: copyDraft, duplicate: true);
-    }
   }
 
   @override
