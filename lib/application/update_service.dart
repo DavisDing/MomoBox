@@ -39,12 +39,19 @@ class UpdateCheckResult {
   bool get hasUpdate => release != null && UpdateService.compareVersions(release!.version, currentVersion) > 0;
 }
 
+enum ApkInstallResult { installerOpened, permissionRequired }
+
 class UpdateService {
-  UpdateService({http.Client? client}) : _client = client ?? http.Client();
+  UpdateService({
+    http.Client? client,
+    Future<Directory> Function()? downloadDirectory,
+  }) : _client = client ?? http.Client(),
+       _downloadDirectory = downloadDirectory ?? getTemporaryDirectory;
 
   static const latestReleaseApi = 'https://api.github.com/repos/DavisDing/MomoBox/releases/latest';
   static const _channel = MethodChannel('com.example.momo_box/update');
   final http.Client _client;
+  final Future<Directory> Function() _downloadDirectory;
 
   Future<UpdateCheckResult> checkForUpdates() async {
     final response = await _client.get(
@@ -99,31 +106,59 @@ class UpdateService {
     final response = await _client.send(http.Request('GET', Uri.parse(url))).timeout(const Duration(seconds: 30));
     if (response.statusCode != 200) throw Exception('APK 下载失败：HTTP ${response.statusCode}');
 
-    final directory = await getApplicationDocumentsDirectory();
+    // Android's FileProvider exposes cacheDir, while Flutter's documents
+    // directory (app_flutter) is outside the configured files-path root.
+    final cache = await _downloadDirectory();
+    final directory = await Directory('${cache.path}/updates').create(recursive: true);
     final safeVersion = release.version.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
     final file = File('${directory.path}/MomoBox-${safeVersion.isEmpty ? 'latest' : safeVersion}.apk');
-    final sink = file.openWrite();
+    final partial = File('${file.path}.part');
+    final sink = partial.openWrite();
     var received = 0;
     final total = response.contentLength ?? -1;
-    await for (final chunk in response.stream) {
-      sink.add(chunk);
-      received += chunk.length;
-      onProgress?.call(received, total);
-    }
-    await sink.close();
-
-    if (release.apkSha256 != null && release.apkSha256!.isNotEmpty) {
-      final digest = await sha256.bind(file.openRead()).first;
-      if (digest.toString().toLowerCase() != release.apkSha256!.toLowerCase()) {
-        await file.delete();
-        throw const FormatException('APK SHA-256 校验失败，已删除下载文件');
+    try {
+      await sink.addStream(
+        response.stream.timeout(const Duration(seconds: 30)).map((chunk) {
+          received += chunk.length;
+          onProgress?.call(received, total);
+          return chunk;
+        }),
+      );
+      await sink.close();
+      if (received == 0 || (total >= 0 && received != total)) {
+        throw const FormatException('APK 下载不完整，请重新下载');
       }
+
+      if (release.apkSha256 != null && release.apkSha256!.isNotEmpty) {
+        final digest = await sha256.bind(partial.openRead()).first;
+        if (digest.toString().toLowerCase() != release.apkSha256!.toLowerCase()) {
+          throw const FormatException('APK SHA-256 校验失败，请重新下载');
+        }
+      }
+      return await partial.rename(file.path);
+    } catch (_) {
+      // A failed transfer must never leave a partial APK available to install.
+      try {
+        await sink.close();
+      } catch (_) {
+        // Preserve the original error if closing the failed sink also fails.
+      }
+      try {
+        if (await partial.exists()) await partial.delete();
+      } catch (_) {
+        // Best-effort cleanup; only the validated final path is installable.
+      }
+      rethrow;
     }
-    return file;
   }
 
-  Future<void> installApk(File file) async {
-    await _channel.invokeMethod<void>('installApk', {'path': file.path});
+  Future<ApkInstallResult> installApk(File file) async {
+    final result = await _channel.invokeMethod<String>('installApk', {'path': file.path});
+    return switch (result) {
+      'permission_required' => ApkInstallResult.permissionRequired,
+      'installer_opened' || null => ApkInstallResult.installerOpened,
+      _ => throw const FormatException('无法识别系统安装器返回的状态'),
+    };
   }
 
   Future<void> openReleasePage(String url) async {

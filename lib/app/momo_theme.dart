@@ -342,7 +342,9 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
       ),
     ),
     appBarTheme: AppBarTheme(
-      backgroundColor: surface.withValues(alpha: 0.85),
+      // Navigation belongs to the page canvas, not the raised card surface.
+      // Keep native/sliver bars consistent with the shared glass app bar.
+      backgroundColor: background,
       surfaceTintColor: Colors.transparent,
       foregroundColor: text,
       elevation: 0,

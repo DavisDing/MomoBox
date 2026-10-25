@@ -363,7 +363,8 @@ class MomoGlassAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final highContrast = MediaQuery.highContrastOf(context);
     return AppBar(
       title: title,
@@ -384,7 +385,11 @@ class MomoGlassAppBar extends StatelessWidget implements PreferredSizeWidget {
           ),
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: scheme.surface.withValues(alpha: highContrast ? 1 : 0.85),
+              // Tint glass with the page canvas so the status/toolbar area
+              // does not turn into a white (or dark grey) card-shaped band.
+              color: theme.scaffoldBackgroundColor.withValues(
+                alpha: highContrast ? 1 : 0.85,
+              ),
               border: Border(
                 bottom: BorderSide(
                   color: scheme.onSurface.withValues(

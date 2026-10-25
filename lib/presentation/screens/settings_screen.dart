@@ -2283,6 +2283,7 @@ class _AboutSettingsScreenState extends ConsumerState<AboutSettingsScreen> {
   UpdateCheckResult? _checkResult;
   String? _updateMessage;
   double? _downloadProgress;
+  File? _downloadedApk;
 
   @override
   void initState() {
@@ -2297,6 +2298,7 @@ class _AboutSettingsScreenState extends ConsumerState<AboutSettingsScreen> {
   }
 
   Future<void> _checkForUpdates() async {
+    if (_checking || _downloading) return;
     setState(() {
       _checking = true;
       _updateMessage = null;
@@ -2306,6 +2308,7 @@ class _AboutSettingsScreenState extends ConsumerState<AboutSettingsScreen> {
       if (!mounted) return;
       setState(() {
         _checkResult = result;
+        _downloadedApk = null;
         _checking = false;
         _updateMessage = result.hasUpdate
             ? '发现新版本 ${result.release!.version}'
@@ -2321,6 +2324,7 @@ class _AboutSettingsScreenState extends ConsumerState<AboutSettingsScreen> {
   }
 
   Future<void> _downloadAndInstall() async {
+    if (_checking || _downloading) return;
     final release = _checkResult?.release;
     if (release == null) return;
     if (!Platform.isAndroid) {
@@ -2335,27 +2339,54 @@ class _AboutSettingsScreenState extends ConsumerState<AboutSettingsScreen> {
     setState(() {
       _downloading = true;
       _downloadProgress = null;
-      _updateMessage = '正在下载 APK…';
+      _updateMessage = _downloadedApk == null ? '正在下载 APK…' : '正在准备安装…';
     });
+    final File file;
     try {
-      final file = await _updateService.downloadApk(
-        release,
-        onProgress: (received, total) {
-          if (!mounted || total <= 0) return;
-          setState(() => _downloadProgress = received / total);
-        },
-      );
-      await _updateService.installApk(file);
+      final downloaded = _downloadedApk;
+      if (downloaded != null && await downloaded.exists()) {
+        file = downloaded;
+      } else {
+        file = await _updateService.downloadApk(
+          release,
+          onProgress: (received, total) {
+            if (!mounted || total <= 0) return;
+            setState(() {
+              _downloadProgress = (received / total).clamp(0.0, 1.0);
+              if (received >= total) _updateMessage = '正在校验 APK…';
+            });
+          },
+        );
+      }
+      if (!mounted) return;
+      _downloadedApk = file;
+    } catch (error) {
       if (!mounted) return;
       setState(() {
         _downloading = false;
-        _updateMessage = 'APK 已下载，正在打开系统安装器。';
+        _updateMessage = '安装包下载或校验失败：$error';
+      });
+      return;
+    }
+
+    setState(() {
+      _downloadProgress = null;
+      _updateMessage = 'APK 已下载，正在打开系统安装器…';
+    });
+    try {
+      final result = await _updateService.installApk(file);
+      if (!mounted) return;
+      setState(() {
+        _downloading = false;
+        _updateMessage = result == ApkInstallResult.permissionRequired
+            ? 'APK 已下载。请在系统设置中允许安装此来源的应用，返回后点击“继续安装”，无需重新下载。'
+            : '已打开系统安装器，请按系统提示完成安装。';
       });
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _downloading = false;
-        _updateMessage = '更新下载失败：$error';
+        _updateMessage = 'APK 已下载，但无法打开安装器：$error。可点击“继续安装”重试，或打开发布页手动下载。';
       });
     }
   }
@@ -2427,13 +2458,29 @@ class _AboutSettingsScreenState extends ConsumerState<AboutSettingsScreen> {
                     Align(
                       alignment: Alignment.centerRight,
                       child: FilledButton.icon(
-                        onPressed: _downloading ? null : _downloadAndInstall,
+                        onPressed: _checking || _downloading ? null : _downloadAndInstall,
                         icon: _downloading
                             ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                             : Icon(Platform.isAndroid ? Icons.download : Icons.open_in_new),
-                        label: Text(Platform.isAndroid ? '下载并安装' : '打开 Release 页面'),
+                        label: Text(Platform.isAndroid
+                            ? (_downloadedApk == null ? '下载并安装' : '继续安装')
+                            : '打开 Release 页面'),
                       ),
                     ),
+                    if (Platform.isAndroid)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: _checking || _downloading ? null : () async {
+                            try {
+                              await _updateService.openReleasePage(release.htmlUrl);
+                            } catch (error) {
+                              if (context.mounted) showAppSnackBar(context, SnackBar(content: Text('无法打开发布页：$error')));
+                            }
+                          },
+                          child: const Text('打开发布页手动下载'),
+                        ),
+                      ),
                   ],
                 ],
               ),

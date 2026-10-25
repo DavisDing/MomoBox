@@ -169,6 +169,19 @@ cp "$script_dir/prepare-flutter-platforms.sh" "$temporary_root/project/prepare.s
   grep -q 'androidx.core:core-ktx:1.15.0' android/app/build.gradle.kts
   grep -q 'com.example.momo_box/update' android/app/src/main/kotlin/com/example/momo_box/MainActivity.kt
   grep -q 'installApk' android/app/src/main/kotlin/com/example/momo_box/MainActivity.kt
+  grep -q 'canRequestPackageInstalls' android/app/src/main/kotlin/com/example/momo_box/MainActivity.kt
+  grep -q 'ACTION_MANAGE_UNKNOWN_APP_SOURCES' android/app/src/main/kotlin/com/example/momo_box/MainActivity.kt
+  grep -q 'permission_required' android/app/src/main/kotlin/com/example/momo_box/MainActivity.kt
+  grep -q 'installer_opened' android/app/src/main/kotlin/com/example/momo_box/MainActivity.kt
+  python3 - <<'PY'
+import xml.etree.ElementTree as ET
+
+paths = ET.parse('android/app/src/main/res/xml/file_paths.xml').getroot()
+# getTemporaryDirectory() writes under cacheDir; sharing must cover updates/.
+assert any(p.tag == 'cache-path' and p.attrib.get('path') in ('.', 'updates/')
+           for p in paths), 'APK cache directory is not shared with the installer'
+assert not any(p.tag == 'root-path' for p in paths), 'Do not expose the filesystem root'
+PY
   grep -q 'openUrl' android/app/src/main/kotlin/com/example/momo_box/MainActivity.kt
   grep -q 'compileSdk = 37' android/app/build.gradle
   grep -q 'minSdk = 36' android/app/build.gradle
