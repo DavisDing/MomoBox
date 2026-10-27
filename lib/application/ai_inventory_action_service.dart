@@ -83,6 +83,7 @@ class AiInventoryActionService {
       case 'intake':
         final draft = a.intakeDraft;
         return '打开可编辑入库草稿：「${draft.name}」${draft.quantity} 件。'
+            '分类：${draft.category}。'
             '核对日期及相似商品后，点击“确认入库”才会写入。';
       case 'shopping_add':
         if (_shopping == null) throw StateError('采购服务不可用。');

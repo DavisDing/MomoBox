@@ -11,6 +11,7 @@ import 'app_feedback.dart';
 import 'momo_glass_components.dart';
 
 import '../../domain/inventory/expiry_rules.dart';
+import '../../domain/inventory/product_categories.dart';
 import '../../domain/models/inventory_models.dart';
 import '../../domain/models/recognition_models.dart';
 import '../controllers/providers.dart';
@@ -26,7 +27,8 @@ class _IntakeDraftMemory {
   String? batchNo;
   String threshold = '1';
   String? shelfLife;
-  String category = '药品保健';
+  String category = ProductCategories.fallback;
+  bool categoryManuallySelected = false;
   ShelfLifeUnit shelfLifeUnit = ShelfLifeUnit.days;
   DateTime? productionDate;
   DateTime? expiryDate;
@@ -52,7 +54,8 @@ class _IntakeDraftMemory {
     batchNo = null;
     threshold = '1';
     shelfLife = null;
-    category = '药品保健';
+    category = ProductCategories.fallback;
+    categoryManuallySelected = false;
     shelfLifeUnit = ShelfLifeUnit.days;
     productionDate = null;
     expiryDate = null;
@@ -66,6 +69,7 @@ final _intakeDraft = _IntakeDraftMemory();
 class IntakeSheet extends ConsumerStatefulWidget {
   const IntakeSheet({
     this.initialDraft,
+    this.suggestInitialCategory = false,
     this.initialName,
     this.initialCategory,
     this.initialQuantity = 1,
@@ -76,6 +80,9 @@ class IntakeSheet extends ConsumerStatefulWidget {
   });
 
   final IntakeDraft? initialDraft;
+  /// Only unconfirmed AI suggestions are eligible for automatic categorization.
+  /// Date provenance is independent of whether a category was chosen by a user.
+  final bool suggestInitialCategory;
   final String? initialName;
   final String? initialCategory;
   final int initialQuantity;
@@ -89,14 +96,7 @@ class IntakeSheet extends ConsumerStatefulWidget {
 
 class _IntakeSheetState extends ConsumerState<IntakeSheet> {
   // Keep existing values stable: saved products and backups store category as text.
-  static const _categories = [
-    '药品保健', '食品生鲜', '美妆个护', '母婴用品',
-    '粮油调味', '零食饮料', '冷冻速食', '宠物用品',
-    '家居清洁', '纸品湿巾', '厨房用品', '餐具水具',
-    '衣物鞋帽', '家纺寝具', '数码电器', '电池灯具',
-    '文具办公', '工具五金', '运动户外', '玩具图书',
-    '园艺绿植', '汽车用品', '其他物品',
-  ];
+  static const _categories = ProductCategories.values;
 
   final _formKey = GlobalKey<FormState>();
   final _name = TextEditingController();
@@ -110,7 +110,8 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
   final _shelfLife = TextEditingController();
   final _picker = ImagePicker();
   late final String _mediaDraftId;
-  String _category = '药品保健';
+  String _category = ProductCategories.fallback;
+  bool _categoryManuallySelected = false;
   ShelfLifeUnit _shelfLifeUnit = ShelfLifeUnit.days;
   String _dateSource = 'manual';
   String _datePrecision = 'day';
@@ -133,7 +134,10 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
     if (aiDraft != null) {
       _name.text = aiDraft.name;
       _quantity.text = '${aiDraft.quantity}';
-      _category = _categories.contains(aiDraft.category) ? aiDraft.category : '其他物品';
+      _category = widget.suggestInitialCategory
+          ? ProductCategories.forSuggestion(name: aiDraft.name, category: aiDraft.category)
+          : aiDraft.category;
+      _categoryManuallySelected = !widget.suggestInitialCategory;
       _brand.text = aiDraft.brand ?? '';
       _specification.text = aiDraft.specification ?? '';
       _barcode.text = aiDraft.barcode ?? '';
@@ -145,11 +149,15 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
       _productionDate = aiDraft.productionDate;
       _expiryDate = aiDraft.expiryDate;
       _dateSource = aiDraft.dateSource;
+      _datePrecision = aiDraft.datePrecision;
     } else if (widget.initialName != null || widget.initialCategory != null) {
       _name.text = widget.initialName ?? '';
       _quantity.text = widget.initialQuantity.toString();
       if (widget.initialCategory != null && widget.initialCategory!.isNotEmpty) {
         _category = widget.initialCategory!;
+        _categoryManuallySelected = true;
+      } else {
+        _category = ProductCategories.forSuggestion(name: _name.text);
       }
     } else if (_intakeDraft.hasContent) {
       _name.text = _intakeDraft.name ?? '';
@@ -162,6 +170,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
       _threshold.text = _intakeDraft.threshold;
       _shelfLife.text = _intakeDraft.shelfLife ?? '';
       _category = _intakeDraft.category;
+      _categoryManuallySelected = _intakeDraft.categoryManuallySelected;
       _shelfLifeUnit = _intakeDraft.shelfLifeUnit;
       _productionDate = _intakeDraft.productionDate;
       _expiryDate = _intakeDraft.expiryDate;
@@ -189,6 +198,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
     _intakeDraft.threshold = _threshold.text;
     _intakeDraft.shelfLife = _shelfLife.text;
     _intakeDraft.category = _category;
+    _intakeDraft.categoryManuallySelected = _categoryManuallySelected;
     _intakeDraft.shelfLifeUnit = _shelfLifeUnit;
     _intakeDraft.productionDate = _productionDate;
     _intakeDraft.expiryDate = _expiryDate;
@@ -234,6 +244,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
   }
 
   Future<void> _scanBarcode() async {
+    if (_saving || _recognizing || _parsingAi) return;
     final barcode = await Navigator.of(context).push<String>(
       MaterialPageRoute(
         fullscreenDialog: true,
@@ -286,14 +297,12 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
       if (result.name != null) _name.text = result.name!;
       if (result.brand != null) _brand.text = result.brand!;
       if (result.specification != null) _specification.text = result.specification!;
-      if (result.category != null) {
-        _category = _categories.contains(result.category) ? result.category! : '其他物品';
-      }
+      _suggestCategory(result.category);
     });
   }
 
-  Future<void> _attachImage(MediaAssetType type) async {
-    final source = await showModalBottomSheet<ImageSource>(
+  Future<void> _attachImage() async {
+    final choice = await showModalBottomSheet<({ImageSource source, MediaAssetType type})>(
       context: context,
       builder: (context) => SafeArea(
         child: Wrap(
@@ -301,28 +310,46 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
             ListTile(
               leading: const Icon(Icons.camera_alt_outlined),
               title: const Text('拍照'),
-              onTap: () => Navigator.pop(context, ImageSource.camera),
+              onTap: () => Navigator.pop(context, (
+                source: ImageSource.camera, type: MediaAssetType.productImage,
+              )),
             ),
             ListTile(
               leading: const Icon(Icons.photo_library_outlined),
               title: const Text('从相册选择'),
-              onTap: () => Navigator.pop(context, ImageSource.gallery),
+              onTap: () => Navigator.pop(context, (
+                source: ImageSource.gallery, type: MediaAssetType.productImage,
+              )),
+            ),
+            ListTile(
+              leading: const Icon(Icons.description_outlined),
+              title: const Text('拍摄说明书'),
+              onTap: () => Navigator.pop(context, (
+                source: ImageSource.camera, type: MediaAssetType.instructionImage,
+              )),
+            ),
+            ListTile(
+              leading: const Icon(Icons.collections_outlined),
+              title: const Text('选择说明书图片'),
+              onTap: () => Navigator.pop(context, (
+                source: ImageSource.gallery, type: MediaAssetType.instructionImage,
+              )),
             ),
           ],
         ),
       ),
     );
-    if (source == null) return;
+    if (choice == null || !mounted) return;
     try {
-      final image = await _picker.pickImage(source: source, imageQuality: 100);
-      if (image == null) return;
+      final image = await _picker.pickImage(source: choice.source, imageQuality: 100);
+      if (image == null || !mounted) return;
       await ref.read(mediaServiceProvider).attachImage(
             source: image,
             entityType: 'intake_draft',
             entityId: _mediaDraftId,
-            type: type,
+            type: choice.type,
           );
-      if (mounted) _message('${type.label}已保存到本机。');
+      if (mounted) _message('${choice.type.label}已保存到本机。');
     } catch (error) {
       if (mounted) _message('保存图片失败：$error');
     }
@@ -439,9 +466,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
       if (suggestion.shelfLifeUnit != null) _shelfLifeUnit = suggestion.shelfLifeUnit!;
       if (suggestion.productionDate != null) _productionDate = suggestion.productionDate;
       if (suggestion.expiryDate != null) _expiryDate = suggestion.expiryDate;
-      if (suggestion.category != null) {
-        _category = _categories.contains(suggestion.category) ? suggestion.category! : '其他物品';
-      }
+      _suggestCategory(suggestion.category);
       if (suggestion.productionDate != null ||
           suggestion.expiryDate != null ||
           suggestion.shelfLifeAmount != null) {
@@ -449,6 +474,15 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
         _datePrecision = suggestion.datePrecision ?? 'unknown';
       }
     });
+  }
+
+  void _suggestCategory([String? suggested]) {
+    if (_categoryManuallySelected) return;
+    final category = ProductCategories.suggestForName(_name.text) ??
+        ProductCategories.canonical(suggested);
+    // Do not erase a useful model/barcode suggestion on each intermediate
+    // keystroke when the edited name has no high-confidence local hint.
+    if (category != null) _category = category;
   }
 
   Future<void> _deleteAsset(MediaAsset asset) async {
@@ -461,7 +495,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
   }
 
   Future<void> _submit() async {
-    if (_saving || _intakeCompleted) return;
+    if (_saving || _intakeCompleted || _recognizing || _parsingAi) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
     setState(() => _saving = true);
     try {
@@ -630,7 +664,8 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
               key: _formKey,
               child: ListView(
                 controller: controller,
-                padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                 children: [
                   Center(
                     child: GestureDetector(
@@ -638,7 +673,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         child: Container(
-                          width: 48,
+                          width: 36,
                           height: 5,
                           decoration: BoxDecoration(
                             color: Theme.of(context).colorScheme.outlineVariant,
@@ -648,32 +683,44 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  Text('入库', style: Theme.of(context).textTheme.headlineSmall),
-                  const SizedBox(height: 16),
                   Row(
                     children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _saving ? null : _scanBarcode,
-                          icon: const Icon(Icons.qr_code_scanner_outlined),
-                          label: const Text('扫描条码'),
-                        ),
+                      Expanded(child: Text('入库', style: Theme.of(context).textTheme.titleLarge)),
+                      IconButton(
+                        tooltip: '扫描条码',
+                        onPressed: _saving || _recognizing || _parsingAi ? null : _scanBarcode,
+                        icon: const Icon(Icons.qr_code_scanner_outlined),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _saving ? null : () => _attachImage(MediaAssetType.productImage),
-                          icon: const Icon(Icons.add_a_photo_outlined),
-                          label: const Text('添加图片'),
-                        ),
+                      IconButton(
+                        tooltip: '关闭入库草稿',
+                        onPressed: _saving ? null : () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close),
                       ),
                     ],
                   ),
+                  const SizedBox(height: 8),
+                  _MediaDraftSection(
+                    assets: assets,
+                    loading: attachments.isLoading,
+                    recognizing: _recognizing,
+                    parsingAi: _parsingAi,
+                    enabled: !_saving && !_intakeCompleted,
+                    onAddImage: _attachImage,
+                    onOcr: () => _runLocalOcr(assets),
+                    onAi: () => _parseAiDraft(assets),
+                    onDelete: _deleteAsset,
+                  ),
                   const SizedBox(height: 12),
-                  TextFormField(controller: _name, decoration: const InputDecoration(labelText: '物品名称 *'), validator: (value) => value == null || value.trim().isEmpty ? '请填写物品名称' : null),
-                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _name,
+                    decoration: const InputDecoration(labelText: '物品名称 *'),
+                    textInputAction: TextInputAction.next,
+                    onChanged: (_) => setState(() => _suggestCategory()),
+                    validator: (value) => value == null || value.trim().isEmpty ? '请填写物品名称' : null,
+                  ),
+                  const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
+                    key: ValueKey('intake-category-$_category'),
                     isExpanded: true,
                     initialValue: _category,
                     isDense: true,
@@ -682,48 +729,60 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
                     decoration: const InputDecoration(labelText: '分类 *'),
                     items: [if (!_categories.contains(_category)) _category, ..._categories]
                         .map((category) => DropdownMenuItem(value: category, child: Text(category))).toList(),
-                    onChanged: (value) => setState(() => _category = value ?? _category),
+                    onChanged: (value) => setState(() {
+                      _category = value ?? _category;
+                      _categoryManuallySelected = true;
+                    }),
                   ),
-                  const SizedBox(height: 10),
-                  TextFormField(controller: _brand, decoration: const InputDecoration(labelText: '品牌（可选）')),
-                  const SizedBox(height: 10),
-                  TextFormField(controller: _specification, decoration: const InputDecoration(labelText: '规格（可选）')),
-                  const SizedBox(height: 10),
-                  Row(
+                  const SizedBox(height: 8),
+                  _AdaptiveIntakeRow(
                     children: [
-                      Expanded(child: TextFormField(controller: _quantity, decoration: const InputDecoration(labelText: '入库数量 *'), keyboardType: TextInputType.number, validator: _positiveIntegerValidator)),
-                      const SizedBox(width: 10),
-                      Expanded(child: TextFormField(controller: _threshold, decoration: const InputDecoration(labelText: '低库存阈值 *'), keyboardType: TextInputType.number, validator: _positiveIntegerValidator)),
+                      TextFormField(controller: _brand, textInputAction: TextInputAction.next, decoration: const InputDecoration(labelText: '品牌（可选）')),
+                      TextFormField(controller: _specification, textInputAction: TextInputAction.next, decoration: const InputDecoration(labelText: '规格（可选）')),
                     ],
                   ),
-                  const SizedBox(height: 10),
-                  TextFormField(controller: _location, decoration: const InputDecoration(labelText: '存放位置')),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
+                  _AdaptiveIntakeRow(
+                    children: [
+                      TextFormField(controller: _quantity, decoration: const InputDecoration(labelText: '入库数量 *'), keyboardType: TextInputType.number, validator: _positiveIntegerValidator),
+                      TextFormField(controller: _threshold, decoration: const InputDecoration(labelText: '低库存阈值 *'), keyboardType: TextInputType.number, validator: _positiveIntegerValidator),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  _AdaptiveIntakeRow(
+                    children: [
+                      TextFormField(controller: _location, decoration: const InputDecoration(labelText: '存放位置')),
+                      TextFormField(controller: _batchNo, decoration: const InputDecoration(labelText: '批次号')),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
                   TextFormField(
                     controller: _barcode,
                     decoration: InputDecoration(
                       labelText: '条码',
-                      suffixIcon: IconButton(icon: const Icon(Icons.qr_code_scanner), tooltip: '扫描条码', onPressed: _saving ? null : _scanBarcode),
+                      suffixIcon: IconButton(icon: const Icon(Icons.qr_code_scanner), tooltip: '扫描条码', onPressed: _saving || _recognizing || _parsingAi ? null : _scanBarcode),
                     ),
                     keyboardType: TextInputType.number,
                   ),
-                  const SizedBox(height: 10),
-                  TextFormField(controller: _batchNo, decoration: const InputDecoration(labelText: '批次号')),
                   const SizedBox(height: 8),
-                  _DateField(label: '生产日期', value: _productionDate, onTap: () => _pickDate(false), onClear: () => setState(() => _productionDate = null)),
-                  const SizedBox(height: 4),
-                  _DateField(label: '到期日期（可不填）', value: _expiryDate, onTap: () => _pickDate(true), onClear: () => setState(() => _expiryDate = null)),
-                  const SizedBox(height: 8),
-                  Row(
+                  _AdaptiveIntakeRow(
                     children: [
-                      Expanded(child: TextFormField(controller: _shelfLife, decoration: const InputDecoration(labelText: '保质期（可选）', hintText: '填写后可自动算到期日'), keyboardType: TextInputType.number, validator: (value) { if (value == null || value.trim().isEmpty) return null; final parsed = int.tryParse(value); return parsed == null || parsed < 1 ? '请输入大于 0 的整数' : null; })),
-                      const SizedBox(width: 10),
-                      DropdownButton<ShelfLifeUnit>(
-                        value: _shelfLifeUnit,
+                      _DateField(label: '生产日期', value: _productionDate, onTap: () => _pickDate(false), onClear: () => setState(() => _productionDate = null)),
+                      _DateField(label: '到期日期（可不填）', value: _expiryDate, onTap: () => _pickDate(true), onClear: () => setState(() => _expiryDate = null)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  _AdaptiveIntakeRow(
+                    children: [
+                      TextFormField(controller: _shelfLife, decoration: const InputDecoration(labelText: '保质期（可选）'), keyboardType: TextInputType.number, validator: (value) { if (value == null || value.trim().isEmpty) return null; final parsed = int.tryParse(value); return parsed == null || parsed < 1 ? '请输入大于 0 的整数' : null; }),
+                      DropdownButtonFormField<ShelfLifeUnit>(
+                        key: ValueKey(_shelfLifeUnit),
+                        initialValue: _shelfLifeUnit,
+                        decoration: const InputDecoration(labelText: '保质期单位'),
+                        isExpanded: true,
                         isDense: true,
                         menuMaxHeight: 200,
                         borderRadius: BorderRadius.circular(12),
-                        underline: const SizedBox.shrink(),
                         onChanged: (value) => setState(() => _shelfLifeUnit = value ?? _shelfLifeUnit),
                         items: const [
                           DropdownMenuItem(value: ShelfLifeUnit.days, child: Text('天', overflow: TextOverflow.ellipsis)),
@@ -732,22 +791,11 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 20),
-                  _MediaDraftSection(
-                    assets: assets,
-                    loading: attachments.isLoading,
-                    recognizing: _recognizing,
-                    parsingAi: _parsingAi,
-                    onAddInstruction: () => _attachImage(MediaAssetType.instructionImage),
-                    onOcr: () => _runLocalOcr(assets),
-                    onAi: () => _parseAiDraft(assets),
-                    onDelete: _deleteAsset,
-                  ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
-                      onPressed: _saving || _intakeCompleted ? null : _submit,
+                      onPressed: _saving || _intakeCompleted || _recognizing || _parsingAi ? null : _submit,
                       icon: _saving ? const SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.inventory_2),
                       label: Text(_intakeCompleted ? '已入库' : _saving ? '正在保存…' : '确认入库'),
                     ),
@@ -767,13 +815,86 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
   }
 }
 
+/// Compact at normal text sizes; reflows rather than shrinking accessible text.
+class _AdaptiveIntakeRow extends StatelessWidget {
+  const _AdaptiveIntakeRow({required this.children, this.minChildWidth = 132});
+
+  final List<Widget> children;
+  final double minChildWidth;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final textScale = MediaQuery.textScalerOf(context).scale(MomoTextSize.body) /
+          MomoTextSize.body;
+      final requiredWidth = children.length * minChildWidth *
+          (textScale < 1 ? 1 : textScale) + (children.length - 1) * 8;
+      final inline = constraints.maxWidth >= requiredWidth;
+      return Flex(
+        direction: inline ? Axis.horizontal : Axis.vertical,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var index = 0; index < children.length; index++) ...[
+            if (index > 0) SizedBox(width: inline ? 8 : 0, height: inline ? 0 : 8),
+            if (inline)
+              Expanded(child: children[index])
+            else
+              SizedBox(width: double.infinity, child: children[index]),
+          ],
+        ],
+      );
+    },
+  );
+}
+
+class _IntakeToolButton extends StatelessWidget {
+  const _IntakeToolButton({
+    required this.label, required this.tooltip, required this.icon,
+    required this.onPressed, this.loading = false,
+  });
+
+  final String label;
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    message: tooltip,
+    child: Semantics(
+      liveRegion: loading,
+      child: OutlinedButton(
+        onPressed: loading ? null : onPressed,
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(48, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          textStyle: Theme.of(context).textTheme.bodyMedium,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (loading)
+              const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2))
+            else Icon(icon, size: 18),
+            const SizedBox(width: 4),
+            Flexible(child: Text(loading ? '$label中…' : label, textAlign: TextAlign.center)),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 class _MediaDraftSection extends StatelessWidget {
   const _MediaDraftSection({
     required this.assets,
     required this.loading,
     required this.recognizing,
     required this.parsingAi,
-    required this.onAddInstruction,
+    required this.enabled,
+    required this.onAddImage,
     required this.onOcr,
     required this.onAi,
     required this.onDelete,
@@ -783,65 +904,121 @@ class _MediaDraftSection extends StatelessWidget {
   final bool loading;
   final bool recognizing;
   final bool parsingAi;
-  final VoidCallback onAddInstruction;
+  final bool enabled;
+  final VoidCallback onAddImage;
   final VoidCallback onOcr;
   final VoidCallback onAi;
   final ValueChanged<MediaAsset> onDelete;
 
   @override
-  Widget build(BuildContext context) => MomoGlassCard(
-        padding: const EdgeInsets.all(12),
-        frosted: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final captionSize = MediaQuery.textScalerOf(context).scale(MomoTextSize.caption);
+    final previewWidth = (captionSize * 6 + 16).clamp(128.0, double.infinity);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _AdaptiveIntakeRow(
+          minChildWidth: 84,
           children: [
-            Text('图片与本地识别', style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 4),
-            const Text('图片压缩后仅保存到本机。OCR 默认在设备本地执行；AI 只读取你确认上传的 OCR 文本。'),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                OutlinedButton.icon(onPressed: onAddInstruction, icon: const Icon(Icons.description_outlined), label: const Text('图片')),
-                FilledButton.tonalIcon(onPressed: recognizing ? null : onOcr, icon: recognizing ? const SizedBox.square(dimension: 14, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.document_scanner_outlined), label: Text(recognizing ? '识别中…' : 'OCR')),
-                FilledButton.tonalIcon(onPressed: parsingAi ? null : onAi, icon: parsingAi ? const SizedBox.square(dimension: 14, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.auto_awesome_outlined), label: Text(parsingAi ? '解析中…' : 'AI解析')),
-              ],
+            _IntakeToolButton(
+              label: '图片',
+              tooltip: '添加商品、包装或说明书图片',
+              icon: Icons.add_a_photo_outlined,
+              onPressed: enabled && !recognizing && !parsingAi ? onAddImage : null,
             ),
-            if (loading) const Padding(padding: EdgeInsets.only(top: 10), child: LinearProgressIndicator()),
-            if (assets.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              SizedBox(
-                height: 104,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: assets.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (context, index) {
-                    final asset = assets[index];
-                    return SizedBox(
-                      width: 128,
-                      child: Stack(
-                        children: [
-                          Positioned.fill(
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child: Image.file(File(asset.localPath), fit: BoxFit.cover, errorBuilder: (_, __, ___) => ColoredBox(color: Theme.of(context).colorScheme.surfaceContainerHighest, child: const Icon(Icons.broken_image_outlined))),
-                            ),
-                          ),
-                          Positioned(left: 4, bottom: 4, child: DecoratedBox(decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)), child: Padding(padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2), child: Text(asset.type.label, style: const TextStyle(color: Colors.white, fontSize: MomoTextSize.caption))))),
-                          Positioned(right: 0, top: 0, child: IconButton(style: IconButton.styleFrom(backgroundColor: Colors.black54, foregroundColor: Colors.white), iconSize: 16, onPressed: () => onDelete(asset), icon: const Icon(Icons.close))),
-                          if (asset.hasOcrText) const Positioned(left: 5, top: 5, child: Icon(Icons.text_snippet, size: 18, color: Colors.white)),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
+            _IntakeToolButton(
+              label: 'OCR',
+              tooltip: '本地识别图片文字',
+              icon: Icons.document_scanner_outlined,
+              loading: recognizing,
+              onPressed: enabled && !parsingAi ? onOcr : null,
+            ),
+            _IntakeToolButton(
+              label: 'AI解析',
+              tooltip: '确认后发送 OCR 文本，生成可编辑草稿',
+              icon: Icons.auto_awesome_outlined,
+              loading: parsingAi,
+              onPressed: enabled && !recognizing ? onAi : null,
+            ),
           ],
         ),
-      );
+        const SizedBox(height: 8),
+        Text('图片留本机 · OCR 本地识别 · AI 发送前需确认', style: theme.textTheme.bodySmall),
+        if (loading)
+          const Padding(padding: EdgeInsets.only(top: 8), child: LinearProgressIndicator()),
+        if (assets.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 112 + captionSize * 1.4,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: assets.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final asset = assets[index];
+                return SizedBox(
+                  width: previewWidth.toDouble(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        height: 104,
+                        child: Stack(
+                          children: [
+                            Positioned.fill(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: Image.file(
+                                  File(asset.localPath),
+                                  fit: BoxFit.cover,
+                                  semanticLabel: asset.type.label,
+                                  errorBuilder: (_, __, ___) => ColoredBox(
+                                    color: theme.colorScheme.surfaceContainerHighest,
+                                    child: const Center(child: Icon(Icons.broken_image_outlined)),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              right: 0, top: 0,
+                              child: IconButton(
+                                tooltip: '删除${asset.type.label}',
+                                style: IconButton.styleFrom(backgroundColor: Colors.black54, foregroundColor: Colors.white),
+                                iconSize: 16,
+                                onPressed: enabled && !recognizing && !parsingAi ? () => onDelete(asset) : null,
+                                icon: const Icon(Icons.close),
+                              ),
+                            ),
+                            if (asset.hasOcrText)
+                              const Positioned(
+                                left: 4, top: 4,
+                                child: Tooltip(
+                                  message: '已保存本地 OCR 文字',
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                                    child: Padding(
+                                      padding: EdgeInsets.all(4),
+                                      child: Icon(Icons.text_snippet_outlined, size: 18, color: Colors.white),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(asset.type.label, style: theme.textTheme.bodySmall),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ],
+    );
+  }
 }
 
 class _BarcodeScannerScreen extends StatefulWidget {
@@ -1242,15 +1419,22 @@ class _DateField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selected = _dateText(value) ?? '未设置';
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      tileColor: Theme.of(context).colorScheme.surface,
-      title: Text(label),
-      subtitle: Text(selected),
-      leading: const Icon(Icons.event_outlined),
-      onTap: onTap,
-      trailing: value == null ? null : IconButton(onPressed: onClear, icon: const Icon(Icons.clear)),
+    return Semantics(
+      button: true,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: InputDecorator(
+          decoration: InputDecoration(
+            labelText: label,
+            floatingLabelBehavior: FloatingLabelBehavior.always,
+            suffixIcon: value == null
+                ? const Icon(Icons.event_outlined, size: 20)
+                : IconButton(tooltip: '清除$label', onPressed: onClear, icon: const Icon(Icons.clear, size: 20)),
+          ),
+          child: Text(selected, style: Theme.of(context).textTheme.bodyMedium),
+        ),
+      ),
     );
   }
 }

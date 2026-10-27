@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/inventory_models.dart';
+import '../../domain/inventory/product_categories.dart';
 import '../controllers/providers.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/intake_sheet.dart';
@@ -15,14 +16,7 @@ class ShoppingScreen extends ConsumerStatefulWidget {
 }
 
 class _ShoppingScreenState extends ConsumerState<ShoppingScreen> {
-  static const _categories = [
-    '药品保健', '食品生鲜', '美妆个护', '母婴用品',
-    '粮油调味', '零食饮料', '冷冻速食', '宠物用品',
-    '家居清洁', '纸品湿巾', '厨房用品', '餐具水具',
-    '衣物鞋帽', '家纺寝具', '数码电器', '电池灯具',
-    '文具办公', '工具五金', '运动户外', '玩具图书',
-    '园艺绿植', '汽车用品', '其他物品',
-  ];
+  static const _categories = ProductCategories.values;
 
   final Set<String> _selectedIds = {};
   String _category = '全部';

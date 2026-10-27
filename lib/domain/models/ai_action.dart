@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../inventory/expiry_rules.dart';
+import '../inventory/product_categories.dart';
 import 'chore_models.dart';
 import 'inventory_models.dart';
 
@@ -163,7 +164,11 @@ class AiInventoryAction {
   }
 
   IntakeDraft get intakeDraft => IntakeDraft(
-    name: string('name')!, category: string('category') ?? '其他物品', quantity: quantity!,
+    name: string('name')!,
+    category: ProductCategories.forSuggestion(
+      name: string('name')!, category: string('category'),
+    ),
+    quantity: quantity!,
     brand: string('brand'), specification: string('specification'),
     barcode: string('barcode'), location: string('location'), batchNo: string('batchNo'),
     lowStockThreshold: (arguments['lowStockThreshold'] as int?) ?? 1,
@@ -174,7 +179,15 @@ class AiInventoryAction {
   );
 
   static String displayText(String text) {
-    if (parse(text) != null) return '操作建议已生成，尚未执行。请查看具体内容后确认。';
+    final action = parse(text);
+    if (action != null && action.kind == 'intake') {
+      final draft = action.intakeDraft;
+      return '入库草稿：${draft.name} × ${draft.quantity} 件\n分类：${draft.category}'
+          '${draft.brand == null ? '' : '\n品牌：${draft.brand}'}'
+          '${draft.specification == null ? '' : '\n规格：${draft.specification}'}'
+          '\n尚未执行，核对草稿后确认入库。';
+    }
+    if (action != null) return '操作建议已生成，尚未执行。请查看具体内容后确认。';
     try {
       final data = jsonDecode(text);
       if (data is Map && data['action'] != null) return '操作建议格式无效或暂不支持，未执行任何操作。请补充信息后重试。';

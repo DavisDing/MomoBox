@@ -144,7 +144,11 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
+      if (mounted && _scrollController.hasClients) {
+        if (MediaQuery.disableAnimationsOf(context) || MediaQuery.accessibleNavigationOf(context)) {
+          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+          return;
+        }
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
           duration: const Duration(milliseconds: 300),
@@ -209,6 +213,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
           context: context, isScrollControlled: true, useSafeArea: true,
           builder: (_) => IntakeSheet(
             initialDraft: action.intakeDraft,
+            suggestInitialCategory: true,
             beforeIntake: () async {
               if (!store.sessions.contains(origin)) throw StateError('原会话已删除，请重新提问。');
               if (executing) throw StateError('本次入库已提交，请先核实库存。');
@@ -353,17 +358,8 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
           child: Column(
             children: [
               // 顶部标题栏
-              Container(
+              Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                  border: Border(
-                    bottom: BorderSide(
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
-                    ),
-                  ),
-                ),
                 child: Row(
                   children: [
                     Container(
@@ -381,9 +377,9 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                         children: [
                           Text(palette.mascotName, style: theme.textTheme.titleMedium),
                           const SizedBox(height: 2),
-                          const Text(
+                          Text(
                             '操作前由你确认',
-                            style: TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey),
+                            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                           ),
                         ],
                       ),
@@ -399,6 +395,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                       onPressed: () => _showHistorySessionsSheet(context, palette),
                     ),
                     IconButton(
+                      tooltip: '关闭助手',
                       icon: const Icon(Icons.close_rounded),
                       onPressed: () => Navigator.of(context).pop(),
                     ),
@@ -511,22 +508,14 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                         child: CircularProgressIndicator(strokeWidth: 2, color: palette.primary),
                       ),
                       const SizedBox(width: 8),
-                      Text('${palette.mascotName} 正在规划执行方案...', style: const TextStyle(fontSize: MomoTextSize.caption)),
+                      Flexible(child: Text('${palette.mascotName} 正在思考…', style: theme.textTheme.bodySmall)),
                     ],
                   ),
                 ),
 
               // 底部输入栏
-              Container(
+              Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface,
-                  border: Border(
-                    top: BorderSide(
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
-                    ),
-                  ),
-                ),
                 child: Row(
                   children: [
                     Expanded(
@@ -545,6 +534,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                     ),
                     const SizedBox(width: 8),
                     IconButton.filled(
+                      tooltip: '发送消息',
                       icon: const Icon(Icons.send_rounded, size: 20),
                       onPressed: _isLoading ? null : () => _sendMessage(),
                     ),

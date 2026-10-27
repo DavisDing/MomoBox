@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../inventory/expiry_rules.dart';
 import '../inventory/calendar_date.dart';
+import '../inventory/product_categories.dart';
 import '../models/recognition_models.dart';
 
 class AiDraftParser {
@@ -22,11 +23,17 @@ class AiDraftParser {
     if (shelfLifeAmount != null && shelfLifeAmount < 1) {
       throw const FormatException('AI 返回的保质期必须大于 0。');
     }
+    final name = stringOrNull(decoded['name']);
+    final category = stringOrNull(decoded['category']);
+    final hasCategoryHint = category != null ||
+        ProductCategories.suggestForName(name ?? '') != null;
     return IntakeDraftSuggestion(
-      name: stringOrNull(decoded['name']),
+      name: name,
       brand: stringOrNull(decoded['brand']),
       specification: stringOrNull(decoded['specification']),
-      category: stringOrNull(decoded['category']),
+      category: hasCategoryHint
+          ? ProductCategories.forSuggestion(name: name ?? '', category: category)
+          : null,
       batchNo: stringOrNull(decoded['batch_no']),
       productionDate: productionDate,
       expiryDate: expiryDate,

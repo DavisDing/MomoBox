@@ -41,6 +41,66 @@ class _PendingAssistant implements AiAssistantService {
 }
 
 void main() {
+  testWidgets('薯片建议自动预填零食分类，确认前不写入，确认后按草稿落库', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(430, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final settings = MemorySettingsRepository();
+    addTearDown(settings.close);
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final inventory = InventoryService(InventoryRepository(db));
+    final store = AiConversationStore(settings);
+    await store.load();
+    store.current.messages.add(ChatMessage(
+      id: 'chips-proposal', role: 'assistant', timestamp: DateTime.now(),
+      content: jsonEncode({'action': {
+        'kind': 'intake', 'name': '薯片', 'category': '药品保健', 'quantity': 1,
+      }}),
+    ));
+    await tester.pumpWidget(ProviderScope(overrides: [
+      databaseProvider.overrideWithValue(db),
+      settingsRepositoryProvider.overrideWithValue(settings),
+      inventoryServiceProvider.overrideWithValue(inventory),
+      aiConversationStoreProvider.overrideWith((ref) => store),
+      aiInventoryActionServiceProvider.overrideWithValue(AiInventoryActionService(settings, inventory)),
+    ], child: const MaterialApp(home: Scaffold(body: AiAssistantDialog()))));
+    Future<void> flush() async {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+      await tester.pumpAndSettle();
+    }
+    await flush();
+    expect(find.textContaining('分类：零食饮料'), findsOneWidget);
+    await tester.tap(find.text('查看并确认操作'));
+    await flush();
+    final name = find.byWidgetPredicate((widget) => widget is TextField &&
+      widget.decoration?.labelText == '物品名称 *');
+    expect(tester.widget<TextField>(name).controller!.text, '薯片');
+    final category = tester.widget<DropdownButton<String>>(find.descendant(
+      of: find.byType(DropdownButtonFormField<String>),
+      matching: find.byType(DropdownButton<String>),
+    ));
+    expect(category.value, '零食饮料');
+    await tester.runAsync(() async => expect(await inventory.watchInventory().first, isEmpty));
+    expect(store.actionReceipts.containsKey('chips-proposal'), isFalse);
+    final scroll = find.descendant(of: find.byType(IntakeSheet), matching: find.byType(Scrollable)).first;
+    await tester.scrollUntilVisible(find.text('确认入库'), 300, scrollable: scroll);
+    await tester.tap(find.text('确认入库'));
+    await flush();
+    await tester.runAsync(() async {
+      final item = (await inventory.watchInventory().first).single;
+      expect(item.name, '薯片');
+      expect(item.category, '零食饮料');
+      expect(item.totalStock, 1);
+      expect(item.brand, isNull);
+      expect(item.specification, isNull);
+      expect(item.batches.single.expiryDate, isNull);
+    });
+    expect(store.actionReceipts['chips-proposal'], '已执行');
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await flush();
+  });
+
   testWidgets('AI 入库填入可编辑草稿，取消不写入，修改后确认才入库并保存回执', (tester) async {
     await tester.binding.setSurfaceSize(const Size(430, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
