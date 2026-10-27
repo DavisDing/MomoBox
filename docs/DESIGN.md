@@ -1407,7 +1407,7 @@ App Drift schema 5→6，新增可查询计划/条目/归档表和两个 nullabl
 
 ### 24.5 顶部导航背景一致性修复（2026-10-25）
 
-- 顶部导航与状态栏区域属于页面背景层，不能使用卡片表面色形成独立白色/深灰横条。`MomoGlassAppBar` 使用当前 Theme 的 `scaffoldBackgroundColor` 作为玻璃底色，保留背景模糊和细分隔；高对比度时使用同色不透明背景。
+- 顶部导航与状态栏区域属于页面背景层，不能使用卡片表面色形成独立白色/深灰横条。`MomoGlassAppBar` 使用当前 Theme 的 `scaffoldBackgroundColor` 作为玻璃底色，保留背景模糊；顶部与内容之间不绘制额外底部分隔线，避免页面出现断层。高对比度时使用同色不透明背景。
 - 全局 `AppBarTheme` 同步使用页面背景色，覆盖库存数据态的 `SliverAppBar`；保留零滚动抬升、透明 Material tint 和透明系统状态栏及相应亮暗图标。适用于所有皮肤和深浅模式，不改变页面布局或业务行为。
 - 新增 `test/presentation/top_bar_background_test.dart`，检查普通/Sliver 顶部在五皮肤、深浅色、高对比度及滚动前后的合成像素与状态栏图标配置。**本次未执行 Flutter analyze/test 或重新渲染**：此前 `/private/tmp` 中的临时 Flutter SDK 和依赖缓存已不存在，当前 PATH 亦无 Flutter/Dart。第24.4节结果和既有预览仅对应之前的版本，不能作为本次修复通过的证据；真机验证仍待执行。
 

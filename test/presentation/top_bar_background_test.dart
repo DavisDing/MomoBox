@@ -8,6 +8,25 @@ import 'package:momo_box/app/momo_theme.dart';
 import 'package:momo_box/presentation/widgets/momo_glass_components.dart';
 
 void main() {
+  testWidgets('顶部玻璃栏不绘制额外底部分隔线', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildMomoTheme(MomoPalette.defaultPalette, Brightness.light),
+        home: const Scaffold(
+          appBar: MomoGlassAppBar(title: Text('Page')),
+        ),
+      ),
+    );
+    final decorated = tester.widget<DecoratedBox>(
+      find.descendant(
+        of: find.byType(AppBar),
+        matching: find.byType(DecoratedBox),
+      ),
+    );
+    final decoration = decorated.decoration as BoxDecoration;
+    expect(decoration.border, isNull);
+  });
+
   for (final brightness in Brightness.values) {
     for (final sliver in [false, true]) {
       testWidgets(
