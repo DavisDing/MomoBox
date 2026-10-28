@@ -20,7 +20,7 @@ class MediaService {
   // the gap between a file write and its metadata commit, or delete a file
   // created after it took its reference snapshot. This also covers separate
   // MediaService/storage instances pointing at the same app media directory.
-  static Future<void> _lastMediaOperation = Future<void>.value();
+  static Future<void>? _lastMediaOperation;
 
   Future<T> _runSerialized<T>(Future<T> Function() operation) {
     final previous = _lastMediaOperation;
@@ -28,13 +28,20 @@ class MediaService {
     // Only the release signal enters the queue, never the operation's result,
     // so a failed save/OCR/delete cannot poison later cleanup or writes.
     _lastMediaOperation = release.future;
-    return previous.then<T>((_) async {
+    Future<T> run() async {
       try {
         return await operation();
       } finally {
+        // Release an idle tail rather than retaining a completed Future and
+        // its scheduling zone across independent callers/test environments.
+        // A queued successor owns the tail and must never be cleared here.
+        if (identical(_lastMediaOperation, release.future)) {
+          _lastMediaOperation = null;
+        }
         release.complete();
       }
-    });
+    }
+    return previous == null ? run() : previous.then<T>((_) => run());
   }
 
   Stream<List<MediaAsset>> watchForEntity({
