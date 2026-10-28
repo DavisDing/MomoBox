@@ -81,7 +81,9 @@ void main() {
     ));
     expect(category.value, '零食饮料');
     await tester.runAsync(() async => expect(await inventory.watchInventory().first, isEmpty));
-    expect(store.actionReceipts.containsKey('chips-proposal'), isFalse);
+    // Opening a proposal locks it against duplicate confirmation routes;
+    // that pending marker is not an execution receipt or an inventory write.
+    expect(store.actionReceipts['chips-proposal'], '等待确认');
     final scroll = find.descendant(of: find.byType(IntakeSheet), matching: find.byType(Scrollable)).first;
     await tester.scrollUntilVisible(find.text('确认入库'), 300, scrollable: scroll);
     await tester.tap(find.text('确认入库'));

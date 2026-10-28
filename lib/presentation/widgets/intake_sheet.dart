@@ -939,6 +939,19 @@ class _MediaDraftSection extends StatelessWidget {
     final theme = Theme.of(context);
     final captionSize = MediaQuery.textScalerOf(context).scale(MomoTextSize.caption);
     final previewWidth = (captionSize * 6 + 16).clamp(128.0, double.infinity);
+    // Paragraph layout rounds line metrics; fontSize * height can be smaller
+    // even for a single line (and ignores wrapping/custom font metrics).
+    var captionHeight = 0.0;
+    for (final asset in assets) {
+      final painter = TextPainter(
+        text: TextSpan(text: asset.type.label, style: theme.textTheme.bodySmall),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+        locale: Localizations.maybeLocaleOf(context),
+      )..layout(maxWidth: previewWidth.toDouble());
+      if (painter.height > captionHeight) captionHeight = painter.height;
+      painter.dispose();
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -974,7 +987,7 @@ class _MediaDraftSection extends StatelessWidget {
         if (assets.isNotEmpty) ...[
           const SizedBox(height: 8),
           SizedBox(
-            height: 112 + captionSize * 1.4,
+            height: 104 + 8 + captionHeight.ceilToDouble(),
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: assets.length,

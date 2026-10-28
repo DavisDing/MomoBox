@@ -128,10 +128,22 @@ void main() {
               of: find.byType(IntakeSheet), matching: find.byType(Scrollable),
             ).first;
             await tester.scrollUntilVisible(find.text('AI解析'), 180, scrollable: scroll);
+            // The label can intersect the viewport while its center is still
+            // below the keyboard-reduced sheet, especially at 3.4x text size.
+            await Scrollable.ensureVisible(tester.element(find.text('AI解析')), alignment: 0.5);
+            await tester.pumpAndSettle();
+            expect(find.text('AI解析').hitTestable(), findsOneWidget);
             await tester.tap(find.text('AI解析'));
             await tester.pumpAndSettle();
             expect(find.text('请先对说明书或包装图片执行本地 OCR。'), findsOneWidget);
+            // Verify the feedback first, then let its normal lifetime finish;
+            // a SnackBar must not be mistaken for an unreachable form control.
+            final feedback = tester.widget<SnackBar>(find.byType(SnackBar));
+            await tester.pump(feedback.duration);
+            await tester.pumpAndSettle();
             await tester.scrollUntilVisible(find.text('确认入库'), 220, scrollable: scroll);
+            await Scrollable.ensureVisible(tester.element(find.text('确认入库')), alignment: 0.5);
+            await tester.pumpAndSettle();
             expect(find.text('确认入库').hitTestable(), findsOneWidget);
             expect(tester.takeException(), isNull);
           },
