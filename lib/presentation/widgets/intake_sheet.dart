@@ -101,6 +101,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
   static const _categories = ProductCategories.values;
 
   final _formKey = GlobalKey<FormState>();
+  final _categoryFieldKey = GlobalKey<FormFieldState<String>>();
   final _name = TextEditingController();
   final _brand = TextEditingController();
   final _specification = TextEditingController();
@@ -305,12 +306,12 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
       if (result.brand != null) _brand.text = result.brand!;
       if (result.specification != null) _specification.text = result.specification!;
       if (category != null) {
-        if (!_categoryManuallySelected) _category = category;
+        if (!_categoryManuallySelected) _updateCategory(category);
         // The user accepted this external category; name edits must not
         // override it, including after restoring this draft.
         _useLocalCategoryHints = false;
       } else {
-        _suggestCategory();
+        _applyLocalCategoryHint();
       }
     });
   }
@@ -482,7 +483,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
       if (suggestion.productionDate != null) _productionDate = suggestion.productionDate;
       if (suggestion.expiryDate != null) _expiryDate = suggestion.expiryDate;
       if (!_categoryManuallySelected) {
-        _category = category;
+        _updateCategory(category);
       }
       // Even when the model is uncertain, do not silently replace its result
       // with a name-based guess now or on subsequent edits/draft restoration.
@@ -496,10 +497,18 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
     });
   }
 
-  void _suggestCategory() {
+  void _updateCategory(String category) {
+    if (_category == category) return;
+    _category = category;
+    // Synchronize programmatic suggestions without replacing the field state
+    // (and losing focus) every time its selected value changes.
+    _categoryFieldKey.currentState?.didChange(category);
+  }
+
+  void _applyLocalCategoryHint() {
     if (_categoryManuallySelected || !_useLocalCategoryHints) return;
     final category = ProductCategories.suggestForName(_name.text);
-    if (category != null) _category = category;
+    if (category != null) _updateCategory(category);
   }
 
   String? get _categoryHint {
@@ -739,12 +748,12 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
                     controller: _name,
                     decoration: const InputDecoration(labelText: '物品名称 *'),
                     textInputAction: TextInputAction.next,
-                    onChanged: (_) => setState(() => _suggestCategory()),
+                    onChanged: (_) => setState(() => _applyLocalCategoryHint()),
                     validator: (value) => value == null || value.trim().isEmpty ? '请填写物品名称' : null,
                   ),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
-                    key: ValueKey('intake-category-$_category'),
+                    key: _categoryFieldKey,
                     isExpanded: true,
                     initialValue: _category,
                     isDense: true,
@@ -942,15 +951,20 @@ class _MediaDraftSection extends StatelessWidget {
     // Paragraph layout rounds line metrics; fontSize * height can be smaller
     // even for a single line (and ignores wrapping/custom font metrics).
     var captionHeight = 0.0;
-    for (final asset in assets) {
-      final painter = TextPainter(
-        text: TextSpan(text: asset.type.label, style: theme.textTheme.bodySmall),
-        textDirection: Directionality.of(context),
-        textScaler: MediaQuery.textScalerOf(context),
-        locale: Localizations.maybeLocaleOf(context),
-      )..layout(maxWidth: previewWidth.toDouble());
-      if (painter.height > captionHeight) captionHeight = painter.height;
-      painter.dispose();
+    // Labels depend only on the two asset types, not on attachment count.
+    // Measure each possible label once per build so text scaling/theme changes
+    // stay accurate without laying out the same caption for every attachment.
+    if (assets.isNotEmpty) {
+      for (final type in MediaAssetType.values) {
+        final painter = TextPainter(
+          text: TextSpan(text: type.label, style: theme.textTheme.bodySmall),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+          locale: Localizations.maybeLocaleOf(context),
+        )..layout(maxWidth: previewWidth.toDouble());
+        if (painter.height > captionHeight) captionHeight = painter.height;
+        painter.dispose();
+      }
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

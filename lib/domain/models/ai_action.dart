@@ -134,7 +134,11 @@ class AiInventoryAction {
         }
         if (data['shelfLifeAmount'] != null && data['productionDate'] == null) return null;
         AiIntakeLimits.validateShelfLife(data['shelfLifeAmount'] as int?,
-          data['shelfLifeUnit'] == 'months' ? ShelfLifeUnit.months : ShelfLifeUnit.days);
+          switch (data['shelfLifeUnit']) {
+            'months' => ShelfLifeUnit.months,
+            'days' => ShelfLifeUnit.days,
+            _ => null,
+          });
       }
       if (['shopping_complete', 'shopping_delete', 'reminder_acknowledge',
         'chore_update', 'chore_complete', 'chore_delete', 'chore_toggle', 'device_control']

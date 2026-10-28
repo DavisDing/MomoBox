@@ -64,9 +64,10 @@ abstract final class ProductCategories {
   }
 
   /// Exposes ambiguity for manual-entry feedback without choosing a winner.
-  static Set<String> candidatesForManualEntry(String name) {
+  /// Candidates follow the persisted category list, not hint traversal order.
+  static List<String> candidatesForManualEntry(String name) {
     final normalized = name.trim();
-    if (normalized.isEmpty) return const <String>{};
+    if (normalized.isEmpty) return const <String>[];
     final matches = <String>{};
     for (final entry in _hints.entries) {
       if (!entry.value.any(normalized.contains)) continue;
@@ -82,7 +83,7 @@ abstract final class ProductCategories {
       }
       matches.add(category);
     }
-    return Set.unmodifiable(matches);
+    return List<String>.unmodifiable(values.where(matches.contains));
   }
 
   /// Local suggestions for manual entry before AI has been applied.

@@ -13,7 +13,7 @@ abstract final class AiIntakeLimits {
 
   static void validateShelfLife(int? amount, ShelfLifeUnit? unit) {
     if (amount == null) return;
-    // An unknown OCR unit stays unknown; never use a months limit for days.
+    // An unknown AI unit stays unknown; never use a months limit for days.
     final maximum = maxShelfLife(unit ?? ShelfLifeUnit.days);
     if (amount < 1 || amount > maximum) {
       if (unit == null) {

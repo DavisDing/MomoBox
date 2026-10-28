@@ -25,9 +25,10 @@ class MediaService {
   Future<T> _runSerialized<T>(Future<T> Function() operation) {
     final previous = _lastMediaOperation;
     final release = Completer<void>();
+    final tail = release.future;
     // Only the release signal enters the queue, never the operation's result,
     // so a failed save/OCR/delete cannot poison later cleanup or writes.
-    _lastMediaOperation = release.future;
+    _lastMediaOperation = tail;
     Future<T> run() async {
       try {
         return await operation();
@@ -35,7 +36,7 @@ class MediaService {
         // Release an idle tail rather than retaining a completed Future and
         // its scheduling zone across independent callers/test environments.
         // A queued successor owns the tail and must never be cleared here.
-        if (identical(_lastMediaOperation, release.future)) {
+        if (identical(_lastMediaOperation, tail)) {
           _lastMediaOperation = null;
         }
         release.complete();

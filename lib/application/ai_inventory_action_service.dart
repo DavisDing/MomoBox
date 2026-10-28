@@ -226,6 +226,8 @@ class AiInventoryActionService {
       throw StateError(validationError ?? '操作参数无效或不支持。');
     }
     final appDescription = await _describeAppAction(action);
+    // Intake was revalidated with AiIntakeLimits above and returns here.
+    // The later technical ceiling applies only to consume/replenish actions.
     if (appDescription != null) return (description: appDescription, remaining: null);
     final items = await _inventory.watchInventory().first;
     final item = items.where((item) => item.id == action.productId).firstOrNull;
