@@ -4,6 +4,7 @@ import '../inventory/expiry_rules.dart';
 import '../inventory/calendar_date.dart';
 import '../inventory/product_categories.dart';
 import '../models/recognition_models.dart';
+import 'ai_intake_limits.dart';
 
 class AiDraftParser {
   const AiDraftParser();
@@ -27,9 +28,7 @@ class AiDraftParser {
     final shelfLife = decoded['shelf_life_amount'];
     final shelfLifeAmount = shelfLife is int ? shelfLife : int.tryParse('$shelfLife');
     final shelfLifeUnit = _parseShelfLifeUnit(decoded['shelf_life_unit']);
-    if (shelfLifeAmount != null && shelfLifeAmount < 1) {
-      throw const FormatException('AI 返回的保质期必须大于 0。');
-    }
+    AiIntakeLimits.validateShelfLife(shelfLifeAmount, shelfLifeUnit);
     final name = stringOrNull(decoded['name']);
     return IntakeDraftSuggestion(
       name: name,

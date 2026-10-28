@@ -220,7 +220,11 @@ class AiInventoryActionService {
     AiInventoryAction action,
   ) async {
     await checkPermission();
-    if (AiInventoryAction.fromJson(action.toJson()) == null) throw StateError('操作参数无效或不支持。');
+    String? validationError;
+    if (AiInventoryAction.fromJson(action.toJson(),
+      onError: (message) => validationError = message) == null) {
+      throw StateError(validationError ?? '操作参数无效或不支持。');
+    }
     final appDescription = await _describeAppAction(action);
     if (appDescription != null) return (description: appDescription, remaining: null);
     final items = await _inventory.watchInventory().first;
@@ -232,7 +236,7 @@ class AiInventoryActionService {
     if (action.kind != 'discard' &&
         (action.quantity == null ||
             action.quantity! < 1 ||
-            action.quantity! > 1000000)) {
+            action.quantity! > AiInventoryAction.maxActionQuantity)) {
       throw StateError('数量必须为有效的正整数。');
     }
     if (action.kind == 'consume') {

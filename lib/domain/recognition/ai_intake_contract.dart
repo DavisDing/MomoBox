@@ -4,6 +4,7 @@ import '../inventory/expiry_rules.dart';
 import '../inventory/product_categories.dart';
 import '../models/ai_action.dart';
 import 'ai_draft_parser.dart';
+import 'ai_intake_limits.dart';
 
 /// Portable prompt context, not a provider-specific structured-output option.
 /// Local parsers remain authoritative even if a model ignores this contract.
@@ -12,7 +13,9 @@ abstract final class AiIntakeContract {
         'type': 'string',
         'enum': ProductCategories.values,
         'nullable': true,
-        'unknown': 'null；不得自创分类、输出多个分类或返回分类别名',
+        'unknown': 'null；不得自创分类或输出多个分类',
+        'output_rule': '请输出 enum 中的标准名称，不输出分类别名',
+        'receiver_compatibility': '接收端兼容既有别名并规范化；这不扩展模型的输出枚举',
       };
 
   static Map<String, Object?> get _actionText => {
@@ -25,7 +28,15 @@ abstract final class AiIntakeContract {
   static Map<String, Object?> get _positiveInteger => {
         'type': 'integer',
         'minimum': 1,
-        'maximum': AiInventoryAction.maxPositiveInteger,
+      };
+
+  static Map<String, Object?> _shelfLifeAmount(String days, String months) => {
+        ..._positiveInteger,
+        'maximum_by_unit': {
+          days: AiIntakeLimits.maxShelfLifeDays,
+          months: AiIntakeLimits.maxShelfLifeMonths,
+        },
+        'maximum_if_unit_unknown': AiIntakeLimits.maxShelfLifeDays,
       };
 
   static const _ocrText = {'type': 'string', 'nullable': true};
@@ -48,9 +59,16 @@ abstract final class AiIntakeContract {
           ])
             key: _actionText,
           'category': _category,
-          'quantity': {..._positiveInteger, 'unit': '件'},
-          for (final key in ['lowStockThreshold', 'shelfLifeAmount'])
-            key: {..._positiveInteger, 'unknown': '省略字段，不能返回 null'},
+          'quantity': {..._positiveInteger, 'maximum': AiIntakeLimits.maxQuantity, 'unit': '件'},
+          'lowStockThreshold': {
+            ..._positiveInteger,
+            'maximum': AiIntakeLimits.maxLowStockThreshold,
+            'unknown': '省略字段，不能返回 null；null 会使整条 action 被拒绝',
+          },
+          'shelfLifeAmount': {
+            ..._shelfLifeAmount('days', 'months'),
+            'unknown': '省略字段，不能返回 null；null 会使整条 action 被拒绝',
+          },
           for (final key in ['productionDate', 'expiryDate'])
             key: {
               ..._date,
@@ -70,6 +88,7 @@ abstract final class AiIntakeContract {
           'expiryDate 不早于 productionDate；无 productionDate 时省略 shelfLifeAmount',
           '提供 shelfLifeAmount 时同时明确 shelfLifeUnit，不依赖应用默认单位',
           '其他未知可选字段省略；不得编造品牌、规格、批号、位置或日期',
+          '数量、阈值或保质期超出建议范围时提示用户手动核对，不截断数值、不换单位绕过限制',
         ],
       });
 
@@ -83,7 +102,7 @@ abstract final class AiIntakeContract {
           'production_date': _date,
           'expiry_date': _date,
           'shelf_life_amount': {
-            'type': 'integer', 'minimum': 1, 'nullable': true,
+            ..._shelfLifeAmount('day', 'month'), 'nullable': true,
           },
           'shelf_life_unit': {
             'type': 'string',

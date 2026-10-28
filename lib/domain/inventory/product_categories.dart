@@ -39,6 +39,7 @@ abstract final class ProductCategories {
 
   /// Validates model output without reclassifying it from the product name.
   /// Missing/uncertain categories remain unknown; unsupported values are errors.
+  /// Prompts request canonical names; reception tolerates existing aliases.
   static String? validateAiCategory(Object? category) {
     if (category == null) return null;
     if (category is! String) {
@@ -58,8 +59,14 @@ abstract final class ProductCategories {
   /// non-food objects do not produce snack hints. These rules do not veto
   /// other independent matches. Conflicting categories produce no local hint.
   static String? suggestForName(String name) {
+    final matches = candidatesForManualEntry(name);
+    return matches.length == 1 ? matches.single : null;
+  }
+
+  /// Exposes ambiguity for manual-entry feedback without choosing a winner.
+  static Set<String> candidatesForManualEntry(String name) {
     final normalized = name.trim();
-    if (normalized.isEmpty) return null;
+    if (normalized.isEmpty) return const <String>{};
     final matches = <String>{};
     for (final entry in _hints.entries) {
       if (!entry.value.any(normalized.contains)) continue;
@@ -75,7 +82,7 @@ abstract final class ProductCategories {
       }
       matches.add(category);
     }
-    return matches.length == 1 ? matches.single : null;
+    return Set.unmodifiable(matches);
   }
 
   /// Local suggestions for manual entry before AI has been applied.

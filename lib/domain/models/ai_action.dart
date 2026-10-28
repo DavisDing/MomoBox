@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../inventory/expiry_rules.dart';
 import '../inventory/product_categories.dart';
+import '../recognition/ai_intake_limits.dart';
 import 'chore_models.dart';
 import 'inventory_models.dart';
 
@@ -24,7 +25,8 @@ class AiInventoryAction {
 
   // Shared by validation and the model-facing intake contract.
   static const maxTextLength = 1000;
-  static const maxPositiveInteger = 1000000;
+  // Existing non-intake actions retain their technical quantity ceiling.
+  static const maxActionQuantity = 1000000;
   static const minDateYear = 2000;
   static const maxDateYear = 2100;
 
@@ -74,17 +76,18 @@ class AiInventoryAction {
     if (quantity != null) 'quantity': quantity,
   };
 
-  static AiInventoryAction? parse(String text) {
+  /// Invalid proposals stay non-executable; optionally retain safe diagnostics.
+  static AiInventoryAction? parse(String text, {void Function(String)? onError}) {
     try {
       final envelope = jsonDecode(text);
       if (envelope is! Map || envelope['action'] is! Map) return null;
-      return fromJson(Map<String, Object?>.from(envelope['action'] as Map));
+      return fromJson(Map<String, Object?>.from(envelope['action'] as Map), onError: onError);
     } catch (_) {
       return null;
     }
   }
 
-  static AiInventoryAction? fromJson(Map<String, Object?> data) {
+  static AiInventoryAction? fromJson(Map<String, Object?> data, {void Function(String)? onError}) {
     try {
       final kind = data['kind'];
       final allowed = schemas[kind];
@@ -94,14 +97,24 @@ class AiInventoryAction {
       }
       bool text(String key) => data[key] is String &&
           (data[key] as String).trim().isNotEmpty && (data[key] as String).length <= maxTextLength;
-      bool integer(String key) => data[key] is int &&
-          (data[key] as int) > 0 && (data[key] as int) <= maxPositiveInteger;
+      bool integer(String key) => data[key] is int && (data[key] as int) > 0;
+      // Preserve category diagnostics before generic text checks can erase them.
+      if (kind == 'intake') ProductCategories.validateAiCategory(data['category']);
       for (final key in ['name', 'title', 'category', 'brand', 'specification',
         'barcode', 'location', 'batchNo', 'reason', 'notes', 'productId', 'batchId', 'id']) {
         if (data[key] != null && !text(key)) return null;
       }
       for (final key in ['quantity', 'lowStockThreshold', 'shelfLifeAmount']) {
-        if (data.containsKey(key) && !integer(key)) return null;
+        if (!data.containsKey(key)) continue;
+        if (!integer(key)) {
+          throw FormatException('AI 返回的 $key 必须是正整数；未知可选字段应省略，不能返回 null。');
+        }
+        final maximum = key == 'quantity'
+            ? (kind == 'intake' ? AiIntakeLimits.maxQuantity : maxActionQuantity)
+            : key == 'lowStockThreshold' ? AiIntakeLimits.maxLowStockThreshold : null;
+        if (maximum != null && (data[key] as int) > maximum) {
+          throw FormatException('AI 返回的 $key 超出建议范围 1～$maximum，请核对后手动填写。');
+        }
       }
       for (final key in ['productionDate', 'expiryDate', 'nextDueDate']) {
         if (data[key] != null) date(data[key]);
@@ -111,7 +124,6 @@ class AiInventoryAction {
       if (['consume', 'replenish', 'intake', 'shopping_add'].contains(kind) && !integer('quantity')) return null;
       if (['intake', 'shopping_add'].contains(kind) && !text('name')) return null;
       if (kind == 'intake') {
-        ProductCategories.validateAiCategory(data['category']);
         if (data['shelfLifeUnit'] != null &&
             !ShelfLifeUnit.values.any((unit) => unit.name == data['shelfLifeUnit'])) {
           return null;
@@ -121,6 +133,8 @@ class AiInventoryAction {
           return null;
         }
         if (data['shelfLifeAmount'] != null && data['productionDate'] == null) return null;
+        AiIntakeLimits.validateShelfLife(data['shelfLifeAmount'] as int?,
+          data['shelfLifeUnit'] == 'months' ? ShelfLifeUnit.months : ShelfLifeUnit.days);
       }
       if (['shopping_complete', 'shopping_delete', 'reminder_acknowledge',
         'chore_update', 'chore_complete', 'chore_delete', 'chore_toggle', 'device_control']
@@ -151,6 +165,9 @@ class AiInventoryAction {
         arguments: Map.unmodifiable({...data}..removeWhere((key, _) =>
           ['kind', 'productId', 'batchId', 'quantity'].contains(key))),
       );
+    } on FormatException catch (error) {
+      onError?.call(error.message);
+      return null;
     } catch (_) {
       return null;
     }
@@ -184,7 +201,9 @@ class AiInventoryAction {
   );
 
   static String displayText(String text) {
-    final action = parse(text);
+    String? validationError;
+    final action = parse(text, onError: (message) => validationError = message);
+    if (validationError != null) return '$validationError\n未执行任何操作。';
     if (action != null && action.kind == 'intake') {
       final draft = action.intakeDraft;
       final lines = [

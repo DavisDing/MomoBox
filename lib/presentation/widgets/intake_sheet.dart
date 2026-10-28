@@ -299,11 +299,19 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
       );
 
   void _applyBarcodeResult(BarcodeLookupResult result) {
+    final category = ProductCategories.canonical(result.category);
     setState(() {
       if (result.name != null) _name.text = result.name!;
       if (result.brand != null) _brand.text = result.brand!;
       if (result.specification != null) _specification.text = result.specification!;
-      _suggestCategory(result.category);
+      if (category != null) {
+        if (!_categoryManuallySelected) _category = category;
+        // The user accepted this external category; name edits must not
+        // override it, including after restoring this draft.
+        _useLocalCategoryHints = false;
+      } else {
+        _suggestCategory();
+      }
     });
   }
 
@@ -488,13 +496,17 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
     });
   }
 
-  void _suggestCategory([String? suggested]) {
-    if (_categoryManuallySelected) return;
-    final category = (_useLocalCategoryHints ? ProductCategories.suggestForName(_name.text) : null) ??
-        ProductCategories.canonical(suggested);
-    // Do not erase a useful model/barcode suggestion on each intermediate
-    // keystroke when the edited name has no high-confidence local hint.
+  void _suggestCategory() {
+    if (_categoryManuallySelected || !_useLocalCategoryHints) return;
+    final category = ProductCategories.suggestForName(_name.text);
     if (category != null) _category = category;
+  }
+
+  String? get _categoryHint {
+    if (_categoryManuallySelected || !_useLocalCategoryHints) return null;
+    final candidates = ProductCategories.candidatesForManualEntry(_name.text);
+    if (candidates.length < 2) return null;
+    return '可能属于${candidates.join('、')}，请手动选择分类；当前分类保持不变。';
   }
 
   Future<void> _deleteAsset(MediaAsset asset) async {
@@ -738,7 +750,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
                     isDense: true,
                     menuMaxHeight: 280,
                     borderRadius: BorderRadius.circular(16),
-                    decoration: const InputDecoration(labelText: '分类 *'),
+                    decoration: InputDecoration(labelText: '分类 *', helperText: _categoryHint, helperMaxLines: 4),
                     items: [if (!_categories.contains(_category)) _category, ..._categories]
                         .map((category) => DropdownMenuItem(value: category, child: Text(category))).toList(),
                     onChanged: (value) => setState(() {
