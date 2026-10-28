@@ -101,7 +101,6 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
   static const _categories = ProductCategories.values;
 
   final _formKey = GlobalKey<FormState>();
-  final _categoryFieldKey = GlobalKey<FormFieldState<String>>();
   final _name = TextEditingController();
   final _brand = TextEditingController();
   final _specification = TextEditingController();
@@ -500,9 +499,10 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
   void _updateCategory(String category) {
     if (_category == category) return;
     _category = category;
-    // Synchronize programmatic suggestions without replacing the field state
-    // (and losing focus) every time its selected value changes.
-    _categoryFieldKey.currentState?.didChange(category);
+    // The next build updates DropdownButtonFormField.initialValue; its
+    // didUpdateWidget synchronizes the value without calling onChanged.
+    // Do not call didChange: the dropdown forwards it to onChanged, which
+    // would incorrectly mark this programmatic suggestion as a manual choice.
   }
 
   void _applyLocalCategoryHint() {
@@ -753,7 +753,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
                   ),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
-                    key: _categoryFieldKey,
+                    key: const ValueKey('intake-category'),
                     isExpanded: true,
                     initialValue: _category,
                     isDense: true,

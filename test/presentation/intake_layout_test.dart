@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:momo_box/app/momo_theme.dart';
+import 'package:momo_box/application/ai_draft_service.dart';
 import 'package:momo_box/domain/models/ai_action.dart';
 import 'package:momo_box/domain/models/inventory_models.dart';
 import 'package:momo_box/domain/models/recognition_models.dart';
@@ -45,6 +46,99 @@ void main() {
     expect(_category(tester), '食品生鲜');
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('连续改名可更新本地分类，保持字段状态并继续显示歧义提示', (tester) async {
+    await _pumpIntake(tester);
+    final selector = find.byType(DropdownButtonFormField<String>);
+    final fieldState = tester.state(selector);
+    await tester.enterText(_field('物品名称 *'), '薯片');
+    await tester.pump();
+    expect(_category(tester), '零食饮料');
+    await tester.enterText(_field('物品名称 *'), '洗衣液');
+    await tester.pump();
+    expect(_category(tester), '家居清洁');
+    expect(identical(tester.state(selector), fieldState), isTrue);
+    await tester.enterText(_field('物品名称 *'), '薯片纸巾');
+    await tester.pump();
+    expect(find.textContaining('可能属于零食饮料、纸品湿巾'), findsOneWidget);
+    expect(_category(tester), '家居清洁');
+    await tester.enterText(_field('物品名称 *'), '电池');
+    await tester.pumpAndSettle();
+    expect(_category(tester), '电池灯具');
+    expect(find.textContaining('可能属于'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('本地建议不会保存为手选标记，重开草稿后仍可随名称更新', (tester) async {
+    await _pumpIntake(tester);
+    await tester.enterText(_field('物品名称 *'), '薯片');
+    await tester.pump();
+    expect(_category(tester), '零食饮料');
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    await _pumpIntake(tester, sheet: const IntakeSheet());
+    expect(_category(tester), '零食饮料');
+    await tester.enterText(_field('物品名称 *'), '洗衣液');
+    await tester.pump();
+    expect(_category(tester), '家居清洁');
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final manuallySelected in [false, true]) {
+    testWidgets('输入名称后连续应用 AI，手选=$manuallySelected，来源及恢复规则保持', (tester) async {
+      final ai = _CategoryDraftService();
+      await _pumpIntake(tester, size: const Size(430, 1000), aiDraftService: ai, assets: [
+        MediaAsset(
+          id: 'ocr-category', entityType: 'intake_draft', entityId: 'test',
+          type: MediaAssetType.productImage,
+          localPath: '/missing-intake-category-test.png',
+          mimeType: 'image/png', sizeBytes: 1, sha256: 'test-only',
+          createdAt: DateTime(2026, 10, 28), ocrText: '商品包装文字',
+        ),
+      ]);
+      await tester.enterText(_field('物品名称 *'), '薯片');
+      await tester.pump();
+      expect(_category(tester), '零食饮料');
+      if (manuallySelected) {
+        await tester.tap(find.byType(DropdownButtonFormField<String>));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('食品生鲜').last);
+        await tester.pumpAndSettle();
+      }
+      for (var request = 0; request < 2; request++) {
+        final previousCategory = _category(tester);
+        await Scrollable.ensureVisible(tester.element(find.text('AI解析')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('AI解析'));
+        await tester.pumpAndSettle();
+        expect(find.text('确认发送 OCR 文本？'), findsOneWidget);
+        expect(ai.calls, request);
+        await tester.tap(find.text('确认发送'));
+        // Parsing stays active while the result dialog awaits confirmation;
+        // settle the route animation without waiting on the loading spinner.
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        expect(ai.calls, request + 1);
+        expect(find.text('确认 AI 草稿'), findsOneWidget);
+        expect(_category(tester), previousCategory);
+        await tester.tap(find.text('应用到可编辑草稿'));
+        await tester.pumpAndSettle();
+        expect(_category(tester), manuallySelected ? '食品生鲜' : ai.categories[request]);
+      }
+      final expectedCategory = manuallySelected ? '食品生鲜' : '美妆个护';
+      await tester.enterText(_field('物品名称 *'), '洗衣液');
+      await tester.pump();
+      expect(_category(tester), expectedCategory);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      await _pumpIntake(tester, sheet: const IntakeSheet());
+      await tester.enterText(_field('物品名称 *'), '薯片纸巾');
+      await tester.pump();
+      expect(_category(tester), expectedCategory);
+      expect(find.textContaining('可能属于'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('旧自定义分类保留，未知物品不默认成为药品', (tester) async {
     await _pumpIntake(tester, sheet: const IntakeSheet(
@@ -164,6 +258,20 @@ String? _category(WidgetTester tester) => tester.widget<DropdownButton<String>>(
   ),
 ).value;
 
+class _CategoryDraftService implements AiDraftService {
+  final categories = ['食品生鲜', '美妆个护'];
+  var calls = 0;
+
+  @override
+  String createRequestToken() => 'category-test';
+
+  @override
+  Future<IntakeDraftSuggestion> parseOcrText(String text, {String? requestToken}) async {
+    expect(text, '商品包装文字');
+    return IntakeDraftSuggestion(category: categories[calls++]);
+  }
+}
+
 Future<void> _pumpIntake(
   WidgetTester tester, {
   IntakeSheet? sheet,
@@ -172,6 +280,7 @@ Future<void> _pumpIntake(
   double keyboard = 0,
   Brightness brightness = Brightness.light,
   List<MediaAsset> assets = const [],
+  AiDraftService? aiDraftService,
 }) async {
   await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -179,6 +288,7 @@ Future<void> _pumpIntake(
     key: UniqueKey(),
     overrides: [
       mediaAssetsProvider.overrideWith((ref, target) => Stream.value(assets)),
+      if (aiDraftService != null) aiDraftServiceProvider.overrideWithValue(aiDraftService),
     ],
     child: MaterialApp(
       theme: buildMomoTheme(MomoPalette.defaultPalette, brightness),
