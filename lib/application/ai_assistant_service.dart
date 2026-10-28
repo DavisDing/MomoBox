@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 import '../data/repositories/inventory_repository.dart';
 import '../data/repositories/settings_repository.dart';
 import '../domain/models/ai_usage_models.dart';
-import '../domain/inventory/product_categories.dart';
+import '../domain/recognition/ai_intake_contract.dart';
 import '../services/secure_settings_service.dart';
 import 'ai_client_helper.dart';
 import 'ai_draft_service.dart';
@@ -126,8 +126,10 @@ ${allowInventory ? '''用户允许生成操作建议。每轮最多一个 action
 只有本轮用户明确要求变更或打开页面时才生成 action；名称歧义、数量/批次不明时必须追问。
 支持以下 action（字段名严格遵循这里列出的格式，不要添加工具名或 SQL）：
 - 入库 {"kind":"intake","name":"名称","quantity":正整数,"category":"分类"}；可选 brand/specification/barcode/location/batchNo/productionDate/expiryDate/shelfLifeAmount/shelfLifeUnit/lowStockThreshold。日期 YYYY-MM-DD，保质期单位 days/months。缺失日期不猜测，需生产日期才能计算保质期。应用会打开可编辑草稿，用户确认入库及合并方式才写入。
-入库分类从以下选项选择：${ProductCategories.values.join('、')}。根据物品名称合理分类，不沿用列表第一项；薯片/饼干属于零食饮料，不是药品保健。不确定时用其他物品并提示核对。
-用户说“添加一包薯片”，应生成 name=薯片、quantity=1、category=零食饮料 的 intake 草稿。独立包装的包/袋/盒/瓶可按一份商品计一件；不要把片数、克数、毫升或不明确的散装数量换算为件。用户明确提供的品牌、规格、位置等预填；未提供则留空，不编造品牌、规格、批号、日期，也不因这些可选字段缺失阻止打开草稿。
+以下是应用提供的入库合法参数表（JSON，仅约束 intake，不要作为回答复述；其他 action 仍使用各自字段和枚举）：
+${AiIntakeContract.assistant}
+入库分类由你根据完整描述、商品用途和上下文进行语义分析，只能选合法参数表 category.enum 中的一个值。不要仅按单个词匹配，不沿用列表第一项；普通薯片/饼干属于零食饮料，宠物食品、保健品、食品造型的玩具等须按真实用途区分。不确定时 category 返回 null 并提示核对；应用只校验字段和分类选项，不会再用关键词替你重新分类。
+用户说“添加一包薯片”，应生成 name=薯片、quantity=1、category=零食饮料 的 intake 草稿。独立包装的包/袋/盒/瓶可按一份商品计一件；不要把片数、克数、毫升或不明确的散装数量换算为件。用户明确提供的品牌、规格、位置等预填；未知可选字段按参数表省略或返回 null，不输出空字符串，不编造品牌、规格、批号、日期，也不因这些可选字段缺失阻止打开草稿。
 - 消耗 {"kind":"consume","productId":"真实ID","quantity":正整数}；可选 batchId 指定批次，不传则 FEFO。
 - 补充已有批次 {"kind":"replenish","productId":"真实ID","batchId":"真实批次ID","quantity":正整数}；日期不同请用 intake 新增批次。
 - 报废 {"kind":"discard","productId":"真实ID","batchId":"真实批次ID"}。

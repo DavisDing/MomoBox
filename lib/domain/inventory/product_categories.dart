@@ -18,35 +18,68 @@ abstract final class ProductCategories {
     '纸巾': '纸品湿巾', '电子产品': '数码电器', '其他': fallback,
   };
 
+  static const _hints = {
+    '零食饮料': ['薯片', '饼干', '爆米花', '巧克力', '果冻', '汽水', '可乐'],
+    '纸品湿巾': ['抽纸', '卷纸', '纸巾', '湿巾'],
+    '家居清洁': ['洗衣液', '洗衣粉', '洗洁精', '洁厕液'],
+    '电池灯具': ['电池', '灯泡'],
+  };
+
+  // Scope these qualifiers to relevant candidates, not the entire product name.
+  // Single characters such as 药/猫/狗 also occur in ordinary food names.
+  static final _petUse = RegExp(r'宠物|猫粮|狗粮|犬粮|猫用|狗用|犬用|猫零食|狗零食|犬零食');
+  static final _supplement = RegExp(r'药品|药物|药用|胶囊|片剂|保健|营养补充|维生素');
+  static final _nonFoodForm = RegExp(r'模型|玩具|模具|香薰|香氛|香水|蜡烛');
+
   static String? canonical(String? category) {
     final trimmed = category?.trim();
     if (values.contains(trimmed)) return trimmed;
     return _aliases[trimmed];
   }
 
-  /// Intentionally small, high-confidence hints, not a universal classifier.
-  /// Ambiguous names and specialty products are left for the user/model.
-  static String? suggestForName(String name) {
-    final normalized = name.trim();
-    if (normalized.isEmpty || RegExp(
-      r'药|胶囊|保健|营养补充|维生素|宠物|猫|狗|模型|玩具|模具|味香|香薰',
-    ).hasMatch(normalized)) {
-      return null;
+  /// Validates model output without reclassifying it from the product name.
+  /// Missing/uncertain categories remain unknown; unsupported values are errors.
+  static String? validateAiCategory(Object? category) {
+    if (category == null) return null;
+    if (category is! String) {
+      throw const FormatException('AI 返回的分类必须是文字或 null。');
     }
-    const hints = {
-      '零食饮料': ['薯片', '饼干', '爆米花', '巧克力', '果冻', '汽水', '可乐'],
-      '纸品湿巾': ['抽纸', '卷纸', '纸巾', '湿巾'],
-      '家居清洁': ['洗衣液', '洗衣粉', '洗洁精', '洁厕液'],
-      '电池灯具': ['电池', '灯泡'],
-    };
-    for (final entry in hints.entries) {
-      if (entry.value.any(normalized.contains)) return entry.key;
+    if (category.trim().isEmpty) return null;
+    final normalized = canonical(category);
+    if (normalized == null) {
+      throw const FormatException('AI 返回了不支持的分类，请重新解析或手动选择。');
     }
-    return null;
+    return normalized;
   }
 
-  /// AI/barcode suggestions may contain aliases or clearly mismatched classes.
-  /// Manual selections (including legacy custom classes) bypass this method.
-  static String forSuggestion({required String name, String? category}) =>
+  /// Manual-entry hints only; never post-process AI output with these rules.
+  /// Intentionally small, high-confidence hints, not a universal classifier.
+  /// Explicit pet food/tissues become 宠物用品; supplements and food-shaped
+  /// non-food objects do not produce snack hints. These rules do not veto
+  /// other independent matches. Conflicting categories produce no local hint.
+  static String? suggestForName(String name) {
+    final normalized = name.trim();
+    if (normalized.isEmpty) return null;
+    final matches = <String>{};
+    for (final entry in _hints.entries) {
+      if (!entry.value.any(normalized.contains)) continue;
+      var category = entry.key;
+      if (category == '零食饮料') {
+        if (_supplement.hasMatch(normalized) || _nonFoodForm.hasMatch(normalized)) {
+          continue;
+        }
+      }
+      if ((category == '零食饮料' || category == '纸品湿巾') &&
+          _petUse.hasMatch(normalized)) {
+        category = '宠物用品';
+      }
+      matches.add(category);
+    }
+    return matches.length == 1 ? matches.single : null;
+  }
+
+  /// Local suggestions for manual entry before AI has been applied.
+  /// User selections and AI results bypass local name hints entirely.
+  static String forManualEntry({required String name, String? category}) =>
       suggestForName(name) ?? canonical(category) ?? fallback;
 }

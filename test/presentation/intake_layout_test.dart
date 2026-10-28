@@ -58,16 +58,16 @@ void main() {
     expect(_category(tester), '其他物品');
   });
 
-  testWidgets('AI建议预填薯片/数量/零食分类，未提供的品牌规格保持空白', (tester) async {
+  testWidgets('AI 分类如实预填，不按薯片关键词覆盖，未知品牌规格保持空白', (tester) async {
     final draft = AiInventoryAction.fromJson({
-      'kind': 'intake', 'name': '薯片', 'quantity': 1, 'category': '药品保健',
+      'kind': 'intake', 'name': '薯片', 'quantity': 1, 'category': '食品生鲜',
     })!.intakeDraft;
     await _pumpIntake(tester, sheet: IntakeSheet(
-      initialDraft: draft, suggestInitialCategory: true,
+      initialDraft: draft, initialCategoryFromAi: true,
     ));
     expect(tester.widget<TextField>(_field('物品名称 *')).controller!.text, '薯片');
     expect(tester.widget<TextField>(_field('入库数量 *')).controller!.text, '1');
-    expect(_category(tester), '零食饮料');
+    expect(_category(tester), '食品生鲜');
     expect(tester.widget<TextField>(_field('品牌（可选）')).controller!.text, isEmpty);
     expect(tester.widget<TextField>(_field('规格（可选）')).controller!.text, isEmpty);
     expect(find.text('已入库'), findsNothing);
@@ -78,9 +78,9 @@ void main() {
       initialDraft: IntakeDraft(
         name: '牛奶', category: '食品生鲜', quantity: 1, dateSource: 'ai',
       ),
-      suggestInitialCategory: true,
+      initialCategoryFromAi: true,
     ));
-    await tester.enterText(_field('物品名称 *'), '核对后的牛奶');
+    await tester.enterText(_field('物品名称 *'), '薯片');
     await tester.pump();
     expect(_category(tester), '食品生鲜');
 
@@ -92,6 +92,20 @@ void main() {
     await tester.enterText(_field('物品名称 *'), '巧克力');
     await tester.pump();
     expect(_category(tester), '我的分类');
+  });
+
+  testWidgets('模型未确定分类时保持中性默认，编辑名称也不切回本地猜测', (tester) async {
+    final draft = AiInventoryAction.fromJson({
+      'kind': 'intake', 'name': '薯片', 'quantity': 1,
+    })!.intakeDraft;
+    await _pumpIntake(tester, sheet: IntakeSheet(
+      initialDraft: draft, initialCategoryFromAi: true,
+    ));
+    expect(_category(tester), '其他物品');
+    await tester.enterText(_field('物品名称 *'), '洗衣液');
+    await tester.pump();
+    expect(_category(tester), '其他物品');
+    expect(tester.takeException(), isNull);
   });
 
   for (final brightness in Brightness.values) {

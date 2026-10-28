@@ -2386,7 +2386,7 @@ class _AboutSettingsScreenState extends ConsumerState<AboutSettingsScreen> {
       if (!mounted) return;
       setState(() {
         _downloading = false;
-        _updateMessage = 'APK 已下载，但无法打开安装器：$error。可点击“继续安装”重试，或打开发布页手动下载。';
+        _updateMessage = 'APK 已下载，但未能确认安装器已打开：$error。请先检查系统提示；若未打开，可点击“继续安装”重试，或打开发布页手动下载。';
       });
     }
   }

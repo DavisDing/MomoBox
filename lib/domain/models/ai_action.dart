@@ -22,6 +22,12 @@ class AiInventoryAction {
   final int? quantity;
   final Map<String, Object?> arguments;
 
+  // Shared by validation and the model-facing intake contract.
+  static const maxTextLength = 1000;
+  static const maxPositiveInteger = 1000000;
+  static const minDateYear = 2000;
+  static const maxDateYear = 2100;
+
   static const schemas = <String, Set<String>>{
     'consume': {'productId', 'quantity', 'batchId'},
     'replenish': {'productId', 'batchId', 'quantity'},
@@ -87,9 +93,9 @@ class AiInventoryAction {
         return null;
       }
       bool text(String key) => data[key] is String &&
-          (data[key] as String).trim().isNotEmpty && (data[key] as String).length <= 1000;
+          (data[key] as String).trim().isNotEmpty && (data[key] as String).length <= maxTextLength;
       bool integer(String key) => data[key] is int &&
-          (data[key] as int) > 0 && (data[key] as int) <= 1000000;
+          (data[key] as int) > 0 && (data[key] as int) <= maxPositiveInteger;
       for (final key in ['name', 'title', 'category', 'brand', 'specification',
         'barcode', 'location', 'batchNo', 'reason', 'notes', 'productId', 'batchId', 'id']) {
         if (data[key] != null && !text(key)) return null;
@@ -105,6 +111,7 @@ class AiInventoryAction {
       if (['consume', 'replenish', 'intake', 'shopping_add'].contains(kind) && !integer('quantity')) return null;
       if (['intake', 'shopping_add'].contains(kind) && !text('name')) return null;
       if (kind == 'intake') {
+        ProductCategories.validateAiCategory(data['category']);
         if (data['shelfLifeUnit'] != null &&
             !ShelfLifeUnit.values.any((unit) => unit.name == data['shelfLifeUnit'])) {
           return null;
@@ -156,7 +163,7 @@ class AiInventoryAction {
       throw const FormatException('日期应为 YYYY-MM-DD');
     }
     final result = DateTime.parse(raw);
-    if (result.year < 2000 || result.year > 2100 ||
+    if (result.year < minDateYear || result.year > maxDateYear ||
         result.toIso8601String().substring(0, 10) != raw) {
       throw const FormatException('日期无效');
     }
@@ -165,9 +172,7 @@ class AiInventoryAction {
 
   IntakeDraft get intakeDraft => IntakeDraft(
     name: string('name')!,
-    category: ProductCategories.forSuggestion(
-      name: string('name')!, category: string('category'),
-    ),
+    category: ProductCategories.validateAiCategory(string('category')) ?? ProductCategories.fallback,
     quantity: quantity!,
     brand: string('brand'), specification: string('specification'),
     barcode: string('barcode'), location: string('location'), batchNo: string('batchNo'),
@@ -182,10 +187,16 @@ class AiInventoryAction {
     final action = parse(text);
     if (action != null && action.kind == 'intake') {
       final draft = action.intakeDraft;
-      return '入库草稿：${draft.name} × ${draft.quantity} 件\n分类：${draft.category}'
-          '${draft.brand == null ? '' : '\n品牌：${draft.brand}'}'
-          '${draft.specification == null ? '' : '\n规格：${draft.specification}'}'
-          '\n尚未执行，核对草稿后确认入库。';
+      final lines = [
+        '入库草稿：${draft.name} × ${draft.quantity} 件',
+        '分类：${draft.category}',
+      ];
+      final optionalFields = {'品牌': draft.brand, '规格': draft.specification};
+      for (final field in optionalFields.entries) {
+        if (field.value != null) lines.add('${field.key}：${field.value}');
+      }
+      lines.add('尚未执行，核对草稿后确认入库。');
+      return lines.join('\n');
     }
     if (action != null) return '操作建议已生成，尚未执行。请查看具体内容后确认。';
     try {

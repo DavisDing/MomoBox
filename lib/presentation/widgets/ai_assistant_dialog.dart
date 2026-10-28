@@ -213,7 +213,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
           context: context, isScrollControlled: true, useSafeArea: true,
           builder: (_) => IntakeSheet(
             initialDraft: action.intakeDraft,
-            suggestInitialCategory: true,
+            initialCategoryFromAi: true,
             beforeIntake: () async {
               if (!store.sessions.contains(origin)) throw StateError('原会话已删除，请重新提问。');
               if (executing) throw StateError('本次入库已提交，请先核实库存。');

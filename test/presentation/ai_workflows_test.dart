@@ -54,7 +54,7 @@ void main() {
     store.current.messages.add(ChatMessage(
       id: 'chips-proposal', role: 'assistant', timestamp: DateTime.now(),
       content: jsonEncode({'action': {
-        'kind': 'intake', 'name': '薯片', 'category': '药品保健', 'quantity': 1,
+        'kind': 'intake', 'name': '薯片', 'category': '零食饮料', 'quantity': 1,
       }}),
     ));
     await tester.pumpWidget(ProviderScope(overrides: [

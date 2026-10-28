@@ -29,6 +29,7 @@ class _IntakeDraftMemory {
   String? shelfLife;
   String category = ProductCategories.fallback;
   bool categoryManuallySelected = false;
+  bool useLocalCategoryHints = true;
   ShelfLifeUnit shelfLifeUnit = ShelfLifeUnit.days;
   DateTime? productionDate;
   DateTime? expiryDate;
@@ -56,6 +57,7 @@ class _IntakeDraftMemory {
     shelfLife = null;
     category = ProductCategories.fallback;
     categoryManuallySelected = false;
+    useLocalCategoryHints = true;
     shelfLifeUnit = ShelfLifeUnit.days;
     productionDate = null;
     expiryDate = null;
@@ -69,7 +71,7 @@ final _intakeDraft = _IntakeDraftMemory();
 class IntakeSheet extends ConsumerStatefulWidget {
   const IntakeSheet({
     this.initialDraft,
-    this.suggestInitialCategory = false,
+    this.initialCategoryFromAi = false,
     this.initialName,
     this.initialCategory,
     this.initialQuantity = 1,
@@ -80,9 +82,9 @@ class IntakeSheet extends ConsumerStatefulWidget {
   });
 
   final IntakeDraft? initialDraft;
-  /// Only unconfirmed AI suggestions are eligible for automatic categorization.
-  /// Date provenance is independent of whether a category was chosen by a user.
-  final bool suggestInitialCategory;
+  /// AI categories are validated, not reclassified by local name hints.
+  /// Explicit/manual categories (including legacy values) remain untouched.
+  final bool initialCategoryFromAi;
   final String? initialName;
   final String? initialCategory;
   final int initialQuantity;
@@ -112,6 +114,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
   late final String _mediaDraftId;
   String _category = ProductCategories.fallback;
   bool _categoryManuallySelected = false;
+  bool _useLocalCategoryHints = true;
   ShelfLifeUnit _shelfLifeUnit = ShelfLifeUnit.days;
   String _dateSource = 'manual';
   String _datePrecision = 'day';
@@ -134,10 +137,11 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
     if (aiDraft != null) {
       _name.text = aiDraft.name;
       _quantity.text = '${aiDraft.quantity}';
-      _category = widget.suggestInitialCategory
-          ? ProductCategories.forSuggestion(name: aiDraft.name, category: aiDraft.category)
+      _category = widget.initialCategoryFromAi
+          ? ProductCategories.validateAiCategory(aiDraft.category) ?? ProductCategories.fallback
           : aiDraft.category;
-      _categoryManuallySelected = !widget.suggestInitialCategory;
+      _categoryManuallySelected = !widget.initialCategoryFromAi;
+      _useLocalCategoryHints = !widget.initialCategoryFromAi;
       _brand.text = aiDraft.brand ?? '';
       _specification.text = aiDraft.specification ?? '';
       _barcode.text = aiDraft.barcode ?? '';
@@ -157,7 +161,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
         _category = widget.initialCategory!;
         _categoryManuallySelected = true;
       } else {
-        _category = ProductCategories.forSuggestion(name: _name.text);
+        _category = ProductCategories.forManualEntry(name: _name.text);
       }
     } else if (_intakeDraft.hasContent) {
       _name.text = _intakeDraft.name ?? '';
@@ -171,6 +175,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
       _shelfLife.text = _intakeDraft.shelfLife ?? '';
       _category = _intakeDraft.category;
       _categoryManuallySelected = _intakeDraft.categoryManuallySelected;
+      _useLocalCategoryHints = _intakeDraft.useLocalCategoryHints;
       _shelfLifeUnit = _intakeDraft.shelfLifeUnit;
       _productionDate = _intakeDraft.productionDate;
       _expiryDate = _intakeDraft.expiryDate;
@@ -199,6 +204,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
     _intakeDraft.shelfLife = _shelfLife.text;
     _intakeDraft.category = _category;
     _intakeDraft.categoryManuallySelected = _categoryManuallySelected;
+    _intakeDraft.useLocalCategoryHints = _useLocalCategoryHints;
     _intakeDraft.shelfLifeUnit = _shelfLifeUnit;
     _intakeDraft.productionDate = _productionDate;
     _intakeDraft.expiryDate = _expiryDate;
@@ -457,6 +463,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
       );
 
   void _applyAiSuggestion(IntakeDraftSuggestion suggestion) {
+    final category = ProductCategories.validateAiCategory(suggestion.category) ?? ProductCategories.fallback;
     setState(() {
       if (suggestion.name != null) _name.text = suggestion.name!;
       if (suggestion.brand != null) _brand.text = suggestion.brand!;
@@ -466,7 +473,12 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
       if (suggestion.shelfLifeUnit != null) _shelfLifeUnit = suggestion.shelfLifeUnit!;
       if (suggestion.productionDate != null) _productionDate = suggestion.productionDate;
       if (suggestion.expiryDate != null) _expiryDate = suggestion.expiryDate;
-      _suggestCategory(suggestion.category);
+      if (!_categoryManuallySelected) {
+        _category = category;
+      }
+      // Even when the model is uncertain, do not silently replace its result
+      // with a name-based guess now or on subsequent edits/draft restoration.
+      _useLocalCategoryHints = false;
       if (suggestion.productionDate != null ||
           suggestion.expiryDate != null ||
           suggestion.shelfLifeAmount != null) {
@@ -478,7 +490,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
 
   void _suggestCategory([String? suggested]) {
     if (_categoryManuallySelected) return;
-    final category = ProductCategories.suggestForName(_name.text) ??
+    final category = (_useLocalCategoryHints ? ProductCategories.suggestForName(_name.text) : null) ??
         ProductCategories.canonical(suggested);
     // Do not erase a useful model/barcode suggestion on each intermediate
     // keystroke when the edited name has no high-confidence local hint.

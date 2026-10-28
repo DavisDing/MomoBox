@@ -131,6 +131,20 @@ void main() {
     await expectLater(updater.installApk(file), throwsA(isA<PlatformException>()));
     expect(await file.readAsBytes(), [1, 2, 3]);
   });
+
+  for (final status in <String?>[null, 'unknown_status']) {
+    test('原生安装回执为 $status 时不当作成功，保留已下载文件', () async {
+      final updater = service(MockClient((_) async => http.Response.bytes([1, 2, 3], 200)));
+      final file = await updater.downloadApk(release());
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            expect(call.method, 'installApk');
+            return status;
+          });
+      await expectLater(updater.installApk(file), throwsA(isA<FormatException>()));
+      expect(await file.readAsBytes(), [1, 2, 3]);
+    });
+  }
 }
 
 Stream<List<int>> _interruptedStream() async* {

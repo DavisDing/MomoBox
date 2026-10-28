@@ -8,13 +8,20 @@ import '../models/recognition_models.dart';
 class AiDraftParser {
   const AiDraftParser();
 
+  // Wire values are singular here, unlike assistant action units.
+  static const shelfLifeUnits = {
+    'day': ShelfLifeUnit.days,
+    'month': ShelfLifeUnit.months,
+  };
+  static const datePrecisions = {'day', 'month', 'unknown'};
+
   IntakeDraftSuggestion parse(String content) {
     final decoded = jsonDecode(_jsonObject(content));
     if (decoded is! Map<String, dynamic>) throw const FormatException('AI 未返回对象形式的草稿。');
     final productionDate = _parseDate(decoded['production_date']);
     final expiryDate = _parseDate(decoded['expiry_date']);
     final precision = stringOrNull(decoded['date_precision']);
-    if (precision != null && !const {'day', 'month', 'unknown'}.contains(precision)) {
+    if (precision != null && !datePrecisions.contains(precision)) {
       throw const FormatException('AI 返回了不支持的日期精度。');
     }
     final shelfLife = decoded['shelf_life_amount'];
@@ -24,16 +31,11 @@ class AiDraftParser {
       throw const FormatException('AI 返回的保质期必须大于 0。');
     }
     final name = stringOrNull(decoded['name']);
-    final category = stringOrNull(decoded['category']);
-    final hasCategoryHint = category != null ||
-        ProductCategories.suggestForName(name ?? '') != null;
     return IntakeDraftSuggestion(
       name: name,
       brand: stringOrNull(decoded['brand']),
       specification: stringOrNull(decoded['specification']),
-      category: hasCategoryHint
-          ? ProductCategories.forSuggestion(name: name ?? '', category: category)
-          : null,
+      category: ProductCategories.validateAiCategory(decoded['category']),
       batchNo: stringOrNull(decoded['batch_no']),
       productionDate: productionDate,
       expiryDate: expiryDate,
@@ -47,11 +49,9 @@ class AiDraftParser {
   ShelfLifeUnit? _parseShelfLifeUnit(Object? value) {
     final raw = stringOrNull(value);
     if (raw == null) return null;
-    return switch (raw) {
-      'day' => ShelfLifeUnit.days,
-      'month' => ShelfLifeUnit.months,
-      _ => throw const FormatException('AI 返回了不支持的保质期单位。'),
-    };
+    final unit = shelfLifeUnits[raw];
+    if (unit == null) throw const FormatException('AI 返回了不支持的保质期单位。');
+    return unit;
   }
 
   String _jsonObject(String content) {
