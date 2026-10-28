@@ -87,7 +87,7 @@ void main() {
     final scroll = find.descendant(of: find.byType(IntakeSheet), matching: find.byType(Scrollable)).first;
     await tester.scrollUntilVisible(find.text('确认入库'), 300, scrollable: scroll);
     await tester.tap(find.text('确认入库'));
-    await flush();
+    await _waitForCommittedIntake(tester, store, 'chips-proposal');
     await tester.runAsync(() async {
       final item = (await inventory.watchInventory().first).single;
       expect(item.name, '薯片');
@@ -146,7 +146,7 @@ void main() {
     final sheetScroll = find.descendant(of: find.byType(IntakeSheet), matching: find.byType(Scrollable)).first;
     await tester.scrollUntilVisible(find.text('确认入库'), 300, scrollable: sheetScroll);
     await tester.tap(find.text('确认入库'));
-    await flush();
+    await _waitForCommittedIntake(tester, store, 'intake-proposal');
     await tester.runAsync(() async {
       final item = (await inventory.watchInventory().first).single;
       expect(item.name, '用户核对后的牛奶');
@@ -485,4 +485,25 @@ void main() {
     expect(await const FlutterSecureStorage().readAll(), isEmpty);
     expect(tester.takeException(), isNull);
   });
+}
+
+Future<void> _waitForCommittedIntake(
+  WidgetTester tester,
+  AiConversationStore store,
+  String proposalId,
+) async {
+  // SQLite uses real asynchronous work. pumpAndSettle only advances the fake
+  // widget clock and can spin forever on the saving indicator before IO ends.
+  for (var attempt = 0; attempt < 100; attempt++) {
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    await tester.pump(const Duration(milliseconds: 50));
+    if (store.actionReceipts[proposalId] == '已执行' &&
+        find.byType(IntakeSheet).evaluate().isEmpty) {
+      await tester.pumpAndSettle();
+      return;
+    }
+  }
+  // Keep failures actionable; never treat a pending proposal as successful.
+  expect(store.actionReceipts[proposalId], '已执行', reason: '入库必须完成真实写入并保存成功回执');
+  expect(find.byType(IntakeSheet), findsNothing, reason: '保存完成后应关闭入库草稿');
 }
