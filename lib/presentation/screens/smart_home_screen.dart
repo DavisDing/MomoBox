@@ -1,3 +1,4 @@
+import '../widgets/momo_mobile_layout.dart';
 import '../widgets/momo_floating_dock.dart';
 import '../widgets/momo_glass_components.dart';
 import '../../app/momo_typography.dart';
@@ -21,55 +22,41 @@ class SmartHomeScreen extends ConsumerWidget {
     final controller = ref.read(smartHomeControllerProvider.notifier);
 
     return Scaffold(
-      appBar: MomoGlassAppBar(
-        toolbarHeight:
-            56 +
-            MediaQuery.textScalerOf(context).scale(MomoTextSize.caption) * 2,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('智能家居'),
-            _buildHaBadge(context, homeState.haStatus),
-          ],
-        ),
-        actions: [
-          IconButton(
-            tooltip: '刷新设备状态',
-            icon: homeState.isLoading
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.refresh),
-            onPressed: homeState.isLoading ? null : () => controller.refresh(),
-          ),
-          IconButton(
-            tooltip: 'HA 连接配置',
-            icon: const Icon(Icons.tune_rounded),
-            onPressed: () => context.push('/settings'),
-          ),
-        ],
-      ),
-      body: homeState.haStatus == HaConnectionStatus.unconfigured
-          ? _buildUnconfiguredState(context, palette)
-          : RefreshIndicator(
-              onRefresh: () => controller.refresh(),
-              child: ListView(
-                padding: EdgeInsets.fromLTRB(16,
-                    16,
-                    16,
-                    16 + MomoDockInsets.bottomOf(context),
+      body: SafeArea(
+        left: false, right: false, bottom: false,
+        child: RefreshIndicator(
+          onRefresh: () => controller.refresh(),
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: MomoMobileLayout.pageInsets(context).add(
+              EdgeInsets.only(bottom: 20 + MomoDockInsets.bottomOf(context))),
+            children: [
+              MomoPageHeader(
+                title: '智能家居',
+                subtitle: Align(alignment: Alignment.centerLeft,
+                  child: _buildHaBadge(context, homeState.haStatus)),
+                actions: [
+                  IconButton(
+                    tooltip: '刷新设备状态',
+                    icon: homeState.isLoading
+                        ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.refresh_rounded),
+                    onPressed: homeState.isLoading ? null : () => controller.refresh(),
                   ),
-                children: [
+                  IconButton(tooltip: 'HA 连接配置', icon: const Icon(Icons.tune_rounded),
+                    onPressed: () => context.push('/settings')),
+                ],
+              ),
+              if (homeState.haStatus == HaConnectionStatus.unconfigured)
+                _buildUnconfiguredState(context)
+              else ...[
                   if (homeState.message != null || homeState.commandError != null || homeState.linkageError != null)
                     _buildStateNotice(context, homeState),
                   // 1. 场景快捷区
                   _buildSectionHeader(
                     context,
                     title: '常用全屋场景',
-                    subtitle: '一键联动控制多设备状态',
+                    subtitle: '查看已同步的场景，快捷执行暂未接入',
                     icon: Icons.auto_awesome_mosaic_outlined,
                   ),
                   const SizedBox(height: 10),
@@ -98,9 +85,11 @@ class SmartHomeScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 10),
                   _buildRoomsAndDevices(context, ref, homeState.devices, palette),
-                ],
-              ),
-            ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -154,10 +143,10 @@ class SmartHomeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildUnconfiguredState(BuildContext context, MomoPalette palette) {
+  Widget _buildUnconfiguredState(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -197,8 +186,8 @@ class SmartHomeScreen extends ConsumerWidget {
           child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-            Text(subtitle, style: theme.textTheme.bodySmall?.copyWith(fontSize: MomoTextSize.caption, color: Colors.grey)),
+            Text(title, style: theme.textTheme.titleLarge),
+            Text(subtitle, style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
           ],
         ),
         ),
@@ -212,7 +201,7 @@ class SmartHomeScreen extends ConsumerWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = constraints.maxWidth >= 480 ? 2 : 1;
+        final columns = MomoMobileLayout.stack(context, constraints.maxWidth, minimum: 480) ? 1 : 2;
         return Wrap(
           spacing: 12,
           runSpacing: 12,
@@ -427,7 +416,8 @@ class SmartHomeScreen extends ConsumerWidget {
             children: [
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                child: Row(
+                child: Wrap(
+                  spacing: 6, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
                       room,
@@ -529,10 +519,10 @@ class SmartHomeScreen extends ConsumerWidget {
               // 空调专属模式与快捷温度调节
               if (device.type == DeviceType.climate && device.isOn) ...[
                 const Divider(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Wrap(
+                  spacing: 12, runSpacing: 12, crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Row(
+                    Wrap(
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -549,7 +539,8 @@ class SmartHomeScreen extends ConsumerWidget {
                         Text('风速: ${device.windSpeed}', style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey)),
                       ],
                     ),
-                    Row(
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         IconButton(
                           visualDensity: VisualDensity.compact,

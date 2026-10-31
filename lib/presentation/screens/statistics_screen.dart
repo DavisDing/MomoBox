@@ -26,7 +26,8 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
   Widget build(BuildContext context) {
     final statistics = ref.watch(inventoryStatisticsProvider(_days));
     return Scaffold(
-      appBar: MomoGlassAppBar(
+      appBar: MomoGlassAppBar.adaptive(
+        context,
         title: const Text('库存统计'),
         actions: [
           IconButton(

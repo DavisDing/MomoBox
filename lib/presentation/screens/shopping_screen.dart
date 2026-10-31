@@ -1,3 +1,4 @@
+import '../widgets/momo_mobile_layout.dart';
 import '../widgets/momo_glass_components.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -26,7 +27,8 @@ class _ShoppingScreenState extends ConsumerState<ShoppingScreen> {
   Widget build(BuildContext context) {
     final shopping = ref.watch(shoppingProvider);
     return Scaffold(
-      appBar: MomoGlassAppBar(
+      appBar: MomoGlassAppBar.adaptive(
+        context,
         title: const Text('待采买清单'),
         actions: [
           IconButton(
@@ -82,7 +84,7 @@ class _ShoppingScreenState extends ConsumerState<ShoppingScreen> {
                     : visible.isEmpty
                         ? const Center(child: Text('该类别暂无采购项。'))
                         : ListView(
-                            padding: const EdgeInsets.all(16),
+                            padding: MomoMobileLayout.pageInsets(context).add(EdgeInsets.only(top: 16, bottom: 20 + MediaQuery.viewPaddingOf(context).bottom)),
                             children: [
                               _section('待购买', visible.where((e) => !e.isCompleted)),
                               _section('已完成', visible.where((e) => e.isCompleted)),

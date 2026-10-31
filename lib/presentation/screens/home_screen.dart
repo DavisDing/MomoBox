@@ -1,3 +1,4 @@
+import '../widgets/momo_mobile_layout.dart';
 import '../widgets/momo_floating_dock.dart';
 import '../widgets/momo_glass_components.dart';
 import '../../app/momo_typography.dart';
@@ -22,14 +23,10 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
-    final theme = Theme.of(context);
-
     final inventoryAsync = ref.watch(inventoryProvider);
     final summary = ref.watch(reminderSummaryProvider);
     final shoppingAsync = ref.watch(shoppingProvider);
     final homeState = ref.watch(smartHomeControllerProvider);
-    final nasState = ref.watch(nasConnectionProvider);
-
     return Scaffold(
       body: inventoryAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -54,9 +51,9 @@ class HomeScreen extends ConsumerWidget {
           Widget buildSectionByKey(String key) {
             switch (key) {
               case 'quick_intake':
-                return _buildQuickIntakeBar(context, ref, palette);
+                return _buildQuickIntakeBar(context, ref);
               case 'alert_summary':
-                return _buildAlertSummaryCard(context, summary, palette);
+                return _buildAlertSummaryCard(context, summary);
               case 'shopping_summary':
                 return _buildShoppingSummaryCard(context, shoppingAsync, summary, palette);
               case 'chores_card':
@@ -68,108 +65,39 @@ class HomeScreen extends ConsumerWidget {
             }
           }
 
-          return CustomScrollView(
-            slivers: [
-              // 家庭状态栏，主题色仅用于标识点缀
-              SliverToBoxAdapter(
-                child: Container(
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    MediaQuery.of(context).padding.top + 12,
-                    16,
-                    12,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // 顶部第一行：家庭名称与模式徽章 + 自定义排序按钮
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: palette.primary.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Icon(palette.appLogoIcon, color: palette.primary, size: 24),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Wrap(
-                                  crossAxisAlignment: WrapCrossAlignment.center,
-                                  spacing: 8,
-                                  runSpacing: 4,
-                                  children: [
-                                    Text(
-                                      '嬷嬷的温馨小家',
-                                      style: theme.textTheme.titleMedium?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    _buildModeBadge(context, isNas: nasState.isConnected),
-                                  ],
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  '美好生活 · 秩序井然',
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.7),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: '自定义首页模块排序',
-                            icon: const Icon(Icons.dashboard_customize_outlined, size: 20),
-                            onPressed: () => _showHomeOrderDialog(context, ref, sectionOrder),
-                          ),
-                        ],
-                      ),
-
-                    ],
+          final insets = MomoMobileLayout.pageInsets(context);
+          return SafeArea(
+            left: false, right: false, bottom: false,
+            child: CustomScrollView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              slivers: [
+                SliverPadding(
+                  padding: insets,
+                  sliver: SliverToBoxAdapter(
+                    child: MomoPageHeader(
+                      title: '家庭总览',
+                      subtitle: Text('${items.length} 种物品，让生活井然有序'),
+                      actions: [
+                        IconButton(
+                          tooltip: '自定义首页模块排序',
+                          icon: const Icon(Icons.tune_rounded),
+                          onPressed: () => _showHomeOrderDialog(context, ref, sectionOrder),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-
-              // 动态可调顺序的各功能模块（紧凑间距）
-              ...sectionOrder.map((secKey) {
-                return SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                    child: buildSectionByKey(secKey),
-                  ),
-                );
-              }),
-
-              SliverToBoxAdapter(child: SizedBox(height: 16 + MomoDockInsets.bottomOf(context))),
-            ],
+                ...sectionOrder.map((key) => SliverPadding(
+                  padding: insets.add(const EdgeInsets.only(bottom: 24)),
+                  sliver: SliverToBoxAdapter(child: buildSectionByKey(key)),
+                )),
+                SliverToBoxAdapter(
+                  child: SizedBox(height: 16 + MomoDockInsets.bottomOf(context)),
+                ),
+              ],
+            ),
           );
         },
-      ),
-    );
-  }
-
-  Widget _buildModeBadge(BuildContext context, {required bool isNas}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: isNas ? Colors.green.withValues(alpha: 0.15) : Colors.blueGrey.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        isNas ? 'NAS 协同模式' : '单机模式',
-        style: TextStyle(
-          fontSize: MomoTextSize.caption,
-          fontWeight: FontWeight.w600,
-          color: isNas ? (Theme.of(context).brightness == Brightness.dark
-                      ? Colors.green.shade300
-                      : Colors.green.shade800)
-                  : Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
       ),
     );
   }
@@ -230,213 +158,109 @@ class HomeScreen extends ConsumerWidget {
     };
   }
 
-  Widget _buildQuickIntakeBar(BuildContext context, WidgetRef ref, MomoPalette palette) {
+  Widget _buildQuickIntakeBar(BuildContext context, WidgetRef ref) {
     final aiConfigured = ref.watch(aiConfigurationStatusProvider).valueOrNull == true;
     final nasState = ref.watch(nasConnectionProvider);
     final homeState = ref.watch(smartHomeControllerProvider);
-    final intake = _buildQuickActionBtn(context,
-            icon: Icons.qr_code_scanner, label: '入库',
-      onTap: () => showModalBottomSheet<void>(context: context,
-              isScrollControlled: true, useSafeArea: true,
-              builder: (_) => const IntakeSheet()),
-          );
-    final status = MomoGlassCard(
-            padding: const EdgeInsets.all(12),
-              borderRadius: 16,
-      child: Column(mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('服务状态', style: Theme.of(context).textTheme.titleSmall),
-                const SizedBox(height: 4),
-                _buildStatusDot(
-            context,
-            label: 'NAS服务', isConnected: nasState.isConnected,
-                  detail: _nasStatusLabel(nasState.status)),
-          const Divider(height: 8),
-                _buildStatusDot(
-            context,
-            label: 'HA服务',
-                  isConnected: homeState.nasOnline && homeState.haStatus == HaConnectionStatus.online && !homeState.isLoading,
-                  detail: _haStatusLabel(homeState)),
-          const Divider(height: 8),
-                _buildStatusDot(
-            context,
-            label: 'AI服务', isConnected: false,
-                  detail: aiConfigured ? '待验证' : '未配置'),
-              ],
-            ),
-          );
     return MomoGlassCard(
-      palette: palette,
-      padding: const EdgeInsets.all(12),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final largeText =
-              MediaQuery.textScalerOf(context).scale(MomoTextSize.body) >
-              MomoTextSize.body * 1.2;
-          if (largeText) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Align(alignment: Alignment.centerLeft, child: intake),
-                const SizedBox(height: 12),
-                status,
-              ],
-            );
-          }
-          return Row(
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          MomoCapsuleButton(
+            label: '入库',
+            icon: const Icon(Icons.add_rounded, size: 24),
+            onPressed: () => showModalBottomSheet<void>(
+              context: context,
+              isScrollControlled: true,
+              useSafeArea: true,
+              builder: (_) => const IntakeSheet(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: const EdgeInsets.only(bottom: 4),
+            shape: const Border(),
+            collapsedShape: const Border(),
+            title: Text('服务状态', style: Theme.of(context).textTheme.bodyMedium),
+            subtitle: Text(nasState.isConnected ? 'NAS 协同模式' : '单机模式 · 本地可用'),
             children: [
-              SizedBox(width: 104, child: intake),
-              const SizedBox(width: 12),
-              Expanded(flex: 2, child: status),
-        ]);
-        },
+              _buildStatusDot(context, label: 'NAS服务',
+                isConnected: nasState.isConnected, detail: _nasStatusLabel(nasState.status)),
+              _buildStatusDot(context, label: 'HA服务',
+                isConnected: homeState.nasOnline && homeState.haStatus == HaConnectionStatus.online && !homeState.isLoading,
+                detail: _haStatusLabel(homeState)),
+              _buildStatusDot(context, label: 'AI服务', isConnected: false,
+                detail: aiConfigured ? '待验证' : '未配置'),
+            ],
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildQuickActionBtn(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) => MomoCapsuleButton(
-    onPressed: onTap,
-    label: label,
-    icon: Icon(icon, size: 24),
-    padding: const EdgeInsets.symmetric(horizontal: 12),
-    );
-
-  Widget _buildAlertSummaryCard(BuildContext context, ReminderSummary summary, MomoPalette palette) {
-    final theme = Theme.of(context);
-    final expiredCount = summary.expired.length;
-    final expiringSoon = summary.expiringWithinDays(3);
-    final expiring30 = summary.expiring.length;
-    final lowStockCount = summary.lowStock.length;
-
-    return MomoGlassCard(
-        padding: const EdgeInsets.all(16),
-      margin: EdgeInsets.zero,
-      child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildAlertSummaryCard(BuildContext context, ReminderSummary summary) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _HomeFlowRow(children: [
+          Expanded(child: Semantics(
+            header: true,
+            child: Text('需要留意', style: Theme.of(context).textTheme.titleLarge),
+          )),
+          IconButton(
+            tooltip: '同步到日历',
+            icon: const Icon(Icons.calendar_month_outlined, size: 22),
+            onPressed: () => CalendarSyncDialog.show(context),
+          ),
+          TextButton(onPressed: () => context.push('/alerts'), child: const Text('全部提醒')),
+        ]),
+        const SizedBox(height: 8),
+        MomoAdaptiveTiles(
+          minimumWidth: 128,
           children: [
-          _HomeFlowRow(
-              children: [
-                Icon(palette.alertIcon, color: palette.primary, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '效期与库存提醒摘要',
-                    style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                IconButton(
-                  tooltip: '同步到日历',
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  icon: Icon(Icons.calendar_month_outlined, size: 18, color: palette.primary),
-                  onPressed: () => CalendarSyncDialog.show(context),
-                ),
-                const SizedBox(width: 6),
-                TextButton(
-                  onPressed: () => context.push('/alerts'),
-                  child: const Text('待处理详情 >', style: TextStyle(fontSize: MomoTextSize.caption)),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-          _HomeFlowRow(
-              children: [
-                Expanded(
-                  child: _buildSummaryGridItem(
-                    context,
-                    icon: Icons.error_outline_rounded,
-                    label: '已过期批次',
-                    count: expiredCount,
-                    color: Colors.red,
-                    onTap: () => context.push('/alerts?filter=expired'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _buildSummaryGridItem(
-                    context,
-                    icon: Icons.warning_amber_rounded,
-                    label: '即将到期 (3天)',
-                    count: expiringSoon,
-                    color: Colors.orange,
-                    onTap: () => context.push('/alerts?filter=expiring'),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-          _HomeFlowRow(
-              children: [
-                Expanded(
-                  child: _buildSummaryGridItem(
-                    context,
-                    icon: Icons.access_time_rounded,
-                    label: '临期提醒',
-                    count: expiring30,
-                    color: Colors.amber.shade800,
-                    onTap: () => context.push('/alerts?filter=expiring'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _buildSummaryGridItem(
-                    context,
-                    icon: Icons.inventory_2_outlined,
-                    label: '库存偏低预警',
-                    count: lowStockCount,
-                    color: Colors.blue,
-                    onTap: () => context.push('/alerts?filter=low_stock'),
-                  ),
-                ),
-              ],
-            ),
+            _buildSummaryGridItem(context, icon: Icons.error_outline_rounded,
+              label: '已过期批次', count: summary.expired.length,
+              color: Theme.of(context).colorScheme.error,
+              onTap: () => context.push('/alerts?filter=expired')),
+            _buildSummaryGridItem(context, icon: Icons.timelapse_rounded,
+              label: '3 天内到期', count: summary.expiringWithinDays(3),
+              color: Colors.orange.shade800,
+              onTap: () => context.push('/alerts?filter=expiring')),
+            _buildSummaryGridItem(context, icon: Icons.schedule_rounded,
+              label: '临期提醒', count: summary.expiring.length,
+              color: Colors.orange.shade800,
+              onTap: () => context.push('/alerts?filter=expiring')),
+            _buildSummaryGridItem(context, icon: Icons.inventory_2_outlined,
+              label: '库存偏低', count: summary.lowStock.length,
+              color: Theme.of(context).colorScheme.primary,
+              onTap: () => context.push('/alerts?filter=low_stock')),
           ],
         ),
-      );
+      ],
+    );
   }
 
-  Widget _buildSummaryGridItem(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    required int count,
-    required Color color,
-    required VoidCallback onTap,
+  Widget _buildSummaryGridItem(BuildContext context, {
+    required IconData icon, required String label, required int count,
+    required Color color, required VoidCallback onTap,
   }) {
     final theme = Theme.of(context);
     return MomoGlassCard(
       onTap: onTap,
-      borderRadius: 16,
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-      child: _HomeFlowRow(
-          children: [
-          Icon(icon, size: 20, color: color),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    '$count',
-                    style: theme.textTheme.titleLarge),
-                  const SizedBox(height: 2),
-                  Text(
-                    label,
-                    style: theme.textTheme.bodySmall),
-                ],
-              ),
-            ),
-          ],
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 24, color: color),
+          const SizedBox(height: 12),
+          Text('$count', style: theme.textTheme.headlineLarge),
+          const SizedBox(height: 4),
+          Text(label, style: theme.textTheme.bodyMedium),
+        ],
       ),
     );
   }
@@ -462,7 +286,7 @@ class HomeScreen extends ConsumerWidget {
               Expanded(
                 child: Text(
                   '采买速览清单',
-                  style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                  style: theme.textTheme.titleLarge,
                 ),
               ),
                 TextButton(
@@ -579,9 +403,7 @@ class HomeScreen extends ConsumerWidget {
                 Expanded(
                   child: Text(
                     '智能家居预览（${_haStatusLabel(homeState)}）',
-                    style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleLarge,
                   ),
                 ),
                 TextButton(
@@ -670,15 +492,11 @@ class HomeScreen extends ConsumerWidget {
                               Text(
                                 device.name,
                                 style: const TextStyle(fontSize: MomoTextSize.caption, fontWeight: FontWeight.bold),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
                               ),
                               Text(
                                 isExecuting ? '控制请求进行中' :
                                     (unavailable ?? device.statusText),
                                 style: TextStyle(fontSize: MomoTextSize.caption, color: theme.textTheme.bodySmall?.color),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
                               ),
                             ],
                           ),
@@ -748,7 +566,7 @@ class HomeScreen extends ConsumerWidget {
                 Expanded(
                   child: Text(
                     '周期循环提醒',
-                    style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                    style: theme.textTheme.titleLarge,
                   ),
                 ),
                 TextButton(
@@ -814,8 +632,6 @@ class HomeScreen extends ConsumerWidget {
                                   fontSize: MomoTextSize.body,
                                   fontWeight: isDue ? FontWeight.bold : FontWeight.normal,
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                             Text(
@@ -829,8 +645,9 @@ class HomeScreen extends ConsumerWidget {
                               ),
                             ),
                             const SizedBox(width: 8),
-                            InkWell(
-                              onTap: () async {
+                            IconButton(
+                              tooltip: '完成「${chore.title}」',
+                              onPressed: () async {
                                 await ref.read(choreServiceProvider).completeChore(chore.id);
                                 if (context.mounted) {
                                   showAppSnackBar(context,
@@ -838,11 +655,7 @@ class HomeScreen extends ConsumerWidget {
                                   );
                                 }
                               },
-                              borderRadius: BorderRadius.circular(12),
-                              child: Padding(
-                                padding: const EdgeInsets.all(4),
-                                child: Icon(Icons.check_circle_outline, size: 18, color: palette.primary),
-                              ),
+                              icon: Icon(Icons.check_circle_outline, size: 24, color: palette.primary),
                             ),
                           ],
                         ),
@@ -876,7 +689,7 @@ class HomeScreen extends ConsumerWidget {
       ),
       builder: (sheetContext) => StatefulBuilder(
         builder: (context, setModalState) => SafeArea(
-          child: Padding(
+          child: SingleChildScrollView(child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -884,7 +697,7 @@ class HomeScreen extends ConsumerWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('调整首页模块显示顺序', style: TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.title)),
+                    const Expanded(child: Text('调整首页模块显示顺序', style: TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.title))),
                     TextButton(
                       onPressed: () async {
                         await ref.read(settingsServiceProvider).setValue(homeSectionOrderKey, order.join(','));
@@ -923,7 +736,7 @@ class HomeScreen extends ConsumerWidget {
                 const SizedBox(height: 12),
               ],
             ),
-          ),
+          )),
         ),
       ),
     );
@@ -938,7 +751,7 @@ class _HomeFlowRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (MediaQuery.textScalerOf(context).scale(MomoTextSize.body) <=
-        MomoTextSize.body * 1.5) {
+        MomoTextSize.body * 1.3) {
       return Row(children: children);
     }
     return Column(

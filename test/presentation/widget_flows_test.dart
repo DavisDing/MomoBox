@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:momo_box/app/momo_box_app.dart';
+import 'package:momo_box/app/momo_theme.dart';
 import 'package:momo_box/application/barcode_lookup_service.dart';
 import 'package:momo_box/application/inventory_service.dart';
 import 'package:momo_box/application/shopping_service.dart';
@@ -31,7 +32,7 @@ void main() {
 
   tearDown(() => database.close());
 
-  testWidgets('首页只有一个入库入口，右侧按行展示真实服务接入状态', (tester) async {
+  testWidgets('首页只有一个入库入口，服务详情按需展开且保持真实状态', (tester) async {
     await tester.binding.setSurfaceSize(const Size(320, 720));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await SettingsRepository(database).setValue(homeSectionOrderKey, 'quick_intake');
@@ -41,11 +42,13 @@ void main() {
     expect(find.text('扫码入库'), findsNothing);
     expect(find.text('拍照识别'), findsNothing);
     expect(find.text('手动录入'), findsNothing);
+    expect(find.text('单机模式 · 本地可用'), findsOneWidget);
+    await tester.tap(find.text('服务状态'));
+    await _pumpForUi(tester);
     final nas = tester.getTopLeft(find.text('NAS服务'));
     final ha = tester.getTopLeft(find.text('HA服务'));
     final ai = tester.getTopLeft(find.text('AI服务'));
-    expect(nas.dx, greaterThan(tester.getTopLeft(find.text('入库')).dx));
-    expect(tester.getTopLeft(find.text('入库')).dy, greaterThan(tester.getTopLeft(find.byIcon(Icons.qr_code_scanner).first).dy));
+    expect(nas.dy, greaterThan(tester.getTopLeft(find.text('入库')).dy));
     expect(nas.dx, ha.dx);
     expect(ha.dx, ai.dx);
     expect(nas.dy, lessThan(ha.dy));
@@ -316,27 +319,26 @@ void main() {
     await _disposeWidgetTree(tester);
   });
 
-    testWidgets('主题变更时App Logo图标跟随切换', (tester) async {
+  testWidgets('主题变更应用新配色且保持固定导航标签', (tester) async {
     await _pumpApp(tester, database);
-    // 默认主题下，库存页 App Logo 为 defaultPalette.appLogoIcon (Icons.all_inbox_rounded)
-    expect(find.byIcon(Icons.all_inbox_rounded), findsWidgets);
-
-    // 切换为 momo 主题
+    await _pumpUntilFound(tester, find.byType(NavigationBar));
     final settingsRepo = SettingsRepository(database);
-    await settingsRepo.setValue('theme', 'momo');
-    await _pumpForUi(tester);
-
-    // 验证 momo 主题下的 logo (Icons.inventory_rounded) 显示，默认 logo 不再显示
-    expect(find.byIcon(Icons.inventory_rounded), findsWidgets);
-    expect(find.byIcon(Icons.all_inbox_rounded), findsNothing);
-
-    // 切换为 doraemon 主题
-    await settingsRepo.setValue('theme', 'doraemon');
-    await _pumpForUi(tester);
-
-    // 验证 doraemon 主题下的 logo (Icons.card_giftcard_rounded) 显示
-    expect(find.byIcon(Icons.card_giftcard_rounded), findsWidgets);
-    expect(find.byIcon(Icons.inventory_rounded), findsNothing);
+    for (final palette in MomoPalette.allPalettes) {
+      await settingsRepo.setValue('theme', palette.storedValue);
+      await _pumpForUi(tester);
+      final app = tester.widget<MaterialApp>(find.byType(MaterialApp));
+      expect(app.theme!.colorScheme.primary, palette.primary);
+      expect(app.darkTheme!.colorScheme.primary,
+          Color.lerp(palette.primary, Colors.white, 0.35));
+      final destinations = tester.widgetList<NavigationDestination>(
+        find.descendant(
+          of: find.byType(NavigationBar),
+          matching: find.byType(NavigationDestination),
+        ),
+      );
+      expect(destinations.map((destination) => destination.label),
+          ['首页', '库存', 'AI 助手', '家居', '我的']);
+    }
     await _disposeWidgetTree(tester);
   });
 
@@ -392,8 +394,8 @@ testWidgets('提醒支持单条和分组已处理，确认状态持久化', (tes
     final batchId = (await database.select(database.productBatches).get()).single.id;
 
     await _pumpApp(tester, database);
-    await _pumpUntilFound(tester, find.text('待处理详情 >'));
-    await tester.tap(find.text('待处理详情 >'));
+    await _pumpUntilFound(tester, find.text('全部提醒'));
+    await tester.tap(find.text('全部提醒'));
     final alertItem = find.descendant(
       of: find.byType(AlertsScreen),
       matching: find.text('周期性低库存'),
@@ -507,8 +509,8 @@ testWidgets('提醒支持单条和分组已处理，确认状态持久化', (tes
     expect(tester.takeException(), isNull);
 
     // 访问首页提醒详情
-    await _pumpUntilFound(tester, find.text('待处理详情 >'));
-    await tester.tap(find.text('待处理详情 >'));
+    await _pumpUntilFound(tester, find.text('全部提醒'));
+    await tester.tap(find.text('全部提醒'));
     await _pumpUntilFound(tester, find.text('效期与库存提醒'));
     expect(find.text('效期与库存提醒'), findsOneWidget);
     tester.binding.handlePopRoute();
@@ -520,18 +522,18 @@ testWidgets('提醒支持单条和分组已处理，确认状态持久化', (tes
       of: find.byType(NavigationBar),
       matching: find.text('库存'),
     ));
-    await _pumpUntilFound(tester, find.text('嬷嬷的小箱子'));
-    expect(find.text('嬷嬷的小箱子'), findsOneWidget);
-    await _pumpUntilFound(tester, find.text('入库'));
+    await _pumpUntilFound(tester, find.byType(InventoryScreen));
+    await _pumpUntilFound(tester, find.byTooltip('入库'));
     expect(tester.takeException(), isNull);
-    expect(find.byTooltip('搜索物品').hitTestable(), findsOneWidget);
+    expect(find.byType(TextField).hitTestable(), findsOneWidget);
     expect(find.byType(PopupMenuButton<InventorySortOption>).hitTestable(), findsOneWidget);
     final sortButton = find.byType(PopupMenuButton<InventorySortOption>);
-    final triggerWidth = tester.getSize(sortButton).width;
     await tester.tap(sortButton);
     await _pumpForUi(tester);
     for (final entry in find.byType(PopupMenuItem<InventorySortOption>).evaluate()) {
-      expect(tester.getSize(find.byWidget(entry.widget)).width, closeTo(triggerWidth, 1));
+      final rect = tester.getRect(find.byWidget(entry.widget));
+      expect(rect.left, greaterThanOrEqualTo(0));
+      expect(rect.right, lessThanOrEqualTo(320));
     }
     expect(tester.takeException(), isNull);
     await tester.tap(find.text('库存从多到少'));
@@ -539,7 +541,7 @@ testWidgets('提醒支持单条和分组已处理，确认状态持久化', (tes
     expect(tester.takeException(), isNull);
 
 
-    tester.widget<FloatingActionButton>(find.byType(FloatingActionButton)).onPressed!();
+    await tester.tap(find.byTooltip('入库'));
     await tester.pump();
     final nameField = _field('物品名称 *');
     await _pumpUntilFound(tester, nameField);

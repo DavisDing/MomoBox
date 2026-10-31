@@ -30,7 +30,8 @@ class _AiUsageScreenState extends ConsumerState<AiUsageScreen> {
     final summary = AiUsageSummary.aggregate(filteredLogs);
 
     return Scaffold(
-      appBar: MomoGlassAppBar(
+      appBar: MomoGlassAppBar.adaptive(
+        context,
         title: const Text('AI 用量统计与日志'),
         actions: [
           if (usageLogs.isNotEmpty)

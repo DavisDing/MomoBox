@@ -394,7 +394,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
     }
 
     return Scaffold(
-      appBar: MomoGlassAppBar(title: const Text('NAS 协同与家庭共享')),
+      appBar: MomoGlassAppBar.adaptive(context, title: const Text('NAS 协同与家庭共享')),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
           16, 16, 16, 16 + MomoDockInsets.bottomOf(context),

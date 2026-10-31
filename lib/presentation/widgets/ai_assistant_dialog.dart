@@ -1,3 +1,4 @@
+import '../widgets/momo_mobile_layout.dart';
 import '../../app/momo_typography.dart';
 import '../screens/alerts_screen.dart';
 import '../screens/home_assistant_settings_screen.dart';
@@ -350,57 +351,42 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
     return SizedBox(
       height: (MediaQuery.sizeOf(context).height - MediaQuery.viewInsetsOf(context).bottom) * 0.92,
       child: MomoGlassCard(
-        frosted: true,
+        borderRadius: 28,
         margin: EdgeInsets.zero,
         padding: EdgeInsets.zero,
         child: SafeArea(
           top: false,
           child: Column(
             children: [
-              // 顶部标题栏
+              // Session tools share one menu when text or screen size needs space.
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: palette.primary.withValues(alpha: 0.18),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Text(palette.mascot, style: const TextStyle(fontSize: 22)),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(palette.mascotName, style: theme.textTheme.titleMedium),
-                          const SizedBox(height: 2),
-                          Text(
-                            '操作前由你确认',
-                            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                          ),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: LayoutBuilder(builder: (context, constraints) {
+                  final compact = MomoMobileLayout.stack(context, constraints.maxWidth, minimum: 280);
+                  return Row(children: [
+                    Expanded(child: Text(palette.mascotName, style: theme.textTheme.titleMedium)),
+                    if (compact)
+                      PopupMenuButton<String>(
+                        tooltip: '会话选项',
+                        icon: const Icon(Icons.more_horiz_rounded),
+                        onSelected: (value) {
+                          if (value == 'new') _createNewSession();
+                          if (value == 'history') _showHistorySessionsSheet(context, palette);
+                        },
+                        itemBuilder: (_) => const [
+                          PopupMenuItem(value: 'new', child: Text('新建会话')),
+                          PopupMenuItem(value: 'history', child: Text('历史会话')),
                         ],
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: '新建会话',
-                      icon: const Icon(Icons.add_comment_outlined, size: 20),
-                      onPressed: _createNewSession,
-                    ),
-                    IconButton(
-                      tooltip: '历史会话',
-                      icon: const Icon(Icons.history_rounded, size: 20),
-                      onPressed: () => _showHistorySessionsSheet(context, palette),
-                    ),
-                    IconButton(
-                      tooltip: '关闭助手',
-                      icon: const Icon(Icons.close_rounded),
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
-                  ],
-                ),
+                      )
+                    else ...[
+                      IconButton(tooltip: '新建会话', icon: const Icon(Icons.add_comment_outlined), onPressed: _createNewSession),
+                      IconButton(tooltip: '历史会话', icon: const Icon(Icons.history_rounded),
+                        onPressed: () => _showHistorySessionsSheet(context, palette)),
+                    ],
+                    IconButton(tooltip: '关闭助手', icon: const Icon(Icons.close_rounded),
+                      onPressed: () => Navigator.of(context).pop()),
+                  ]);
+                }),
               ),
 
               if (_store.storageError != null)
@@ -419,21 +405,23 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                   ]),
                 ),
               if (_store.isRecoveringArchive) const LinearProgressIndicator(),
-              // 快捷提问意图胶囊
+              // Keep the composer and conversation usable above a phone keyboard.
+              if (MediaQuery.sizeOf(context).height - MediaQuery.viewInsetsOf(context).bottom > 480 &&
+                  MediaQuery.textScalerOf(context).scale(MomoTextSize.body) <= MomoTextSize.body * 1.5)
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Row(
                   children: [
-                    _buildQuickChip('📦 入库两盒牛奶', palette),
+                    _buildQuickChip('📦 入库两盒牛奶'),
                     const SizedBox(width: 8),
-                    _buildQuickChip('📺 打开电视', palette),
+                    _buildQuickChip('📺 打开电视'),
                     const SizedBox(width: 8),
-                    _buildQuickChip('❄️ 空调调到 25 度', palette),
+                    _buildQuickChip('❄️ 空调调到 25 度'),
                     const SizedBox(width: 8),
-                    _buildQuickChip('🧴 还有多少洗衣液？', palette),
+                    _buildQuickChip('🧴 还有多少洗衣液？'),
                     const SizedBox(width: 8),
-                    _buildQuickChip('🛒 采购三包纸巾', palette),
+                    _buildQuickChip('🛒 采购三包纸巾'),
                   ],
                 ),
               ),
@@ -474,8 +462,8 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                             isUser ? msg.content : AiInventoryAction.displayText(msg.content),
                             style: TextStyle(
                               color: theme.colorScheme.onSurface,
-                              fontSize: MomoTextSize.body,
-                              height: 1.4,
+                              fontSize: MomoTextSize.title,
+                              height: 1.5,
                             ),
                           ),
                           if (!isUser && AiInventoryAction.parse(msg.content) != null)
@@ -548,7 +536,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
     );
   }
 
-  Widget _buildQuickChip(String label, MomoPalette palette) {
+  Widget _buildQuickChip(String label) {
     return ActionChip(
       label: Text(label, style: const TextStyle(fontSize: MomoTextSize.caption)),
       onPressed: _isLoading ? null : () => _sendMessage(label.replaceAll(RegExp(r'^[^\s]+\s+'), '')),

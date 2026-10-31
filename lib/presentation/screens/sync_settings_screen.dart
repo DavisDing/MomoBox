@@ -59,7 +59,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           ]);
 
     return Scaffold(
-      appBar: MomoGlassAppBar(title: const Text('同步设置')),
+      appBar: MomoGlassAppBar.adaptive(context, title: const Text('同步设置')),
       body: ListView(
         padding: EdgeInsets.fromLTRB(16, 12, 16, 32 + MomoDockInsets.bottomOf(context)),
         children: [

@@ -44,11 +44,11 @@ class MomoPalette {
   static const defaultPalette = MomoPalette(
     skin: MomoSkin.defaultSkin,
     label: '默认主题（极简蓝）',
-    primary: Color(0xFF4A90D9),
-    secondary: Color(0xFF36CFC9),
-    background: Color(0xFFF7F8FA),
+    primary: Color(0xFF0066CC),
+    secondary: Color(0xFF248A3D),
+    background: Color(0xFFF2F2F7),
     surface: Colors.white,
-    text: Color(0xFF2C3E50),
+    text: Color(0xFF1C1C1E),
     mascot: '📦',
     mascotName: '箱宝',
     appLogoIcon: Icons.all_inbox_rounded,
@@ -169,13 +169,16 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
   final background = isDark ? Colors.black : palette.background;
   final surface = isDark ? const Color(0xFF1C1C1E) : palette.surface;
   final text = isDark ? Colors.white : palette.text;
-  final action = isDark ? Colors.white : Colors.black;
+  final action = isDark
+      ? Color.lerp(palette.primary, Colors.white, 0.35)!
+      : palette.primary;
   final onAction = isDark ? Colors.black : Colors.white;
   final outline = text.withValues(alpha: isDark ? 0.14 : 0.08);
   final colorScheme = ColorScheme.fromSeed(
     seedColor: palette.primary,
     brightness: brightness,
-    primary: palette.primary,
+    primary: action,
+    onPrimary: onAction,
     secondary: palette.secondary,
     surface: surface,
     onSurface: text,
@@ -197,6 +200,9 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
 
   return ThemeData(
     useMaterial3: true,
+    splashFactory: NoSplash.splashFactory,
+    visualDensity: VisualDensity.standard,
+    materialTapTargetSize: MaterialTapTargetSize.padded,
     buttonTheme: const ButtonThemeData(alignedDropdown: true),
     brightness: brightness,
     colorScheme: colorScheme,
@@ -208,11 +214,11 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
       elevation: 0,
       margin: const EdgeInsets.symmetric(vertical: 6),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(18),
         side: BorderSide(color: outline, width: 0.5),
       ),
     ),
-    // 全局胶囊按钮风格
+    // Color identifies the primary action; content surfaces stay neutral.
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         elevation: 0,
@@ -228,8 +234,8 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
-        foregroundColor: text,
-        backgroundColor: surface.withValues(alpha: isDark ? 0.8 : 0.82),
+        foregroundColor: colorScheme.primary,
+        backgroundColor: colorScheme.primary.withValues(alpha: isDark ? 0.14 : 0.07),
         disabledForegroundColor: text.withValues(alpha: 0.3),
         minimumSize: const Size(48, 48),
         shape: const StadiumBorder(),
@@ -253,7 +259,7 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
     ),
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
-        foregroundColor: palette.primary,
+        foregroundColor: colorScheme.primary,
         shape: const StadiumBorder(),
         minimumSize: const Size(44, 44),
       ),
@@ -266,7 +272,7 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
       ),
     ),
     listTileTheme: ListTileThemeData(
-      minTileHeight: 56,
+      minTileHeight: 60,
       iconColor: text.withValues(alpha: 0.7),
       textColor: text,
       titleTextStyle: textTheme.titleMedium,
@@ -338,7 +344,7 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
       backgroundColor: surface,
       surfaceTintColor: Colors.transparent,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
     ),
     appBarTheme: AppBarTheme(

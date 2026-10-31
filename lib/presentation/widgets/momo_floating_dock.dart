@@ -6,8 +6,7 @@ import 'package:flutter/material.dart';
 import '../../app/momo_theme.dart';
 import '../../app/momo_typography.dart';
 
-/// Space a page must include at the end of its scrollable content, including
-/// the default inventory FAB where present (dragged positions are user owned).
+/// Space a page must include at the end of its scrollable content.
 ///
 /// Unlike MediaQuery.padding, this survives nested Scaffolds and SafeAreas.
 /// Explicit ListView padding and CustomScrollView slivers must consume it;
@@ -71,7 +70,7 @@ class MomoDockLayout {
     );
     final innerPadding = math.min(4.0, spareWidth / 2);
     final horizontalMargin = math.min(
-      24.0,
+      12.0,
       math.max(0.0, (spareWidth - innerPadding * 2) / 2),
     );
     final destinationWidth =
@@ -102,10 +101,10 @@ class MomoDockLayout {
     return MomoDockLayout._(
       // Native indicators are 32dp high; leave 7dp above and below the group.
       barHeight: math.max(
-        66.0,
+        64.0,
         (32 + labelGap + labelHeight + 14).ceilToDouble(),
       ),
-      bottomSpacing: math.max(20.0, MediaQuery.viewPaddingOf(context).bottom),
+      bottomSpacing: math.max(8.0, MediaQuery.viewPaddingOf(context).bottom),
       horizontalMargin: horizontalMargin,
       innerPadding: innerPadding,
       destinationWidth: destinationWidth,
@@ -138,7 +137,7 @@ class MomoFloatingCapsuleDock extends StatelessWidget {
     }
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final highContrast = MediaQuery.highContrastOf(context);
+    final highContrast = MediaQuery.highContrastOf(context) || MediaQuery.accessibleNavigationOf(context);
     final baseSurface = isDark ? theme.colorScheme.surface : palette.surface;
     final borderColor =
         isDark
@@ -158,7 +157,7 @@ class MomoFloatingCapsuleDock extends StatelessWidget {
                 availableWidth: constraints.maxWidth,
               );
           final radius = BorderRadius.circular(
-            math.min(36, geometry.barHeight / 2),
+            math.min(24, geometry.barHeight / 2),
           );
           final indicatorShape = _DockIndicatorBorder(
             maxWidth: math.max(0, geometry.destinationWidth - 8),
@@ -175,7 +174,7 @@ class MomoFloatingCapsuleDock extends StatelessWidget {
                   states.contains(WidgetState.disabled)
                       ? theme.colorScheme.onSurface.withValues(alpha: 0.38)
                       : selected
-                      ? theme.colorScheme.onSurface
+                      ? theme.colorScheme.primary
                       : theme.colorScheme.onSurfaceVariant,
             );
           });
@@ -196,9 +195,9 @@ class MomoFloatingCapsuleDock extends StatelessWidget {
                     color:
                         isDark
                             ? Colors.black.withValues(alpha: 0.40)
-                            : palette.primary.withValues(alpha: 0.12),
-                    blurRadius: 24,
-                    offset: const Offset(0, 8),
+                            : Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 20,
+                    offset: const Offset(0, 4),
                     spreadRadius: -2,
                   ),
                 ],

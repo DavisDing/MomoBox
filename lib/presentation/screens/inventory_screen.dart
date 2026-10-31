@@ -1,3 +1,4 @@
+import '../widgets/momo_mobile_layout.dart';
 import '../widgets/momo_floating_dock.dart';
 import '../widgets/momo_glass_components.dart';
 import '../../app/momo_typography.dart';
@@ -27,7 +28,6 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
   String _category = '全部';
   bool _showAnomalies = false;
   InventorySortOption _sortOption = InventorySortOption.expirySoonest;
-  bool _searchExpanded = false;
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
 
@@ -38,282 +38,142 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
     super.dispose();
   }
 
+  void _openIntake() => showModalBottomSheet<void>(
+    context: context, isScrollControlled: true, useSafeArea: true,
+    builder: (_) => const IntakeSheet(),
+  );
+
   @override
   Widget build(BuildContext context) {
     final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
     final inventory = ref.watch(inventoryProvider);
     final summary = ref.watch(reminderSummaryProvider);
-    return inventory.when(
-      loading: () => Scaffold(
-        appBar: MomoGlassAppBar(
-          title: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(palette.appLogoIcon, color: palette.primary, size: 24),
-              const SizedBox(width: 8),
-              const Flexible(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('嬷嬷的小箱子', maxLines: 1, overflow: TextOverflow.ellipsis),
-                    Text('单机模式 · 本地 SQLite', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: MomoTextSize.caption, fontWeight: FontWeight.normal)),
-                  ],
-                ),
-              ),
-            ],
+    final insets = MomoMobileLayout.pageInsets(context);
+    return Scaffold(
+      body: SafeArea(
+        left: false, right: false, bottom: false,
+        child: inventory.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, _) => _ErrorState(
+            message: '本地数据库暂时不可用，请重试。',
+            onRetry: () => ref.invalidate(inventoryProvider),
           ),
-        ),
-        body: const Center(child: CircularProgressIndicator()),
-      ),
-      error: (error, _) => Scaffold(
-        appBar: MomoGlassAppBar(
-          title: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(palette.appLogoIcon, color: palette.primary, size: 24),
-              const SizedBox(width: 8),
-              const Flexible(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('嬷嬷的小箱子', maxLines: 1, overflow: TextOverflow.ellipsis),
-                    Text('单机模式 · 本地 SQLite', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: MomoTextSize.caption, fontWeight: FontWeight.normal)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        body: _ErrorState(
-          message: '本地数据库暂时不可用：',
-          onRetry: () => ref.invalidate(inventoryProvider),
-        ),
-      ),
-      data: (items) {
-        final categories = {'全部', ...items.map((item) => item.category)}.toList();
-        final filtered = items.where((item) {
-          final normalized = _query.trim().toLowerCase();
-          final matchesQuery = normalized.isEmpty ||
-              [item.name, item.brand, item.location, item.barcode]
-                  .whereType<String>()
-                  .any((value) => value.toLowerCase().contains(normalized));
-          final matchesCategory = _category == '全部' || item.category == _category;
-          final matchesAnomaly = !_showAnomalies ||
-              item.isLowStock ||
-              item.overallExpiryStatus == ExpiryStatus.expiring ||
-              item.overallExpiryStatus == ExpiryStatus.expired;
-          return matchesQuery && matchesCategory && matchesAnomaly;
-        }).toList();
-        final sorted = sortInventoryItems(filtered, _sortOption);
-        final textScaler = MediaQuery.textScalerOf(context);
-        final largeText =
-            textScaler.scale(MomoTextSize.body) > MomoTextSize.body * 1.5;
-        final searchHeight = 40.0 +
-            (textScaler.scale(MomoTextSize.body) - MomoTextSize.body)
-                .clamp(0.0, double.infinity) * 1.5;
-        final filterHeight = 48.0 +
-            (textScaler.scale(MomoTextSize.caption) - MomoTextSize.caption)
-                .clamp(0.0, double.infinity) * 1.4;
-
-        return GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onTap: () {
-            if (_searchExpanded) {
-              _searchFocusNode.unfocus();
-              if (_query.trim().isEmpty) {
-                setState(() => _searchExpanded = false);
-              }
-            }
-          },
-          child: Scaffold(
-          body: RefreshIndicator(
-            onRefresh: () async => ref.invalidate(inventoryProvider),
-            child: CustomScrollView(
-              slivers: [
-                SliverAppBar(
-                  floating: true,
-                  snap: true,
-                  toolbarHeight: searchHeight + 16,
-                  titleSpacing: 16,
-                  elevation: 0,
-                  title:
-                        largeText
-                            ? null
-                            : (_searchExpanded
-                      ? MomoGlassSearchBar(
-                                  hintText: '搜索名称、品牌、位置或条码',
-                                  controller: _searchController,
-                            focusNode: _searchFocusNode,
-                                  palette: palette,
-                                  onChanged:
-                                      (value) => setState(() => _query = value),
-                              suffixIcon: IconButton(
-                                    tooltip: '清除搜索',
-                                    icon: const Icon(Icons.clear, size: 18),
-                                onPressed: () {
-                                  _searchController.clear();
-                                  setState(() {
-                                    _query = '';
-                                    _searchExpanded = false;
-                                  });
-                                },
-                                  ),
-                        )
-                      : Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(palette.appLogoIcon, color: palette.primary, size: 22),
-                            const SizedBox(width: 8),
-                            const Flexible(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('嬷嬷的小箱子', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.section)),
-                                  Text('单机模式 · 本地 SQLite', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: MomoTextSize.caption, fontWeight: FontWeight.normal)),
-                                ],
-                              ),
-                            ),
-                          ],
-                        )),
-                    actions: [
-                    if (!_searchExpanded)
-                      IconButton(
-                        tooltip: '搜索物品',
-                        icon: const Icon(Icons.search_rounded),
+          data: (items) {
+            final categories = {'全部', ...items.map((item) => item.category)}.toList();
+            final activeCategory = categories.contains(_category) ? _category : '全部';
+            final filtered = items.where((item) {
+              final normalized = _query.trim().toLowerCase();
+              final matchesQuery = normalized.isEmpty ||
+                  [item.name, item.brand, item.location, item.barcode]
+                      .whereType<String>()
+                      .any((value) => value.toLowerCase().contains(normalized));
+              final matchesCategory = activeCategory == '全部' || item.category == activeCategory;
+              final matchesAnomaly = !_showAnomalies || item.isLowStock ||
+                  item.overallExpiryStatus == ExpiryStatus.expiring ||
+                  item.overallExpiryStatus == ExpiryStatus.expired;
+              return matchesQuery && matchesCategory && matchesAnomaly;
+            }).toList();
+            final sorted = sortInventoryItems(filtered, _sortOption);
+            final filterHeight = (MediaQuery.textScalerOf(context)
+                .scale(MomoTextSize.body) * 1.4 + 28).clamp(56.0, double.infinity);
+            return RefreshIndicator(
+              onRefresh: () async => ref.invalidate(inventoryProvider),
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                slivers: [
+                  SliverPadding(
+                    padding: insets,
+                    sliver: SliverToBoxAdapter(child: MomoPageHeader(
+                      title: '库存',
+                      subtitle: Text('${items.length} 种物品'),
+                      actions: [
+                        _SortSelector(current: _sortOption,
+                          onSelected: (value) => setState(() => _sortOption = value)),
+                        IconButton.filled(
+                          tooltip: '入库', onPressed: _openIntake,
+                          style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
+                          icon: const Icon(Icons.add_rounded),
+                        ),
+                      ],
+                    )),
+                  ),
+                  SliverPadding(
+                    padding: insets.add(const EdgeInsets.only(bottom: 16)),
+                    sliver: SliverToBoxAdapter(child: MomoGlassSearchBar(
+                      hintText: '搜索物品、品牌或位置',
+                      controller: _searchController, focusNode: _searchFocusNode,
+                      palette: palette,
+                      onChanged: (value) => setState(() => _query = value),
+                      suffixIcon: _query.isEmpty ? null : IconButton(
+                        tooltip: '清除搜索', icon: const Icon(Icons.cancel_rounded, size: 20),
                         onPressed: () {
-                          setState(() => _searchExpanded = true);
-                          Future.microtask(() => _searchFocusNode.requestFocus());
+                          _searchController.clear();
+                          setState(() => _query = '');
                         },
                       ),
-                    _SortSelector(
-                      current: _sortOption,
-                      onSelected: (value) => setState(() => _sortOption = value),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
+                    )),
                   ),
-                  if (largeText)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                        child:
-                            _searchExpanded
-                                ? MomoGlassSearchBar(
-                                  hintText: '搜索名称、品牌、位置或条码',
-                                  controller: _searchController,
-                                  focusNode: _searchFocusNode,
-                                  palette: palette,
-                                  onChanged:
-                                      (value) => setState(() => _query = value),
-                                  suffixIcon: IconButton(
-                                    tooltip: '清除搜索',
-                                    icon: const Icon(Icons.clear, size: 18),
-                                    onPressed: () {
-                                      _searchController.clear();
-                                      setState(() {
-                                        _query = '';
-                                        _searchExpanded = false;
-                                      });
-                                    },
-                                  ),
-                                )
-                                : const Text('嬷嬷的小箱子'),
-                      ),
-                    ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
-                    child: _SummaryCard(
-                      summary: summary,
-                      selected: _showAnomalies,
+                  SliverPadding(
+                    padding: insets.add(const EdgeInsets.only(bottom: 12)),
+                    sliver: SliverToBoxAdapter(child: _SummaryCard(
+                      summary: summary, selected: _showAnomalies,
                       onTap: () => setState(() {
                         _showAnomalies = !_showAnomalies;
-                        _category = '全部';
-                        _query = '';
-                        _searchController.clear();
-                        _searchExpanded = false;
+                        _category = '全部'; _query = ''; _searchController.clear();
+                        _searchFocusNode.unfocus();
                       }),
-                    ),
+                    )),
                   ),
-                ),
-                SliverPersistentHeader(
-                  pinned: true,
-                  delegate: _StickyFilterHeaderDelegate(
-                    child: ClipRRect(
-                      child: BackdropFilter(
+                  SliverPersistentHeader(
+                    pinned: true,
+                    delegate: _StickyFilterHeaderDelegate(
+                      height: filterHeight,
+                      child: ClipRect(child: BackdropFilter(
+                        enabled: !MediaQuery.highContrastOf(context) && !MediaQuery.accessibleNavigationOf(context),
                         filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.88),
-                            border: Border(
-                              bottom: BorderSide(
-                                color: Theme.of(context).dividerColor.withValues(alpha: 0.08),
-                              ),
-                            ),
-                          ),
+                        child: ColoredBox(
+                          color: Theme.of(context).scaffoldBackgroundColor.withValues(
+                            alpha: MediaQuery.highContrastOf(context) || MediaQuery.accessibleNavigationOf(context) ? 1 : 0.92),
                           child: SingleChildScrollView(
                             scrollDirection: Axis.horizontal,
-                            child: Row(
-                              children: [
-                                ...categories.map(
-                                  (cat) => Padding(
-                                    padding: const EdgeInsets.only(right: 6),
-                                    child: ChoiceChip(
-                                      visualDensity: VisualDensity.compact,
-                                      label: Text(cat, style: const TextStyle(fontSize: MomoTextSize.caption)),
-                                      selected: _category == cat,
-                                      onSelected: (_) => setState(() => _category = cat),
-                                    ),
-                                  ),
+                            padding: insets,
+                            child: Row(children: [
+                              for (final category in categories) Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: ChoiceChip(
+                                  label: Text(category),
+                                  selected: activeCategory == category,
+                                  onSelected: (_) => setState(() => _category = category),
                                 ),
-                              ],
-                            ),
+                              ),
+                            ]),
                           ),
                         ),
-                      ),
-                    ),
-                    height: filterHeight,
-                  ),
-                ),
-                if (sorted.isEmpty)
-                  SliverToBoxAdapter(
-                    child: _EmptyInventory(
-                      hasItems: items.isNotEmpty,
-                      onAdd: items.isEmpty
-                          ? () => showModalBottomSheet<void>(
-                                context: context,
-                                isScrollControlled: true,
-                                useSafeArea: true,
-                                builder: (_) => const IntakeSheet(),
-                              )
-                          : null,
-                    ),
-                  )
-                else
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                    sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) => Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: _InventoryCard(item: sorted[index]),
-                        ),
-                        childCount: sorted.length,
-                        ),
-                      ),
-                    ),
-                  SliverToBoxAdapter(
-                    child: SizedBox(
-                      height: 16 + MomoDockInsets.bottomOf(context),
+                      )),
                     ),
                   ),
-              ],
-            ),
-          ),
-          ),
-        );
-      },
+                  if (sorted.isEmpty)
+                    SliverToBoxAdapter(child: _EmptyInventory(
+                      hasItems: items.isNotEmpty, onAdd: items.isEmpty ? _openIntake : null,
+                    ))
+                  else SliverPadding(
+                    padding: insets.add(const EdgeInsets.only(top: 12)),
+                    sliver: SliverList(delegate: SliverChildBuilderDelegate(
+                      (context, index) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _InventoryCard(item: sorted[index]),
+                      ),
+                      childCount: sorted.length,
+                    )),
+                  ),
+                  SliverToBoxAdapter(child: SizedBox(height: 20 + MomoDockInsets.bottomOf(context))),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 }
@@ -353,12 +213,12 @@ class _SummaryCard extends StatelessWidget {
       margin: EdgeInsets.zero,
       child: Row(
           children: [
-            const Text('📦', style: TextStyle(fontSize: 36)),
+            Icon(Icons.notifications_none_rounded, color: theme.colorScheme.primary),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
                 '有 ${summary.expiring.length + summary.expired.length} 项效期提醒，${summary.lowStock.length} 项库存偏低。${selected ? '正在查看异常物品' : '点击查看异常物品'}',
-                style: theme.textTheme.titleSmall,
+                style: theme.textTheme.bodyMedium,
               ),
             ),
           ],
@@ -375,80 +235,21 @@ class _SortSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    // Match the menu to the trigger, including the user's font scaling.
-    const labelStyle = TextStyle(fontSize: MomoTextSize.caption, fontWeight: FontWeight.w500);
-    final painter = TextPainter(
-      text: TextSpan(text: current.label, style: DefaultTextStyle.of(context).style.merge(labelStyle)),
-      textDirection: Directionality.of(context),
-      textScaler: MediaQuery.textScalerOf(context),
-    )..layout();
-    final triggerWidth = (painter.width.ceilToDouble() + 18 + 4 + 20 + 2).clamp(
-      48.0,
-      MediaQuery.sizeOf(context).width - 96.0,
-    );
-    painter.dispose();
     return PopupMenuButton<InventorySortOption>(
       tooltip: '排序：${current.label}',
+      icon: const Icon(Icons.sort_rounded),
       onSelected: onSelected,
       position: PopupMenuPosition.under,
-      elevation: 4,
-      shadowColor: Colors.black.withValues(alpha: 0.12),
-      constraints: BoxConstraints.tightFor(width: triggerWidth),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: isDark ? Colors.white.withValues(alpha: 0.1) : theme.dividerColor.withValues(alpha: 0.15),
-          width: 0.8,
-        ),
-      ),
-      itemBuilder: (context) => InventorySortOption.values
-          .map(
-            (option) => PopupMenuItem<InventorySortOption>(
-              value: option,
-              height: 38,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      option.label,
-                      style: TextStyle(
-                        fontSize: MomoTextSize.caption,
-                        fontWeight: option == current ? FontWeight.w600 : FontWeight.normal,
-                        color: option == current ? theme.colorScheme.primary : null,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          )
-          .toList(growable: false),
-      child: Container(
-        width: triggerWidth,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: theme.dividerColor.withValues(alpha: 0.15)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.swap_vert_rounded, size: 18),
-            const SizedBox(width: 4),
-            Flexible(
-              child: Text(
-              current.label,
-              style: const TextStyle(fontSize: MomoTextSize.caption, fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+      itemBuilder: (context) => [
+        for (final option in InventorySortOption.values)
+          PopupMenuItem<InventorySortOption>(
+            value: option,
+            child: Row(children: [
+              Expanded(child: Text(option.label)),
+              if (option == current) const Icon(Icons.check_rounded, size: 20),
+            ]),
+          ),
+      ],
     );
   }
 }
@@ -474,86 +275,56 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
       (candidate) => candidate.expiryStatus != ExpiryStatus.expired,
     );
     final canReplenish = item.batches.any((candidate) => !candidate.isDiscarded);
-    return GestureDetector(
-      onHorizontalDragEnd: (details) {
-        final velocity = details.primaryVelocity ?? 0;
-        if (velocity < -80) {
-          setState(() => _actionsVisible = true);
-        } else if (velocity > 80) {
-          setState(() => _actionsVisible = false);
-        }
-      },
-      child: Row(
+    final theme = Theme.of(context);
+    return MomoGlassCard(
+      onTap: () => context.push('/inventory/${item.id}'),
+      padding: const EdgeInsets.all(16),
+      margin: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: MomoGlassCard(
-                onTap: () {
-                  if (_actionsVisible) {
-                    setState(() => _actionsVisible = false);
-                    return;
-                  }
-                  context.push('/inventory/${item.id}');
-                },
-              padding: const EdgeInsets.all(14),
-              margin: EdgeInsets.zero,
-              child: _InventoryFlowRow(
-                    children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(_categoryEmoji(item.category), style: const TextStyle(fontSize: MomoTextSize.page)),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(item.name, style: Theme.of(context).textTheme.titleMedium),
-                            const SizedBox(height: 3),
-                            Text(
-                              '${item.totalStock} ${item.unit} · ${item.location ?? '未设置位置'} · ${item.batches.length} 个批次',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                            if (item.isLowStock) ...[
-                              const SizedBox(height: 5),
-                              const Text('库存偏低', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: MomoTextSize.caption)),
-                            ],
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          StatusBadge(status: item.overallExpiryStatus, days: batch?.daysUntilExpiry),
-                          const SizedBox(height: 6),
-                      MomoCapsuleButton(
-                        onPressed: canConsume ? () => _showConsumeDialog(context) : null,
-                        label: '消耗',
-                        isPrimary: false,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        icon: const Icon(
-                                    Icons.remove_circle_outline,
-                                    size: 18),
-                          ),
-                        ],
-                      ),
-                    ],
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Container(
+              width: 40, height: 40, alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(12),
               ),
+              child: Text(_categoryEmoji(item.category), style: const TextStyle(fontSize: 22)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(item.name, style: theme.textTheme.titleMedium),
+              const SizedBox(height: 4),
+              Text('${item.location ?? '未设置位置'} · ${item.batches.length} 个批次',
+                style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            ])),
+            IconButton(
+              tooltip: _actionsVisible ? '收起快捷操作' : '物品快捷操作',
+              onPressed: _busy ? null : () => setState(() => _actionsVisible = !_actionsVisible),
+              icon: Icon(_actionsVisible ? Icons.expand_less_rounded : Icons.more_horiz_rounded),
+            ),
+          ]),
+          const SizedBox(height: 16),
+          Wrap(spacing: 12, runSpacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
+            Text('${item.totalStock} ${item.unit}', style: theme.textTheme.titleMedium),
+            StatusBadge(status: item.overallExpiryStatus, days: batch?.daysUntilExpiry),
+            if (item.isLowStock) Text('库存偏低', style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.error)),
+          ]),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: MomoCapsuleButton(
+              onPressed: canConsume && !_busy ? () => _showConsumeDialog(context) : null,
+              label: '消耗', isPrimary: false,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              icon: const Icon(Icons.remove_circle_outline, size: 20),
             ),
           ),
           if (_actionsVisible) ...[
-            const SizedBox(width: 4),
+            const Divider(height: 24),
             _QuickActions(
-              busy: _busy,
-              canConsume: canConsume,
-              canReplenish: canReplenish,
+              busy: _busy, canConsume: canConsume, canReplenish: canReplenish,
               onConsume: () => _consumeOne(context),
               onReplenish: () => _replenishOne(context),
               onShopping: () => _addToShopping(context),
@@ -827,43 +598,24 @@ class _QuickActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MomoGlassCard(
-      margin: EdgeInsets.zero,
-      padding: EdgeInsets.zero,
-      child: SizedBox(
-        width: 156,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Expanded(
-              child: IconButton(
-                tooltip: '快速消耗 1 件',
-                onPressed: busy || !canConsume ? null : onConsume,
-                icon: const Icon(Icons.remove_circle_outline),
-              ),
-            ),
-            Expanded(
-              child: IconButton(
-                tooltip: '快速补充 1 件',
-                onPressed: busy || !canReplenish ? null : onReplenish,
-                icon: const Icon(Icons.add_circle_outline),
-              ),
-            ),
-            Expanded(
-              child: IconButton(
-                tooltip: '加入采购清单',
-                onPressed: busy ? null : onShopping,
-                icon: const Icon(Icons.add_shopping_cart_outlined),
-              ),
-            ),
-            IconButton(
-              tooltip: '收起快捷操作',
-              onPressed: busy ? null : onClose,
-              icon: const Icon(Icons.close, size: 18),
-            ),
-          ],
+    return Wrap(
+      spacing: 8, runSpacing: 8,
+      children: [
+        TextButton.icon(
+          onPressed: busy || !canConsume ? null : onConsume,
+          icon: const Icon(Icons.remove_circle_outline), label: const Text('快速消耗 1 件'),
         ),
-      ),
+        TextButton.icon(
+          onPressed: busy || !canReplenish ? null : onReplenish,
+          icon: const Icon(Icons.add_circle_outline), label: const Text('快速补充 1 件'),
+        ),
+        TextButton.icon(
+          onPressed: busy ? null : onShopping,
+          icon: const Icon(Icons.add_shopping_cart_outlined), label: const Text('加入采购清单'),
+        ),
+        IconButton(tooltip: '收起快捷操作', onPressed: busy ? null : onClose,
+          icon: const Icon(Icons.close_rounded)),
+      ],
     );
   }
 }
@@ -951,26 +703,3 @@ String _categoryEmoji(String category) => switch (category) {
     };
 
 String _dateText(DateTime date) => '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-
-class _InventoryFlowRow extends StatelessWidget {
-  const _InventoryFlowRow({required this.children});
-  final List<Widget> children;
-  @override
-  Widget build(BuildContext context) {
-    if (MediaQuery.textScalerOf(context).scale(MomoTextSize.body) <=
-        MomoTextSize.body * 1.5) {
-      return Row(children: children);
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children:
-          children.map((child) {
-            if (child is Flexible) return child.child;
-            if (child is SizedBox && child.width != null && child.child == null) {
-              return SizedBox(height: child.width);
-            }
-            return child;
-          }).toList(),
-    );
-  }
-}

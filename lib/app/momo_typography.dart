@@ -12,11 +12,11 @@ abstract final class MomoTextSize {
 }
 
 TextTheme buildMomoTextTheme(TextTheme base) => base.copyWith(
-  displayLarge: base.displayLarge?.copyWith(fontSize: MomoTextSize.display, height: 1.2, fontWeight: FontWeight.w600),
-  displayMedium: base.displayMedium?.copyWith(fontSize: MomoTextSize.display, height: 1.2, fontWeight: FontWeight.w600),
-  displaySmall: base.displaySmall?.copyWith(fontSize: MomoTextSize.metric, height: 1.2, fontWeight: FontWeight.w600),
-  headlineLarge: base.headlineLarge?.copyWith(fontSize: MomoTextSize.metric, height: 1.2, fontWeight: FontWeight.w600),
-  headlineMedium: base.headlineMedium?.copyWith(fontSize: MomoTextSize.page, height: 1.3, fontWeight: FontWeight.w600),
+  displayLarge: base.displayLarge?.copyWith(fontSize: MomoTextSize.display, height: 1.15, letterSpacing: -0.5, fontWeight: FontWeight.w600),
+  displayMedium: base.displayMedium?.copyWith(fontSize: MomoTextSize.display, height: 1.15, letterSpacing: -0.5, fontWeight: FontWeight.w600),
+  displaySmall: base.displaySmall?.copyWith(fontSize: MomoTextSize.metric, height: 1.15, letterSpacing: -0.5, fontWeight: FontWeight.w600),
+  headlineLarge: base.headlineLarge?.copyWith(fontSize: MomoTextSize.metric, height: 1.15, letterSpacing: -0.5, fontWeight: FontWeight.w600),
+  headlineMedium: base.headlineMedium?.copyWith(fontSize: MomoTextSize.page, height: 1.25, letterSpacing: -0.3, fontWeight: FontWeight.w600),
   headlineSmall: base.headlineSmall?.copyWith(fontSize: MomoTextSize.page, height: 1.3, fontWeight: FontWeight.w600),
   titleLarge: base.titleLarge?.copyWith(fontSize: MomoTextSize.section, height: 1.3, fontWeight: FontWeight.w600),
   titleMedium: base.titleMedium?.copyWith(fontSize: MomoTextSize.title, height: 1.4, fontWeight: FontWeight.w600),

@@ -1,3 +1,5 @@
+> 2026-10-31：移动端UI已重构，以下所有 `current-*` 图片均为历史预览，尚未重新渲染，不能代表新代码。新布局与验证限制见 DESIGN 第33节。
+
 # 当前代码预览（2026-10-25）
 
 `current-ui-overview.png` 汇总首页、库存、设置的浅色和深色页面；对应单页见 `current-{home,inventory,settings}-{light,dark}.png`。

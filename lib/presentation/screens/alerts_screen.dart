@@ -1,3 +1,4 @@
+import '../widgets/momo_mobile_layout.dart';
 import '../widgets/momo_glass_components.dart';
 import '../../app/momo_typography.dart';
 import '../widgets/calendar_sync_dialog.dart';
@@ -35,7 +36,8 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
     final summary = ref.watch(reminderSummaryProvider);
 
     return Scaffold(
-      appBar: MomoGlassAppBar(
+      appBar: MomoGlassAppBar.adaptive(
+        context,
         title: const Text('效期与库存提醒'),
         actions: [
           IconButton(
@@ -68,7 +70,7 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
           if (!hasAlerts) return const _EmptyAlerts();
 
           return ListView(
-            padding: const EdgeInsets.all(16),
+            padding: MomoMobileLayout.pageInsets(context).add(EdgeInsets.only(top: 16, bottom: 20 + MediaQuery.viewPaddingOf(context).bottom)),
             children: [
               _AlertDashboard(
                 summary: summary,
@@ -207,37 +209,18 @@ class _AlertDashboard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
-            Row(
+            MomoAdaptiveTiles(
+              minimumWidth: 110,
               children: [
-                Expanded(
-                  child: _StatTile(
-                    label: '已过期',
-                    value: summary.expired.length,
-                    color: theme.colorScheme.error,
-                    isSelected: activeFilter == 'expired',
-                    onTap: () => onFilterSelected('expired'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _StatTile(
-                    label: '3 天内到期',
-                    value: expiringSoon,
-                    color: Colors.orange,
-                    isSelected: activeFilter == 'expiring',
-                    onTap: () => onFilterSelected('expiring'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _StatTile(
-                    label: '低库存',
-                    value: summary.lowStock.length,
-                    color: Colors.blue,
-                    isSelected: activeFilter == 'low_stock',
-                    onTap: () => onFilterSelected('low_stock'),
-                  ),
-                ),
+                _StatTile(label: '已过期', value: summary.expired.length,
+                  color: theme.colorScheme.error, isSelected: activeFilter == 'expired',
+                  onTap: () => onFilterSelected('expired')),
+                _StatTile(label: '3 天内到期', value: expiringSoon,
+                  color: Colors.orange, isSelected: activeFilter == 'expiring',
+                  onTap: () => onFilterSelected('expiring')),
+                _StatTile(label: '低库存', value: summary.lowStock.length,
+                  color: theme.colorScheme.primary, isSelected: activeFilter == 'low_stock',
+                  onTap: () => onFilterSelected('low_stock')),
               ],
             ),
           ],
@@ -270,7 +253,8 @@ class _StatTile extends StatelessWidget {
               ? Theme.of(context).colorScheme.surfaceContainerHighest
               : null,
       borderRadius: 16,
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.all(12),
         child: Column(
           children: [
             Text(

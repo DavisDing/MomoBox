@@ -1264,7 +1264,8 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: MomoGlassAppBar(
+      appBar: MomoGlassAppBar.adaptive(
+        context,
         title: const Text('扫描商品条码'),
         leading: IconButton(
           icon: const Icon(Icons.close),

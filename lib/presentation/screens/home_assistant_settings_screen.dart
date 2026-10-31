@@ -144,7 +144,8 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
     _hydrateFromState(homeState);
 
     return Scaffold(
-      appBar: MomoGlassAppBar(
+      appBar: MomoGlassAppBar.adaptive(
+        context,
         title: const Text('Home Assistant 连接配置'),
         actions: [
           IconButton(

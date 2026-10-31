@@ -1,3 +1,4 @@
+import '../widgets/momo_mobile_layout.dart';
 import '../../app/momo_typography.dart';
 import '../../application/ai_fallback_executor.dart';
 import 'nas_settings_screen.dart';
@@ -40,12 +41,16 @@ class SettingsScreen extends ConsumerWidget {
     final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
 
     return Scaffold(
-      appBar: MomoGlassAppBar(
-        title: const Text('系统设置'),
-      ),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + MomoDockInsets.bottomOf(context)),
-        children: [
+      body: SafeArea(
+        left: false, right: false, bottom: false,
+        child: ListView(
+          padding: MomoMobileLayout.pageInsets(context).add(
+            EdgeInsets.only(bottom: 20 + MomoDockInsets.bottomOf(context))),
+          children: [
+            const MomoPageHeader(
+              title: '系统设置',
+              subtitle: Text('把小箱子调成你喜欢的样子'),
+            ),
           _buildSectionHeader(context, '外观与个性化'),
           Card(
             margin: const EdgeInsets.only(bottom: 16),
@@ -56,7 +61,7 @@ class SettingsScreen extends ConsumerWidget {
                   context,
                   icon: Icons.palette_outlined,
                   title: '主题中心与个性化',
-                  subtitle: '当前：${palette.label}（吉祥物：${palette.mascot} ${palette.mascotName}）',
+                  subtitle: palette.label,
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const ThemeSettingsScreen()),
                   ),
@@ -95,7 +100,7 @@ class SettingsScreen extends ConsumerWidget {
                   context,
                   icon: Icons.psychology_outlined,
                   title: 'AI 解析与模型配置',
-                  subtitle: '自动识别协议、chat/responses 双协议与多模型切换',
+                  subtitle: '管理服务、模型与连接',
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const AiSettingsScreen()),
                   ),
@@ -220,7 +225,7 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
         ],
-      ),
+      )),
     );
   }
 
@@ -231,9 +236,9 @@ class SettingsScreen extends ConsumerWidget {
       child: Text(
         title,
         style: TextStyle(
-          fontSize: MomoTextSize.body,
-          fontWeight: FontWeight.bold,
-          color: theme.colorScheme.primary,
+          fontSize: MomoTextSize.caption,
+          fontWeight: FontWeight.w600,
+          color: theme.colorScheme.onSurfaceVariant,
         ),
       ),
     );
@@ -247,12 +252,18 @@ class SettingsScreen extends ConsumerWidget {
     required VoidCallback onTap,
   }) {
     return ListTile(
-      leading: CircleAvatar(
-        backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
-        child: Icon(icon, color: Theme.of(context).colorScheme.primary),
-      ),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.body)),
-      subtitle: Text(subtitle, style: const TextStyle(fontSize: MomoTextSize.caption)),
+      leading: MediaQuery.textScalerOf(context).scale(MomoTextSize.body) > MomoTextSize.body * 1.5
+          ? null
+          : Container(
+              width: 32, height: 32,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
+            ),
+      title: Text(title, style: Theme.of(context).textTheme.titleMedium),
+      subtitle: Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
       trailing: const Icon(Icons.arrow_forward_ios, size: 14),
       onTap: onTap,
     );
@@ -298,7 +309,7 @@ class _DiagnosticExportScreenState extends State<DiagnosticExportScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: MomoGlassAppBar(title: const Text('本地诊断导出')),
+    appBar: MomoGlassAppBar.adaptive(context, title: const Text('本地诊断导出')),
     body: ListView(
       padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
       children: [
@@ -329,7 +340,7 @@ class ThemeSettingsScreen extends ConsumerWidget {
     final currentTheme = ref.watch(themeNameProvider).valueOrNull;
 
     return Scaffold(
-      appBar: MomoGlassAppBar(title: const Text('主题中心')),
+      appBar: MomoGlassAppBar.adaptive(context, title: const Text('主题中心')),
       body: ListView(
         padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
         children: MomoPalette.allPalettes.map((palette) {
@@ -604,7 +615,7 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: MomoGlassAppBar(title: const Text('外部条码 API')),
+      appBar: MomoGlassAppBar.adaptive(context, title: const Text('外部条码 API')),
       body: ListView(
         padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
         children: [
@@ -1405,7 +1416,7 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: MomoGlassAppBar(title: const Text('AI 解析与模型配置')),
+      appBar: MomoGlassAppBar.adaptive(context, title: const Text('AI 解析与模型配置')),
       body: ListView(
         padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
         children: [
@@ -1655,7 +1666,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: MomoGlassAppBar(title: const Text('数据备份与迁移')),
+        appBar: MomoGlassAppBar.adaptive(context, title: const Text('数据备份与迁移')),
         body: ListView(
           padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
           children: [
@@ -1701,7 +1712,7 @@ class FontScaleSettingsScreen extends ConsumerWidget {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: MomoGlassAppBar(title: const Text('字体大小设置')),
+      appBar: MomoGlassAppBar.adaptive(context, title: const Text('字体大小设置')),
       body: ListView(
         padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
         children: [
@@ -1913,7 +1924,7 @@ class _NotificationSettingsScreenState extends ConsumerState<NotificationSetting
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: MomoGlassAppBar(title: const Text('提醒与通知')),
+        appBar: MomoGlassAppBar.adaptive(context, title: const Text('提醒与通知')),
         body: ListView(
           padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
           children: [
@@ -2077,7 +2088,8 @@ class _StorageManagementScreenState extends ConsumerState<StorageManagementScree
   Widget build(BuildContext context) {
     final usage = _usage;
     return Scaffold(
-      appBar: MomoGlassAppBar(
+      appBar: MomoGlassAppBar.adaptive(
+        context,
         title: const Text('数据与存储空间'),
         actions: [IconButton(onPressed: _busy ? null : _reload, icon: const Icon(Icons.refresh), tooltip: '刷新')],
       ),
@@ -2237,7 +2249,7 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: MomoGlassAppBar(title: const Text('隐私与密钥')),
+        appBar: MomoGlassAppBar.adaptive(context, title: const Text('隐私与密钥')),
         body: ListView(
           padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
           children: [
@@ -2396,7 +2408,7 @@ class _AboutSettingsScreenState extends ConsumerState<AboutSettingsScreen> {
     final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
     final release = _checkResult?.release;
     return Scaffold(
-      appBar: MomoGlassAppBar(title: const Text('关于嬷嬷的小箱子')),
+      appBar: MomoGlassAppBar.adaptive(context, title: const Text('关于嬷嬷的小箱子')),
       body: ListView(
         padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
         children: [

@@ -19,24 +19,18 @@ const _palettes = [
   MomoPalette.sakuraPalette,
 ];
 
-List<NavigationDestination> _destinations(MomoPalette palette) => [
-  const NavigationDestination(icon: Icon(Icons.home), label: '首页'),
+const _destinations = [
+  NavigationDestination(icon: Icon(Icons.home_outlined), label: '首页'),
   NavigationDestination(
-    icon: Icon(palette.inventoryIcon),
-    label: palette.inventoryLabel,
+    icon: Icon(Icons.inventory_2_outlined),
+    label: '库存',
   ),
   NavigationDestination(
-    icon: Padding(
-      padding: const EdgeInsets.all(5),
-      child: Text(
-        palette.mascot,
-        style: const TextStyle(fontSize: 22, height: 1),
-      ),
-    ),
-    label: palette.mascotName,
+    icon: Icon(Icons.auto_awesome_outlined),
+    label: 'AI 助手',
   ),
-  const NavigationDestination(icon: Icon(Icons.hub), label: '家居'),
-  const NavigationDestination(icon: Icon(Icons.person), label: '我的'),
+  NavigationDestination(icon: Icon(Icons.cottage_outlined), label: '家居'),
+  NavigationDestination(icon: Icon(Icons.person_outline_rounded), label: '我的'),
 ];
 
 void main() {
@@ -47,7 +41,7 @@ void main() {
         (tester) async {
           addTearDown(tester.view.reset);
           tester.view.devicePixelRatio = 1;
-          final destinations = _destinations(palette);
+          const destinations = _destinations;
           for (final width in [280.0, 320.0, 800.0]) {
             tester.view.physicalSize = Size(width, width == 800 ? 360 : 640);
             for (final scale in [1.0, 1.3, 3.4]) {
@@ -198,7 +192,7 @@ void main() {
                   bottomNavigationBar: MomoFloatingCapsuleDock(
                     selectedIndex: 0,
                     onDestinationSelected: (_) {},
-                    destinations: _destinations(palette),
+                    destinations: _destinations,
                     palette: palette,
                   ),
                 ),
@@ -256,7 +250,7 @@ void main() {
                     selectedIndex: selected,
                     onDestinationSelected:
                         (value) => setState(() => selected = value),
-                    destinations: _destinations(MomoPalette.defaultPalette),
+                    destinations: _destinations,
                     palette: MomoPalette.defaultPalette,
                   ),
                 ),
@@ -340,7 +334,7 @@ void main() {
   }
 
   testWidgets(
-    'inventory default FAB clears the last item and keyboard hides both overlays',
+    'inventory reserves only the navigation layer and keyboard releases that space',
     (tester) async {
       addTearDown(tester.view.reset);
       tester.view.devicePixelRatio = 1;
@@ -360,18 +354,18 @@ void main() {
         controller.jumpTo(controller.position.maxScrollExtent);
         await tester.pump();
         final lastItem = find.byKey(const Key('last-item'));
-        final fab = find.byType(FloatingActionButton);
+        expect(find.byType(FloatingActionButton), findsNothing);
         final dock = find.byType(MomoFloatingCapsuleDock);
         expect(
           MomoDockInsets.bottomOf(tester.element(lastItem)),
           closeTo(
-            tester.getSize(dock).height + tester.getSize(fab).height + 12,
+            tester.getSize(dock).height,
             0.01,
           ),
         );
         expect(
           tester.getBottomLeft(lastItem).dy,
-          lessThan(tester.getTopLeft(fab).dy),
+          lessThan(tester.getTopLeft(dock).dy),
         );
         final previousTaps = taps;
         await tester.tap(lastItem);
@@ -392,7 +386,7 @@ void main() {
       );
       tester.view.viewInsets = const FakeViewPadding();
       await tester.pumpAndSettle();
-      expect(find.byType(FloatingActionButton), findsOneWidget);
+      expect(find.byType(FloatingActionButton), findsNothing);
       expect(find.byType(NavigationBar), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
     },

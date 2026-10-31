@@ -1,3 +1,4 @@
+import '../widgets/momo_mobile_layout.dart';
 import '../widgets/momo_glass_components.dart';
 import '../../app/momo_typography.dart';
 import 'dart:io';
@@ -23,7 +24,7 @@ class ProductDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final inventory = ref.watch(inventoryProvider);
     return Scaffold(
-      appBar: MomoGlassAppBar(title: const Text('商品详情')),
+      appBar: MomoGlassAppBar.adaptive(context, title: const Text('商品详情')),
       body: inventory.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _DetailMessage(
@@ -73,7 +74,7 @@ class _ProductDetailBody extends ConsumerWidget {
         .toList(growable: false);
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+      padding: MomoMobileLayout.pageInsets(context).add(EdgeInsets.only(top: 12, bottom: 24 + MediaQuery.viewPaddingOf(context).bottom)),
       children: [
         _ProductOverview(item: item),
         const SizedBox(height: 16),
@@ -166,12 +167,12 @@ class _ProductOverview extends StatelessWidget {
     final nearestBatch = item.nearestDatedBatch;
     final theme = Theme.of(context);
     return MomoGlassCard(
-        padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(16),
       margin: EdgeInsets.zero,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            _DetailFlow(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
@@ -228,7 +229,7 @@ class _InfoRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Row(
+        child: _DetailFlow(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SizedBox(
@@ -271,7 +272,7 @@ class _BatchGroupHeader extends StatelessWidget {
         children: [
           Icon(icon, size: 18),
           const SizedBox(width: 6),
-          Text(title, style: Theme.of(context).textTheme.titleMedium),
+          Expanded(child: Text(title, style: Theme.of(context).textTheme.titleMedium)),
         ],
       );
 }
@@ -1073,4 +1074,25 @@ class _ProductMediaSectionState extends ConsumerState<_ProductMediaSection> {
   void _showMessage(String message) {
     ScaffoldMessenger.of(context)..hideCurrentSnackBar()..showSnackBar(SnackBar(content: Text(message)));
   }
+}
+
+/// Read labels above values at large text sizes instead of narrowing both.
+class _DetailFlow extends StatelessWidget {
+  const _DetailFlow({required this.children, required this.crossAxisAlignment});
+  final List<Widget> children;
+  final CrossAxisAlignment crossAxisAlignment;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(builder: (context, constraints) {
+    if (!MomoMobileLayout.stack(context, constraints.maxWidth, minimum: 240)) {
+      return Row(crossAxisAlignment: crossAxisAlignment, children: children);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [for (final child in children) ...[
+        if (child is Flexible) child.child else if (child is SizedBox && child.child != null) child.child! else child,
+        const SizedBox(height: 6),
+      ]],
+    );
+  });
 }

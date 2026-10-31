@@ -32,11 +32,11 @@ void main() {
         child: const MomoBoxApp(enableMediaReconciliation: false),
       ),
     );
-    await _waitFor(tester, find.text('待处理详情 >'));
+    await _waitFor(tester, find.text('全部提醒'));
     expect(find.byType(HomeScreen), findsOneWidget);
 
-    await tester.ensureVisible(find.text('待处理详情 >'));
-    await tester.tap(find.text('待处理详情 >'));
+    await tester.ensureVisible(find.text('全部提醒'));
+    await tester.tap(find.text('全部提醒'));
     await _waitFor(tester, find.byType(AlertsScreen));
     await _waitFor(tester, find.text('当前无待处理提醒。'));
     await tester.pageBack();

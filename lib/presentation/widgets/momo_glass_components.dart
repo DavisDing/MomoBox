@@ -1,9 +1,12 @@
 import 'dart:ui';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../../app/momo_theme.dart';
+import 'momo_floating_dock.dart';
+import 'momo_press_scale.dart';
 
 /// Capsule actions retain native focus, keyboard and screen-reader behavior.
 /// Height is a minimum: wrapped labels and accessibility text can grow.
@@ -68,7 +71,6 @@ class _MomoCapsuleButtonState extends State<MomoCapsuleButton> {
 
   @override
   Widget build(BuildContext context) {
-    final reducedMotion = MediaQuery.disableAnimationsOf(context);
     final enabled = widget.onPressed != null && !widget.isLoading;
     final theme = Theme.of(context);
     final buttonTheme =
@@ -120,7 +122,7 @@ class _MomoCapsuleButtonState extends State<MomoCapsuleButton> {
         theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
       ),
     );
-    Widget button =
+    final button =
         widget.isPrimary
             ? FilledButton(
               statesController: _states,
@@ -134,20 +136,8 @@ class _MomoCapsuleButtonState extends State<MomoCapsuleButton> {
               onPressed: enabled ? widget.onPressed : null,
               child: child,
             );
-    if (!widget.isPrimary && !MediaQuery.highContrastOf(context)) {
-      button = ClipRRect(
-        borderRadius: BorderRadius.circular(1000),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-          child: button,
-        ),
-      );
-    }
-    return AnimatedScale(
-      scale: !reducedMotion && enabled && _pressed ? 0.96 : 1,
-      duration:
-          reducedMotion ? Duration.zero : const Duration(milliseconds: 150),
-      curve: Curves.easeOutCubic,
+    return MomoPressScale(
+      pressed: enabled && _pressed,
       child: button,
     );
   }
@@ -160,7 +150,7 @@ class MomoGlassCard extends StatefulWidget {
     this.onTap,
     this.padding = const EdgeInsets.all(16),
     this.margin,
-    this.borderRadius = 20,
+    this.borderRadius = 18,
     this.palette,
     this.color,
     this.frosted = false,
@@ -187,8 +177,7 @@ class _MomoGlassCardState extends State<MomoGlassCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final highContrast = MediaQuery.highContrastOf(context);
-    final reducedMotion = MediaQuery.disableAnimationsOf(context);
+    final highContrast = MediaQuery.highContrastOf(context) || MediaQuery.accessibleNavigationOf(context);
     final radius = BorderRadius.circular(widget.borderRadius);
     final surface =
         widget.color ??
@@ -234,22 +223,12 @@ class _MomoGlassCardState extends State<MomoGlassCard> {
     }
     return Padding(
       padding: widget.margin ?? const EdgeInsets.symmetric(vertical: 6),
-      child: AnimatedScale(
-        scale: _pressed && !reducedMotion ? 0.98 : 1,
-        duration:
-            reducedMotion ? Duration.zero : const Duration(milliseconds: 150),
-        curve: Curves.easeOutCubic,
+      child: MomoPressScale(
+        pressed: _pressed,
         child: DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: radius,
             border: Border.all(color: border, width: 0.5),
-            boxShadow: [
-              BoxShadow(
-                color: theme.shadowColor.withValues(alpha: 0.06),
-                offset: const Offset(0, 2),
-                blurRadius: 8,
-              ),
-            ],
           ),
           // Paint the fine border above the material, outside its clip.
           child: Padding(padding: const EdgeInsets.all(0.5), child: content),
@@ -259,7 +238,7 @@ class _MomoGlassCardState extends State<MomoGlassCard> {
   }
 }
 
-/// A capsule search field with no fixed-height constraint on scaled text.
+/// A rounded search field with no fixed-height constraint on scaled text.
 class MomoGlassSearchBar extends StatelessWidget {
   const MomoGlassSearchBar({
     required this.hintText,
@@ -291,11 +270,11 @@ class MomoGlassSearchBar extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final shape = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(1000),
+      borderRadius: BorderRadius.circular(12),
       borderSide: BorderSide.none,
     );
     return ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 40),
+      constraints: const BoxConstraints(minHeight: 48),
       child: TextField(
         controller: controller,
         focusNode: focusNode,
@@ -304,14 +283,16 @@ class MomoGlassSearchBar extends StatelessWidget {
         onSubmitted: onSubmitted,
         onTap: onTap,
         textInputAction: textInputAction,
-        style: theme.textTheme.bodyMedium,
+        scrollPadding: EdgeInsets.fromLTRB(20, 20, 20, 20 + MomoDockInsets.bottomOf(context)),
+        style: theme.textTheme.bodyLarge,
         decoration: InputDecoration(
           hintText: hintText,
+          hintStyle: theme.textTheme.bodyLarge?.copyWith(color: scheme.onSurfaceVariant),
           prefixIcon: const Icon(Icons.search_rounded, size: 24),
           suffixIcon: suffixIcon,
           prefixIconConstraints: const BoxConstraints(
             minWidth: 44,
-            minHeight: 40,
+            minHeight: 48,
           ),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
@@ -348,6 +329,55 @@ class MomoGlassAppBar extends StatelessWidget implements PreferredSizeWidget {
     super.key,
   });
 
+  /// Scaffold reads preferredSize before building the toolbar. Resolve the
+  /// title at the call site so large text gets real space, including back and
+  /// action buttons, instead of merely painting beyond a fixed 56dp bar.
+  factory MomoGlassAppBar.adaptive(
+    BuildContext context, {
+    Widget? title,
+    Widget? leading,
+    List<Widget>? actions,
+    PreferredSizeWidget? bottom,
+    bool automaticallyImplyLeading = true,
+    bool? centerTitle,
+    double? titleSpacing,
+    double toolbarHeight = kToolbarHeight,
+    Key? key,
+  }) {
+    var height = toolbarHeight;
+    if (title is Text) {
+      final availableWidth = math.max(1.0,
+        MediaQuery.sizeOf(context).width - MediaQuery.paddingOf(context).horizontal -
+        ((leading != null || automaticallyImplyLeading) ? 56 : 0) -
+        (actions?.length ?? 0) * 48 - (titleSpacing ?? 16) * 2,
+      );
+      final painter = TextPainter(
+        text: TextSpan(
+          text: title.data ?? title.textSpan?.toPlainText(),
+          style: Theme.of(context).textTheme.titleLarge?.merge(title.style),
+        ),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+        locale: Localizations.maybeLocaleOf(context),
+      )..layout(maxWidth: availableWidth);
+      height = math.max(height, painter.height.ceilToDouble() + 16);
+      painter.dispose();
+    }
+    return MomoGlassAppBar(
+      key: key,
+      title: title == null ? null : DefaultTextStyle.merge(
+        softWrap: true, overflow: TextOverflow.visible, child: title,
+      ),
+      leading: leading,
+      actions: actions,
+      bottom: bottom,
+      automaticallyImplyLeading: automaticallyImplyLeading,
+      centerTitle: centerTitle,
+      titleSpacing: titleSpacing,
+      toolbarHeight: height,
+    );
+  }
+
   final Widget? title;
   final Widget? leading;
   final List<Widget>? actions;
@@ -364,7 +394,7 @@ class MomoGlassAppBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final highContrast = MediaQuery.highContrastOf(context);
+    final highContrast = MediaQuery.highContrastOf(context) || MediaQuery.accessibleNavigationOf(context);
     return AppBar(
       title: title,
       leading: leading,
