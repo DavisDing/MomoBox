@@ -51,6 +51,10 @@ void main() {
               expect(MediaQuery.textScalerOf(tester.element(find.byType(MomoPageHeader))).scale(14), closeTo(14 * scale, 0.01));
               expect(tester.takeException(), isNull, reason: route);
               if (route == '/inventory') {
+                // Check the header while it is mounted, before scrolling the
+                // lazy slivers out of the viewport on short/large-text screens.
+                expect(find.byTooltip('入库'), findsOneWidget);
+                expect(find.byType(FloatingActionButton), findsNothing);
                 final search = find.byType(TextField);
                 expect(search, findsOneWidget);
                 await tester.ensureVisible(search);
@@ -61,26 +65,29 @@ void main() {
                 expect(find.text('没有符合筛选条件的物品'), findsOneWidget);
                 tester.state<ScrollableState>(scrollable).position.jumpTo(0);
                 await tester.pump();
-                await tester.ensureVisible(find.byTooltip('清除搜索'));
-                await tester.tap(find.byTooltip('清除搜索'));
+                final clearSearch = find.widgetWithIcon(IconButton, Icons.cancel_rounded);
+                await _revealAboveDock(tester, clearSearch, scrollable);
+                expect(clearSearch.hitTestable(), findsOneWidget);
+                await tester.tap(clearSearch);
                 await _frames(tester);
+                expect(container.read(appRouterProvider).routeInformationProvider.value.uri.path,
+                    '/inventory');
+                expect(tester.widget<TextField>(search).controller!.text, isEmpty);
                 await tester.scrollUntilVisible(find.text('厨房储物柜里的长名称测试物品'), 200, scrollable: scrollable);
                 expect(find.text('厨房储物柜里的长名称测试物品'), findsOneWidget);
-                // Header action replaces the movable overlay.
-                expect(find.byTooltip('入库'), findsOneWidget);
-                expect(find.byType(FloatingActionButton), findsNothing);
               }
               if (route == '/settings') {
                 final scrollable = find.descendant(of: find.byType(SettingsScreen), matching: find.byType(Scrollable)).first;
-                await tester.scrollUntilVisible(find.text('关于与存储信息'), 240, scrollable: scrollable);
-                final state = tester.state<ScrollableState>(scrollable);
-                state.position.jumpTo(state.position.maxScrollExtent);
-                await tester.pump();
-                expect(find.text('关于与存储信息').hitTestable(), findsOneWidget);
-                if (size.width < 840) {
-                  expect(tester.getBottomLeft(find.text('关于与存储信息')).dy,
-                    lessThan(tester.getTopLeft(find.byType(MomoFloatingCapsuleDock)).dy));
-                }
+                final about = find.text('关于与存储信息');
+                await tester.scrollUntilVisible(about, 240, scrollable: scrollable);
+                // The last tile can exceed the usable viewport at large text
+                // sizes. Reveal its title instead of forcing the list to its
+                // end, which can scroll that title above the screen.
+                await _revealAboveDock(tester, about, scrollable);
+                expect(about.hitTestable(), findsOneWidget);
+                await tester.tap(about);
+                await _frames(tester);
+                expect(find.byType(AboutSettingsScreen), findsOneWidget);
               }
             }
             expect(tester.takeException(), isNull);
@@ -179,6 +186,28 @@ void main() {
       expect(tester.takeException(), isNull);
     }
   });
+}
+
+Future<void> _revealAboveDock(
+  WidgetTester tester,
+  Finder target,
+  Finder scrollable,
+) async {
+  await tester.ensureVisible(target);
+  await _frames(tester);
+  final dock = find.byType(MomoFloatingCapsuleDock);
+  if (dock.evaluate().isEmpty) return;
+
+  // ensureVisible considers the full scroll viewport; the floating dock paints
+  // over it. Move the target into the uncovered area before a real pointer tap.
+  final overlap = tester.getBottomRight(target).dy - tester.getTopLeft(dock).dy;
+  if (overlap >= 0) {
+    final position = tester.state<ScrollableState>(scrollable).position;
+    position.jumpTo((position.pixels + overlap + 16)
+        .clamp(position.minScrollExtent, position.maxScrollExtent).toDouble());
+    await _frames(tester);
+  }
+  expect(tester.getBottomRight(target).dy, lessThan(tester.getTopLeft(dock).dy));
 }
 
 Future<void> _frames(WidgetTester tester) async {
