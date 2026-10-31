@@ -1622,3 +1622,11 @@ App Drift schema 5→6，新增可查询计划/条目/归档表和两个 nullabl
 - 已从Flutter官方stable源码核对NavigationRail的原生scrollable支持；独立的系统“减少透明度”偏好尚未接入，当前实色回退使用高对比度/辅助导航信号，不能声称已覆盖该系统开关。
 - 最终 `git diff --check` **PASS**；25个修改/新增Dart文件的tree-sitter语法解析 **PASS（0语法错误）**。这些检查不替代 `flutter analyze` 或 `flutter test test/presentation/`；后两项仍待可用SDK执行。本轮运行证据以差异空白检查、Dart语法解析与源码/调用链复核为限。Android/iOS真机视觉、系统键盘、VoiceOver/TalkBack及浮动材质性能均 **NOT_EXECUTED**。未提交、推送或发布。
 - AI_CONTEXT更新建议：在本次运行及视觉验收后，将旧视觉保护范围更新为AC-031，并记录固定功能导航标签、常驻搜索/标题区入库及动态字号回流；当前仅提出建议，不把源码状态升级为已验收长期事实。
+
+### 33.4 CI 第61次运行的打包前置测试修复
+
+2026-10-31复核提交 `1ca3b1fc7c939954e30e7a44b215ef88f661884e` 的Actions运行 `41178507303`（第61次）：静态分析、iOS unsigned build和后端验证通过；Flutter单测出现2项失败并最终达到10分钟步骤超时，因此Android debug、正式安装包及发布步骤未执行。该运行结果不覆盖以下未提交修复。
+
+- `mobile_redesign_test.dart`：首个视口用例结束时，卸载ProviderScope触发Drift的零延时查询清理定时器；原来的无参数 `pump()` 不推进假时钟，直接注册 `database.close` 为teardown又可能等待未完成的异步清理，导致定时器残留及后续用例停滞。改为 `try/finally` 在成功和断言失败路径均卸载组件，显式 `pump(Duration.zero)` 排空零延时任务，再通过 `tester.runAsync(database.close)` 完成数据库关闭。保留全部视口、字号、深浅色及交互断言。
+- `home_ha_quick_actions_test.dart`：服务状态重构为默认折叠，测试先验证明细隐藏，再点击展开并检查HA真实连接状态；保留“已连接”及非“未接入”的原断言。未改变生产状态判断、界面或业务实现，也未放宽CI超时。
+- 本轮验证：2个修改Dart文件的tree-sitter语法解析、`git diff --check`通过；本机仍无Flutter/Dart，官方SDK元数据下载返回404，未能复跑Flutter单测、analyze或Android打包。需在新提交的CI运行中确认测试和安装包产出，不能将修复源码记为打包成功。未提交、推送或发布。

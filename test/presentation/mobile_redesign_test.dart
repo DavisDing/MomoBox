@@ -29,63 +29,69 @@ void main() {
           addTearDown(tester.view.reset);
           addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
           final database = AppDatabase.forTesting(NativeDatabase.memory());
-          addTearDown(database.close);
           final appScale = scale > 1.3 ? 1.3 : scale;
           tester.platformDispatcher.textScaleFactorTestValue = scale / appScale;
           addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-          await SettingsRepository(database).setValue('font_scale', '$appScale');
-          await InventoryService(InventoryRepository(database)).intake(const IntakeDraft(
-            name: '厨房储物柜里的长名称测试物品', category: '家居清洁', quantity: 3,
-          ));
-          await tester.pumpWidget(ProviderScope(
-            overrides: [databaseProvider.overrideWithValue(database)],
-            child: const MomoBoxApp(enableMediaReconciliation: false),
-          ));
-          await _frames(tester);
-          final container = ProviderScope.containerOf(tester.element(find.byType(MomoBoxApp)));
-          final router = container.read(appRouterProvider);
-          for (final route in ['/', '/inventory', '/smart-home', '/settings']) {
-            router.go(route);
+          try {
+            await SettingsRepository(database).setValue('font_scale', '$appScale');
+            await InventoryService(InventoryRepository(database)).intake(const IntakeDraft(
+              name: '厨房储物柜里的长名称测试物品', category: '家居清洁', quantity: 3,
+            ));
+            await tester.pumpWidget(ProviderScope(
+              overrides: [databaseProvider.overrideWithValue(database)],
+              child: const MomoBoxApp(enableMediaReconciliation: false),
+            ));
             await _frames(tester);
-            expect(find.byType(MomoPageHeader), findsOneWidget);
-            expect(MediaQuery.textScalerOf(tester.element(find.byType(MomoPageHeader))).scale(14), closeTo(14 * scale, 0.01));
-            expect(tester.takeException(), isNull, reason: route);
-            if (route == '/inventory') {
-              final search = find.byType(TextField);
-              expect(search, findsOneWidget);
-              await tester.ensureVisible(search);
-              await tester.enterText(search, '没有此商品');
+            final container = ProviderScope.containerOf(tester.element(find.byType(MomoBoxApp)));
+            final router = container.read(appRouterProvider);
+            for (final route in ['/', '/inventory', '/smart-home', '/settings']) {
+              router.go(route);
               await _frames(tester);
-              final scrollable = find.descendant(of: find.byType(InventoryScreen), matching: find.byType(Scrollable)).first;
-              await tester.scrollUntilVisible(find.text('没有符合筛选条件的物品'), 200, scrollable: scrollable);
-              expect(find.text('没有符合筛选条件的物品'), findsOneWidget);
-              tester.state<ScrollableState>(scrollable).position.jumpTo(0);
-              await tester.pump();
-              await tester.ensureVisible(find.byTooltip('清除搜索'));
-              await tester.tap(find.byTooltip('清除搜索'));
-              await _frames(tester);
-              await tester.scrollUntilVisible(find.text('厨房储物柜里的长名称测试物品'), 200, scrollable: scrollable);
-              expect(find.text('厨房储物柜里的长名称测试物品'), findsOneWidget);
-              // Header action replaces the movable overlay.
-              expect(find.byTooltip('入库'), findsOneWidget);
-              expect(find.byType(FloatingActionButton), findsNothing);
-            }
-            if (route == '/settings') {
-              final scrollable = find.descendant(of: find.byType(SettingsScreen), matching: find.byType(Scrollable)).first;
-              await tester.scrollUntilVisible(find.text('关于与存储信息'), 240, scrollable: scrollable);
-              final state = tester.state<ScrollableState>(scrollable);
-              state.position.jumpTo(state.position.maxScrollExtent);
-              await tester.pump();
-              expect(find.text('关于与存储信息').hitTestable(), findsOneWidget);
-              if (size.width < 840) {
-                expect(tester.getBottomLeft(find.text('关于与存储信息')).dy,
-                  lessThan(tester.getTopLeft(find.byType(MomoFloatingCapsuleDock)).dy));
+              expect(find.byType(MomoPageHeader), findsOneWidget);
+              expect(MediaQuery.textScalerOf(tester.element(find.byType(MomoPageHeader))).scale(14), closeTo(14 * scale, 0.01));
+              expect(tester.takeException(), isNull, reason: route);
+              if (route == '/inventory') {
+                final search = find.byType(TextField);
+                expect(search, findsOneWidget);
+                await tester.ensureVisible(search);
+                await tester.enterText(search, '没有此商品');
+                await _frames(tester);
+                final scrollable = find.descendant(of: find.byType(InventoryScreen), matching: find.byType(Scrollable)).first;
+                await tester.scrollUntilVisible(find.text('没有符合筛选条件的物品'), 200, scrollable: scrollable);
+                expect(find.text('没有符合筛选条件的物品'), findsOneWidget);
+                tester.state<ScrollableState>(scrollable).position.jumpTo(0);
+                await tester.pump();
+                await tester.ensureVisible(find.byTooltip('清除搜索'));
+                await tester.tap(find.byTooltip('清除搜索'));
+                await _frames(tester);
+                await tester.scrollUntilVisible(find.text('厨房储物柜里的长名称测试物品'), 200, scrollable: scrollable);
+                expect(find.text('厨房储物柜里的长名称测试物品'), findsOneWidget);
+                // Header action replaces the movable overlay.
+                expect(find.byTooltip('入库'), findsOneWidget);
+                expect(find.byType(FloatingActionButton), findsNothing);
+              }
+              if (route == '/settings') {
+                final scrollable = find.descendant(of: find.byType(SettingsScreen), matching: find.byType(Scrollable)).first;
+                await tester.scrollUntilVisible(find.text('关于与存储信息'), 240, scrollable: scrollable);
+                final state = tester.state<ScrollableState>(scrollable);
+                state.position.jumpTo(state.position.maxScrollExtent);
+                await tester.pump();
+                expect(find.text('关于与存储信息').hitTestable(), findsOneWidget);
+                if (size.width < 840) {
+                  expect(tester.getBottomLeft(find.text('关于与存储信息')).dy,
+                    lessThan(tester.getTopLeft(find.byType(MomoFloatingCapsuleDock)).dy));
+                }
               }
             }
+            expect(tester.takeException(), isNull);
+          } finally {
+            // Detach consumers and drain Drift's deferred stream cleanup before
+            // closing SQLite in the real async zone. A fake-clock teardown can
+            // otherwise leave timers pending and block the rest of the suite.
+            await tester.pumpWidget(const SizedBox.shrink());
+            await tester.pump(Duration.zero);
+            await tester.runAsync(database.close);
           }
-          expect(tester.takeException(), isNull);
-          await tester.pumpWidget(const SizedBox.shrink());
-          await tester.pump();
         });
       }
     }

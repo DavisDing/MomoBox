@@ -831,6 +831,10 @@ void main() {
     testWidgets('首页 HA 服务行读取真实控制器状态，而非固定未接入', (tester) async {
       final controller = await _controller(_FakeHaRepository());
       await _pumpHome(tester, controller, sections: ['quick_intake']);
+      expect(find.text('HA服务'), findsNothing);
+      await tester.tap(find.text('服务状态'));
+      await tester.pumpAndSettle();
+      expect(find.text('HA服务'), findsOneWidget);
       final haRow = find.ancestor(of: find.text('HA服务'), matching: find.byType(Row)).first;
       expect(find.descendant(of: haRow, matching: find.text('已连接')), findsOneWidget);
       expect(find.descendant(of: haRow, matching: find.text('未接入')), findsNothing);
