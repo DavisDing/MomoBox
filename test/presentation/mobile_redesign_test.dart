@@ -78,15 +78,16 @@ void main() {
               }
               if (route == '/settings') {
                 final scrollable = find.descendant(of: find.byType(SettingsScreen), matching: find.byType(Scrollable)).first;
-                await tester.scrollUntilVisible(find.text('关于与存储信息'), 240, scrollable: scrollable);
-                final state = tester.state<ScrollableState>(scrollable);
-                state.position.jumpTo(state.position.maxScrollExtent);
-                await tester.pump();
-                expect(find.text('关于与存储信息').hitTestable(), findsOneWidget);
-                if (size.width < 840) {
-                  expect(tester.getBottomLeft(find.text('关于与存储信息')).dy,
-                    lessThan(tester.getTopLeft(find.byType(MomoFloatingCapsuleDock)).dy));
-                }
+                final about = find.text('关于与存储信息');
+                await tester.scrollUntilVisible(about, 240, scrollable: scrollable);
+                // The last tile can exceed the usable viewport at large text
+                // sizes. Reveal its title instead of forcing the list to its
+                // end, which can scroll that title above the screen.
+                await _revealAboveDock(tester, about, scrollable);
+                expect(about.hitTestable(), findsOneWidget);
+                await tester.tap(about);
+                await _frames(tester);
+                expect(find.byType(AboutSettingsScreen), findsOneWidget);
               }
             }
             expect(tester.takeException(), isNull);
