@@ -129,7 +129,8 @@ void main() {
       0,
     );
     expect(find.byType(MomoFloatingCapsuleDock), findsNothing);
-    await tester.pageBack();
+    expect(find.byType(BackButton).hitTestable(), findsOneWidget);
+    await tester.tap(find.byType(BackButton));
     await _pumpForUi(tester);
     expect(find.byType(SettingsScreen), findsOneWidget);
     expect(find.byType(MomoFloatingCapsuleDock), findsOneWidget);

@@ -93,7 +93,9 @@ void main() {
                   expect(MomoDockInsets.bottomOf(tester.element(page)), 0);
                   expect(find.byType(MomoFloatingCapsuleDock), findsNothing);
                   expect(tester.takeException(), isNull, reason: category.title);
-                  await tester.pageBack();
+                  final back = find.byType(BackButton);
+                  expect(back.hitTestable(), findsOneWidget);
+                  await tester.tap(back);
                   await _frames(tester);
                   expect(tester.state<ScrollableState>(scrollable).position.pixels,
                       closeTo(previousOffset, 0.01));

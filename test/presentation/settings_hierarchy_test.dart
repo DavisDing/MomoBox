@@ -70,10 +70,10 @@ void main() {
         await tester.tap(find.text(MomoPalette.momoPalette.label));
         await tester.pumpAndSettle();
         expect(settings.values['theme'], MomoPalette.momoPalette.storedValue);
-        await tester.pageBack();
+        await tester.tap(find.byType(BackButton));
         await tester.pumpAndSettle();
         expect(find.text(MomoPalette.momoPalette.label), findsOneWidget);
-        await tester.pageBack();
+        await tester.tap(find.byType(BackButton));
         await tester.pumpAndSettle();
         expect(find.byType(SettingsScreen), findsOneWidget);
         expect(tester.takeException(), isNull);
