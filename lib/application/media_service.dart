@@ -4,12 +4,16 @@ import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 
 import '../data/repositories/media_repository.dart';
+import '../data/nas/nas_sync_api.dart';
+import 'backend_processing_service.dart';
 import '../domain/models/recognition_models.dart';
 import '../services/local_ocr_service.dart';
 import '../services/media_storage_service.dart';
 
 class MediaService {
-  MediaService(this._repository, this._storage, this._ocr);
+  MediaService(this._repository, this._storage, this._ocr, {this.backend});
+
+  final BackendProcessingService? backend;
 
   final MediaRepository _repository;
   final MediaStorageService _storage;
@@ -48,8 +52,7 @@ class MediaService {
   Stream<List<MediaAsset>> watchForEntity({
     required String entityType,
     required String entityId,
-  }) =>
-      _repository.watchForEntity(entityType: entityType, entityId: entityId);
+  }) => _repository.watchForEntity(entityType: entityType, entityId: entityId);
 
   Future<List<MediaAsset>> loadForEntity({
     required String entityType,
@@ -64,9 +67,12 @@ class MediaService {
     required MediaAssetType type,
   }) =>
       _runSerialized(() async {
-        final stored = await _storage.storeImage(source);
+        final api = await backend?.resolveApi();
+        final stored = api == null ? await _storage.storeImage(source)
+            : await _storage.storeUploadSource(source);
+        var committed = false;
         try {
-          return await _repository.create(
+          final asset = await _repository.create(
             entityType: entityType,
             entityId: entityId,
             type: type,
@@ -75,14 +81,27 @@ class MediaService {
             sizeBytes: stored.sizeBytes,
             sha256: stored.sha256,
           );
+          committed = true;
+          // Metadata is committed first so an interrupted upload can recover.
+          if (api != null) {
+            try { await backend!.upload(api, asset); } catch (_) {
+              throw StateError('图片已暂存，后端上传未完成；请联网后重试 OCR 或同步。');
+            }
+          }
+          return asset;
         } catch (_) {
-          await _storage.deleteIfExists(stored.path);
+          // Keep a committed asset's source bytes for retry.
+          if (!committed) {
+            await _storage.deleteIfExists(stored.path);
+          }
           rethrow;
         }
       });
 
   Future<String> runOcr(MediaAsset asset) =>
       _runSerialized(() async {
+        final api = await backend?.resolveApi();
+        if (api != null) return backend!.ocr(api, asset);
         if (!await File(asset.localPath).exists()) {
           throw StateError('图片文件已丢失，无法识别。');
         }
@@ -96,24 +115,42 @@ class MediaService {
     required String productId,
   }) =>
       _runSerialized(
-        () => _repository.reassignEntity(
-          fromEntityType: 'intake_draft',
-          fromEntityId: intakeDraftId,
-          toEntityType: 'product',
-          toEntityId: productId,
-        ),
+        () async {
+          final service = backend;
+          final assets = await _repository.loadForEntity(entityType: 'intake_draft', entityId: intakeDraftId);
+          if (service != null) {
+            await service.reassignIntake(assets, productId);
+          } else {
+            await _repository.reassignEntity(fromEntityType: 'intake_draft', fromEntityId: intakeDraftId,
+              toEntityType: 'product', toEntityId: productId);
+          }
+        },
       );
 
   Future<void> delete(MediaAsset asset) =>
       _runSerialized(() async {
+        final api = await backend?.resolveApi();
+        if (api != null) await backend!.delete(api, asset);
         final removed = await _repository.markDeleted(asset.id);
         if (removed != null) await _storage.deleteIfExists(removed.localPath);
       });
+
+  Future<void> syncBackend(NasSyncApi api) => _runSerialized(() async {
+    final service = backend;
+    if (service == null) return;
+    for (final asset in await _repository.loadAllActive()) {
+      await service.upload(api, asset);
+    }
+    await service.refreshProducts(api);
+  });
 
   Future<MediaCleanupReport> reconcile({
     Duration intakeDraftRetention = const Duration(days: 1),
   }) =>
       _runSerialized(() async {
+        final api = await backend?.resolveApi();
+        // Offline cleanup must not turn missing cache files into remote deletes.
+        if (api != null) return const MediaCleanupReport(deletedFiles: 0, deletedMetadata: 0);
         var deletedFiles = 0;
         var deletedMetadata = 0;
         final cutoff = DateTime.now().subtract(intakeDraftRetention);

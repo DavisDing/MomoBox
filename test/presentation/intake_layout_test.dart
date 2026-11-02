@@ -229,7 +229,7 @@ void main() {
             expect(find.text('AI解析').hitTestable(), findsOneWidget);
             await tester.tap(find.text('AI解析'));
             await tester.pumpAndSettle();
-            expect(find.text('请先对说明书或包装图片执行本地 OCR。'), findsOneWidget);
+            expect(find.text('请先对说明书或包装图片执行 OCR。'), findsOneWidget);
             // Verify the feedback first, then let its normal lifetime finish;
             // a SnackBar must not be mistaken for an unreachable form control.
             final feedback = tester.widget<SnackBar>(find.byType(SnackBar));

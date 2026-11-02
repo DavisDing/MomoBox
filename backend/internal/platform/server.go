@@ -2,6 +2,7 @@ package platform
 
 import (
 	"context"
+	"github.com/momobox/backend/internal/processing"
 	"net/http"
 	"time"
 )
@@ -10,9 +11,10 @@ import (
 const healthDatabaseTimeout = 2 * time.Second
 
 type Server struct {
-	HTTPServer *http.Server
-	DB         DB
-	Config     Config
+	HTTPServer      *http.Server
+	DB              DB
+	Config          Config
+	SchemaReadiness func(context.Context) error
 }
 
 func NewHTTPServer(cfg Config, db DB) *Server {
@@ -34,18 +36,15 @@ func NewHTTPServerWithRoutes(cfg Config, db DB, businessRoutes http.Handler) *Se
 	} else {
 		mux.Handle("/api/v1/", RequestIDMiddleware(http.HandlerFunc(NotImplementedHandler)))
 	}
-	return &Server{
-		Config: cfg,
-		DB:     db,
-		HTTPServer: &http.Server{
-			Addr:              cfg.HTTPAddr,
-			Handler:           RequestIDMiddleware(RequestLogMiddleware(nil, requestLimitMiddleware(cfg.MaxRequestBodyBytes, RouteTemplateHandler(mux)))),
-			ReadHeaderTimeout: 5 * time.Second,
-			ReadTimeout:       15 * time.Second,
-			WriteTimeout:      15 * time.Second,
-			IdleTimeout:       60 * time.Second,
-		},
+	platform.HTTPServer = &http.Server{
+		Addr:              cfg.HTTPAddr,
+		Handler:           RequestIDMiddleware(RequestLogMiddleware(nil, requestLimitMiddleware(cfg.MaxRequestBodyBytes, RouteTemplateHandler(mux)))),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
+	return platform
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
@@ -61,11 +60,13 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Inherit earlier deadlines and cancellation; release the timer even when
-	// PingContext succeeds. This checks connectivity, not schema readiness.
+	// PingContext succeeds. Production also checks this image's migration ledger.
 	ctx, cancel := context.WithTimeout(r.Context(), healthDatabaseTimeout)
 	defer cancel()
 	status, database := "ok", "ok"
 	if s.DB == nil || s.DB.PingContext(ctx) != nil {
+		status, database = "degraded", "unavailable"
+	} else if s.SchemaReadiness != nil && s.SchemaReadiness(ctx) != nil {
 		status, database = "degraded", "unavailable"
 	}
 	code := http.StatusOK
@@ -92,7 +93,7 @@ func (s *Server) capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"schema_version": s.Config.SchemaVersion, "sync_protocol_version": s.Config.SyncProtocolVersion,
-		"media_upload": false, "ai_proxy": false, "ollama_embedded": false,
+		"media_upload": true, "backend_ocr": true, "backend_ai": len(processing.AIFromEnv().Endpoints) > 0, "operation_history": true, "ai_proxy": true, "ollama_embedded": false,
 		"inventory_commands": true, "home_assistant": true,
 	})
 }

@@ -187,8 +187,9 @@ ${buffer.toString()}
     }
   }
 
-  Future<List<AiEndpointConfig>> _resolveFallbackConfigs() =>
-      AiDraftService.resolveFallbackConfigs(_settings, _secureSettings);
+  Future<List<AiEndpointConfig>> _resolveFallbackConfigs() async =>
+      await _fallbackExecutor.usesBackend() ? [AiFallbackExecutor.backendConfig]
+          : await AiDraftService.resolveFallbackConfigs(_settings, _secureSettings);
 
   void _recordUsage(
     Map<String, dynamic> decoded,

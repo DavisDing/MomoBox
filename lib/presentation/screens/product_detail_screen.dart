@@ -476,9 +476,9 @@ class _ManualQaSectionState extends ConsumerState<_ManualQaSection> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('本地说明书问答', style: Theme.of(context).textTheme.titleMedium),
+                  Text('说明书问答', style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 4),
-                  const Text('先在本机检索 OCR 文字；如确认使用 AI，只发送相关文字片段，不上传原图。'),
+                  const Text('单机时在本机检索；连接后端时在 NAS 检索 OCR 文字，确认后由 NAS 调用 AI，不向模型发送原图。'),
                   const SizedBox(height: 10),
                   Align(
                     alignment: Alignment.centerLeft,
@@ -543,7 +543,7 @@ class _ManualQaDialogState extends State<_ManualQaDialog> {
         _loading = false;
         _answer = sources.isEmpty
             ? const ManualQaAnswer(
-                answer: '说明书中未提及：本地 OCR 文字中没有找到相关片段。建议打开原图或使用外部搜索核对。',
+                answer: '说明书中未提及：OCR 文字中没有找到相关片段。建议打开原图或使用外部搜索核对。',
                 sources: [],
               )
             : null;
@@ -552,7 +552,7 @@ class _ManualQaDialogState extends State<_ManualQaDialog> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = '本地检索失败：$error';
+        _error = 'OCR 检索失败：$error';
       });
     }
   }
@@ -563,7 +563,7 @@ class _ManualQaDialogState extends State<_ManualQaDialog> {
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('确认发送 OCR 片段？'),
-            content: const Text('将仅发送问题和本地检索到的 OCR 文字片段给你自行配置的 AI 服务，不会上传原图。是否继续？'),
+            content: const Text('将仅发送问题和相关 OCR 文字。连接后端时由 NAS 使用其配置的 AI 服务；单机模式使用手机配置的 AI 服务。不向模型发送原图。是否继续？'),
             actions: [
               TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
                   MomoCapsuleButton(onPressed: () => Navigator.pop(context, true),
@@ -593,7 +593,7 @@ class _ManualQaDialogState extends State<_ManualQaDialog> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = 'AI 问答未完成：$error。仍可查看下方本地来源。';
+        _error = 'AI 问答未完成：$error。仍可查看下方来源。';
       });
     }
   }
@@ -628,7 +628,7 @@ class _ManualQaDialogState extends State<_ManualQaDialog> {
                 children: [
                   MomoCapsuleButton(
                     onPressed: _loading ? null : _searchLocally,
-                    label: '先查本地 OCR',
+                    label: '检索 OCR',
                     icon: const Icon(Icons.search),
                   ),
                   if (_sources.isNotEmpty) ...[
@@ -659,7 +659,7 @@ class _ManualQaDialogState extends State<_ManualQaDialog> {
               ],
               if (_sources.isNotEmpty) ...[
                 const SizedBox(height: 14),
-                Text('来源（本地 OCR）', style: theme.textTheme.titleSmall),
+                Text('来源（OCR）', style: theme.textTheme.titleSmall),
                 const SizedBox(height: 4),
                 ..._sources.map((source) => _QaSourceTile(source: source)),
               ],
@@ -713,8 +713,8 @@ class _MovementHistory extends ConsumerWidget {
   final String productId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) => FutureBuilder<List<StockMovement>>(
-        future: ref.read(inventoryServiceProvider).loadMovements(productId),
+  Widget build(BuildContext context, WidgetRef ref) => StreamBuilder<List<StockMovement>>(
+        stream: ref.watch(inventoryRepositoryProvider).watchMovements(productId),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()));
@@ -935,7 +935,7 @@ class _ProductMediaSectionState extends ConsumerState<_ProductMediaSection> {
             entityId: widget.item.id,
             type: MediaAssetType.productImage,
           );
-      if (mounted) _showMessage('商品图片已保存到本机。');
+      if (mounted) _showMessage('商品图片已保存；连接后端时已上传。');
     } catch (error) {
       if (mounted) _showMessage('添加图片失败：$error');
     }
@@ -961,7 +961,7 @@ class _ProductMediaSectionState extends ConsumerState<_ProductMediaSection> {
         }
       }
       if (mounted) {
-        final summary = '本地 OCR 完成：$textCount/${targets.length} 张说明书图片识别到文字。';
+        final summary = 'OCR 完成：$textCount/${targets.length} 张说明书图片识别到文字。';
         _showMessage(failedCount == 0 ? summary : '$summary 另有 $failedCount 张未能识别，可手动填写。');
       }
     } finally {
@@ -994,7 +994,9 @@ class _ProductMediaSectionState extends ConsumerState<_ProductMediaSection> {
                 IconButton(onPressed: _addImage, tooltip: '添加商品图片', icon: const Icon(Icons.add_a_photo_outlined)),
               ],
             ),
-            const Text('图片压缩后保存在本机；说明书图片可执行本地 OCR。'),
+            const Text('单机时保存在本机；连接后端后上传图片，由 NAS 处理图片、OCR 和 AI。'),
+            for (final asset in assets.where((a) => a.backendStatusLabel != null))
+              Text('${asset.type.label}：${asset.backendStatusLabel}${asset.backendError == null ? '' : '，${asset.backendError}'}'),
             const SizedBox(height: 8),
             if (assets.isEmpty) const Text('暂无图片。可在此保存包装或说明书照片。'),
             if (assets.isNotEmpty)
@@ -1030,7 +1032,7 @@ class _ProductMediaSectionState extends ConsumerState<_ProductMediaSection> {
                 isPrimary: false, icon: const Icon(Icons.description_outlined),
               ),
               MomoCapsuleButton(onPressed: _ocrRunning ? null : () => _ocr(assets),
-                label: _ocrRunning ? '识别中…' : '本地 OCR',
+                label: _ocrRunning ? '识别中…' : 'OCR',
                 isPrimary: false, icon: _ocrRunning ? const SizedBox.square(dimension: 14, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.document_scanner_outlined),
               ),
               MomoCapsuleButton(onPressed: () => _openManualSearch(context, widget.item),
@@ -1065,7 +1067,7 @@ class _ProductMediaSectionState extends ConsumerState<_ProductMediaSection> {
       final image = await _picker.pickImage(source: source, imageQuality: 100);
       if (image == null) return;
       await ref.read(mediaServiceProvider).attachImage(source: image, entityType: 'product', entityId: widget.item.id, type: MediaAssetType.instructionImage);
-      if (mounted) _showMessage('说明书图片已保存到本机。');
+      if (mounted) _showMessage('说明书图片已保存；连接后端时已上传。');
     } catch (error) {
       if (mounted) _showMessage('添加说明书图片失败：$error');
     }

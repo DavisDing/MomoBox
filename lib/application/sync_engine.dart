@@ -66,6 +66,7 @@ class SyncEngine {
     this.familyId,
     this.localWorkspaceId,
     this.prepareFeatureSupport,
+    this.afterInventorySync,
     this.acknowledgeEntityVersion,
   })  : _api = api,
         _repository = repository,
@@ -88,6 +89,7 @@ class SyncEngine {
     String? familyId,
     String? localWorkspaceId,
     Future<void> Function()? prepareFeatureSupport,
+    Future<void> Function()? afterInventorySync,
   }) : this._withBusinessAdapter(
           api: api,
           repository: repository,
@@ -98,6 +100,7 @@ class SyncEngine {
           familyId: familyId,
           localWorkspaceId: localWorkspaceId,
           prepareFeatureSupport: prepareFeatureSupport,
+          afterInventorySync: afterInventorySync,
         );
 
   SyncEngine._withBusinessAdapter({
@@ -110,6 +113,7 @@ class SyncEngine {
     String? familyId,
     String? localWorkspaceId,
     Future<void> Function()? prepareFeatureSupport,
+    Future<void> Function()? afterInventorySync,
   }) : this._fromAdapter(
           api: api,
           repository: repository,
@@ -124,6 +128,7 @@ class SyncEngine {
           familyId: familyId,
           localWorkspaceId: localWorkspaceId,
           prepareFeatureSupport: prepareFeatureSupport,
+          afterInventorySync: afterInventorySync,
         );
 
   SyncEngine._fromAdapter({
@@ -135,6 +140,7 @@ class SyncEngine {
     String? familyId,
     String? localWorkspaceId,
     Future<void> Function()? prepareFeatureSupport,
+    Future<void> Function()? afterInventorySync,
   }) : this(
           api: api,
           repository: repository,
@@ -143,6 +149,7 @@ class SyncEngine {
           familyId: familyId,
           localWorkspaceId: localWorkspaceId,
           prepareFeatureSupport: prepareFeatureSupport,
+          afterInventorySync: afterInventorySync,
           acknowledgeEntityVersion: adapter.acknowledgeEntityVersion,
           applyRemoteChange: (change) async {
             SyncRemoteChangeDeferred? deferred;
@@ -179,6 +186,7 @@ class SyncEngine {
   final String? familyId;
   final String? localWorkspaceId;
   final Future<void> Function()? prepareFeatureSupport;
+  final Future<void> Function()? afterInventorySync;
   final Future<void> Function(SyncOutboxEntry entry, int version)? acknowledgeEntityVersion;
 
   Future<SyncRunReport>? _runInFlight;
@@ -466,6 +474,10 @@ class SyncEngine {
         throw const SyncRemoteChangeDeferred('a new conflict resolution requires a fresh snapshot before pull');
       }
       final pullResult = await _pullChanges(pullLimit);
+      if (pullResult.deferred == 0 && !pullResult.hasMore) {
+        await afterInventorySync?.call();
+        _api.assertCurrentSession();
+      }
       final latest = await _ensureState();
       final hasDeferred = pullResult.deferred > 0;
       await _repository.saveState(

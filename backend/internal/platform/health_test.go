@@ -68,6 +68,27 @@ func TestHealthConnectivityContract(t *testing.T) {
 	}
 }
 
+func TestHealthRejectsConnectedDatabaseWithInvalidSchema(t *testing.T) {
+	server := NewHTTPServer(Config{}, healthProbeDB{ping: func(context.Context) error { return nil }})
+	var probeContext context.Context
+	server.SchemaReadiness = func(ctx context.Context) error {
+		probeContext = ctx
+		if _, ok := ctx.Deadline(); !ok {
+			t.Fatal("schema probe has no deadline")
+		}
+		return errors.New("private schema error")
+	}
+	response := httptest.NewRecorder()
+	server.HTTPServer.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/health", nil))
+	assertHealthResponse(t, response, http.StatusServiceUnavailable, "degraded", "unavailable")
+	if strings.Contains(response.Body.String(), "private") {
+		t.Fatal("schema probe leaked details")
+	}
+	if probeContext == nil || !errors.Is(probeContext.Err(), context.Canceled) {
+		t.Fatal("schema probe context was not released")
+	}
+}
+
 func TestHealthProbeDeadlineAndCleanup(t *testing.T) {
 	if healthDatabaseTimeout <= 0 || healthDatabaseTimeout > 2*time.Second {
 		t.Fatalf("database timeout = %v, want positive and at most 2s", healthDatabaseTimeout)

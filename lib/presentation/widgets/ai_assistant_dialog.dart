@@ -165,12 +165,14 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
     _checkingConsent = true;
     try {
       final settings = ref.read(settingsRepositoryProvider);
-      if (await settings.getValue('ai_assistant_context_consent_v2') != 'true') {
+      final backendMode = (await settings.getValue('nas_server_url'))?.trim().isNotEmpty == true;
+      final consentKey = backendMode ? 'ai_assistant_context_consent_backend_v1' : 'ai_assistant_context_consent_v2';
+      if (await settings.getValue(consentKey) != 'true') {
         if (!mounted) return;
         final consent = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
           title: const Text('发送给你配置的 AI 服务？'), scrollable: true,
           content: const Text('提问会携带近期对话，以及当前库存/批次、采购、待处理提醒、已保存家务和已授权设备状态。'
-            '会发送给你配置的主服务，失败时可能尝试副服务和兜底服务；不发送图片、密钥或账号凭据。'
+            '连接后端时先发送到 NAS，由 NAS 使用其配置的主服务和失败回退服务；单机时使用手机配置的 AI 服务。不向模型发送图片、密钥或账号凭据。'
             '\n同意发送不代表同意操作，任何变更仍须逐次确认。此选择会保存在本机。'),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
@@ -178,7 +180,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
           ],
         ));
         if (consent != true || !mounted) return;
-        await settings.setValue('ai_assistant_context_consent_v2', 'true');
+        await settings.setValue(consentKey, 'true');
       }
     } catch (_) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('发送授权保存失败，请重试。')));

@@ -10,16 +10,19 @@ LOCK_HELPER=$SCRIPT_DIR/deployment-lock.sh
 DEFAULT_OUTPUT_DIR=$NAS_DIR/backups
 OUTPUT_DIR=$DEFAULT_OUTPUT_DIR
 OUTPUT_DIR_SET=0
+RETAIN_COUNT=30
 
 usage() {
     cat <<USAGE
-Usage: $PROGRAM [--output-dir DIR]
+Usage: $PROGRAM [--output-dir DIR] [--retain-count N]
 
 Create a PostgreSQL custom-format backup using the postgres service in:
   $COMPOSE_FILE
 
 Options:
   -o, --output-dir DIR  Destination directory (default: $DEFAULT_OUTPUT_DIR)
+  --retain-count N      Keep newest N unpinned completed backups (default: 30).
+                        0 disables pruning. A .dump.keep file pins a backup.
   -h, --help            Show this help and exit
 
 The completed dump path is printed to standard output. The dump is written to a
@@ -50,6 +53,13 @@ while [ "$#" -gt 0 ]; do
         -h|--help)
             usage
             exit 0
+            ;;
+        --retain-count)
+            [ "$#" -ge 2 ] || fail "$1 requires a count"
+            case "$2" in ''|*[!0-9]*|0[0-9]*) fail "retain-count must be a non-negative integer" ;; esac
+            [ "${#2}" -le 6 ] || fail "retain-count is too large"
+            RETAIN_COUNT=$2
+            shift 2
             ;;
         --)
             shift
@@ -120,6 +130,7 @@ cleanup_temp() {
 cleanup_lock_and_temp() {
     status=$?
     cleanup_temp
+    rm -f "${RETENTION_LIST:-}"
     rm -f "${TEMP_META:-}"
     if [ "$MOMO_DATABASE_MODE" != legacy ]; then
         . "$SCRIPT_DIR/backend-isolation.sh"
@@ -158,5 +169,36 @@ fi
 # mv is atomic because the temporary and final files are in the same directory.
 [ ! -e "$FINAL_PATH" ] || fail "refusing to overwrite existing file: $FINAL_PATH"
 mv "$TEMP_PATH" "$FINAL_PATH" || fail "cannot finalize backup"
+RETENTION_OWNER="$NAS_DIR|$MOMO_PROJECT_NAME|$MOMO_DATABASE_MODE|$MOMO_EXPECTED_DATABASE|$MOMO_EXPECTED_ROLE"
+printf '%s\n' "$RETENTION_OWNER" >"$FINAL_PATH.owner" || fail "cannot write backup retention ownership"
+chmod 600 "$FINAL_PATH.owner"
+
+# Prune only after a new archive was successfully finalized, under the same
+# deployment lock. Never touch unrelated names, links, partial files or pins.
+if [ "$RETAIN_COUNT" -gt 0 ]; then
+    RETENTION_LIST=$(mktemp "$OUTPUT_DIR/.momobox-retention.XXXXXX") || fail "cannot create retention list"
+    for candidate in "$OUTPUT_DIR"/momobox-postgres-*.dump; do
+        [ -f "$candidate" ] && [ ! -L "$candidate" ] || continue
+        [ "$candidate" != "$FINAL_PATH" ] || continue
+        [ ! -e "$candidate.keep" ] && [ ! -L "$candidate.keep" ] || continue
+        [ ! -L "$candidate.meta" ] || continue
+        [ -f "$candidate.owner" ] && [ ! -L "$candidate.owner" ] || continue
+        [ "$(cat "$candidate.owner")" = "$RETENTION_OWNER" ] || continue
+        basename=${candidate##*/}
+        if printf '%s\n' "$basename" | LC_ALL=C grep -Eq '^momobox-postgres-[0-9]{8}T[0-9]{6}Z-[0-9]+[.]dump$'; then
+            printf '%s\n' "$basename"
+        fi
+    done | LC_ALL=C sort -r >"$RETENTION_LIST"
+    count=1
+    while IFS= read -r basename; do
+        count=$((count + 1))
+        [ "$count" -gt "$RETAIN_COUNT" ] || continue
+        rm -f "$OUTPUT_DIR/$basename" "$OUTPUT_DIR/$basename.meta" "$OUTPUT_DIR/$basename.owner" || {
+            rm -f "$RETENTION_LIST"
+            fail "backup completed but retention cleanup failed"
+        }
+    done <"$RETENTION_LIST"
+    rm -f "$RETENTION_LIST"
+fi
 
 printf '%s\n' "$FINAL_PATH"

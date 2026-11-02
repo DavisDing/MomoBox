@@ -8,7 +8,9 @@ import (
 	"time"
 )
 
-const httpShutdownTimeout = 10 * time.Second
+// Finish draining before Docker's default 10-second stop deadline, leaving
+// time for the caller's deferred database cleanup and process exit.
+const httpShutdownTimeout = 8 * time.Second
 
 type httpServerLifecycle interface {
 	ListenAndServe() error

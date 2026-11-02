@@ -188,6 +188,10 @@ class InventoryRepository {
         .getSingleOrNull();
   }
 
+  Stream<List<StockMovement>> watchMovements(String productId) =>
+      (_database.select(_database.stockMovements)..where((m) => m.productId.equals(productId)))
+        .watch().asyncMap((_) => loadMovements(productId));
+
   Future<List<StockMovement>> loadMovements(String productId) async {
     final rows = await (_database.select(_database.stockMovements)
           ..where((movement) => movement.productId.equals(productId))
@@ -241,6 +245,7 @@ class InventoryRepository {
       throw ArgumentError.value(draft.lowStockThreshold, 'lowStockThreshold');
     }
     final now = DateTime.now();
+    final operationId = _uuid.v4();
     final batchId = _uuid.v4();
 
     return _database.transaction(() async {
@@ -286,6 +291,7 @@ class InventoryRepository {
         now: now,
       );
       await _insertMovement(
+          operationId: operationId,
         productId: productId,
         batchId: batchId,
         type: 'intake',
@@ -322,7 +328,7 @@ class InventoryRepository {
       );
       await _enqueueInventoryCommand(
         command: 'restock',
-        operationId: _uuid.v4(),
+        operationId: operationId,
         allocations: [
           {'batch_id': batchId, 'quantity': draft.quantity},
         ],
@@ -343,6 +349,7 @@ class InventoryRepository {
   }) async {
     if (quantity < 1) throw ArgumentError.value(quantity, 'quantity');
     final now = DateTime.now();
+    final operationId = _uuid.v4();
     final batchId = _uuid.v4();
     await _database.transaction(() async {
       await _insertBatch(
@@ -357,6 +364,7 @@ class InventoryRepository {
         now: now,
       );
       await _insertMovement(
+          operationId: operationId,
         productId: productId,
         batchId: batchId,
         type: 'intake',
@@ -382,7 +390,7 @@ class InventoryRepository {
       );
       await _enqueueInventoryCommand(
         command: 'restock',
-        operationId: _uuid.v4(),
+        operationId: operationId,
         allocations: [
           {'batch_id': batchId, 'quantity': quantity},
         ],
@@ -394,6 +402,7 @@ class InventoryRepository {
 
   Future<void> consumeByFefo(String productId, int quantity) async {
     final now = DateTime.now();
+    final operationId = _uuid.v4();
     await _database.transaction(() async {
       final records = await (_database.select(_database.productBatches)
             ..where((batch) =>
@@ -435,6 +444,7 @@ class InventoryRepository {
           ),
         );
         await _insertMovement(
+          operationId: operationId,
           productId: productId,
           batchId: allocation.batchId,
           type: 'consume',
@@ -448,7 +458,7 @@ class InventoryRepository {
           .write(ProductsCompanion(updatedAt: Value(now)));
       await _enqueueInventoryCommand(
         command: 'consume_allocated',
-        operationId: _uuid.v4(),
+        operationId: operationId,
         allocations: _allocationPayload(allocations),
         now: now,
       );
@@ -461,6 +471,7 @@ class InventoryRepository {
     int quantity,
   ) async {
     final now = DateTime.now();
+    final operationId = _uuid.v4();
     await _database.transaction(() async {
       final records = await (_database.select(_database.productBatches)
             ..where((batch) => batch.id.equals(batchId) & batch.deletedAt.isNull()))
@@ -496,6 +507,7 @@ class InventoryRepository {
             ..where((product) => product.id.equals(productId)))
           .write(ProductsCompanion(updatedAt: Value(now)));
       await _insertMovement(
+          operationId: operationId,
         productId: productId,
         batchId: batchId,
         type: 'consume',
@@ -505,7 +517,7 @@ class InventoryRepository {
       );
       await _enqueueInventoryCommand(
         command: 'consume_allocated',
-        operationId: _uuid.v4(),
+        operationId: operationId,
         allocations: [
           {'batch_id': batchId, 'quantity': quantity},
         ],
@@ -517,6 +529,7 @@ class InventoryRepository {
   Future<void> replenishBatch(String batchId, int quantity) async {
     if (quantity < 1) throw ArgumentError.value(quantity, 'quantity');
     final now = DateTime.now();
+    final operationId = _uuid.v4();
     await _database.transaction(() async {
       final batch = await (_database.select(_database.productBatches)
             ..where((entry) => entry.id.equals(batchId) & entry.deletedAt.isNull()))
@@ -535,6 +548,7 @@ class InventoryRepository {
             ..where((product) => product.id.equals(batch.productId)))
           .write(ProductsCompanion(updatedAt: Value(now)));
       await _insertMovement(
+          operationId: operationId,
         productId: batch.productId,
         batchId: batch.id,
         type: 'adjustment',
@@ -544,7 +558,7 @@ class InventoryRepository {
       );
       await _enqueueInventoryCommand(
         command: 'restock',
-        operationId: _uuid.v4(),
+        operationId: operationId,
         allocations: [
           {'batch_id': batch.id, 'quantity': quantity},
         ],
@@ -555,6 +569,7 @@ class InventoryRepository {
 
   Future<void> discardBatch(String batchId, {int? expectedRemainingQuantity}) async {
     final now = DateTime.now();
+    final operationId = _uuid.v4();
     await _database.transaction(() async {
       final batch = await (_database.select(_database.productBatches)
             ..where((entry) => entry.id.equals(batchId) & entry.deletedAt.isNull()))
@@ -579,6 +594,7 @@ class InventoryRepository {
       // 因为备份格式和库存流水约束都明确禁止零数量 movement。
       if (batch.remainingQuantity > 0) {
         await _insertMovement(
+          operationId: operationId,
           productId: batch.productId,
           batchId: batch.id,
           type: 'discard',
@@ -591,7 +607,7 @@ class InventoryRepository {
       // command protocol validates that authoritative quantity is also zero.
       await _enqueueInventoryCommand(
         command: 'discard',
-        operationId: _uuid.v4(),
+        operationId: operationId,
         allocations: [
           {'batch_id': batch.id, 'quantity': batch.remainingQuantity},
         ],
@@ -1263,6 +1279,7 @@ class InventoryRepository {
   }
 
   Future<void> _insertMovement({
+    required String operationId,
     required String productId,
     required String? batchId,
     required String type,
@@ -1270,9 +1287,10 @@ class InventoryRepository {
     required String note,
     required DateTime now,
   }) async {
+    final id = _uuid.v4();
     await _database.into(_database.stockMovements).insert(
           StockMovementsCompanion.insert(
-            id: _uuid.v4(),
+            id: id,
             productId: productId,
             batchId: Value(batchId),
             type: type,
@@ -1281,6 +1299,11 @@ class InventoryRepository {
             createdAt: now,
           ),
         );
+    if (batchId != null) {
+      await _database.customStatement(
+        'INSERT INTO stock_movement_sources(operation_id,batch_id,local_id) VALUES (?,?,?)',
+        [operationId, batchId, id]);
+    }
   }
 
   String? _trimToNull(String? value) {

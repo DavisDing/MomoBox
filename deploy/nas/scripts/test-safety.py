@@ -133,7 +133,7 @@ class ScriptSafetyTests(unittest.TestCase):
         env = dict(self.env, SCENARIO=scenario)
         args = ['sh', str(self.nas / 'scripts' / (name + '.sh'))]
         if name == 'restore': args += ['--yes', str(self.root / 'input.dump')]
-        result = subprocess.run(args + list(extra), env=env, text=True, capture_output=True, timeout=10)
+        result = subprocess.run(args + list(extra), env=env, text=True, capture_output=True, timeout=60)
         self.calls = [json.loads(line) for line in (self.root / 'calls').read_text().splitlines()]
         self.text_calls = [' '.join(call) for call in self.calls]
         return result
@@ -158,6 +158,46 @@ class ScriptSafetyTests(unittest.TestCase):
         self.assertLess(dumps[1], migrate)
         self.assertLess(migrate, check)
         self.assertLess(check, start)
+
+    def test_backup_retention_keeps_pins_and_ignores_unrelated_files(self):
+        directory = self.nas / 'backups'
+        directory.mkdir()
+        for day in range(1, 5):
+            dump = directory / f'momobox-postgres-2026010{day}T000000Z-100.dump'
+            dump.write_text('old archive')
+            Path(str(dump) + '.meta').write_text('old metadata')
+            Path(str(dump) + '.owner').write_text(str(self.nas.resolve()) + '||legacy||\n')
+        pinned = directory / 'momobox-postgres-20260101T000000Z-100.dump'
+        Path(str(pinned) + '.keep').touch()
+        unrelated = directory / 'manual-backup.dump'
+        unrelated.write_text('manual')
+        foreign = directory / 'momobox-postgres-20250101T000000Z-2.dump'
+        foreign.write_text('another deployment')
+        Path(str(foreign) + '.owner').write_text('another-deployment')
+        linked = directory / 'momobox-postgres-20250101T000000Z-1.dump'
+        linked.symlink_to(unrelated)
+        result = self.run_script('backup', extra=('--retain-count', '2'))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(Path(result.stdout.strip()).is_file())
+        self.assertTrue(pinned.is_file())
+        self.assertTrue(unrelated.is_file())
+        self.assertTrue(foreign.is_file())
+        self.assertTrue(linked.is_symlink())
+        self.assertFalse((directory / 'momobox-postgres-20260102T000000Z-100.dump').exists())
+        self.assertFalse((directory / 'momobox-postgres-20260102T000000Z-100.dump.meta').exists())
+        self.assertTrue((directory / 'momobox-postgres-20260104T000000Z-100.dump').is_file())
+
+    def test_failed_backup_does_not_prune_and_zero_disables_retention(self):
+        directory = self.nas / 'backups'
+        directory.mkdir()
+        old = directory / 'momobox-postgres-20260101T000000Z-1.dump'
+        old.write_text('keep')
+        result = self.run_script('backup', 'dump-list-failure', extra=('--retain-count', '1'))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue(old.is_file())
+        result = self.run_script('backup', extra=('--retain-count', '0'))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(old.is_file())
         self.assertFalse((self.nas / '.momobox-deployment.lock').exists())
 
     def test_pull_failure_does_not_stop_existing_service(self):

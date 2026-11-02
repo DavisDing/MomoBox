@@ -16,12 +16,15 @@ const (
 	DefaultRegistrationMode    = "first_setup"
 	DefaultAccessTokenTTL      = 15 * time.Minute
 	DefaultRefreshTokenTTL     = 30 * 24 * time.Hour
-	DefaultMaxRequestBodyBytes = 1 << 20
-	DefaultAppVersion          = "0.1.0"
+	DefaultMaxRequestBodyBytes = 12 << 20
 	DefaultAPIVersion          = "v1"
 	DefaultSchemaVersion       = 1
 	DefaultSyncProtocolVersion = 1
 )
+
+// DefaultAppVersion is embedded by the image build using Go's -X linker flag.
+// Source-only builds report dev instead of claiming a historical release.
+var DefaultAppVersion = "dev"
 
 type Config struct {
 	AppEnv               string
@@ -42,6 +45,16 @@ type Config struct {
 }
 
 func LoadConfig() (Config, error) {
+	return loadConfig(true)
+}
+
+// LoadConfigReadOnly never initializes secrets; probes and schema checks must
+// not change deployment identity when the persistent data directory is missing.
+func LoadConfigReadOnly() (Config, error) {
+	return loadConfig(false)
+}
+
+func loadConfig(initializeSecrets bool) (Config, error) {
 	cfg := Config{
 		AppEnv:               envOrDefault("APP_ENV", "development"),
 		HTTPAddr:             envOrDefault("HTTP_ADDR", DefaultHTTPAddr),
@@ -85,7 +98,7 @@ func LoadConfig() (Config, error) {
 			return Config{}, fmt.Errorf("SYNC_PROTOCOL_VERSION: %w", err)
 		}
 	}
-	return cfg, cfg.Validate()
+	return resolveSecrets(cfg, envOrDefault("MOMO_DATA_DIR", "/data"), initializeSecrets)
 }
 
 func (c Config) Validate() error {
@@ -101,6 +114,28 @@ func (c Config) Validate() error {
 			return errors.New("DATABASE_URL must be a postgres:// or postgresql:// URL")
 		}
 	}
+	if err := c.validateSecrets(); err != nil {
+		return err
+	}
+	if c.RegistrationMode != "first_setup" && c.RegistrationMode != "invite_only" && c.RegistrationMode != "open" {
+		return fmt.Errorf("REGISTRATION_MODE must be first_setup, invite_only, or open")
+	}
+	if c.AccessTokenTTL <= 0 || c.RefreshTokenTTL <= 0 {
+		return errors.New("token TTLs must be positive")
+	}
+	if c.RefreshTokenTTL < c.AccessTokenTTL {
+		return errors.New("REFRESH_TOKEN_TTL must not be shorter than ACCESS_TOKEN_TTL")
+	}
+	if c.MaxRequestBodyBytes <= 0 {
+		return errors.New("MAX_REQUEST_BODY_BYTES must be positive")
+	}
+	if c.SchemaVersion < 1 || c.SyncProtocolVersion < 1 {
+		return errors.New("schema and sync protocol versions must be positive")
+	}
+	return nil
+}
+
+func (c Config) validateSecrets() error {
 	if strings.EqualFold(strings.TrimSpace(c.AppEnv), "production") {
 		for _, secret := range []struct {
 			name  string
@@ -132,21 +167,6 @@ func (c Config) Validate() error {
 	}
 	if len(c.HATokenEncryptionKey) != 32 {
 		return errors.New("HA_TOKEN_ENCRYPTION_KEY must be exactly 32 bytes")
-	}
-	if c.RegistrationMode != "first_setup" && c.RegistrationMode != "invite_only" && c.RegistrationMode != "open" {
-		return fmt.Errorf("REGISTRATION_MODE must be first_setup, invite_only, or open")
-	}
-	if c.AccessTokenTTL <= 0 || c.RefreshTokenTTL <= 0 {
-		return errors.New("token TTLs must be positive")
-	}
-	if c.RefreshTokenTTL < c.AccessTokenTTL {
-		return errors.New("REFRESH_TOKEN_TTL must not be shorter than ACCESS_TOKEN_TTL")
-	}
-	if c.MaxRequestBodyBytes <= 0 {
-		return errors.New("MAX_REQUEST_BODY_BYTES must be positive")
-	}
-	if c.SchemaVersion < 1 || c.SyncProtocolVersion < 1 {
-		return errors.New("schema and sync protocol versions must be positive")
 	}
 	return nil
 }

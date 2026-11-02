@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../application/sync_scheduler.dart';
+import '../application/calendar_refresh_scheduler.dart';
 import '../domain/models/inventory_models.dart';
 import '../presentation/controllers/providers.dart';
 import '../presentation/screens/alerts_screen.dart';
@@ -72,13 +73,31 @@ class MomoBoxApp extends ConsumerStatefulWidget {
 
 class _MomoBoxAppState extends ConsumerState<MomoBoxApp> {
   late SyncScheduler _syncScheduler;
+  late CalendarRefreshScheduler _calendarRefreshScheduler;
 
   @override
   void initState() {
     super.initState();
+    ref.listenManual<CalendarRefreshScheduler>(
+      calendarRefreshSchedulerProvider,
+      (previous, next) {
+        previous?.stop();
+        _calendarRefreshScheduler = next;
+        final items = ref.read(inventoryProvider).valueOrNull;
+        if (items != null && items.isNotEmpty) {
+          next.updateTimeZone(items.first.familyTimeZone);
+        }
+        next.start();
+      },
+      fireImmediately: true,
+    );
     ref.listenManual<AsyncValue<List<InventoryItem>>>(
       inventoryProvider,
-      (_, next) => next.whenData(_reconcileInventoryAndSync),
+      (_, next) {
+        if (!next.isLoading && !next.hasError) {
+          next.whenData(_reconcileInventoryAndSync);
+        }
+      },
       fireImmediately: true,
     );
     ref.listenManual<AsyncValue<List<ReminderAcknowledgement>>>(
@@ -105,6 +124,7 @@ class _MomoBoxAppState extends ConsumerState<MomoBoxApp> {
 
   @override
   void dispose() {
+    _calendarRefreshScheduler.stop();
     _syncScheduler.stop();
     super.dispose();
   }
@@ -118,6 +138,9 @@ class _MomoBoxAppState extends ConsumerState<MomoBoxApp> {
   }
 
   Future<void> _reconcileInventoryAndSync(List<InventoryItem> items) async {
+    _calendarRefreshScheduler.updateTimeZone(
+      items.isEmpty ? null : items.first.familyTimeZone,
+    );
     // 低库存确认只在一个提醒周期内有效；库存恢复正常时清除旧确认。
     try {
       await ref.read(reminderServiceProvider).reconcile(items);
@@ -129,10 +152,15 @@ class _MomoBoxAppState extends ConsumerState<MomoBoxApp> {
   }
 
   void _syncNotifications() {
-    final currentItems = ref.read(inventoryProvider).valueOrNull;
-    final acknowledgements = ref.read(reminderAcknowledgementsProvider).valueOrNull ??
-        const <ReminderAcknowledgement>[];
-    if (currentItems == null) return;
+    if (!mounted) return;
+    final inventory = ref.read(inventoryProvider);
+    final handled = ref.read(reminderAcknowledgementsProvider);
+    if (inventory.isLoading || inventory.hasError || handled.isLoading || handled.hasError) return;
+    final currentItems = inventory.asData?.value;
+    final acknowledgements = handled.asData?.value;
+    // Loading/error states must not erase existing plans or revive reminders
+    // by substituting an empty acknowledgement list.
+    if (currentItems == null || acknowledgements == null) return;
     // 通知是增强能力；平台调度失败不能阻塞本地库存页面。
     ref.read(localNotificationServiceProvider).sync(
       currentItems,

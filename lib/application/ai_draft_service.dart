@@ -73,7 +73,7 @@ class AiDraftService {
     }
     ensureCurrent();
     final content = text.trim();
-    if (content.isEmpty) throw ArgumentError('请先对说明书或包装图片执行本地 OCR。');
+    if (content.isEmpty) throw ArgumentError('请先对说明书或包装图片执行 OCR。');
     if (content.length > 20000) throw ArgumentError('OCR 文本过长，请先保留与商品信息相关的页面。');
 
     // 1. 构建三级配置
@@ -123,8 +123,9 @@ class AiDraftService {
     }
   }
 
-  Future<List<AiEndpointConfig>> _resolveFallbackConfigs() =>
-      resolveFallbackConfigs(_settings, _secureSettings);
+  Future<List<AiEndpointConfig>> _resolveFallbackConfigs() async =>
+      await _fallbackExecutor.usesBackend() ? [AiFallbackExecutor.backendConfig]
+          : await resolveFallbackConfigs(_settings, _secureSettings);
 
   static Future<List<AiEndpointConfig>> resolveFallbackConfigs(
     SettingsRepository settings,

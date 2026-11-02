@@ -7,6 +7,7 @@ import (
 	"github.com/momobox/backend/internal/auth"
 	"github.com/momobox/backend/internal/family"
 	homeassistant "github.com/momobox/backend/internal/homeassistant"
+	"github.com/momobox/backend/internal/processing"
 	syncservice "github.com/momobox/backend/internal/sync"
 	"github.com/momobox/backend/internal/syncdevice"
 )
@@ -25,6 +26,7 @@ type ClaimsAuthorizer interface {
 }
 
 type Dependencies struct {
+	Processing    *processing.Service
 	Auth          AuthService
 	Family        FamilyService
 	Devices       DeviceService

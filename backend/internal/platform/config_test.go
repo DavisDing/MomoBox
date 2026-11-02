@@ -176,6 +176,26 @@ func TestLoadConfigPreservesSecretsAndDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadConfigUsesEmbeddedVersionUnlessOverridden(t *testing.T) {
+	setSecurityConfigEnv(t)
+	cfg, err := platform.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if platform.DefaultAppVersion == "" || cfg.AppVersion != platform.DefaultAppVersion {
+		t.Fatalf("embedded version not reported: %q", cfg.AppVersion)
+	}
+	// Keep explicit overrides compatible with existing deployment tooling.
+	t.Setenv("APP_VERSION", "deployment-override")
+	cfg, err = platform.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AppVersion != "deployment-override" {
+		t.Fatalf("deployment override ignored: %q", cfg.AppVersion)
+	}
+}
+
 func TestKnownExampleSecretsMatchDeploymentTemplate(t *testing.T) {
 	data, err := os.ReadFile("../../../deploy/nas/.env.example")
 	if os.IsNotExist(err) {

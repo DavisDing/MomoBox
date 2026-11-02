@@ -571,3 +571,95 @@
 - 本机 `git diff --check` PASS，并完成控件类型/API、所有原业务断言、成功/异常清理与共享 tearDown 的静态复核。只修改该测试文件和本记录，无依赖、schema、workflow、生产代码或超时设置变化。
 - 本机 Flutter/Dart executable 仍不可用，未安装工具。修改后的 `flutter analyze`、该文件测试、完整 Flutter 测试、Android debug/iOS unsigned build 均 `NOT_EXECUTED`。
 - 证据：`https://github.com/DavisDing/MomoBox/actions/runs/39759449117`；Flutter job `119759833019`；iOS job `119759833073`。
+
+## 2026-11-02：日历跨日刷新续修（本地源码，运行待验证）
+
+- 基线 HEAD `76d6b62`，开始时工作区干净；本批对应 AC-026 和 AC-018 读取保护，不新增业务范围。修改未提交、推送或发布。
+- 已新增独立前台日历调度，连接App生命周期和当前库存所属家庭时区；跨日或单机时区变化时刷新库存及统计，再沿原路径重算提醒/通知。普通分钟检查及同日权限弹窗返回不触发数据库读取/通知重排，后台与卸载停止定时器。
+- 通知重排要求库存和提醒确认同时成功就绪，不使用加载/错误状态中保留的旧值，不把未读取确认当作空列表。失败时保留原计划，数据恢复后原监听继续。
+- 新增9项回归源码（领域2、调度5、App接线2），覆盖上海午夜、日期线、纽约夏令时23/25小时日、单机UTC instant、时钟跳变、时区切换、后台跨日/同日返回、重复挂载、Provider替换、卸载与加载/错误数据保护。测试源码尚未执行。
+
+| 检查 | 状态 | 证据及边界 |
+| --- | --- | --- |
+| 本批7个Dart文件tree-sitter解析 | PASS | 复用已有 `/private/tmp/momobox-dart-syntax-314` 与系统已有Python3.14，0语法错误；包括新增未跟踪文件，不是Dart类型/API检查 |
+| 本批引用、空白、末尾换行与 `git diff --check` | PASS | 本地静态检查；不代表Flutter布局/生命周期/数据库运行通过 |
+| Flutter analyze、9项新增回归及既有通知/调度回归 | NOT_EXECUTED | PATH未发现Flutter/Dart，package_config所指临时SDK已不存在；未安装工具或依赖 |
+| Drift生成、Android/iOS构建、同SHA CI、设备视觉/权限/时区联调 | NOT_EXECUTED | 无可用SDK/设备，本批未提交或运行远端CI；历史提交结果不覆盖本批 |
+
+建议可用SDK环境先执行：
+
+```sh
+flutter test test/domain/calendar_date_test.dart test/application/calendar_refresh_scheduler_test.dart test/app/calendar_refresh_wiring_test.dart test/app/sync_scheduler_wiring_test.dart test/presentation/notification_permission_recovery_test.dart test/services/local_notification_service_test.dart
+flutter analyze
+flutter test
+```
+
+随后按现有CI完成同SHA Android debug/iOS unsigned build，并在设备上分别检查家庭午夜、单机旅行/系统时区变更、后台跨日、通知设置授权和测试通知。不得把语法解析当作这些验证已通过。
+
+会话过程中另出现 `settings_screen.dart`、`mobile_redesign_test.dart`、`widget_flows_test.dart`、`settings_hierarchy_test.dart` 及相关需求/设计的改动；这些不属于本批写入范围，已保留，不计入本批7文件语法结果或功能交付。无数据迁移、依赖或视觉设计变更。长期AI_CONTEXT更新建议见DESIGN同日“日历跨日与提醒刷新续修”一节，待运行证据后再确认。
+
+## 2026-11-02：普通操作历史与后端图片/OCR/AI（本地实现，设备验收待执行）
+
+用户明确授权普通操作历史跨端同步、已有图片/OCR迁移，以及连接并确认后端同步后将图片处理、OCR和AI分析迁至NAS；AI包括入库草稿、助手和说明书问答。不做多工作区、改绑或跨家庭迁移。工作区已有且会话期间继续出现其他设置、采购、日历刷新和后端/运维修改，均保留；本记录不将这些其他修改归为本批交付。未提交、推送、部署或发布。
+
+### 实现与兼容边界
+
+- 后端追加migration 0010：普通consumption_records增加提交有序历史游标和客户端发生时间；新增媒体字节/状态、删除墓碑及AI结果回执。历史拉取只落流水，不重放库存；新本机事件用operation_id+batch_id与服务端记录关联，分页和游标同SQLite事务提交。旧流水只在原outbox与批次/数量/时间有精确唯一证据时关联，无证据不近似删除，旧重复项仍可能需要核对。
+- Drift schema6→7只新增三个原生辅助表，保留原图、OCR、库存及已有流水；核心JSON格式和媒体排除边界不变。已有OCR迁移保留文字及local_migration来源，不自动重新识别。新拍摄原字节暂存，NAS完成方向处理、JPEG正规化、存储和OCR；上传超时保留同ID/内容重试，墓碑防止迟到上传/识别复活，草稿确认关联有持久待办。
+- AI目标/模型/密钥从NAS环境读取，兼容chat/responses与配置的主/副/兜底服务；不接受手机指定endpoint/key/tools。说明书检索也移至NAS，模型只收到获授权文字。手机继续结果校验、可编辑草稿和逐次写入确认。已选择后端时不可静默回退至本机OCR或手机AI密钥。
+- 图片、OCR和AI请求复用既有家庭/设备认证及refresh；处理模式在首次发送、401刷新后的重试前及响应后复检，拒绝切换到仅本地/其他endpoint后的迟到结果。收尾源码复核修正入库媒体状态文字的组件位置，避免通用按钮引用不存在的assets/theme。
+- 现有页面布局/主题保留，更新路径说明、发送确认、OCR操作及状态反馈。镜像增加Tesseract和中英文语言数据，无新增Go module或Dart包。NAS AI环境变量与接口说明见 `nas/06-backend-processing.md`。
+
+### 已执行验证
+
+| 检查 | 结果 | 证据与限制 |
+| --- | --- | --- |
+| Go全套测试与真实PostgreSQL16回归 | PASS | 复用已有临时Go1.22.8、缓存依赖及隔离PG16.2；`go test -count=1 -ldflags=-linkmode=external ./...`，显式MOMO_TEST_DATABASE_URL指向本轮临时库，各测试创建/清理随机schema；覆盖迁移、图片/OCR状态、重试/墓碑/关联、历史只读分页/排序锁、AI回执和现有后端回归 |
+| 最后中文说明书检索修改后的受影响Go包 | PASS | `go test -count=1 -ldflags=-linkmode=external ./internal/processing ./internal/httpapi ./internal/store/syncpostgres`，仍使用同一隔离PG16；OCR和模型使用可控替身，非真实识别/推理 |
+| `go vet ./...` | PASS | 本轮后端工作区静态检查 |
+| Linux amd64/arm64编译 | PASS | CGO关闭的两个后端产物存于 `/private/tmp/momobox-processing-linux-amd64` 和 `/private/tmp/momobox-processing-linux-arm64`；只证明编译，不是Linux运行或镜像构建 |
+| NAS发布资产检查 | PASS | `python3 scripts/ci/test-nas-release-assets.py`，1项 |
+| NAS部署变体检查 | PASS | `python3 deploy/nas/scripts/test-variants.py`，19项；本机脚本/fake环境，不是实际Compose |
+| NAS脚本安全回归 | PASS | `python3 deploy/nas/scripts/test-safety.py`，14项；本机脚本/fake环境，不是NAS运行 |
+| Dart tree-sitter语法解析 | PASS | 最终工作区33个存在的修改/新增Dart文件，0语法错误；包含本轮新增回归源码及并行会话文件，未计删除文件；不是Dart类型/API检查 |
+| SQLite辅助schema创建/重复执行 | PASS | 读取实际backend_processing_schema.dart三条DDL，在SQLite内存库连续执行两次并核对表名；不等于Drift升级/手机运行 |
+| `git diff --check`及新增源码/文档空白与末尾换行 | PASS | 包含未跟踪源码/测试/SQL/文档检查；不以diff忽略新文件代替验证 |
+
+Go初始环境不在PATH，已使用现存临时工具和缓存解决；macOS Go1.22默认链接生成的测试程序曾因LC_UUID问题无法运行，最终使用外部链接完成上述测试，不将初始环境失败当作最终测试结果。未安装或修改系统工具链。
+
+### 未执行与后续验收
+
+| 检查 | 状态 | 原因/所需证据 |
+| --- | --- | --- |
+| Flutter analyze、Flutter tests、Drift build_runner、Android/iOS构建 | NOT_EXECUTED | PATH无Flutter/Dart，package_config指向的临时SDK不存在；没有可用Dart编译器，源码与语法复核不替代运行 |
+| 真实Tesseract与中英文识别质量 | NOT_EXECUTED | 本机无OCR程序；后端回归使用OCR替身，镜像所需系统包仍需实际构建验证 |
+| 真实模型、网络/协议与费用行为 | NOT_EXECUTED | 未配置或调用真实供应商；HTTP替身只验证合同、回执和限制 |
+| Docker/Compose、NAS升级/备份恢复、双手机联调 | NOT_EXECUTED | 无目标环境执行；须核对真实图片/OCR迁移、第二设备展示、断网/重启/会话切换、逐次确认及历史不重复/数量不变 |
+| 当前改动对应的远端CI/镜像/Release | NOT_EXECUTED | 修改未提交/推送，历史CI和既有版本资产不覆盖本轮 |
+
+可用SDK环境先执行 `flutter test test/application/backend_processing_service_test.dart test/application/media_service_test.dart test/data/nas_sync_api_test.dart test/domain/ai_fallback_executor_test.dart`，再执行 `flutter analyze` 和既有完整CI。新增回归源码覆盖历史消重/重放/数量不变、异常页不推进、上传回执丢失保持ID/内容、本机OCR不调用、AI不读取手机配置或静默回退、模式切换响应/refresh重试保护；这些Flutter测试尚未运行，不记为PASS。本轮隔离临时PostgreSQL已正常停止，保留测试目录供复核，没有清理业务数据。
+
+AI_CONTEXT长期更新建议：设备验收后局部记录双模式的图片/OCR/AI边界、schema7和普通历史同步，替代旧“NAS不提供AI Proxy”的描述；本轮仅提出建议，不把源码状态升级为设备验收。
+
+
+## 2026-11-02：NAS 内部密钥自动管理与精简 Compose
+
+本批按用户确认实现首次自动生成并持久化 JWT_SECRET、REFRESH_TOKEN_PEPPER、HA_TOKEN_ENCRYPTION_KEY，保持登录/刷新与原显式环境变量兼容。主要改动为 backend/internal/platform/config.go、secrets.go、secrets_test.go，及命令层 healthcheck/schema-check 只读加载和 config_secrets_test.go。单文件模板 deploy/nas/ugreen-v0.12.67/docker-compose.yaml 删除三项手填密钥，仅需改数据库连接/外部网络；配套 README 明示既有密钥保留、发布前提与数据目录权限。未修改本批范围之外的并行会话功能。
+
+### 已通过
+
+- Go1.22.8受影响回归：internal/platform、cmd/momo-backend、internal/securetoken、tests/auth、tests/homeassistant，使用 `go test -race -ldflags=-linkmode=external -count=1`；均PASS。命令层真实优雅退出测试使用本机随机回环端口，未访问NAS或数据库。
+- 新增覆盖：24路并发初始化同一身份、重启复用、实际JWT验签/refresh摘要/HA解密连续性、完整显式配置无文件依赖、部分配置保留原始字节、环境覆盖不回写、损坏/缺字段/版本/尾随数据/宽权限/链接/目录/超大文件拒绝且不覆盖、不可写目录失败、无效配置不落盘、read-only命令不初始化。非密钥配置错误保持准确字段提示。
+- `go vet ./internal/platform ./cmd/momo-backend`：PASS。
+- CGO关闭的Linux amd64/arm64后端编译：PASS，构建版本注入v0.99.1-check仅用于验证；输出位于/private/tmp/momobox-compose-linux-{amd64,arm64}，不是发布产物或Linux运行证据。
+- Ruby YAML解析与本次精简模板静态断言：PASS，核对单服务/latest/仅DATABASE_URL/18473/数据挂载/外部网络/无.env及用户排除字段。
+- `python3 scripts/ci/test-nas-release-assets.py`：PASS（1项，现有发布资产打包回归）。此次精简模板另外以显式文件列表刷新本地交付包，不表示已纳入远端Release。
+- 最终 `git diff --check`、新增文件空白/末尾换行检查及本地交付包逐文件内容核对：PASS；交付包仅含Compose、README和.gitignore，不含运行data或secrets.json。
+
+工具复用已有临时Go与依赖缓存，GOPROXY=off、GOSUMDB=off；MOMO_TEST_DATABASE_URL明确移除。macOS测试使用外部链接避开现有Go1.22 LC_UUID问题，未安装依赖、修改系统环境或接触业务数据库。没有UI、依赖或数据库schema变化。
+
+### 未执行
+
+Docker/Compose运行与镜像构建、实际PG18/NAS初始化和重启/升级、备份恢复及设备联调为NOT_EXECUTED（本机无Docker及目标设备访问）；本地Go/文件系统测试不能代替这些验收。工作区未提交/推送/发布，线上latest是否含本批功能未核实；必须发布对应镜像后才使用无手填密钥模板。
+
+全显式旧部署继续沿用原环境变量，不自动写入密钥文件，也不能删除后对旧库重新生成。新部署的./data/secrets.json须与数据库配套备份；现有.env运维脚本并未在本批扩展成该单文件模板的完整灾备流程。AI_CONTEXT长期事实建议在发布/设备验证后补充此部署约定。

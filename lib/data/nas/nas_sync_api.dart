@@ -43,6 +43,18 @@ class NasSyncApi {
   Future<String?>? _refreshInFlight;
   int _sessionRevision = 0;
   bool _closed = false;
+  Future<void> Function()? _processingGuard;
+
+  void setProcessingGuard(Future<void> Function() guard) => _processingGuard = guard;
+  Future<void> assertProcessingSession() async {
+    assertCurrentSession();
+    await _processingGuard?.call();
+    assertCurrentSession();
+  }
+
+  bool matchesEndpoint(String endpoint) {
+    try { return _baseUri == _parseBaseUri(endpoint); } catch (_) { return false; }
+  }
 
   /// Also guard database-only work after a network response has been parsed.
   void assertCurrentSession() => _requireCurrentSession(_sessionRevision);
@@ -267,15 +279,33 @@ class NasSyncApi {
     return _parse(json, NasSyncConflictResolveResponse.fromJson);
   }
 
+  /// Processing calls share authentication, refresh and late-session guards.
+  Future<Map<String, dynamic>> processingRequest(String path, {
+    String method = 'POST', Map<String, dynamic>? body,
+    Map<String, String>? queryParameters,
+  }) async {
+    await assertProcessingSession();
+    final result = await _sendJson(method: method, path: path, body: body,
+      queryParameters: queryParameters, timeout: const Duration(seconds: 100),
+      requestGuard: assertProcessingSession);
+    await assertProcessingSession();
+    return result;
+  }
+
   Future<Map<String, dynamic>> _sendJson({
     required String method,
     required String path,
     Map<String, dynamic>? body,
     Map<String, String>? queryParameters,
+    Duration? timeout,
+    Future<void> Function()? requestGuard,
     bool retryOnUnauthorized = true,
     String? tokenOverride,
   }) async {
     final sessionRevision = _sessionRevision;
+    if (requestGuard != null) {
+      await requestGuard();
+    }
     _requireCurrentSession(sessionRevision);
     final token = tokenOverride ??
         (_accessTokenProvider != null ? _accessTokenProvider() : _accessToken);
@@ -301,12 +331,12 @@ class NasSyncApi {
       final encodedBody = body == null ? null : jsonEncode(body);
       switch (method) {
         case 'GET':
-          response = await _client.get(uri, headers: headers).timeout(_requestTimeout);
+          response = await _client.get(uri, headers: headers).timeout(timeout ?? _requestTimeout);
           break;
         case 'POST':
           response = await _client
               .post(uri, headers: headers, body: encodedBody)
-              .timeout(_requestTimeout);
+              .timeout(timeout ?? _requestTimeout);
           break;
         default:
           throw ArgumentError('Unsupported NAS sync HTTP method: $method');
@@ -332,6 +362,8 @@ class NasSyncApi {
           path: path,
           body: body,
           queryParameters: queryParameters,
+          timeout: timeout,
+          requestGuard: requestGuard,
           retryOnUnauthorized: false,
           tokenOverride: refreshedToken,
         );

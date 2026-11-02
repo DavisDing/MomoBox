@@ -17,11 +17,7 @@ class MomoPalette {
     required this.mascotName,
     required this.appLogoIcon,
     required this.inventoryIcon,
-    required this.alertIcon,
     required this.shoppingIcon,
-    required this.inventoryLabel,
-    required this.alertLabel,
-    required this.shoppingLabel,
   });
 
   final MomoSkin skin;
@@ -35,11 +31,7 @@ class MomoPalette {
   final String mascotName;
   final IconData appLogoIcon;
   final IconData inventoryIcon;
-  final IconData alertIcon;
   final IconData shoppingIcon;
-  final String inventoryLabel;
-  final String alertLabel;
-  final String shoppingLabel;
 
   static const defaultPalette = MomoPalette(
     skin: MomoSkin.defaultSkin,
@@ -53,11 +45,7 @@ class MomoPalette {
     mascotName: '箱宝',
     appLogoIcon: Icons.all_inbox_rounded,
     inventoryIcon: Icons.inventory_2_outlined,
-    alertIcon: Icons.notifications_none,
     shoppingIcon: Icons.shopping_bag_outlined,
-    inventoryLabel: '库存',
-    alertLabel: '提醒',
-    shoppingLabel: '采买',
   );
 
   static const momoPalette = MomoPalette(
@@ -72,11 +60,7 @@ class MomoPalette {
     mascotName: '嬷嬷',
     appLogoIcon: Icons.inventory_rounded,
     inventoryIcon: Icons.archive_outlined,
-    alertIcon: Icons.access_alarms_outlined,
     shoppingIcon: Icons.assignment_outlined,
-    inventoryLabel: '百宝箱',
-    alertLabel: '时效警',
-    shoppingLabel: '采买折',
   );
 
   static const doraemonPalette = MomoPalette(
@@ -91,11 +75,7 @@ class MomoPalette {
     mascotName: '哆啦叮当',
     appLogoIcon: Icons.card_giftcard_rounded,
     inventoryIcon: Icons.widgets_outlined,
-    alertIcon: Icons.hourglass_top_outlined,
     shoppingIcon: Icons.receipt_long_outlined,
-    inventoryLabel: '四次元袋',
-    alertLabel: '时光警报',
-    shoppingLabel: '补给单',
   );
 
   static const forestPalette = MomoPalette(
@@ -110,11 +90,7 @@ class MomoPalette {
     mascotName: '森灵',
     appLogoIcon: Icons.eco_rounded,
     inventoryIcon: Icons.park_outlined,
-    alertIcon: Icons.wb_twilight_outlined,
     shoppingIcon: Icons.shopping_basket_outlined,
-    inventoryLabel: '林间储仓',
-    alertLabel: '萌芽警报',
-    shoppingLabel: '补种清单',
   );
 
   static const sakuraPalette = MomoPalette(
@@ -129,11 +105,7 @@ class MomoPalette {
     mascotName: '小樱',
     appLogoIcon: Icons.local_florist_rounded,
     inventoryIcon: Icons.favorite_border_rounded,
-    alertIcon: Icons.schedule_outlined,
     shoppingIcon: Icons.card_giftcard_outlined,
-    inventoryLabel: '樱之锦囊',
-    alertLabel: '花期提醒',
-    shoppingLabel: '赏味心愿',
   );
 
   static List<MomoPalette> get allPalettes => [

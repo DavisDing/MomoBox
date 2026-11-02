@@ -142,7 +142,7 @@ docker compose \
 
 更新、备份、恢复使用 `deploy/nas/.momobox-deployment.lock` 互斥。发现锁存在时不要直接删除：先检查 owner 元信息、本项目所有容器（含 one-off）、PostgreSQL 活动及仍可能运行的迁移/恢复进程，证明任务已终止后再按运维流程处理；删除锁不代表数据库或同步历史已安全。恢复仍是破坏性原库操作，执行前必须另存当前库备份、验证来源与目标；本脚本不等于完整灾备方案。
 
-后端 `schema-check` 和 `serve` 启动门禁只验证 ledger 的版本、名称、checksum（保留限定 legacy 兼容），不修复记录、不验证物理表结构或数据/历史完整性；`/api/v1/health` 仍仅报告数据库连接，不是 restore epoch 或完整 readiness 接口。
+后端 `schema-check` 和 `serve` 启动门禁只验证 ledger 的版本、名称、checksum（保留限定 legacy 兼容），不修复记录、不验证物理表结构或数据/历史完整性；`/api/v1/health` 在生产接线中同时验证数据库连接及当前镜像的 migration ledger；缺迁移、checksum不匹配或探测超时返回503，且不泄漏底层错误。它不验证物理表/数据完整性或 restore epoch。
 
 ## 明确不包含的服务
 
@@ -152,3 +152,10 @@ docker compose \
 - Home Assistant
 
 这些服务的生命周期和网络可达性由用户自行管理。
+
+2026-11-02 审计修复：三套 Compose 均有 `json-file` 日志上限（每容器10m×3），自带 PostgreSQL 使用只读根文件系统、有界临时目录及最小启动 capabilities，镜像基础层固定官方 manifest digest。PG16版本和原数据卷路径未更改。`.env.example` 用同一份 POSTGRES_PASSWORD 展开 DATABASE_URL（推荐十六进制密码）；已有凭据不能直接重置。备份默认保留30份未固定归档，长期恢复点需 `.dump.keep`，参数和边界见 OPERATIONS。真实 Docker/UGOS 仍待验收。
+
+
+### 图片/OCR与AI后端处理（2026-11-02）
+
+新后端提供普通操作历史分页、图片上传/存储、Tesseract中英文OCR和受控AI模型调用；App须登录并确认相同NAS/账号/家庭。通过本目录`.env.example`的`AI_ENDPOINT`、`AI_MODEL`、`AI_API_KEY`、`AI_PROTOCOL`及可选副/兜底配置启用后端AI，更改后重建容器。手机AI密钥不会自动迁入NAS。默认请求上限12MiB，单图JPEG/PNG上限8MiB；代理需相应放行体积和处理超时。图片/OCR及AI回执存PG，随现有数据库备份，不需新增媒体卷。完整契约、故障恢复及未验收边界见[后端处理说明](../../docs/nas/06-backend-processing.md)。

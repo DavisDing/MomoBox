@@ -26,7 +26,30 @@ class CalendarDate {
 
   static DateTime today({String? timeZone, DateTime? instant}) {
     final now = instant ?? DateTime.now();
-    if (timeZone == null) return DateTime(now.year, now.month, now.day);
+    if (timeZone == null) {
+      final localNow = now.toLocal();
+      return DateTime(localNow.year, localNow.month, localNow.day);
+    }
+    final familyNow = tz.TZDateTime.from(now, _location(timeZone));
+    return DateTime(familyNow.year, familyNow.month, familyNow.day);
+  }
+
+  /// Calendar midnight may be 23 or 25 elapsed hours away across DST.
+  static Duration untilNextDay({String? timeZone, DateTime? instant}) {
+    final now = instant ?? DateTime.now();
+    if (timeZone == null) {
+      final localNow = now.toLocal();
+      return DateTime(localNow.year, localNow.month, localNow.day + 1)
+          .difference(now);
+    }
+    final location = _location(timeZone);
+    final familyNow = tz.TZDateTime.from(now, location);
+    return tz.TZDateTime(
+      location, familyNow.year, familyNow.month, familyNow.day + 1,
+    ).difference(now);
+  }
+
+  static tz.Location _location(String name) {
     if (!_zonesInitialized) {
       try {
         tz.getLocation('Asia/Shanghai');
@@ -35,8 +58,7 @@ class CalendarDate {
       }
       _zonesInitialized = true;
     }
-    final familyNow = tz.TZDateTime.from(now, tz.getLocation(timeZone));
-    return DateTime(familyNow.year, familyNow.month, familyNow.day);
+    return tz.getLocation(name);
   }
 
   static void validateTimeZone(String name) {

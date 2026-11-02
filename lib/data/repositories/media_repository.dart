@@ -28,7 +28,7 @@ class MediaRepository {
             ..where((asset) => asset.deletedAt.isNull())
             ..orderBy([(asset) => OrderingTerm.desc(asset.createdAt)]))
           .watch()
-          .map(_toModels);
+          .asyncMap(_toModels);
 
   Future<List<MediaAsset>> loadForEntity({
     required String entityType,
@@ -88,6 +88,20 @@ class MediaRepository {
       height: height,
       createdAt: now,
     );
+  }
+
+  Future<void> cacheRemote({required String id, required String entityType,
+    required String entityId, required MediaAssetType type,
+    required String localPath, required String mimeType, required int sizeBytes,
+    required String sha256, required DateTime createdAt}) async {
+    final existing = await (_database.select(_database.mediaAssets)..where((m) => m.id.equals(id)))
+      .getSingleOrNull();
+    // A locally pending delete must not be resurrected by a stale remote page.
+    if (existing?.deletedAt != null) return;
+    await _database.into(_database.mediaAssets).insertOnConflictUpdate(
+      MediaAssetsCompanion.insert(id: id, entityType: entityType, entityId: entityId,
+        mediaType: type.storageValue, localPath: localPath, mimeType: mimeType,
+        sizeBytes: sizeBytes, sha256: sha256, createdAt: createdAt));
   }
 
   Future<void> updateOcr(String id, String text) async {
@@ -275,10 +289,20 @@ class MediaRepository {
     );
   }
 
-  List<MediaAsset> _toModels(List<MediaAssetRecord> records) =>
-      records.map(_toModel).toList(growable: false);
+  Future<List<MediaAsset>> _toModels(List<MediaAssetRecord> records) async {
+    final result = <MediaAsset>[];
+    for (final record in records) {
+      final state = await _database.customSelect(
+        'SELECT state,error FROM backend_media_state WHERE asset_id=?',
+        variables: [Variable.withString(record.id)]).getSingleOrNull();
+      result.add(_toModel(record, backendState: state?.read<String>('state'),
+        backendError: state?.readNullable<String>('error')));
+    }
+    return result;
+  }
 
-  MediaAsset _toModel(MediaAssetRecord record) => MediaAsset(
+  MediaAsset _toModel(MediaAssetRecord record, {String? backendState, String? backendError}) => MediaAsset(
+        backendState: backendState, backendError: backendError,
         id: record.id,
         entityType: record.entityType,
         entityId: record.entityId,

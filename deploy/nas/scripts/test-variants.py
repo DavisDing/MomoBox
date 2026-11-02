@@ -27,7 +27,7 @@ class VariantOperationsTests(unittest.TestCase):
         self.deploy = self.root / 'chosen deployment'
         self.deploy.mkdir()
         (self.deploy / 'docker-compose.yaml').write_text('services: {}\n')
-        (self.deploy / '.env').write_text('DATABASE_URL=postgres://user:private@db/momo\n')
+        (self.deploy / '.env').write_text('DATABASE_URL=postgres://user:private@db/momo\nPG_CLIENT_IMAGE=' + DIGEST + '\n')
         self.options = ('--deployment-dir', str(self.deploy), '--project-name', 'chosen-momo',
                         '--database-mode', mode, '--expected-database', database,
                         '--expected-role', 'momo_user', '--pg-client-image', DIGEST)
@@ -70,6 +70,32 @@ class VariantOperationsTests(unittest.TestCase):
             self.assertIn('--project-name', args)
             self.assertEqual(args[args.index('--project-name') + 1], 'chosen-momo')
             self.assertIn(str((self.deploy / '.env').resolve()), args)
+
+    def test_external_pg_client_digest_comes_from_env_without_shell_execution(self):
+        self.prepare()
+        marker = self.root / 'executed'
+        (self.deploy / '.env').write_text((self.deploy / '.env').read_text() + 'IGNORED=$(touch ' + str(marker) + ')\n')
+        result = safety.ScriptSafetyTests.run_script(self, 'backup', extra=(
+            '--deployment-dir', str(self.deploy), '--project-name', 'chosen-momo',
+            '--database-mode', 'external', '--expected-database', 'momo',
+            '--expected-role', 'momo_user'))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(marker.exists())
+        self.assertTrue(self.called('momo-pg-client dump'))
+
+    def test_external_client_digest_requires_one_valid_value(self):
+        self.prepare()
+        env_file = self.deploy / '.env'
+        original = env_file.read_text()
+        for content in (original + 'PG_CLIENT_IMAGE=' + DIGEST + '\n',
+                        original.replace(DIGEST, 'docker.io/library/postgres:16')):
+            env_file.write_text(content)
+            result = safety.ScriptSafetyTests.run_script(self, 'backup', extra=(
+                '--deployment-dir', str(self.deploy), '--project-name', 'chosen-momo',
+                '--database-mode', 'external', '--expected-database', 'momo',
+                '--expected-role', 'momo_user'))
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(self.called('momo-pg-client dump'))
 
     def test_external_update_orders_final_backup_and_keeps_other_db_running(self):
         self.prepare()

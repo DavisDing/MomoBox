@@ -44,6 +44,7 @@ Shared options for new deployments (all identity options are required):
   --expected-database NAME   Assert the actual database, never select a fallback
   --expected-role NAME       Assert the actual connecting role
   --pg-client-image IMAGE    docker.io/library/postgres@sha256:<64 hex digits>
+                            Or use PG_CLIENT_IMAGE in the selected .env.
 Update also requires --exclusive-writer, --restore-proof FILE and
 --proof-max-age SECONDS. They do not authorize a restored database to reopen.
 USAGE
@@ -60,6 +61,11 @@ momo_context_init() {
         case "$MOMO_DATABASE_MODE" in managed|external) ;; *) fail "explicit deployments require managed or external mode" ;; esac
         case "$MOMO_EXPECTED_DATABASE" in ''|*[!A-Za-z0-9_]* ) fail "expected database must use letters, digits or underscore" ;; esac
         case "$MOMO_EXPECTED_ROLE" in ''|*[!A-Za-z0-9_]* ) fail "expected role must use letters, digits or underscore" ;; esac
+        if [ -z "$MOMO_PG_CLIENT_IMAGE" ]; then
+            # Read this one constrained value without sourcing the deployment
+            # environment as shell code. Compose uses the same value below.
+            MOMO_PG_CLIENT_IMAGE=$(awk '/^PG_CLIENT_IMAGE=/ { count++; value = substr($0, 17) } END { if (count == 1) print value; else if (count > 1) exit 2 }' "$NAS_DIR/.env") || fail "PG_CLIENT_IMAGE must appear exactly once in deployment .env"
+        fi
         case "$MOMO_PG_CLIENT_IMAGE" in docker.io/library/postgres@sha256:*) ;; *) fail "PG client must be an explicit official postgres digest" ;; esac
         momo_digest=${MOMO_PG_CLIENT_IMAGE#*@sha256:}
         [ "${#momo_digest}" -eq 64 ] || fail "invalid PG client digest"

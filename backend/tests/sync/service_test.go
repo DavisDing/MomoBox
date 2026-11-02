@@ -119,10 +119,10 @@ func (f *fakeRepository) RecordConflict(_ context.Context, _ syncmod.SyncConflic
 
 func testChange(operation syncmod.Operation, key string) syncmod.SyncChange {
 	return syncmod.SyncChange{
-		ChangeID:       "change-1",
+		ChangeID:       "b0000000-0000-4000-8000-000000000001",
 		Operation:      operation,
 		Entity:         "products",
-		EntityID:       "product-1",
+		EntityID:       "a0000000-0000-4000-8000-000000000006",
 		BaseVersion:    0,
 		Payload:        map[string]any{"name": "洗衣液"},
 		IdempotencyKey: key,
@@ -159,13 +159,13 @@ func TestPushAcceptedThenReplayedWithoutSecondMutation(t *testing.T) {
 
 func TestEntityConflictAndInventoryAreSeparatePaths(t *testing.T) {
 	repository := newFakeRepository()
-	repository.entities["products:product-1"] = syncmod.EntityRecord{
-		Entity: "products", EntityID: "product-1", Version: 3, Payload: map[string]any{"name": "server"},
+	repository.entities["products:a0000000-0000-4000-8000-000000000006"] = syncmod.EntityRecord{
+		Entity: "products", EntityID: "a0000000-0000-4000-8000-000000000006", Version: 3, Payload: map[string]any{"name": "server"},
 	}
 	service := syncmod.NewService(repository)
 
 	conflictRequest := syncmod.PushRequest{DeviceID: "device-1", Changes: []syncmod.SyncChange{{
-		ChangeID: "conflict-1", Operation: syncmod.OperationEntityUpsert, Entity: "products", EntityID: "product-1",
+		ChangeID: "b0000000-0000-4000-8000-000000000002", Operation: syncmod.OperationEntityUpsert, Entity: "products", EntityID: "a0000000-0000-4000-8000-000000000006",
 		BaseVersion: 2, Payload: map[string]any{"name": "client"}, IdempotencyKey: "device-1:conflict-1",
 	}}}
 	conflict, err := service.Push(context.Background(), conflictRequest)
@@ -177,7 +177,7 @@ func TestEntityConflictAndInventoryAreSeparatePaths(t *testing.T) {
 	}
 
 	inventoryRequest := syncmod.PushRequest{DeviceID: "device-1", Changes: []syncmod.SyncChange{{
-		ChangeID: "inventory-1", Operation: syncmod.OperationInventoryCommand, Command: syncmod.InventoryCommandConsumeAllocated,
+		ChangeID: "b0000000-0000-4000-8000-000000000003", Operation: syncmod.OperationInventoryCommand, Command: syncmod.InventoryCommandConsumeAllocated,
 		Allocations:    []syncmod.InventoryAllocation{{BatchID: "batch-1", Quantity: 2}},
 		IdempotencyKey: "device-1:inventory-1",
 	}}}
@@ -264,7 +264,7 @@ func (f *externalHARepository) ExecuteExternalHomeAssistantCommand(_ context.Con
 func TestExternalHAExecutionReleasesTransactionAndRecoversReceiptCommitFailure(t *testing.T) {
 	repository := &externalHARepository{fakeRepository: newFakeRepository(), receipts: map[string]syncmod.HomeAssistantCommandResult{}, failSettlement: true}
 	service := syncmod.NewService(repository)
-	request := syncmod.PushRequest{DeviceID: "device-1", Changes: []syncmod.SyncChange{{ChangeID: "change-1", Operation: syncmod.OperationHomeAssistantCommand, IdempotencyKey: "external-command-key", IntegrationID: "integration-1", EntityID: "light.kitchen", Command: "turn_on"}}}
+	request := syncmod.PushRequest{DeviceID: "device-1", Changes: []syncmod.SyncChange{{ChangeID: "b0000000-0000-4000-8000-000000000001", Operation: syncmod.OperationHomeAssistantCommand, IdempotencyKey: "external-command-key", IntegrationID: "integration-1", EntityID: "light.kitchen", Command: "turn_on"}}}
 	if _, err := service.Push(context.Background(), request); err == nil {
 		t.Fatal("expected post-effect receipt failure")
 	}
