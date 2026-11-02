@@ -124,6 +124,7 @@ void main() {
     final previousOffset = scrollable.position.pixels;
     await tester.tap(last);
     await _pumpUntilFound(tester, find.byType(AboutSettingsScreen));
+    await _pumpForUi(tester);
     expect(
       MomoDockInsets.bottomOf(tester.element(find.byType(AboutSettingsScreen))),
       0,
