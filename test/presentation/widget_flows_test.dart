@@ -88,7 +88,7 @@ void main() {
     await _disposeWidgetTree(tester);
   });
 
-  testWidgets('我的末项在Dock上方可点击，原生push页继续继承动态占位', (tester) async {
+  testWidgets('我的末项避让Dock，二级页隐藏Dock且返回保留位置', (tester) async {
     addTearDown(tester.view.reset);
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(320, 640);
@@ -103,7 +103,7 @@ void main() {
         matching: find.text('我的'),
       ),
     );
-    await _pumpUntilFound(tester, find.text('系统设置'));
+    await _pumpUntilFound(tester, find.byType(SettingsScreen));
     await _pumpForUi(tester);
     final last = find.text('关于与存储信息');
     final settingsScroll = find.descendant(
@@ -121,12 +121,20 @@ void main() {
       tester.getBottomLeft(tile).dy,
       lessThan(tester.getTopLeft(find.byType(MomoFloatingCapsuleDock)).dy),
     );
+    final previousOffset = scrollable.position.pixels;
     await tester.tap(last);
     await _pumpUntilFound(tester, find.byType(AboutSettingsScreen));
     expect(
       MomoDockInsets.bottomOf(tester.element(find.byType(AboutSettingsScreen))),
-      greaterThan(0),
+      0,
     );
+    expect(find.byType(MomoFloatingCapsuleDock), findsNothing);
+    await tester.pageBack();
+    await _pumpForUi(tester);
+    expect(find.byType(SettingsScreen), findsOneWidget);
+    expect(find.byType(MomoFloatingCapsuleDock), findsOneWidget);
+    expect(tester.state<ScrollableState>(settingsScroll).position.pixels,
+      closeTo(previousOffset, 0.01));
     expect(tester.takeException(), isNull);
     await _disposeWidgetTree(tester);
   });

@@ -1630,3 +1630,16 @@ App Drift schema 5→6，新增可查询计划/条目/归档表和两个 nullabl
 - `mobile_redesign_test.dart`：首个视口用例结束时，卸载ProviderScope触发Drift的零延时查询清理定时器；原来的无参数 `pump()` 不推进假时钟，直接注册 `database.close` 为teardown又可能等待未完成的异步清理，导致定时器残留及后续用例停滞。改为 `try/finally` 在成功和断言失败路径均卸载组件，显式 `pump(Duration.zero)` 排空零延时任务，再通过 `tester.runAsync(database.close)` 完成数据库关闭。保留全部视口、字号、深浅色及交互断言。
 - `home_ha_quick_actions_test.dart`：服务状态重构为默认折叠，测试先验证明细隐藏，再点击展开并检查HA真实连接状态；保留“已连接”及非“未接入”的原断言。未改变生产状态判断、界面或业务实现，也未放宽CI超时。
 - 本轮验证：2个修改Dart文件的tree-sitter语法解析、`git diff --check`通过；本机仍无Flutter/Dart，官方SDK元数据下载返回404，未能复跑Flutter单测、analyze或Android打包。需在新提交的CI运行中确认测试和安装包产出，不能将修复源码记为打包成功。未提交、推送或发布。
+
+## 34. 2026-11-02：“我的”一级/二级设置重构
+
+本次以 `76d6b62` 干净工作区为基线，用户授权重组“我的”页面，范围见 AC-032。
+
+- `SettingsScreen` 从14个平铺入口缩为6个入口，分为使用偏好、服务与协同、数据与应用。首屏名称与底栏“我的”一致。
+- `SettingsCategoryScreen` 用四个明确分类组织详细入口：外观与显示（主题、字号）、智能服务（AI配置/用量、条码）、家庭与同步（NAS、HA、同步）、数据与隐私（统计、备份、隐私、诊断）。提醒、关于从一级直达。原有业务页面复用，不保留旧长列表分支。
+- `_SettingsGroup`/`_SettingsLink` 统一实色分组、原生按下反馈、60dp最小行高和文字换行；较大字号省略装饰图标，分隔线同步回退到文字边距；页面沿用手机边距与阅读宽度。
+- `_openSettingsPage` 把新设置详情放到根Navigator上，隐藏shell底部导航；沿用MaterialPageRoute的原生返回行为。减少动态效果或辅助导航启用时使用120ms淡入淡出；详情统一补底部SafeArea，原设置页面无须携带不可见Dock的占位。列表使用PageStorageKey保留返回位置。库存统计复用原StatisticsScreen，通过相同返回栈进入。
+- 更新24组移动端回归，逐一进入四类设置、检查实际字体缩放、隐藏Dock及返回位置；原末项可点击回归改为验证新二级导航。补设置逐级返回、诊断入口、主题保存及减少动态转场用例。断言与路由变化对应，不删除原核心行为检查。
+- 本机Flutter/Dart executable仍缺失，暂时只能执行tree-sitter语法检查与`git diff --check`；这些不替代Flutter analyze/test/build。修改在隔离分支执行CI，正式发布与真机视觉验收未在本次范围内授权。实际执行证据另行补充。
+
+AI_CONTEXT更新建议：AC-032完成运行与视觉验收后，记录“我的”六入口与根Navigator详情；当前不把源码状态写成已验收事实。

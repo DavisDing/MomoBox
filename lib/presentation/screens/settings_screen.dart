@@ -10,7 +10,6 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -32,242 +31,289 @@ import '../../services/local_notification_service.dart';
 import '../../services/diagnostic_log_service.dart';
 import '../controllers/providers.dart';
 import 'ai_usage_screen.dart';
+import 'statistics_screen.dart';
 
-class SettingsScreen extends ConsumerWidget {
+/// The six primary destinations keep the phone's settings overview short.
+/// Editing and service setup stay in the existing dedicated screens.
+class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
-
-    return Scaffold(
-      body: SafeArea(
-        left: false, right: false, bottom: false,
-        child: ListView(
-          padding: MomoMobileLayout.pageInsets(context).add(
-            EdgeInsets.only(bottom: 20 + MomoDockInsets.bottomOf(context))),
-          children: [
-            const MomoPageHeader(
-              title: '系统设置',
-              subtitle: Text('把小箱子调成你喜欢的样子'),
-            ),
-          _buildSectionHeader(context, '外观与个性化'),
-          Card(
-            margin: const EdgeInsets.only(bottom: 16),
-            clipBehavior: Clip.antiAlias,
-            child: Column(
-              children: [
-                _buildSettingsListTile(
-                  context,
-                  icon: Icons.palette_outlined,
-                  title: '主题中心与个性化',
-                  subtitle: palette.label,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const ThemeSettingsScreen()),
-                  ),
-                ),
-                const Divider(height: 1, indent: 56),
-                _buildSettingsListTile(
-                  context,
-                  icon: Icons.format_size_rounded,
-                  title: '界面字体大小',
-                  subtitle: '支持紧凑、标准、大号及关怀超大号字号',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const FontScaleSettingsScreen()),
-                  ),
-                ),
-              ],
-            ),
+  Widget build(BuildContext context) => Scaffold(
+    body: SafeArea(
+      left: false, right: false, bottom: false,
+      child: ListView(
+        key: const PageStorageKey('settings-overview'),
+        padding: MomoMobileLayout.pageInsets(context).add(
+          EdgeInsets.only(bottom: 20 + MomoDockInsets.bottomOf(context))),
+        children: [
+          const MomoPageHeader(
+            title: '我的',
+            subtitle: Text('偏好、服务与数据'),
           ),
-
-          _buildSectionHeader(context, '隐私、密钥与外部服务'),
-          Card(
-            margin: const EdgeInsets.only(bottom: 16),
-            clipBehavior: Clip.antiAlias,
-            child: Column(
-              children: [
-                _buildSettingsListTile(
-                  context,
-                  icon: Icons.shield_outlined,
-                  title: '隐私与密钥安全',
-                  subtitle: 'AI 密钥与敏感凭证仅保存在设备安全存储中',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const PrivacySettingsScreen()),
-                  ),
-                ),
-                const Divider(height: 1, indent: 56),
-                _buildSettingsListTile(
-                  context,
-                  icon: Icons.psychology_outlined,
-                  title: 'AI 解析与模型配置',
-                  subtitle: '管理服务、模型与连接',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const AiSettingsScreen()),
-                  ),
-                ),
-                const Divider(height: 1, indent: 56),
-                _buildSettingsListTile(
-                  context,
-                  icon: Icons.insert_chart_outlined,
-                  title: '库存统计',
-                  subtitle: '查看消耗、入库/调整与报废趋势',
-                  onTap: () => context.push('/statistics'),
-                ),
-                const Divider(height: 1, indent: 56),
-                _buildSettingsListTile(
-                  context,
-                  icon: Icons.analytics_outlined,
-                  title: 'AI 用量与日志汇总',
-                  subtitle: '当日/7天/30天/全部 Token 与明细统计',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const AiUsageScreen()),
-                  ),
-                ),
-                const Divider(height: 1, indent: 56),
-                _buildSettingsListTile(
-                  context,
-                  icon: Icons.qr_code_scanner,
-                  title: '外部条码 API 接口',
-                  subtitle: '多接口配置、免费源切换与调用角色',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const BarcodeSettingsScreen()),
-                  ),
-                ),
-              ],
+          _SettingsGroup(title: '使用偏好', children: [
+            _categoryLink(SettingsCategory.appearance),
+            _SettingsLink(
+              icon: Icons.notifications_active_outlined,
+              title: '提醒与通知',
+              subtitle: '权限与测试提醒',
+              destination: (_) => const NotificationSettingsScreen(),
             ),
-          ),
-
-          _buildSectionHeader(context, '网络服务与家庭协同'),
-          Card(
-            margin: const EdgeInsets.only(bottom: 16),
-            clipBehavior: Clip.antiAlias,
-            child: Column(
-              children: [
-                _buildSettingsListTile(
-                  context,
-                  icon: Icons.dns_outlined,
-                  title: 'NAS 协同管理',
-                  subtitle: '局域网双向同步、家庭组识别码与多端协同',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const NasSettingsScreen()),
-                  ),
-                ),
-                const Divider(height: 1, indent: 56),
-                _buildSettingsListTile(
-                  context,
-                  icon: Icons.hub_outlined,
-                  title: 'Home Assistant 连接配置',
-                  subtitle: 'HA 地址、Token 授权状态与设备白名单',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const HomeAssistantSettingsScreen()),
-                  ),
-                ),
-                const Divider(height: 1, indent: 56),
-                _buildSettingsListTile(
-                  context,
-                  icon: Icons.sync_outlined,
-                  title: '同步状态与冲突处理',
-                  subtitle: '首次同步选择、手动同步与本地冲突记录',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const SyncSettingsScreen()),
-                  ),
-                ),
-              ],
+          ]),
+          _SettingsGroup(title: '服务与协同', children: [
+            _categoryLink(SettingsCategory.intelligence),
+            _categoryLink(SettingsCategory.household),
+          ]),
+          _SettingsGroup(title: '数据与应用', children: [
+            _categoryLink(SettingsCategory.data),
+            _SettingsLink(
+              icon: Icons.info_outline,
+              title: '关于与存储信息',
+              subtitle: '版本、空间与许可',
+              destination: (_) => const AboutSettingsScreen(),
             ),
-          ),
-
-          _buildSectionHeader(context, '数据与系统'),
-          Card(
-            margin: const EdgeInsets.only(bottom: 16),
-            clipBehavior: Clip.antiAlias,
-            child: Column(
-              children: [
-                _buildSettingsListTile(
-                  context,
-                  icon: Icons.notifications_active_outlined,
-                  title: '提醒与通知',
-                  subtitle: '查看通知权限、重新授权并发送测试提醒',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const NotificationSettingsScreen()),
-                  ),
-                ),
-                const Divider(height: 1, indent: 56),
-                _buildSettingsListTile(
-                  context,
-                  icon: Icons.backup_outlined,
-                  title: '数据备份与迁移',
-                  subtitle: '核心数据 JSON 导出与合并导入（不含图片/OCR）',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const BackupSettingsScreen()),
-                  ),
-                ),
-                const Divider(height: 1, indent: 56),
-                _buildSettingsListTile(
-                  context,
-                  icon: Icons.bug_report_outlined,
-                  title: '本地诊断导出',
-                  subtitle: '查看记录范围并导出脱敏错误诊断',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const DiagnosticExportScreen()),
-                  ),
-                ),
-                const Divider(height: 1, indent: 56),
-                _buildSettingsListTile(
-                  context,
-                  icon: Icons.info_outline,
-                  title: '关于与存储信息',
-                  subtitle: '版本号、本地数据说明、存储空间管理与许可',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const AboutSettingsScreen()),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          ]),
         ],
-      )),
-    );
-  }
+      ),
+    ),
+  );
 
-  Widget _buildSectionHeader(BuildContext context, String title) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 8, top: 4),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: MomoTextSize.caption,
-          fontWeight: FontWeight.w600,
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
+  Widget _categoryLink(SettingsCategory category) => _SettingsLink(
+    icon: category.icon,
+    title: category.title,
+    subtitle: category.summary,
+    destination: (_) => SettingsCategoryScreen(category: category),
+  );
+}
+
+enum SettingsCategory {
+  appearance('外观与显示', '主题与字体大小', Icons.palette_outlined),
+  intelligence('智能服务', 'AI、条码与用量', Icons.auto_awesome_outlined),
+  household('家庭与同步', 'NAS、家居连接与同步', Icons.home_outlined),
+  data('数据与隐私', '统计、备份与安全', Icons.shield_outlined);
+
+  const SettingsCategory(this.title, this.summary, this.icon);
+
+  final String title;
+  final String summary;
+  final IconData icon;
+}
+
+/// A focused second-level list, with an ordinary back stack and no tab dock.
+class SettingsCategoryScreen extends ConsumerWidget {
+  const SettingsCategoryScreen({required this.category, super.key});
+
+  final SettingsCategory category;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final groups = switch (category) {
+      SettingsCategory.appearance => [
+        _SettingsGroup(children: [
+          _SettingsLink(
+            icon: Icons.palette_outlined,
+            title: '主题中心与个性化',
+            subtitle: MomoPalette.fromStoredValue(
+              ref.watch(themeNameProvider).valueOrNull).label,
+            destination: (_) => const ThemeSettingsScreen(),
+          ),
+          _SettingsLink(
+            icon: Icons.format_size_rounded,
+            title: '界面字体大小',
+            subtitle: '选择适合自己的阅读大小',
+            destination: (_) => const FontScaleSettingsScreen(),
+          ),
+        ]),
+      ],
+      SettingsCategory.intelligence => [
+        _SettingsGroup(title: 'AI 助手', children: [
+          _SettingsLink(
+            icon: Icons.psychology_outlined,
+            title: 'AI 解析与模型配置',
+            subtitle: '管理服务、模型与连接',
+            destination: (_) => const AiSettingsScreen(),
+          ),
+          _SettingsLink(
+            icon: Icons.analytics_outlined,
+            title: 'AI 用量与日志汇总',
+            subtitle: '查看 Token 用量与调用明细',
+            destination: (_) => const AiUsageScreen(),
+          ),
+        ]),
+        _SettingsGroup(title: '识别服务', children: [
+          _SettingsLink(
+            icon: Icons.qr_code_scanner,
+            title: '外部条码 API 接口',
+            subtitle: '管理查询接口与调用顺序',
+            destination: (_) => const BarcodeSettingsScreen(),
+          ),
+        ]),
+      ],
+      SettingsCategory.household => [
+        _SettingsGroup(title: '连接', children: [
+          _SettingsLink(
+            icon: Icons.dns_outlined,
+            title: 'NAS 协同管理',
+            subtitle: '服务地址、账号与家庭成员',
+            destination: (_) => const NasSettingsScreen(),
+          ),
+          _SettingsLink(
+            icon: Icons.hub_outlined,
+            title: 'Home Assistant 连接配置',
+            subtitle: '连接授权与设备权限',
+            destination: (_) => const HomeAssistantSettingsScreen(),
+          ),
+        ]),
+        _SettingsGroup(title: '同步', children: [
+          _SettingsLink(
+            icon: Icons.sync_outlined,
+            title: '同步状态与冲突处理',
+            subtitle: '首次同步、手动同步与冲突记录',
+            destination: (_) => const SyncSettingsScreen(),
+          ),
+        ]),
+      ],
+      SettingsCategory.data => [
+        _SettingsGroup(title: '本地数据', children: [
+          _SettingsLink(
+            icon: Icons.insert_chart_outlined,
+            title: '库存统计',
+            subtitle: '消耗、入库与报废趋势',
+            destination: (_) => const StatisticsScreen(),
+          ),
+          _SettingsLink(
+            icon: Icons.backup_outlined,
+            title: '数据备份与迁移',
+            subtitle: '核心数据 JSON 导出与合并导入',
+            destination: (_) => const BackupSettingsScreen(),
+          ),
+        ]),
+        _SettingsGroup(title: '隐私与诊断', children: [
+          _SettingsLink(
+            icon: Icons.shield_outlined,
+            title: '隐私与密钥安全',
+            subtitle: '了解凭证存储与数据边界',
+            destination: (_) => const PrivacySettingsScreen(),
+          ),
+          _SettingsLink(
+            icon: Icons.bug_report_outlined,
+            title: '本地诊断导出',
+            subtitle: '查看记录范围并导出脱敏诊断',
+            destination: (_) => const DiagnosticExportScreen(),
+          ),
+        ]),
+      ],
+    };
+    return Scaffold(
+      appBar: MomoGlassAppBar.adaptive(context, title: Text(category.title)),
+      body: ListView(
+        key: PageStorageKey('settings-${category.name}'),
+        padding: MomoMobileLayout.pageInsets(context).add(
+          const EdgeInsets.only(top: 16, bottom: 24)),
+        children: groups,
       ),
     );
   }
+}
 
-  Widget _buildSettingsListTile(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-  }) {
-    return ListTile(
-      leading: MediaQuery.textScalerOf(context).scale(MomoTextSize.body) > MomoTextSize.body * 1.5
-          ? null
-          : Container(
-              width: 32, height: 32,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
+class _SettingsGroup extends StatelessWidget {
+  const _SettingsGroup({this.title, required this.children});
+
+  final String? title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final largeText = MediaQuery.textScalerOf(context).scale(MomoTextSize.body) >
+        MomoTextSize.body * 1.5;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (title != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Semantics(
+                header: true,
+                child: Text(title!, style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                )),
               ),
-              child: Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
             ),
-      title: Text(title, style: Theme.of(context).textTheme.titleMedium),
-      subtitle: Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
-      trailing: const Icon(Icons.arrow_forward_ios, size: 14),
-      onTap: onTap,
+          Card(
+            margin: EdgeInsets.zero,
+            clipBehavior: Clip.antiAlias,
+            child: Column(children: [
+              for (var i = 0; i < children.length; i++) ...[
+                if (i > 0) Divider(height: 1, indent: largeText ? 16 : 60, endIndent: 16),
+                children[i],
+              ],
+            ]),
+          ),
+        ],
+      ),
     );
   }
+}
+
+class _SettingsLink extends StatelessWidget {
+  const _SettingsLink({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.destination,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final WidgetBuilder destination;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final largeText = MediaQuery.textScalerOf(context).scale(MomoTextSize.body) >
+        MomoTextSize.body * 1.5;
+    return ListTile(
+      minTileHeight: 60,
+      leading: largeText ? null : Container(
+        width: 32, height: 32,
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primary.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(icon, size: 20, color: theme.colorScheme.primary),
+      ),
+      title: Text(title, style: theme.textTheme.titleMedium),
+      subtitle: Text(subtitle, style: theme.textTheme.bodyMedium?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      )),
+      trailing: const Icon(Icons.chevron_right_rounded, size: 20),
+      onTap: () => _openSettingsPage(context, destination),
+    );
+  }
+}
+
+void _openSettingsPage(BuildContext context, WidgetBuilder destination) {
+  final reduceMotion = MediaQuery.disableAnimationsOf(context) ||
+      MediaQuery.accessibleNavigationOf(context);
+  Widget page(BuildContext context) => ColoredBox(
+    color: Theme.of(context).scaffoldBackgroundColor,
+    // Detail pages live above the shell. Reserve the system gesture area even
+    // for existing screens with explicit ListView padding; no phantom dock gap.
+    child: SafeArea(top: false, left: false, right: false, child: destination(context)),
+  );
+  final Route<void> route = reduceMotion
+      ? PageRouteBuilder<void>(
+          pageBuilder: (context, animation, secondaryAnimation) => page(context),
+          transitionDuration: const Duration(milliseconds: 120),
+          reverseTransitionDuration: const Duration(milliseconds: 120),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+              FadeTransition(opacity: animation, child: child),
+        )
+      : MaterialPageRoute<void>(builder: page);
+  Navigator.of(context, rootNavigator: true).push(route);
 }
 
 class DiagnosticExportScreen extends StatefulWidget {

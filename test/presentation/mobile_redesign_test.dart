@@ -78,6 +78,26 @@ void main() {
               }
               if (route == '/settings') {
                 final scrollable = find.descendant(of: find.byType(SettingsScreen), matching: find.byType(Scrollable)).first;
+                expect(find.text('AI 解析与模型配置'), findsNothing);
+                for (final category in SettingsCategory.values) {
+                  final entry = find.text(category.title);
+                  await tester.scrollUntilVisible(entry, 200, scrollable: scrollable);
+                  await _revealAboveDock(tester, entry, scrollable);
+                  expect(entry.hitTestable(), findsOneWidget);
+                  final previousOffset = tester.state<ScrollableState>(scrollable).position.pixels;
+                  await tester.tap(entry);
+                  await _frames(tester);
+                  final page = find.byType(SettingsCategoryScreen);
+                  expect(tester.widget<SettingsCategoryScreen>(page).category, category);
+                  expect(MediaQuery.textScalerOf(tester.element(page)).scale(14), closeTo(14 * scale, 0.01));
+                  expect(MomoDockInsets.bottomOf(tester.element(page)), 0);
+                  expect(find.byType(MomoFloatingCapsuleDock), findsNothing);
+                  expect(tester.takeException(), isNull, reason: category.title);
+                  await tester.pageBack();
+                  await _frames(tester);
+                  expect(tester.state<ScrollableState>(scrollable).position.pixels,
+                      closeTo(previousOffset, 0.01));
+                }
                 final about = find.text('关于与存储信息');
                 await tester.scrollUntilVisible(about, 240, scrollable: scrollable);
                 // The last tile can exceed the usable viewport at large text
