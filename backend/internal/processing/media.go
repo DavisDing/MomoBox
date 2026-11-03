@@ -24,6 +24,7 @@ const MaxImageBytes = 8 << 20
 var ErrInvalid = errors.New("invalid processing request")
 var ErrConflict = errors.New("media identity conflicts with existing content or was deleted")
 var ErrBusy = errors.New("processing in progress; retry later")
+var ErrOutcomeUnknown = errors.New("AI result is unknown; submit a new explicit request only after review")
 var ErrUnavailable = errors.New("backend processor unavailable")
 
 type Asset struct {
@@ -51,14 +52,15 @@ type Upload struct {
 }
 type OCRFunc func(context.Context, []byte) (string, error)
 type Service struct {
-	DB    *sql.DB
-	OCR   OCRFunc
-	AI    AIConfig
-	slots chan struct{}
+	DB         *sql.DB
+	OCR        OCRFunc
+	AI         AIConfig
+	slots      chan struct{}
+	imageSlots chan struct{}
 }
 
 func New(db *sql.DB, ai AIConfig) *Service {
-	return &Service{DB: db, OCR: Tesseract, AI: ai, slots: make(chan struct{}, 2)}
+	return &Service{DB: db, OCR: Tesseract, AI: ai, slots: make(chan struct{}, 2), imageSlots: make(chan struct{}, 1)}
 }
 func UUID(v string) bool {
 	if len(v) != 36 || v[8] != '-' || v[13] != '-' || v[18] != '-' || v[23] != '-' {
@@ -127,8 +129,8 @@ func (s *Service) Upload(ctx context.Context, family, user string, u Upload) (As
 		return Asset{}, err
 	}
 	select {
-	case s.slots <- struct{}{}:
-		defer func() { <-s.slots }()
+	case s.imageSlots <- struct{}{}:
+		defer func() { <-s.imageSlots }()
 	default:
 		return Asset{}, ErrBusy
 	}
@@ -143,6 +145,13 @@ func (s *Service) Upload(ctx context.Context, family, user string, u Upload) (As
 	defer tx.Rollback()
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,1011))`, family+":"+u.ID); err != nil {
 		return Asset{}, err
+	}
+	if u.EntityType == "product" {
+		var productID string
+		err := tx.QueryRowContext(ctx, `SELECT id::text FROM products WHERE id=$1::uuid AND family_id=$2::uuid AND deleted_at IS NULL FOR KEY SHARE`, u.EntityID, family).Scan(&productID)
+		if err != nil {
+			return Asset{}, err
+		}
 	}
 	var deleted bool
 	if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM media_tombstones WHERE family_id=$1::uuid AND id=$2::uuid)`, family, u.ID).Scan(&deleted); err != nil {
@@ -165,10 +174,10 @@ func (s *Service) Upload(ctx context.Context, family, user string, u Upload) (As
 	return a, err
 }
 func (s *Service) List(ctx context.Context, family, kind, id, after string) ([]Asset, error) {
-	if !validEntity(kind, id) || (after != "" && !UUID(after)) {
+	if !(validEntity(kind, id) || (kind == "product" && id == "")) || (after != "" && !UUID(after)) {
 		return nil, ErrInvalid
 	}
-	rows, err := s.DB.QueryContext(ctx, `SELECT `+strings.Replace(assetColumns, "source_sha256,content,", "source_sha256,NULL::bytea,", 1)+` FROM media_assets WHERE family_id=$1::uuid AND entity_type=$2 AND entity_id=$3::uuid AND ($4='' OR id>NULLIF($4,'')::uuid) ORDER BY id LIMIT 50`, family, kind, id, after)
+	rows, err := s.DB.QueryContext(ctx, `SELECT `+strings.Replace(assetColumns, "source_sha256,content,", "source_sha256,NULL::bytea,", 1)+` FROM media_assets WHERE family_id=$1::uuid AND entity_type=$2 AND ($3='' OR entity_id=NULLIF($3,'')::uuid) AND ($4='' OR id>NULLIF($4,'')::uuid) ORDER BY id LIMIT 50`, family, kind, id, after)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +217,7 @@ func (s *Service) Reassign(ctx context.Context, family, id, product string) erro
 	if !UUID(id) || !UUID(product) {
 		return ErrInvalid
 	}
-	result, err := s.DB.ExecContext(ctx, `UPDATE media_assets SET entity_type='product',entity_id=$3::uuid,updated_at=CURRENT_TIMESTAMP WHERE family_id=$1::uuid AND id=$2::uuid AND deleted_at IS NULL AND (entity_type='intake_draft' OR (entity_type='product' AND entity_id=$3::uuid))`, family, id, product)
+	result, err := s.DB.ExecContext(ctx, `UPDATE media_assets SET entity_type='product',entity_id=$3::uuid,updated_at=CURRENT_TIMESTAMP WHERE family_id=$1::uuid AND id=$2::uuid AND deleted_at IS NULL AND EXISTS(SELECT 1 FROM products p WHERE p.id=$3::uuid AND p.family_id=$1::uuid AND p.deleted_at IS NULL) AND (entity_type='intake_draft' OR (entity_type='product' AND entity_id=$3::uuid))`, family, id, product)
 	if err != nil {
 		return err
 	}

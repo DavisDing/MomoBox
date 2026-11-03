@@ -112,6 +112,49 @@ void main() {
     response: response ?? _receipt(action: action, changeId: changeId, remoteId: remoteId),
   );
 
+  test('bounded successful receipt pruning preserves rejected and legacy history evidence', () async {
+    for(final id in ['accepted-old','rejected-old','legacy-history']) {
+      await repository.enqueue(SyncOutboxDraft(changeId:id,scopeId:_scope,
+        operation:id=='legacy-history'?SyncOperation.inventoryCommand:SyncOperation.entityUpsert,
+        operationId:id=='legacy-history'?'operation':null,
+        entity:'products',entityId:'product',idempotencyKey:'$id-key-long-enough',requestJson:'{}'));
+      if(id=='rejected-old') { await repository.markRejected(changeId:id,errorCode:'VALIDATION_FAILED',errorMessage:'bad',confirmedByNas:true,completedAt:DateTime.utc(2025)); }
+      else { await repository.markAccepted(changeId:id,serverCursor:1,completedAt:DateTime.utc(2025)); }
+    }
+    expect(await repository.pruneSuccessful(scopeId:_scope,before:DateTime.utc(2026)),1);
+    expect(await repository.getByChangeId('accepted-old'),isNull);
+    await expectLater(repository.enqueue(const SyncOutboxDraft(changeId:'accepted-old',scopeId:_scope,operation:SyncOperation.entityUpsert,idempotencyKey:'accepted-old-key-long-enough',requestJson:'{}')),throwsStateError);
+    expect(await repository.getByChangeId('rejected-old'),isNotNull);
+    expect(await repository.getByChangeId('legacy-history'),isNotNull);
+  });
+
+  for (final code in ['HA_INVALID_TOKEN','HA_UNAUTHORIZED','HA_INVALID_URL','HA_UNAVAILABLE','HA_AUDIT_FAILURE']) {
+    test('HA rejection $code can be explicitly withdrawn and retains audit', () async {
+      await repository.enqueue(SyncOutboxDraft(changeId: code, scopeId: _scope,
+        operation: SyncOperation.homeAssistantCommand, integrationId: 'integration',
+        entityId: 'light.kitchen', command: 'turn_on', idempotencyKey: '$code-idempotency-key', requestJson: '{}'));
+      await repository.markRejected(changeId: code, errorCode: code, errorMessage: 'NAS refusal', confirmedByNas: true);
+      final entry = (await repository.getByChangeId(code))!;
+      expect(await repository.canAbandonRejected(entry), isTrue);
+      await repository.abandonRejected(scopeId: _scope, changeId: code);
+      expect(await repository.hasSnapshotBlockingChanges(scopeId: _scope), isFalse);
+      expect((await repository.getByChangeId(code))!.status, SyncOutboxStatus.rejected);
+      expect(await repository.getConflictResolutionRefreshToken(_scope), isNotNull);
+    });
+  }
+
+  test('malformed local change is withdrawable after earlier network claims', () async {
+    await repository.enqueue(const SyncOutboxDraft(changeId: 'bad-local',scopeId:_scope,
+      operation: SyncOperation.entityUpsert, entity:'products', entityId:'product',
+      idempotencyKey:'malformed-local-idempotency-key',requestJson:'{}'));
+    await database.customStatement("UPDATE sync_outbox SET request_json='{bad' WHERE change_id='bad-local'");
+    await repository.claimNext(scopeId:_scope);
+    await repository.releaseInFlight(changeId:'bad-local',errorCode:'network',errorMessage:'offline',nextAttemptAt:DateTime.now().subtract(const Duration(seconds:1)));
+    await repository.claimNext(scopeId:_scope);
+    await repository.markRejected(changeId:'bad-local',errorCode:'INVALID_LOCAL_CHANGE',errorMessage:'malformed',failedBeforeFirstSend:true);
+    expect(await repository.canAbandonRejected((await repository.getByChangeId('bad-local'))!),isTrue);
+  });
+
   for (final action in ['keep_remote', 'keep_local']) {
     for (final operation in [SyncOperation.entityUpsert, SyncOperation.entityDelete]) {
       test('$action settles ${operation.wireValue} atomically without retry or fake accepted', () async {

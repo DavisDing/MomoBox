@@ -1,8 +1,19 @@
 services:
   momo-backend:
-    image: ghcr.io/davisding/momobox-backend:latest
+    mem_limit: 768m
+    # Public latest manifest resolved 2026-11-03; update this digest deliberately.
+    image: ghcr.io/davisding/momobox-backend@sha256:8e05a14b1bc1feeffdbd5a63271e23312513f3433d50d209698e1482044e0a9f
     restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
     environment:
+      GOMEMLIMIT: 512MiB
       # 必填：已有 PG 的网络别名、专属库/账号及密码；密码中的特殊字符需 URL 编码。
       DATABASE_URL: "postgres://momobox_user:CHANGE_ME_PASSWORD@CHANGE_ME_PG_HOST:5432/momobox?sslmode=disable"
     networks: [default, database_network]

@@ -3,6 +3,7 @@
 # Importing Compose does not apply MomoBox migrations; see ../README.md.
 services:
   postgres:
+    mem_limit: 512m
     image: postgres:18.6-alpine3.24@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
     restart: unless-stopped
     logging:
@@ -33,6 +34,7 @@ services:
       start_period: 10s
 
   momo-backend:
+    mem_limit: 768m
     # Allow the backend's 10-second graceful drain to finish before SIGKILL.
     stop_grace_period: 15s
     image: ${MOMO_BACKEND_IMAGE:?set MOMO_BACKEND_IMAGE to a pinned GHCR tag or digest in .env}
@@ -44,7 +46,7 @@ services:
         max-file: "3"
     read_only: true
     tmpfs:
-      - /tmp:size=16m,mode=1777
+      - /tmp:size=64m,mode=1777
     cap_drop:
       - ALL
     security_opt:
@@ -52,6 +54,7 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-production}
       APP_VERSION: ${APP_VERSION:?set APP_VERSION to the deployed image version in .env}
+      GOMEMLIMIT: 512MiB
       HTTP_ADDR: 0.0.0.0:8080
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}

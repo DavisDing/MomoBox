@@ -22,7 +22,9 @@ func (r *transactionRepository) WithinChange(ctx context.Context, apply func() (
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) {
 			switch pgErr.Code {
-			case "22P02", "22003", "22007", "22008", "22001", "23502", "23503", "23505", "23514":
+			case "23503", "23505":
+				err = syncdomain.NewBusinessError("VERSION_CONFLICT", "change conflicts with current database state; refresh and resolve", nil)
+			case "22P02", "22003", "22007", "22008", "22001", "23502", "23514":
 				// Do not expose PostgreSQL messages, values, constraint names or SQL.
 				err = syncdomain.NewBusinessError("VALIDATION_FAILED", "change contains invalid data or violates a data constraint", nil)
 			}

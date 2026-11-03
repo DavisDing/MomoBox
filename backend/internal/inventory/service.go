@@ -34,16 +34,17 @@ const (
 )
 
 type Command struct {
-	FamilyID       string
-	ActorID        string
-	DeviceID       string
-	OperationID    string
-	IdempotencyKey string
-	ProductID      string
-	BatchID        string
-	Quantity       int
-	Command        CommandName
-	Allocations    []Allocation
+	ClientOccurredAt *time.Time
+	FamilyID         string
+	ActorID          string
+	DeviceID         string
+	OperationID      string
+	IdempotencyKey   string
+	ProductID        string
+	BatchID          string
+	Quantity         int
+	Command          CommandName
+	Allocations      []Allocation
 }
 
 type Allocation struct {
@@ -72,15 +73,16 @@ type BatchChange struct {
 }
 
 type ConsumptionRecord struct {
-	ID          string
-	FamilyID    string
-	ActorID     string
-	DeviceID    string
-	OperationID string
-	Command     CommandName
-	BatchID     string
-	Quantity    int
-	OccurredAt  time.Time
+	ClientOccurredAt *time.Time
+	ID               string
+	FamilyID         string
+	ActorID          string
+	DeviceID         string
+	OperationID      string
+	Command          CommandName
+	BatchID          string
+	Quantity         int
+	OccurredAt       time.Time
 }
 
 type Result struct {
@@ -168,7 +170,7 @@ func (s *Service) Execute(ctx context.Context, command Command) (Result, error) 
 			if err := tx.AppendConsumptionRecord(txCtx, ConsumptionRecord{
 				ID: newOperationRecordID(command.OperationID, allocation.BatchID), FamilyID: command.FamilyID,
 				ActorID: command.ActorID, DeviceID: command.DeviceID, OperationID: command.OperationID,
-				Command: command.Command, BatchID: allocation.BatchID, Quantity: allocation.Quantity, OccurredAt: occurredAt,
+				Command: command.Command, BatchID: allocation.BatchID, Quantity: allocation.Quantity, OccurredAt: occurredAt, ClientOccurredAt: command.ClientOccurredAt,
 			}); err != nil {
 				return err
 			}
@@ -215,7 +217,9 @@ func (s *Service) plan(ctx context.Context, tx Tx, command Command) ([]Allocatio
 			return nil, ErrBatchUnavailable
 		}
 		if command.Command == CommandDiscard && command.Quantity != batch.Quantity {
-			if command.Quantity > batch.Quantity { return nil, ErrInsufficientStock }
+			if command.Quantity > batch.Quantity {
+				return nil, ErrInsufficientStock
+			}
 			return nil, fmt.Errorf("%w: discard quantity must equal the entire authoritative remainder", ErrInvalidCommand)
 		}
 		return []Allocation{{BatchID: batch.ID, Quantity: command.Quantity, BeforeQuantity: batch.Quantity, BeforeVersion: batch.Version}}, nil

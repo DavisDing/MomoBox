@@ -1,5 +1,6 @@
 services:
   postgres:
+    mem_limit: 512m
     image: postgres:16.4-alpine@sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c
     restart: unless-stopped
     logging:
@@ -30,6 +31,7 @@ services:
       start_period: 10s
 
   momo-backend:
+    mem_limit: 768m
     # Allow the backend's 10-second graceful drain to finish before SIGKILL.
     stop_grace_period: 15s
     image: ${MOMO_BACKEND_IMAGE:?set MOMO_BACKEND_IMAGE to a pinned GHCR tag or digest in .env}
@@ -41,7 +43,7 @@ services:
         max-file: "3"
     read_only: true
     tmpfs:
-      - /tmp:size=16m,mode=1777
+      - /tmp:size=64m,mode=1777
     cap_drop:
       - ALL
     security_opt:
@@ -49,6 +51,7 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-production}
       APP_VERSION: ${APP_VERSION:?set APP_VERSION to the deployed image version in .env}
+      GOMEMLIMIT: 512MiB
       HTTP_ADDR: 0.0.0.0:8080
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}

@@ -82,6 +82,7 @@ class MediaAsset {
   final String? backendError;
   String? get backendStatusLabel => switch (backendState) {
     'uploading' => '上传中', 'failed' => '上传待重试',
+    'download_failed' => '图片恢复待重试',
     'synced' => '已上传后端', 'ocr_processing' => '后端 OCR 中',
     'ocr_failed' => '后端 OCR 待重试', 'ocr_complete' => '后端 OCR 完成',
     'deleting' => '删除待同步', _ => null,

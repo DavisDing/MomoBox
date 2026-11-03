@@ -170,6 +170,9 @@ class AiFallbackExecutor {
           model: config.model, endpoint: 'backend', durationMs: result['elapsed_ms'] as int,
           isSuccess: true)]);
     }
+    if (configs.any((config) => config.endpoint == 'backend')) {
+      throw StateError('NAS 会话或处理模式已变化，请恢复 NAS 连接后重试。');
+    }
     try {
       final response = await _executor.execute(
         configs: configs,

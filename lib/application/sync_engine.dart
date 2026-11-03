@@ -31,6 +31,7 @@ class SyncRunReport {
     this.deferred = 0,
     this.hasMorePending = false,
     this.hasMoreRemote = false,
+    this.postProcessingError,
   });
 
   final int pushed;
@@ -38,6 +39,7 @@ class SyncRunReport {
   final bool skipped;
   final String? reason;
   final int deferred;
+  final String? postProcessingError;
 
   /// More immediately sendable operations remain after a bounded push. This
   /// must never be inferred from deferred/conflict counts alone.
@@ -474,12 +476,28 @@ class SyncEngine {
         throw const SyncRemoteChangeDeferred('a new conflict resolution requires a fresh snapshot before pull');
       }
       final pullResult = await _pullChanges(pullLimit);
+      String? processingError;
       if (pullResult.deferred == 0 && !pullResult.hasMore) {
-        await afterInventorySync?.call();
+        try {
+          await afterInventorySync?.call();
+        } catch (_) {
+          // Inventory/cursor are already committed. Keep auxiliary recovery
+          // observable without changing the completed inventory run's status.
+          _api.assertCurrentSession();
+          processingError = '库存已同步；历史或图片尚未完成，将在后续同步重试。';
+        }
         _api.assertCurrentSession();
       }
       final latest = await _ensureState();
       final hasDeferred = pullResult.deferred > 0;
+      if (!hasDeferred && !pullResult.hasMore) {
+        await _repository.saveProcessingWarning(_scopeId, processingError);
+        // Maintenance failure must not invalidate already committed inventory.
+        try {
+          await _repository.pruneSuccessful(scopeId: _scopeId,
+              before: DateTime.now().toUtc().subtract(const Duration(days: 90)));
+        } catch (_) { /* retry bounded maintenance on a later run */ }
+      }
       await _repository.saveState(
         _replaceState(
           latest,
@@ -494,6 +512,7 @@ class SyncEngine {
       return SyncRunReport(
         pushed: pushed,
         pulled: pullResult.applied,
+        postProcessingError: processingError,
         deferred: pullResult.deferred,
         hasMoreRemote: pullResult.hasMore,
         skipped: false,
@@ -1105,5 +1124,6 @@ class _PullResult {
 
   final int applied;
   final int deferred;
+  final String? postProcessingError;
   final bool hasMore;
 }

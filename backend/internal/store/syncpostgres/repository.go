@@ -876,6 +876,13 @@ func (r *transactionRepository) ExecuteInventoryCommand(ctx context.Context, cha
 	if err := r.validateInventoryDependencies(ctx, command); err != nil {
 		return syncdomain.InventoryCommandResult{}, err
 	}
+	if change.ClientUpdatedAt != "" {
+		occurred, err := time.Parse(time.RFC3339, change.ClientUpdatedAt)
+		if err != nil {
+			return syncdomain.InventoryCommandResult{}, err
+		}
+		command.ClientOccurredAt = &occurred
+	}
 	service := inventory.NewService(inventorypostgres.BindTransaction(r.tx, true))
 	result, err := service.Execute(ctx, command)
 	if err != nil {
@@ -884,15 +891,7 @@ func (r *transactionRepository) ExecuteInventoryCommand(ctx context.Context, cha
 	if len(result.Allocations) == 0 {
 		return syncdomain.InventoryCommandResult{}, errors.New("inventory command returned no allocations")
 	}
-	if change.ClientUpdatedAt != "" {
-		occurred, parseErr := time.Parse(time.RFC3339, change.ClientUpdatedAt)
-		if parseErr != nil {
-			return syncdomain.InventoryCommandResult{}, parseErr
-		}
-		if _, err := r.tx.ExecContext(ctx, `UPDATE consumption_records SET client_occurred_at=$4 WHERE family_id=$1::uuid AND device_id=$2::uuid AND operation_id=$3::uuid`, r.familyID, r.deviceID, change.OperationID, occurred); err != nil {
-			return syncdomain.InventoryCommandResult{}, err
-		}
-	}
+
 	entityID := result.Allocations[0].BatchID
 	var version int64
 	var raw []byte

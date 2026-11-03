@@ -26,6 +26,51 @@ class SyncOutboxRepository {
   /// All business repositories passed to the sync adapter share this database.
   AppDatabase get database => _database;
 
+  Stream<String?> watchProcessingWarning(String scopeId) =>
+      (_database.select(_database.appSettings)..where((s) => s.key.equals('sync_processing_warning:$scopeId')))
+          .watchSingleOrNull().map((row) => row?.value);
+
+  Future<void> saveProcessingWarning(String scopeId, String? message) async {
+    final key = 'sync_processing_warning:$scopeId';
+    if (message == null) {
+      await (_database.delete(_database.appSettings)..where((s) => s.key.equals(key))).go();
+    } else {
+      await _database.into(_database.appSettings).insertOnConflictUpdate(
+        AppSettingsCompanion.insert(key: key, value: message, updatedAt: _now()));
+    }
+  }
+
+  /// Bounded maintenance of successful receipts only. Unresolved, rejected and
+  /// conflict-linked intents remain available for review and recovery.
+  Future<int> pruneSuccessful({required String scopeId, required DateTime before}) =>
+      _database.transaction(() async {
+        final rows = await (_database.select(_database.syncOutbox)
+          ..where((o) => o.scopeId.equals(scopeId) & o.status.isIn(['accepted', 'replayed']) &
+              o.completedAt.isSmallerThanValue(before))
+          ..orderBy([(o) => OrderingTerm.asc(o.completedAt)])..limit(200)).get();
+        var removed = 0;
+        for (final row in rows) {
+          final conflict = await (_database.select(_database.syncConflicts)
+            ..where((c) => c.scopeId.equals(scopeId) & c.outboxChangeId.equals(row.changeId))..limit(1)).get();
+          if (conflict.isNotEmpty) continue;
+          if (row.operation == SyncOperation.inventoryCommand.wireValue) {
+            // Legacy history dedup needs the outbox until correlation exists.
+            final request = _decodedRequest(_outboxFromRecord(row));
+            final allocations = request?['allocations'];
+            if (allocations is! List || allocations.isEmpty) continue;
+            final sources = await _database.customSelect('''SELECT s.batch_id FROM stock_movement_sources s
+              JOIN stock_movements m ON m.id=s.local_id WHERE s.operation_id=?''',
+              variables: [Variable.withString(row.operationId ?? '')]).get();
+            final batches = sources.map((r) => r.read<String>('batch_id')).toSet();
+            if (allocations.any((a) => a is! Map || !batches.contains(a['batch_id']))) continue;
+          }
+          await _saveInternalSetting('sync_pruned_change:${jsonEncode([scopeId, row.changeId])}', '{}');
+          await _saveInternalSetting('sync_pruned_key:${jsonEncode([scopeId, row.idempotencyKey])}', '{}');
+          removed += await (_database.delete(_database.syncOutbox)..where((o) => o.changeId.equals(row.changeId))).go();
+        }
+        return removed;
+      });
+
   Future<T> transaction<T>(Future<T> Function() action) =>
       _database.transaction(action);
 
@@ -294,6 +339,11 @@ class SyncOutboxRepository {
   /// outside a transaction; use [enqueue] for standalone outbox writes.
   Future<SyncOutboxEntry> enqueueInCurrentTransaction(SyncOutboxDraft draft) async {
     _validateDraft(draft);
+    final retired = await (_database.select(_database.appSettings)..where((s) => s.key.isIn([
+      'sync_pruned_change:${jsonEncode([draft.scopeId, draft.changeId])}',
+      'sync_pruned_key:${jsonEncode([draft.scopeId, draft.idempotencyKey])}',
+    ]))..limit(1)).get();
+    if (retired.isNotEmpty) throw StateError('该同步请求已完成并归档，不能重新入队。');
 
     final existing = await (_database.select(_database.syncOutbox)
           ..where((entry) => entry.changeId.equals(draft.changeId)))
@@ -912,11 +962,15 @@ class SyncOutboxRepository {
       final entry = await getByChangeId(changeId);
       await _markTerminal(changeId: changeId, status: SyncOutboxStatus.rejected,
         errorCode: errorCode, errorMessage: errorMessage, completedAt: completedAt);
-      if (entry != null && ((confirmedByNas && _isDefinitiveRejection(entry, errorCode)) ||
-          (failedBeforeFirstSend && entry.attemptCount == 1))) {
+      if (entry != null && ((confirmedByNas && (_isDefinitiveRejection(entry, errorCode) ||
+              (entry.operation == SyncOperation.homeAssistantCommand &&
+               const {'HA_UNAVAILABLE', 'HA_AUDIT_FAILURE'}.contains(errorCode)))) ||
+          (failedBeforeFirstSend && errorCode == 'INVALID_LOCAL_CHANGE'))) {
         await _saveInternalSetting(_rejectionEvidenceKey(entry.scopeId, changeId), jsonEncode({
           ..._outboxIdentity(entry),
-          'source': confirmedByNas ? 'nas_rejected' : 'never_sent',
+          'source': confirmedByNas ? 'nas_rejected' : 'local_invalid',
+          'execution_unknown': (confirmedByNas && !_isDefinitiveRejection(entry, errorCode)) ||
+              (!confirmedByNas && entry.attemptCount > 1),
           'error_code': errorCode,
           'error_message': errorMessage,
           'recorded_at': _now().toIso8601String(),
@@ -936,6 +990,7 @@ class SyncOutboxRepository {
       'HOME_ASSISTANT_NOT_CONFIGURED', 'HA_FORBIDDEN', 'HA_INVALID_ROLE',
       'HA_INVALID_ARGUMENT', 'HA_INVALID_COMMAND', 'HA_INVALID_PARAMETERS',
       'HA_UNSUPPORTED_COMMAND', 'HA_NOT_FOUND',
+      'HA_INVALID_TOKEN', 'HA_UNAUTHORIZED', 'HA_INVALID_URL',
     }.contains(code);
   }
 
@@ -954,16 +1009,20 @@ class SyncOutboxRepository {
 
   Future<bool> canAbandonRejected(SyncOutboxEntry entry) async {
     if (entry.status != SyncOutboxStatus.rejected || await _isSettledOutboxEntry(entry)) return false;
+    // Legacy HA rejections lack the newer evidence sidecar. Withdrawal is an
+    // explicit acknowledgement, never a claim that the device did not execute.
+    if (entry.operation == SyncOperation.homeAssistantCommand && const {
+      'HA_INVALID_TOKEN', 'HA_UNAUTHORIZED', 'HA_INVALID_URL', 'HA_UNAVAILABLE', 'HA_AUDIT_FAILURE',
+    }.contains(entry.lastErrorCode)) return true;
     final evidence = await _readSettlement(_rejectionEvidenceKey(entry.scopeId, entry.changeId));
     return evidence != null && _settlementMatchesOutbox(evidence, entry) &&
-        (evidence['source'] == 'nas_rejected' || evidence['source'] == 'never_sent') &&
+        (evidence['source'] == 'nas_rejected' || evidence['source'] == 'never_sent' || evidence['source'] == 'local_invalid') &&
         evidence['error_code'] == entry.lastErrorCode &&
         evidence['error_message'] == entry.lastErrorMessage;
   }
 
-  /// Explicitly withdraw an intent with durable proof that it did not execute.
-  /// Unknown requests never enter here. The original request and refusal remain
-  /// unchanged; a fresh authoritative snapshot removes optimistic local effects.
+  /// Explicitly withdraw a rejected intent. Legacy HA transport/audit errors
+  /// require manual device review; withdrawal never undoes a physical action.
   Future<void> abandonRejected({required String scopeId, required String changeId}) async {
     await _database.transaction(() async {
       final entry = await getByChangeId(changeId);
@@ -983,7 +1042,12 @@ class SyncOutboxRepository {
           throw StateError('A linked conflict requires a NAS resolution receipt.');
         }
       }
-      final evidence = (await _readSettlement(_rejectionEvidenceKey(scopeId, changeId)))!;
+      final evidence = await _readSettlement(_rejectionEvidenceKey(scopeId, changeId)) ?? {
+        ..._outboxIdentity(entry), 'source': 'nas_rejected',
+        'error_code': entry.lastErrorCode, 'error_message': entry.lastErrorMessage,
+        'execution_unknown': true, 'legacy_receipt': true,
+      };
+      await _saveInternalSetting(_rejectionEvidenceKey(scopeId, changeId), jsonEncode(evidence));
       await _saveInternalSetting(_rejectedSettlementKey(scopeId, changeId), jsonEncode({
         ...evidence, 'action': 'abandon_rejected', 'settled_at': _now().toIso8601String(),
       }));
@@ -1436,7 +1500,7 @@ class SyncOutboxRepository {
       final evidence = await _readSettlement(_rejectionEvidenceKey(entry.scopeId, entry.changeId));
       if (rejected != null && evidence != null &&
           rejected['action'] == 'abandon_rejected' &&
-          (evidence['source'] == 'nas_rejected' || evidence['source'] == 'never_sent') &&
+          (evidence['source'] == 'nas_rejected' || evidence['source'] == 'never_sent' || evidence['source'] == 'local_invalid') &&
           _settlementMatchesOutbox(rejected, entry) && _settlementMatchesOutbox(evidence, entry) &&
           rejected['source'] == evidence['source'] &&
           rejected['error_code'] == entry.lastErrorCode && evidence['error_code'] == entry.lastErrorCode) {

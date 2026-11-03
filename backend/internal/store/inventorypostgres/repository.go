@@ -76,10 +76,10 @@ ON CONFLICT (family_id, device_id, idempotency_key) DO NOTHING`
 	appendConsumptionSQL = `
 INSERT INTO consumption_records (
     family_id, batch_id, product_id, record_type, quantity_change, reason,
-    operation_id, idempotency_key, created_by_user_id, device_id, created_at
+    operation_id, idempotency_key, created_by_user_id, device_id, created_at, client_occurred_at
 ) VALUES (
     $1::uuid, $2::uuid, $3::uuid, $4, $5, $6,
-    $7::uuid, $8, $9::uuid, $10::uuid, $11
+    $7::uuid, $8, $9::uuid, $10::uuid, $11, $12
 )`
 
 	appendInventoryChangeSQL = `
@@ -323,7 +323,7 @@ func (r *txRepository) AppendConsumptionRecord(ctx context.Context, record inven
 	_, err = r.tx.ExecContext(ctx, appendConsumptionSQL,
 		record.FamilyID, record.BatchID, locked.ProductID, recordType, quantityDelta,
 		string(record.Command), record.OperationID, consumptionIdempotencyKey(record.OperationID, record.BatchID),
-		record.ActorID, record.DeviceID, record.OccurredAt,
+		record.ActorID, record.DeviceID, record.OccurredAt, record.ClientOccurredAt,
 	)
 	if err != nil {
 		return fmt.Errorf("append consumption record: %w", err)

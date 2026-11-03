@@ -36,6 +36,37 @@ func TestNormalizeImageRejectsInvalidAndStripsMetadata(t *testing.T) {
 	}
 }
 
+func TestOrientationUsesViewWithoutFullImageCopy(t *testing.T) {
+	src := image.NewNRGBA64(image.Rect(0, 0, 3, 2))
+	for y := 0; y < 2; y++ {
+		for x := 0; x < 3; x++ {
+			src.Set(x, y, color.NRGBA64{R: uint16(100 * x), G: uint16(100 * y), A: 65535})
+		}
+	}
+	view := orientImage(src, 6)
+	if _, ok := view.(orientedImage); !ok {
+		t.Fatal("orientation allocated full image")
+	}
+	if view.Bounds().Dx() != 2 || view.Bounds().Dy() != 3 {
+		t.Fatal("orientation bounds")
+	}
+	for y := 0; y < 3; y++ {
+		for x := 0; x < 2; x++ {
+			if view.At(x, y) != src.At(y, 1-x) {
+				t.Fatal("orientation pixel mismatch")
+			}
+		}
+	}
+}
+
+func TestAIUnknownProviderOutcomeDoesNotAutomaticallyFailOver(t *testing.T) {
+	calls := 0
+	c := AIConfig{Endpoints: []AIEndpoint{{Endpoint: "http://one.test/v1", Model: "model", Protocol: "chat"}, {Endpoint: "http://two.test/v1", Model: "model", Protocol: "chat"}}, Client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) { calls++; return nil, context.DeadlineExceeded })}}
+	if _, err := c.call(context.Background(), AIRequest{User: "text"}); err != ErrOutcomeUnknown || calls != 1 {
+		t.Fatalf("automatic duplicate inference: calls=%d err=%v", calls, err)
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

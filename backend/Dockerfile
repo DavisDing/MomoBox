@@ -13,7 +13,7 @@ FROM alpine:3.20.3@sha256:1e42bbe2508154c9126d48c2b8a75420c3544343bf86fd041fb752
 RUN addgroup -S momo && adduser -S -G momo -u 10001 momo \
     && apk add --no-cache ca-certificates tzdata tesseract-ocr tesseract-ocr-data-eng tesseract-ocr-data-chi_sim \
     && mkdir -p /data && chown momo:momo /data
-ENV APP_ENV=production TMPDIR=/data
+ENV APP_ENV=production TMPDIR=/tmp
 WORKDIR /app
 COPY --from=build /out/momo-backend /app/momo-backend
 COPY --from=build /src/migrations /app/migrations

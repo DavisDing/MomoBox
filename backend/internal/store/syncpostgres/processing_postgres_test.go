@@ -27,6 +27,7 @@ func processingImage(t *testing.T) []byte {
 }
 func TestPostgresMediaRetriesTombstonesAndOCR(t *testing.T) {
 	f := newImportPostgresFixture(t)
+	f.exec(t, `INSERT INTO products(id,family_id,name) VALUES($1::uuid,$2::uuid,'item')`, importProduct, importFamily)
 	s := processing.New(f.db, processing.AIConfig{})
 	u := processing.Upload{ID: importPlan, EntityType: "product", EntityID: importProduct, MediaType: "instruction_image", Content: processingImage(t)}
 	a, err := s.Upload(f.ctx, importFamily, importUser, u)
@@ -163,7 +164,7 @@ func TestPostgresAIReceiptsSuppressRepeatedPaidRequests(t *testing.T) {
 	// Crash/unknown outcomes are not automatically charged again.
 	f.exec(t, `UPDATE processing_ai_results SET status='running',result=NULL WHERE id=$1::uuid`, importPlan)
 	request.User = "text"
-	if _, err := s.Analyze(f.ctx, importFamily, importUser, request); !errors.Is(err, processing.ErrUnavailable) {
+	if _, err := s.Analyze(f.ctx, importFamily, importUser, request); !errors.Is(err, processing.ErrOutcomeUnknown) {
 		t.Fatal("unknown outcome retried", err)
 	}
 	if calls.Load() != 1 {
@@ -192,6 +193,7 @@ func TestPostgresHistoryCursorWaitsForEarlierCommit(t *testing.T) {
 
 func TestPostgresExistingOCRAndDraftAssociationMigrateWithoutReprocessing(t *testing.T) {
 	f := newImportPostgresFixture(t)
+	f.exec(t, `INSERT INTO products(id,family_id,name) VALUES($1::uuid,$2::uuid,'item')`, importProduct, importFamily)
 	s := processing.New(f.db, processing.AIConfig{})
 	u := processing.Upload{ID: importPlan, EntityType: "intake_draft", EntityID: importCategory, MediaType: "instruction_image", Content: processingImage(t), OCRText: "原本机 OCR 文本"}
 	a, err := s.Upload(f.ctx, importFamily, importUser, u)

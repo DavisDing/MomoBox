@@ -60,6 +60,19 @@ void main() {
     expect(BackupFormat.records(document, 'products'), isEmpty);
   });
 
+  test('流水数量符号必须与业务类型一致，允许零数量报废', () {
+    Map<String,Object?> movement(String type,int quantity) => {
+      'id':'movement-$type-$quantity','product_id':'product-1','batch_id':'batch-1',
+      'type':type,'quantity':quantity,'note':'test','created_at':'2026-09-02T08:00:00.000',
+    };
+    final zeroDiscard=validDocument()..['stock_movements']=[movement('discard',0)];
+    expect(BackupFormat.records(BackupFormat.parse(jsonEncode(zeroDiscard)),'stock_movements'),hasLength(1));
+    for(final row in [movement('consume',0),movement('consume',2),movement('discard',1),movement('intake',-1)]) {
+      final bad=validDocument()..['stock_movements']=[row];
+      expect(()=>BackupFormat.records(BackupFormat.parse(jsonEncode(bad)),'stock_movements'),throwsFormatException);
+    }
+  });
+
   test('拒绝无效 JSON、错误备份头、错误版本或缺少必需数据段', () {
     expect(() => BackupFormat.parse('{'), throwsA(isA<FormatException>()));
     expect(

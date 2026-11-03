@@ -290,15 +290,19 @@ class MediaRepository {
   }
 
   Future<List<MediaAsset>> _toModels(List<MediaAssetRecord> records) async {
-    final result = <MediaAsset>[];
-    for (final record in records) {
-      final state = await _database.customSelect(
-        'SELECT state,error FROM backend_media_state WHERE asset_id=?',
-        variables: [Variable.withString(record.id)]).getSingleOrNull();
-      result.add(_toModel(record, backendState: state?.read<String>('state'),
-        backendError: state?.readNullable<String>('error')));
+    if (records.isEmpty) return [];
+    final states = <String, QueryRow>{};
+    // Stay below SQLite's parameter limit for larger photo libraries.
+    for (var offset = 0; offset < records.length; offset += 400) {
+      final ids = records.skip(offset).take(400).map((r) => r.id).toList();
+      final rows = await _database.customSelect(
+        'SELECT asset_id,state,error FROM backend_media_state WHERE asset_id IN (${List.filled(ids.length, '?').join(',')})',
+        variables: ids.map(Variable.withString).toList()).get();
+      for (final row in rows) { states[row.read<String>('asset_id')] = row; }
     }
-    return result;
+    return [for (final record in records) _toModel(record,
+      backendState: states[record.id]?.read<String>('state'),
+      backendError: states[record.id]?.readNullable<String>('error'))];
   }
 
   MediaAsset _toModel(MediaAssetRecord record, {String? backendState, String? backendError}) => MediaAsset(

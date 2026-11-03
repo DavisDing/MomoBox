@@ -67,8 +67,10 @@ class MediaService {
     required MediaAssetType type,
   }) =>
       _runSerialized(() async {
-        final api = await backend?.resolveApi();
-        final stored = api == null ? await _storage.storeImage(source)
+        NasSyncApi? api;
+        var backendUnavailable = false;
+        try { api = await backend?.resolveApi(); } catch (_) { backendUnavailable = true; }
+        final stored = api == null && !backendUnavailable ? await _storage.storeImage(source)
             : await _storage.storeUploadSource(source);
         var committed = false;
         try {
@@ -82,6 +84,7 @@ class MediaService {
             sha256: stored.sha256,
           );
           committed = true;
+          if (backendUnavailable) await backend!.stage(asset);
           // Metadata is committed first so an interrupted upload can recover.
           if (api != null) {
             try { await backend!.upload(api, asset); } catch (_) {
@@ -129,8 +132,15 @@ class MediaService {
 
   Future<void> delete(MediaAsset asset) =>
       _runSerialized(() async {
-        final api = await backend?.resolveApi();
-        if (api != null) await backend!.delete(api, asset);
+        NasSyncApi? api;
+        var unavailable = false;
+        try { api = await backend?.resolveApi(); } catch (_) { unavailable = true; }
+        if (api != null || unavailable) {
+          await backend!.stage(asset, deleting: true);
+          if (api != null) {
+            try { await backend!.delete(api, asset); } catch (_) { /* durable tombstone remains queued */ }
+          }
+        }
         final removed = await _repository.markDeleted(asset.id);
         if (removed != null) await _storage.deleteIfExists(removed.localPath);
       });
@@ -138,19 +148,27 @@ class MediaService {
   Future<void> syncBackend(NasSyncApi api) => _runSerialized(() async {
     final service = backend;
     if (service == null) return;
+    var failed = false;
+    try { await service.flushDeletes(api); } catch (_) { api.assertCurrentSession(); failed = true; }
     for (final asset in await _repository.loadAllActive()) {
-      await service.upload(api, asset);
+      try { await service.upload(api, asset); } catch (_) { api.assertCurrentSession(); failed = true; }
     }
     await service.refreshProducts(api);
+    if (failed) throw StateError('部分图片未完成同步，请查看图片状态后重试。');
   });
 
   Future<MediaCleanupReport> reconcile({
     Duration intakeDraftRetention = const Duration(days: 1),
   }) =>
       _runSerialized(() async {
-        final api = await backend?.resolveApi();
+        NasSyncApi? api;
+        var unavailable = false;
+        try { api = await backend?.resolveApi(); } catch (_) { unavailable = true; }
         // Offline cleanup must not turn missing cache files into remote deletes.
-        if (api != null) return const MediaCleanupReport(deletedFiles: 0, deletedMetadata: 0);
+        if (api != null || unavailable) {
+          final references = (await _repository.loadAllActive()).map((a) => a.localPath).toSet();
+          return MediaCleanupReport(deletedFiles: await _storage.deleteUnreferenced(references), deletedMetadata: 0);
+        }
         var deletedFiles = 0;
         var deletedMetadata = 0;
         final cutoff = DateTime.now().subtract(intakeDraftRetention);

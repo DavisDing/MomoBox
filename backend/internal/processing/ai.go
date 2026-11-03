@@ -83,7 +83,11 @@ func (s *Service) Analyze(ctx context.Context, family, user string, r AIRequest)
 	// A durable claim suppresses concurrent/repeated paid requests and stores the
 	// completed result before returning it. Failed/unknown outcomes require a new
 	// explicit user request rather than an implicit provider retry.
-	_, err := s.DB.ExecContext(ctx, `INSERT INTO processing_ai_results(family_id,user_id,id,input_hash,status) VALUES($1::uuid,$2::uuid,$3::uuid,$4,'processing') ON CONFLICT DO NOTHING`, family, user, r.ID, hash)
+	claim, err := s.DB.ExecContext(ctx, `INSERT INTO processing_ai_results(family_id,user_id,id,input_hash,status) VALUES($1::uuid,$2::uuid,$3::uuid,$4,'processing') ON CONFLICT DO NOTHING`, family, user, r.ID, hash)
+	if err != nil {
+		return AIResult{}, err
+	}
+	inserted, err := claim.RowsAffected()
 	if err != nil {
 		return AIResult{}, err
 	}
@@ -137,8 +141,8 @@ func (s *Service) Analyze(ctx context.Context, family, user string, r AIRequest)
 		err = json.Unmarshal(result, &out)
 		return out, err
 	}
-	if status != "processing" {
-		return AIResult{}, ErrUnavailable
+	if status != "processing" || inserted != 1 {
+		return AIResult{}, ErrOutcomeUnknown
 	}
 	selected, err := conn.ExecContext(ctx, `UPDATE processing_ai_results SET status='running' WHERE family_id=$1::uuid AND user_id=$2::uuid AND id=$3::uuid AND status='processing'`, family, user, r.ID)
 	if err != nil {
@@ -223,15 +227,18 @@ func (c AIConfig) call(ctx context.Context, r AIRequest) (AIResult, error) {
 			resp, err := client.Do(req)
 			if err != nil {
 				stop()
-				break
+				return AIResult{}, ErrOutcomeUnknown
 			}
 			raw, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20+1))
 			resp.Body.Close()
 			stop()
 			if readErr != nil || len(raw) > 1<<20 {
-				break
+				return AIResult{}, ErrOutcomeUnknown
 			}
 			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				if resp.StatusCode >= 500 {
+					return AIResult{}, ErrOutcomeUnknown
+				}
 				if p == "chat" && (resp.StatusCode == 404 || resp.StatusCode == 405) {
 					continue
 				}
@@ -239,11 +246,11 @@ func (c AIConfig) call(ctx context.Context, r AIRequest) (AIResult, error) {
 			}
 			var decoded map[string]json.RawMessage
 			if json.Unmarshal(raw, &decoded) != nil {
-				break
+				return AIResult{}, ErrOutcomeUnknown
 			}
 			content := responseText(decoded)
 			if strings.TrimSpace(content) == "" {
-				break
+				return AIResult{}, ErrOutcomeUnknown
 			}
 			usage := decoded["usage"]
 			if len(usage) == 0 {

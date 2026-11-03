@@ -6,6 +6,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:momo_box/application/media_service.dart';
+import 'package:momo_box/application/backend_processing_service.dart';
 import 'package:momo_box/core/database/app_database.dart';
 import 'package:momo_box/data/repositories/media_repository.dart';
 import 'package:momo_box/domain/models/recognition_models.dart';
@@ -13,6 +14,33 @@ import 'package:momo_box/services/local_ocr_service.dart';
 import 'package:momo_box/services/media_storage_service.dart';
 
 void main() {
+  test('expired NAS session still allows local attachment and queued deletion', () async {
+    final h=await _Harness.create();
+    final backend=BackendProcessingService(h.database,h.repository,h.storage,
+      resolveApi:() async {throw StateError('session expired');},scopeId:()=> 'family');
+    final service=MediaService(h.repository,h.storage,h.ocr,backend:backend);
+    final asset=await h.attach(service:service);
+    expect(await File(asset.localPath).exists(),isTrue);
+    expect((await h.database.customSelect('SELECT state FROM backend_media_state').getSingle()).read<String>('state'),'failed');
+    await service.delete(asset);
+    expect(await h.repository.loadAllActive(),isEmpty);
+    expect((await h.database.customSelect('SELECT state FROM backend_media_state').getSingle()).read<String>('state'),'deleting');
+  });
+
+  test('backend cleanup removes actual unreferenced bytes and keeps referenced images', () async {
+    final h=await _Harness.create();
+    final asset=await h.seed('keep');
+    final orphan=await File('${h.directory.path}/orphan.jpg').writeAsBytes([1]);
+    final backend=BackendProcessingService(h.database,h.repository,h.storage,
+      resolveApi:() async {throw StateError('session expired');},scopeId:()=> 'family');
+    final service=MediaService(h.repository,h.storage,h.ocr,backend:backend);
+    final report=await service.reconcile();
+    expect(report.deletedFiles,1);
+    expect(await orphan.exists(),isFalse);
+    expect(await File(asset.localPath).exists(),isTrue);
+    expect(await h.repository.loadAllActive(),hasLength(1));
+  });
+
   for (final boundary in ['file written', 'metadata pending']) {
     test('cleanup waits for attachment at $boundary across service instances', () async {
       final h = await _Harness.create();
@@ -555,6 +583,9 @@ class _ControlledMediaStorage extends MediaStorageService {
   Object? deleteFailure;
   Object? cleanupFailure;
   int storeCalls = 0;
+
+  @override
+  Future<StoredImageFile> storeUploadSource(XFile source) => storeImage(source);
 
   @override
   Future<StoredImageFile> storeImage(XFile source) async {

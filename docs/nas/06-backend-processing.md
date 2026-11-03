@@ -27,7 +27,7 @@ MAX_REQUEST_BODY_BYTES=12582912
 
 协议支持 auto/chat/responses；目标仅来自NAS部署者配置，不接受客户端指定地址、密钥或工具。HTTP重定向不跟随；图片不发送给模型。每次外部尝试预算20秒、整体预算65秒（HTTP客户端上限60秒），只在明确不支持Chat接口时自动尝试Responses；服务失败可使用已配置的副/兜底服务。环境配置缺失时 `backend_ai=false`，App提示NAS配置缺失，不使用手机密钥代替。界面保留本机配置用于单机模式；连接后端时连通性测试针对NAS当前服务。
 
-单张原图最大8 MiB，JPEG/PNG，最大2400万像素、单边12000像素。NAS负责解码、应用JPEG EXIF方向、重新编码、去除EXIF/GPS；手机只暂存/上传/缓存展示。HEIC等不支持格式明确失败，需要选择JPEG/PNG；没有假装处理成功。JSON base64有体积开销，反向代理需允许至少12 MiB请求，超时需覆盖OCR/AI处理时间。后端两路有界处理并发；满载返回 PROCESSING_BUSY。
+单张原图最大8 MiB，JPEG/PNG，最大2400万像素、单边12000像素。NAS负责解码、应用JPEG EXIF方向、重新编码、去除EXIF/GPS；手机只暂存/上传/缓存展示。HEIC等不支持格式明确失败，需要选择JPEG/PNG；没有假装处理成功。JSON base64有体积开销，反向代理需允许至少12 MiB请求，超时需覆盖OCR/AI处理时间。图片解码/正规化单路并发，EXIF方向通过坐标视图读取，不复制完整像素缓冲；OCR/AI仍为两路有界处理并发。后端容器上限768MiB，Go软内存目标512MiB；满载返回 PROCESSING_BUSY，真实容器峰值与OOM行为待验收。
 
 ## HTTP契约（均要求当前有效家庭/设备会话）
 
@@ -59,3 +59,7 @@ MAX_REQUEST_BODY_BYTES=12582912
 隔离PostgreSQL16测试和Go检查见VALIDATION对应记录；真实Tesseract、真实模型、Docker、NAS及双手机仍需分别执行。测试中的模拟OCR/HTTP只验证状态、权限、幂等与事务，不代表识别质量或真实供应商兼容性已通过。
 
 AI_CONTEXT更新建议：运行/设备验收后，将“NAS不提供AI Proxy、图片/OCR始终留本机”的旧长期边界更新为上述已确认双模式规则；本次不把源码实现写成已验收现状。
+
+2026-11-03审计续修：库存同步成功后，历史/媒体失败独立记为持久警告，下一轮重试不撤销已提交库存游标。零数量discard可进入历史；相同operation_id+batch_id关联更新为服务端稳定ID。媒体单项失败保留状态并继续其他项；会话失效时保留本机暂存/删除待办。家庭商品媒体支持entity_id为空的单流元数据分页，旧NAS返回400/404时保留逐商品兼容入口。本机媒体状态批量读取，避免逐图查询。
+
+AI只有本次INSERT真正创建回执的调用者可启动推理。旧processing/running/failed请求不会自动重跑，未知结果返回HTTP409 AI_RESULT_UNKNOWN；需用户核对后显式新请求。网络/5xx/读取或成功响应解析异常均不自动切另一供应商。client_occurred_at仅随新流水INSERT保存，不批量修改历史。图片product关联在事务内核对家庭归属，草稿重关联也校验目标家庭商品。

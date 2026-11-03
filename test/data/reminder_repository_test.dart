@@ -39,6 +39,19 @@ void main() {
 
   tearDown(() => database.close());
 
+  test('corrupt and duplicate legacy policies cannot break inventory reads', () async {
+    Future<void> policy(String id, String value, int order) => database.into(database.appSettings).insert(
+      AppSettingsCompanion.insert(key: 'reminder_sync_policy:family:$id', value: value, updatedAt: DateTime.utc(2026, 11, order))).then((_) {});
+    await policy('broken', '{broken', 1);
+    await policy('old', '{"low_stock_threshold":2}', 1);
+    await policy('new', '{"low_stock_threshold":5}', 2);
+    await policy('invalid', '{"enabled":"yes"}', 3);
+    final result = await repository.remotePolicies('family');
+    expect(result['']!.lowStockThreshold, 5);
+    expect(await database.select(database.appSettings).get(), hasLength(4));
+    expect(await repository.remotePolicies('other'), isEmpty);
+  });
+
   test('单条标记已处理会写入提醒记录', () async {
     await repository.acknowledge(
       reminderKey: 'product-1:low-stock',

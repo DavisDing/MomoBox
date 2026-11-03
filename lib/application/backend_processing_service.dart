@@ -5,6 +5,7 @@ import 'package:drift/drift.dart';
 
 import '../core/database/app_database.dart';
 import '../data/nas/nas_sync_api.dart';
+import '../data/nas/nas_api_error.dart';
 import '../data/repositories/media_repository.dart';
 import '../data/repositories/sync_workspace_repository.dart';
 import '../domain/models/recognition_models.dart';
@@ -42,6 +43,31 @@ class BackendProcessingService {
     return scope;
   }
 
+  /// Persist local intent against the original binding without requiring login.
+  Future<void> stage(MediaAsset asset, {bool deleting = false}) async {
+    final owner = await SyncWorkspaceRepository(database).readOwner();
+    final current = scopeId();
+    if (current != null && owner != null && current != owner.familyId) throw StateError('当前家庭与本机图片绑定不匹配。');
+    final scope = owner?.familyId ?? current;
+    if (scope == null) throw StateError('缺少原家庭绑定，请保留图片并重新登录。');
+    final old = await database.customSelect('SELECT scope_id FROM backend_media_state WHERE asset_id=?',
+      variables: [Variable.withString(asset.id)]).getSingleOrNull();
+    if (old != null && old.read<String>('scope_id') != scope) throw StateError('图片家庭不匹配。');
+    await _state(asset.id, scope, deleting ? 'deleting' : 'failed', error: '等待 NAS 会话恢复后同步');
+  }
+
+  Future<void> flushDeletes(NasSyncApi api) async {
+    final scope = await _scope(api);
+    final rows = await database.customSelect("SELECT asset_id FROM backend_media_state WHERE scope_id=? AND state='deleting'",
+      variables: [Variable.withString(scope)]).get();
+    for (final row in rows) {
+      final id = row.read<String>('asset_id');
+      await api.processingRequest('/media/$id/delete');
+      api.assertCurrentSession();
+      await _state(id, scope, 'deleted');
+    }
+  }
+
   Future<void> upload(NasSyncApi api, MediaAsset asset) async {
     final scope = await _scope(api);
     final state = await database.customSelect(
@@ -63,7 +89,7 @@ class BackendProcessingService {
     if (reassignment != null && reassignment.read<String>('scope_id') != scope) {
       throw StateError('图片关联属于其他家庭。');
     }
-    if (const {'synced', 'ocr_processing', 'ocr_failed', 'ocr_complete'}.contains(state?.read<String>('state'))) {
+    if (const {'synced', 'ocr_processing', 'ocr_failed', 'ocr_complete', 'download_failed'}.contains(state?.read<String>('state'))) {
       if (reassignment != null) await _finishReassign(api, asset.id, reassignment.read<String>('product_id'));
       return;
     }
@@ -168,20 +194,21 @@ class BackendProcessingService {
   Future<void> refreshEntity(NasSyncApi api, String kind, String id) async {
     final scope = await _scope(api);
     var after = '';
+    var hadFailures = false;
     for (var page = 0; page < 100; page++) {
       final response = await api.processingRequest('/media', method: 'GET',
         queryParameters: {'entity_type': kind, 'entity_id': id, 'after': after});
       final rows = (response['assets'] as List).cast<Map<String, dynamic>>();
+      final locals = {for (final asset in (id.isEmpty ? await repository.loadAllActive() : await repository.loadForEntity(entityType: kind, entityId: id))) asset.id: asset};
       for (final row in rows) {
         api.assertCurrentSession();
         final assetId = row['id'] as String;
-        if (assetId.compareTo(after) <= 0 || row['entity_type'] != kind || row['entity_id'] != id) {
+        if (assetId.compareTo(after) <= 0 || row['entity_type'] != kind || (id.isNotEmpty && row['entity_id'] != id)) {
           throw const FormatException('后端媒体分页无效。');
         }
         after = assetId;
-        final matches = (await repository.loadForEntity(entityType: kind, entityId: id))
-            .where((a) => a.id == assetId).toList();
-        final local = matches.isEmpty ? null : matches.first;
+        final local = locals[assetId];
+        try {
         if (row['deleted_at'] != null) {
           if (local != null) {
             await repository.markDeleted(assetId);
@@ -194,11 +221,14 @@ class BackendProcessingService {
           final full = await api.processingRequest('/media/$assetId', method: 'GET');
           api.assertCurrentSession();
           if (full['deleted_at'] != null) continue;
+          if (full['id'] != assetId || full['entity_type'] != kind || full['entity_id'] != row['entity_id']) {
+            throw const FormatException('后端图片关联不匹配。');
+          }
           final content = base64Decode(full['content'] as String);
           final stored = await storage.storeBackendImage(assetId, content);
           api.assertCurrentSession();
           if (local == null) {
-            await repository.cacheRemote(id: assetId, entityType: kind, entityId: id,
+            await repository.cacheRemote(id: assetId, entityType: kind, entityId: row['entity_id'] as String,
               type: MediaAssetType.fromStorageValue(full['media_type'] as String),
               localPath: stored.path, mimeType: stored.mimeType, sizeBytes: stored.sizeBytes,
               sha256: stored.sha256, createdAt: DateTime.parse(full['created_at'] as String));
@@ -213,17 +243,29 @@ class BackendProcessingService {
         await _state(assetId, scope, row['ocr_status'] == 'complete' ? 'ocr_complete' :
           row['ocr_status'] == 'processing' ? 'ocr_processing' :
           row['ocr_status'] == 'failed' ? 'ocr_failed' : 'synced');
+        } catch (_) {
+          api.assertCurrentSession();
+          hadFailures = true;
+          await _state(assetId, scope, 'download_failed', error: '图片尚未恢复，其余图片继续同步');
+        }
       }
-      if (rows.length < 50) return;
+      if (rows.length < 50) {
+        if (hadFailures) throw StateError('部分图片尚未恢复，请稍后重试。');
+        return;
+      }
     }
     throw StateError('图片较多，请再次刷新以继续。');
   }
 
   Future<void> refreshProducts(NasSyncApi api) async {
-    final products = await (database.select(database.products)
-      ..where((p) => p.deletedAt.isNull())).get();
-    for (final product in products) {
-      await refreshEntity(api, 'product', product.id);
+    try {
+      await refreshEntity(api, 'product', '');
+    } on NasApiError catch (error) {
+      // Older NAS versions require an entity ID. Preserve their compatibility
+      // while current servers use one family-wide metadata pagination stream.
+      if (error.statusCode != 400 && error.statusCode != 404) rethrow;
+      final products = await (database.select(database.products)..where((p) => p.deletedAt.isNull())).get();
+      for (final product in products) { await refreshEntity(api, 'product', product.id); }
     }
   }
 
@@ -248,16 +290,21 @@ class BackendProcessingService {
       until = high;
       var previous = after;
       final ids = <String>{};
+      final operations = <String>{};
       for (final row in records) {
         final cursor = row['cursor'] as int;
         final id = row['id'];
         final quantity = row['quantity'] as int;
         if (id is! String || id.isEmpty || !ids.add(id) ||
-            cursor <= previous || cursor > next || quantity == 0 ||
+            cursor <= previous || cursor > next || (quantity == 0 && row['type'] != 'discard') ||
             (const {'consume', 'discard'}.contains(row['type']) && quantity > 0) ||
             (row['type'] == 'restock' && quantity < 0) ||
             !const {'consume', 'restock', 'discard', 'adjust'}.contains(row['type'])) {
           throw const FormatException('操作历史记录无效。');
+        }
+        final operation = row['operation_id'];
+        if (operation is String && operation.isNotEmpty && !operations.add('$operation:${row['batch_id']}')) {
+          throw const FormatException('操作历史包含重复操作/批次。');
         }
         previous = cursor;
       }
@@ -273,7 +320,8 @@ class BackendProcessingService {
           if (product == null || batch == null || batch.productId != product.id) {
             throw StateError('请先完成库存同步，再恢复操作历史。');
           }
-          var source = await database.customSelect(
+          final operationId = row['operation_id'] as String?;
+          var source = operationId == null || operationId.isEmpty ? null : await database.customSelect(
             'SELECT local_id FROM stock_movement_sources WHERE operation_id=? AND batch_id=?',
             variables: [Variable.withString(row['operation_id'] as String? ?? ''),
               Variable.withString(batch.id)]).getSingleOrNull();
@@ -314,6 +362,11 @@ class BackendProcessingService {
                 'consume' => '消耗', 'restock' => '补充库存', 'discard' => '批次报废', _ => '库存调整',
               }),
               createdAt: DateTime.parse(row['created_at'] as String)));
+          if (operationId != null && operationId.isNotEmpty) {
+            await database.customStatement('''INSERT INTO stock_movement_sources(operation_id,batch_id,local_id) VALUES (?,?,?)
+              ON CONFLICT(operation_id,batch_id) DO UPDATE SET local_id=excluded.local_id''',
+              [operationId, batch.id, row['id']]);
+          }
         }
         await api.assertProcessingSession();
         await database.into(database.appSettings).insertOnConflictUpdate(

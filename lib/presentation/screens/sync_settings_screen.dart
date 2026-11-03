@@ -64,6 +64,11 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
         padding: EdgeInsets.fromLTRB(16, 12, 16, 32 + MomoDockInsets.bottomOf(context)),
         children: [
           _buildOverviewCard(context, account, engine, state),
+          if (scopeId != null) StreamBuilder<String?>(
+            stream: SyncOutboxRepository(ref.watch(databaseProvider)).watchProcessingWarning(scopeId),
+            builder: (context, snapshot) => snapshot.data == null
+                ? const SizedBox.shrink() : Padding(padding: const EdgeInsets.all(12), child: Text(snapshot.data!)),
+          ),
           const SizedBox(height: 12),
           _buildBootstrapCard(context, engine, state),
           const SizedBox(height: 12),
@@ -348,7 +353,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           children: [
             Text('被拒绝的变更', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
-            const Text('这些变更仍阻止权威快照覆盖本机。只有具备明确未执行证据时，才可确认放弃并恢复 NAS 状态。'),
+            const Text('这些变更仍阻止权威快照覆盖本机。可确认放弃有明确拒绝回执的意图。HA 通信或审计失败时，必须先核实设备实际状态。'),
             for (final entry in entries) FutureBuilder<bool>(
               future: repository.canAbandonRejected(entry),
               builder: (context, permission) => ListTile(
@@ -373,7 +378,10 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
   Future<void> _abandonRejected(SyncOutboxEntry entry, SyncEngine engine, NasSyncApi api, String deviceId) async {
     final accepted = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
       title: const Text('放弃被拒绝的变更？'),
-      content: const Text('已确认该请求未执行。继续将放弃这条本地意图，并获取 NAS 最新权威快照撤销相应本地变更。'
+      content: Text((const {'HA_UNAVAILABLE', 'HA_AUDIT_FAILURE'}.contains(entry.lastErrorCode) ||
+          (entry.lastErrorCode == 'INVALID_LOCAL_CHANGE' && entry.attemptCount > 1)
+          ? '原请求结果可能未知，请先核实 NAS 或设备的实际状态。继续仅撤回这条请求，不会撤销设备动作。'
+          : '已收到拒绝或本地无法发送的证据。') + '继续将放弃这条本地意图，并获取 NAS 最新权威快照撤销相应本地变更。'
           '其他尚未解决的操作仍会阻止覆盖；原请求和拒绝回执会保留，库存及 Home Assistant 操作不会重新执行。'),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
@@ -769,7 +777,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                     ? '同步暂停：推送 ${report.pushed} 条，拉取 ${report.pulled} 条，待处理 ${report.deferred} 条。'
                     : report.hasMoreRemote
                         ? '本轮拉取 ${report.pulled} 条；远端仍有数据，前台时将分批继续，尚未完成同步。'
-                        : '同步完成：推送 ${report.pushed} 条，拉取 ${report.pulled} 条，待处理 ${report.deferred} 条。');
+                        : '库存同步完成：推送 ${report.pushed} 条，拉取 ${report.pulled} 条。${report.postProcessingError ?? ''}');
       }
     } catch (error) {
       if (_isCurrentEngine(engine)) setState(() => _message = '同步失败：$error');

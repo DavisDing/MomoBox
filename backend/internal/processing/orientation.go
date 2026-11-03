@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"image"
+	"image/color"
 )
 
 // Read only the bounded TIFF orientation tag. Other EXIF fields, including
@@ -79,28 +80,37 @@ func orientImage(src image.Image, orientation int) image.Image {
 	if orientation >= 5 {
 		outW, outH = h, w
 	}
-	dst := image.NewNRGBA(image.Rect(0, 0, outW, outH))
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			dx, dy := x, y
-			switch orientation {
-			case 2:
-				dx = w - 1 - x
-			case 3:
-				dx, dy = w-1-x, h-1-y
-			case 4:
-				dy = h - 1 - y
-			case 5:
-				dx, dy = y, x
-			case 6:
-				dx, dy = h-1-y, x
-			case 7:
-				dx, dy = h-1-y, w-1-x
-			case 8:
-				dx, dy = y, w-1-x
-			}
-			dst.Set(dx, dy, src.At(x+bounds.Min.X, y+bounds.Min.Y))
-		}
+	return orientedImage{src: src, orientation: orientation, w: w, h: h, bounds: image.Rect(0, 0, outW, outH)}
+}
+
+// JPEG encoding reads transformed coordinates without allocating a second
+// full-resolution RGBA buffer (up to another 96 MiB for a 24 MP input).
+type orientedImage struct {
+	src               image.Image
+	orientation, w, h int
+	bounds            image.Rectangle
+}
+
+func (v orientedImage) ColorModel() color.Model { return v.src.ColorModel() }
+func (v orientedImage) Bounds() image.Rectangle { return v.bounds }
+func (v orientedImage) At(x, y int) color.Color {
+	sx, sy := x, y
+	switch v.orientation {
+	case 2:
+		sx = v.w - 1 - x
+	case 3:
+		sx, sy = v.w-1-x, v.h-1-y
+	case 4:
+		sy = v.h - 1 - y
+	case 5:
+		sx, sy = y, x
+	case 6:
+		sx, sy = y, v.h-1-x
+	case 7:
+		sx, sy = v.w-1-y, v.h-1-x
+	case 8:
+		sx, sy = v.w-1-y, x
 	}
-	return dst
+	b := v.src.Bounds()
+	return v.src.At(sx+b.Min.X, sy+b.Min.Y)
 }

@@ -612,12 +612,14 @@ final syncEngineProvider = Provider<SyncEngine?>((ref) {
     localWorkspaceId: localWorkspaceId,
     afterInventorySync: () async {
       final capability = await api.processingRequest('/capabilities', method: 'GET');
+      Object? processingError;
       if (capability['operation_history'] == true) {
-        await ref.read(backendProcessingServiceProvider).syncHistory(api);
+        try { await ref.read(backendProcessingServiceProvider).syncHistory(api); } catch (error) { processingError = error; }
       }
       if (capability['media_upload'] == true) {
-        await ref.read(mediaServiceProvider).syncBackend(api);
+        try { await ref.read(mediaServiceProvider).syncBackend(api); } catch (error) { processingError ??= error; }
       }
+      if (processingError != null) throw StateError('历史或图片同步待恢复。');
     },
     prepareFeatureSupport: () async {
       try {

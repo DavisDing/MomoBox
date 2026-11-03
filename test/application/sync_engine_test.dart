@@ -185,6 +185,24 @@ Map<String, dynamic> bootstrapSnapshot({
     };
 
 void main() {
+  test('auxiliary failure retains inventory cursor and successful run state', () async {
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repository = SyncOutboxRepository(db);
+    final api = FakeSyncApi();
+    addTearDown(api.close);
+    await repository.saveState(SyncStateModel(scopeId: 'family-a', deviceId: 'device-a', pullCursor: 0, pushAckCursor: 0, consecutiveFailures: 0, bootstrapStatus: SyncBootstrapStatus.ready, updatedAt: DateTime.now()));
+    final engine = SyncEngine(api: api, repository: repository, scopeId: 'family-a', deviceId: 'device-a', applyRemoteChange: (_) async {}, afterInventorySync: () async { throw StateError('history interrupted'); });
+    final report = await engine.runOnce();
+    final state = await repository.getState('family-a');
+    expect(report.postProcessingError, isNotNull);
+    expect(state!.pullCursor, 10);
+    expect(state.lastSuccessAt, isNotNull);
+    expect(state.lastErrorCode, isNull);
+    expect(state.consecutiveFailures, 0);
+    expect(await repository.watchProcessingWarning('family-a').first, isNotNull);
+  });
+
   const scope = 'family';
   late AppDatabase database;
   late FakeSyncApi api;

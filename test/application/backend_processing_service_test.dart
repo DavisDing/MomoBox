@@ -22,6 +22,29 @@ import 'package:momo_box/services/media_storage_service.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('zero discard is accepted, invalid zero consume preserves page and cursor', () async {
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final inventory = InventoryRepository(db);
+    final product = await inventory.createProductWithBatch(const IntakeDraft(name: '米', category: '食品生鲜', quantity: 1, lowStockThreshold: 1));
+    final batch = (await db.select(db.productBatches).get()).single.id;
+    var type = 'discard';
+    final api = NasSyncApi('https://nas.example', accessToken: 'test', client: MockClient((_) async => http.Response(jsonEncode({
+      'records': [{'id':'zero', 'cursor':1, 'product_id':product, 'batch_id':batch, 'operation_id':null,
+        'type':type,'quantity':0,'created_at':'2026-11-03T01:00:00Z'}],
+      'next_cursor':1, 'until':1, 'has_more':false,
+    }), 200)));
+    addTearDown(api.close);
+    final service = BackendProcessingService(db, MediaRepository(db), MediaStorageService(), resolveApi: () async => api, scopeId: () => 'family');
+    await service.syncHistory(api);
+    expect((await db.select(db.stockMovements).get()).where((m) => m.id == 'zero').single.quantity, 0);
+    await db.customStatement("DELETE FROM app_settings WHERE key LIKE 'sync_backend_history_cursor:%'");
+    type = 'consume';
+    await expectLater(service.syncHistory(api), throwsFormatException);
+    expect(await db.customSelect("SELECT * FROM app_settings WHERE key LIKE 'sync_backend_history_cursor:%'").get(), isEmpty);
+    expect((await inventory.loadInventory()).single.totalStock, 1);
+  });
+
   test('history replaces only its correlated local event and never changes stock', () async {
     final db = AppDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
@@ -71,6 +94,27 @@ void main() {
     await expectLater(service.syncHistory(api), throwsFormatException);
     expect(await db.select(db.stockMovements).get(), isEmpty);
     expect(await db.select(db.appSettings).get(), isEmpty);
+  });
+
+  test('one missing local image does not prevent the next image from uploading', () async {
+    final db = AppDatabase.forTesting(NativeDatabase.memory()); addTearDown(db.close);
+    final dir = await Directory.systemTemp.createTemp('audit-media-'); addTearDown(() => dir.delete(recursive:true));
+    final repository = MediaRepository(db);
+    final missing = await repository.create(entityType:'product', entityId:'product', type:MediaAssetType.productImage,
+      localPath:'${dir.path}/missing',mimeType:'image/jpeg',sizeBytes:3,sha256:'a');
+    final file = await File('${dir.path}/present').writeAsBytes([1,2,3]);
+    final valid = await repository.create(entityType:'product',entityId:'product',type:MediaAssetType.productImage,
+      localPath:file.path,mimeType:'image/jpeg',sizeBytes:3,sha256:'b');
+    final uploaded = <String>[];
+    final api = NasSyncApi('https://nas.example',accessToken:'test',client:MockClient((r) async {
+      if (r.url.path.endsWith('/upload')) { final id=(jsonDecode(r.body) as Map)['id'] as String; uploaded.add(id); return http.Response(jsonEncode({'id':id,'deleted_at':null}),200); }
+      return http.Response('{"assets":[]}',200);
+    }));addTearDown(api.close);
+    final backend=BackendProcessingService(db,repository,MediaStorageService(),resolveApi:() async=>api,scopeId:()=> 'family');
+    final media=MediaService(repository,MediaStorageService(),_NeverLocalOcr(),backend:backend);
+    await expectLater(media.syncBackend(api),throwsStateError);
+    expect(uploaded,[valid.id]);
+    expect((await repository.loadAllActive()).firstWhere((a)=>a.id==missing.id).backendState,'failed');
   });
 
   test('backend AI uses NAS without any phone provider configuration or key', () async {

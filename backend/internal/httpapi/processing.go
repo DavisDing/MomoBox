@@ -26,6 +26,8 @@ func (h *Handler) processingActor(w http.ResponseWriter, r *http.Request) (auth.
 }
 func processingError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, processing.ErrOutcomeUnknown):
+		writeError(w, r, 409, "AI_RESULT_UNKNOWN", "original AI request result is unknown; review before explicitly starting a new request", nil)
 	case errors.Is(err, processing.ErrInvalid):
 		writeError(w, r, 400, "VALIDATION_FAILED", "invalid media or processing request", nil)
 	case errors.Is(err, sql.ErrNoRows):

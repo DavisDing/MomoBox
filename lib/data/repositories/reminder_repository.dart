@@ -63,7 +63,8 @@ class ReminderRepository {
     final policies = await _remotePolicies(scopeId);
     final productId = (payload['product_id'] as String?)?.trim();
     if (policies.entries.any((entry) =>
-        entry.key != key && entry.value['product_id'] == productId)) {
+        entry.key != key && entry.value.containsKey('product_id') &&
+        entry.value['product_id'] == productId)) {
       throw const FormatException('reminder_settings contains duplicate active product/default policies');
     }
     await _database.into(_database.appSettings).insertOnConflictUpdate(
@@ -86,11 +87,17 @@ class ReminderRepository {
     final prefix = 'reminder_sync_policy:$scopeId:';
     // Filter exact prefixes in Dart instead of SQL LIKE so wildcard characters
     // in a scope ID cannot select another family's policy.
-    final rows = await _database.select(_database.appSettings).get();
-    return {
-      for (final row in rows.where((row) => row.key.startsWith(prefix)))
-        row.key: Map<String, dynamic>.from(jsonDecode(row.value) as Map),
-    };
+    final rows = await (_database.select(_database.appSettings)
+      ..orderBy([(r) => OrderingTerm.desc(r.updatedAt), (r) => OrderingTerm.asc(r.key)])).get();
+    final result = <String, Map<String, dynamic>>{};
+    for (final row in rows.where((row) => row.key.startsWith(prefix))) {
+      try {
+        final payload = Map<String, dynamic>.from(jsonDecode(row.value) as Map);
+        validateRemoteSettings(payload);
+        result[row.key] = payload;
+      } on FormatException { continue; } on TypeError { continue; }
+    }
+    return result;
   }
 
   /// The empty key denotes the family policy; product policies take priority.
@@ -102,9 +109,7 @@ class ReminderRepository {
       validateRemoteSettings(payload);
       final productId = (payload['product_id'] as String?)?.trim() ?? '';
       if (result.containsKey(productId)) {
-        throw const FormatException(
-          'reminder_settings contains duplicate active product/default policies',
-        );
+        continue; // Legacy duplicates: newest valid row wins, retain originals.
       }
       result[productId] = ReminderPolicy(
         enabled: payload['enabled'] as bool? ?? true,

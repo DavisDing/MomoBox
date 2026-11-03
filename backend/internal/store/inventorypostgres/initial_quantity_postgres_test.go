@@ -114,6 +114,7 @@ CREATE TABLE consumption_records (
     created_by_user_id uuid NOT NULL,
     device_id uuid NOT NULL,
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    client_occurred_at timestamptz,
     FOREIGN KEY (batch_id, family_id) REFERENCES product_batches (id, family_id),
     UNIQUE (family_id, device_id, idempotency_key)
 );

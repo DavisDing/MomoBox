@@ -430,8 +430,12 @@ class BackupFormat {
           _recordError(section, index, '已报废批次的 remaining_quantity 必须为 0。');
         }
       case 'stock_movements':
-        if ((record['quantity'] as int) == 0) {
-          _recordError(section, index, '“quantity”不能为 0。');
+        final quantity = record['quantity'] as int;
+        final type = record['type'];
+        if ((quantity == 0 && type != 'discard') ||
+            (const {'consume', 'discard'}.contains(type) && quantity > 0) ||
+            (type == 'intake' && quantity < 0)) {
+          _recordError(section, index, '流水数量符号与类型不一致。');
         }
       case 'shopping_entries':
         if ((record['target_quantity'] as int) < 1) {
