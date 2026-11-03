@@ -1013,7 +1013,9 @@ class SyncOutboxRepository {
     // explicit acknowledgement, never a claim that the device did not execute.
     if (entry.operation == SyncOperation.homeAssistantCommand && const {
       'HA_INVALID_TOKEN', 'HA_UNAUTHORIZED', 'HA_INVALID_URL', 'HA_UNAVAILABLE', 'HA_AUDIT_FAILURE',
-    }.contains(entry.lastErrorCode)) return true;
+    }.contains(entry.lastErrorCode)) {
+      return true;
+    }
     final evidence = await _readSettlement(_rejectionEvidenceKey(entry.scopeId, entry.changeId));
     return evidence != null && _settlementMatchesOutbox(evidence, entry) &&
         (evidence['source'] == 'nas_rejected' || evidence['source'] == 'never_sent' || evidence['source'] == 'local_invalid') &&

@@ -376,12 +376,13 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
   }
 
   Future<void> _abandonRejected(SyncOutboxEntry entry, SyncEngine engine, NasSyncApi api, String deviceId) async {
+    final outcomeWarning = const {'HA_UNAVAILABLE', 'HA_AUDIT_FAILURE'}.contains(entry.lastErrorCode) ||
+        (entry.lastErrorCode == 'INVALID_LOCAL_CHANGE' && entry.attemptCount > 1)
+        ? '原请求结果可能未知，请先核实 NAS 或设备的实际状态。继续仅撤回这条请求，不会撤销设备动作。'
+        : '已收到拒绝或本地无法发送的证据。';
     final accepted = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
       title: const Text('放弃被拒绝的变更？'),
-      content: Text((const {'HA_UNAVAILABLE', 'HA_AUDIT_FAILURE'}.contains(entry.lastErrorCode) ||
-          (entry.lastErrorCode == 'INVALID_LOCAL_CHANGE' && entry.attemptCount > 1)
-          ? '原请求结果可能未知，请先核实 NAS 或设备的实际状态。继续仅撤回这条请求，不会撤销设备动作。'
-          : '已收到拒绝或本地无法发送的证据。') + '继续将放弃这条本地意图，并获取 NAS 最新权威快照撤销相应本地变更。'
+      content: Text('${outcomeWarning}继续将放弃这条本地意图，并获取 NAS 最新权威快照撤销相应本地变更。'
           '其他尚未解决的操作仍会阻止覆盖；原请求和拒绝回执会保留，库存及 Home Assistant 操作不会重新执行。'),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),

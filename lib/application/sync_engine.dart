@@ -1124,6 +1124,5 @@ class _PullResult {
 
   final int applied;
   final int deferred;
-  final String? postProcessingError;
   final bool hasMore;
 }
