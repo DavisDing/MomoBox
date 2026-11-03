@@ -26,7 +26,7 @@ void main() {
     final tables = await database.customSelect("SELECT name FROM sqlite_master WHERE name LIKE 'sync_initial_import_%'").get();
     expect(tables.map((row) => row.read<String>('name')).toSet(),
       containsAll(['sync_initial_import_plans', 'sync_initial_import_items', 'sync_initial_import_scope']));
-    expect((await database.customSelect('PRAGMA user_version').getSingle()).read<int>('user_version'), 6);
+    expect((await database.customSelect('PRAGMA user_version').getSingle()).read<int>('user_version'), 7);
   });
 
   test('real auxiliary category envelope preserves id and metadata; tombstones are excluded', () async {

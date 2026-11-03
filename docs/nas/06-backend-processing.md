@@ -1,0 +1,61 @@
+# 家庭历史与后端图片、OCR、AI
+
+2026-11-02 用户确认范围：普通操作历史跨端同步；已有图片/OCR迁移；选择并确认家庭后端同步后，新图片、OCR、AI分析在NAS处理。保留单机模式、可编辑草稿及逐次写入确认。不做多工作区、改绑或跨家庭迁移。
+
+## 数据与兼容
+
+- Go migration `0010_media_and_operation_history.sql` 为追加迁移，不改旧迁移校验和。现有 consumption_records 增加独立 identity 游标、提交排序锁和可空 client_occurred_at；旧记录仍可读，客户端事件时间与服务器记录时间分开保存。历史读取不重放库存命令。
+- 新增 media_assets、media_tombstones、processing_ai_results。图片正规化后的 JPEG 字节、OCR文本/来源/状态/失败、AI结果均在 PostgreSQL 内。标准数据库备份包含这些表，不另引入文件卷；数据库体积会随图片增加。
+- Drift schema 6→7 只增加 backend_media_state、backend_media_reassign、stock_movement_sources 三张辅助表，保留原图片、业务流水和核心备份格式。新辅助表不进入核心JSON备份，历史恢复游标使用已有 `sync_` 排除前缀。
+- 核心JSON仍不携带图片、OCR、后端凭据或同步现场；在相同NAS/家庭恢复图片需重新登录并确认绑定、完成库存同步。数据库迁移降级前备份；旧App忽略新侧表，旧后端镜像的schema门禁可能拒绝新库，不能删表伪造回退。正式灾备切换仍不在本次范围。
+
+## 后端配置与运行
+
+后端 Dockerfile 增加 Tesseract、中英文语言数据，沿用 Alpine 3.20 基线；没有新增Go module或Flutter包。本机未安装OCR程序，镜像构建和真实识别质量未验收。
+
+三个生产Compose模板增加可选环境变量（更改后须重建容器，App不上传手机密钥）：
+
+```dotenv
+AI_ENDPOINT=https://your-compatible-provider.example/v1
+AI_MODEL=your-model
+AI_API_KEY=your-secret
+AI_PROTOCOL=auto
+# 可选：AI_SECONDARY_ENDPOINT/MODEL/API_KEY/PROTOCOL
+# 可选：AI_FALLBACK_ENDPOINT/MODEL/API_KEY/PROTOCOL
+MAX_REQUEST_BODY_BYTES=12582912
+```
+
+协议支持 auto/chat/responses；目标仅来自NAS部署者配置，不接受客户端指定地址、密钥或工具。HTTP重定向不跟随；图片不发送给模型。每次外部尝试预算20秒、整体预算65秒（HTTP客户端上限60秒），只在明确不支持Chat接口时自动尝试Responses；服务失败可使用已配置的副/兜底服务。环境配置缺失时 `backend_ai=false`，App提示NAS配置缺失，不使用手机密钥代替。界面保留本机配置用于单机模式；连接后端时连通性测试针对NAS当前服务。
+
+单张原图最大8 MiB，JPEG/PNG，最大2400万像素、单边12000像素。NAS负责解码、应用JPEG EXIF方向、重新编码、去除EXIF/GPS；手机只暂存/上传/缓存展示。HEIC等不支持格式明确失败，需要选择JPEG/PNG；没有假装处理成功。JSON base64有体积开销，反向代理需允许至少12 MiB请求，超时需覆盖OCR/AI处理时间。后端两路有界处理并发；满载返回 PROCESSING_BUSY。
+
+## HTTP契约（均要求当前有效家庭/设备会话）
+
+| 接口 | 行为 |
+| --- | --- |
+| GET /api/v1/capabilities | 新增 operation_history/media_upload/backend_ocr/backend_ai；wire schema/protocol仍为1/1 |
+| GET /api/v1/inventory/history?after=0&until=0&limit=100 | 按家庭分页；首次冻结高水位，返回 records/next_cursor/until/has_more；上限500 |
+| POST /api/v1/media/upload | id/entity_type/entity_id/media_type/content(base64)，可选旧ocr_text；幂等UUID与原文件SHA；不接受同ID不同图片或复活墓碑 |
+| GET /api/v1/media?entity_type=product&entity_id=UUID&after=UUID | 每页最多50条元数据（含墓碑），不读取图片字节；客户端按UUID继续，下一轮从头重查新增/更新 |
+| GET /api/v1/media/UUID | 取单张图片及处理状态；已删图片不返回字节 |
+| POST /api/v1/media/UUID/ocr | 执行后端OCR，pending/processing/complete/failed；完成结果幂等复用，崩溃租约2分钟后可重试 |
+| POST /api/v1/media/UUID/delete | 删除字节和OCR、保留墓碑；上传未知结果也先记录删除意图 |
+| POST /api/v1/media/UUID/reassign | product_id；草稿转商品关联，可安全重试；不支持任意商品间改关联 |
+| POST /api/v1/media/manual/search | product_id/query；在后端检索OCR并返回最多5个片段 |
+| POST /api/v1/ai/analyze | request_id/system_prompt/user_prompt/history/temperature；仅后端配置的模型推理，不执行工具、SQL或库存写入 |
+
+## 移动端流程
+
+1. 后端模式从持久化NAS设置读取，要求已认证且匹配原NAS/账号/家庭绑定、已明确选择远端同步模式。登录丢失/旧会话迟到/家庭不匹配/仅本地模式均阻止后端处理；不会静默调用本地OCR或手机AI。手动库存核心流程保留。
+2. 拍照后先写本地暂存及元数据，再以稳定媒体ID上传。上传失败保留原字节与待重试状态，OCR重试或下一次前台/手动同步继续同一上传，不生成重复图片。未提供分块断点续传，8MiB上限内重传整图。
+3. 现有本机图片和已保存OCR文本随成功库存同步迁至NAS，旧文字以local_migration来源保留，不为迁移自动重做识别或调用AI。新图片OCR由NAS执行，手机只缓存结果；说明书检索及模型请求均转至后端。
+4. 上传、OCR进行中、完成、失败和删除待同步有独立状态；UI沿用原工具行、图片列表、提示和草稿确认。草稿转商品先持久化本机关联及后端待办，网络恢复后补传关联。
+5. 库存同步落地后恢复普通操作历史；每页历史与游标同SQLite事务提交，不修改库存数量。通过 operation_id+batch_id 匹配新本机流水，删除对应乐观记录并存服务端稳定ID。旧版有保留outbox且事件/批次/数量精确唯一匹配时可关联；证据缺失时不按时间近似删除历史，可能需要人工核对旧重复项。
+6. AI仍由手机组装合法参数表和已授权上下文，后端负责模型调用及结果持久化；手机做返回校验、展示和用户确认，既有写操作执行前复检不变。切换到后端发送需单独确认上下文授权。AI失败不自动执行业务；未知推理结果不自动再次收费，同request_id返回已存回执，失败/崩溃需用户显式新请求。
+7. 同步媒体采用按现有商品逐页刷新，非后台常驻服务；App退后台、离线、处理失败时可能延后，需前台恢复或手动同步。不存在跨账号迁移、改绑或多工作区入口。
+
+## 验收边界
+
+隔离PostgreSQL16测试和Go检查见VALIDATION对应记录；真实Tesseract、真实模型、Docker、NAS及双手机仍需分别执行。测试中的模拟OCR/HTTP只验证状态、权限、幂等与事务，不代表识别质量或真实供应商兼容性已通过。
+
+AI_CONTEXT更新建议：运行/设备验收后，将“NAS不提供AI Proxy、图片/OCR始终留本机”的旧长期边界更新为上述已确认双模式规则；本次不把源码实现写成已验收现状。

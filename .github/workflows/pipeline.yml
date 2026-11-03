@@ -421,11 +421,17 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           set -euo pipefail
-          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/momobox-backend"
+          image_owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/${image_owner}/momobox-backend"
           {
             echo "image=$image"
+            if [[ "$RELEASE_REQUIRED" == 'true' ]]; then
+              echo "version=v${VERSION}"
+            else
+              echo "version=sha-${GITHUB_SHA::7}"
+            fi
             echo 'tags<<EOF'
-            if [[ "$BACKEND_LATEST_REQUIRED" == 'true' ]]; then
+            if [[ "$BACKEND_LATEST_REQUIRED" == 'true' || "$RELEASE_REQUIRED" == 'true' ]]; then
               echo "$image:latest"
             fi
             if [[ "$RELEASE_REQUIRED" == 'true' ]]; then
@@ -443,11 +449,14 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.backend-image.outputs.tags }}
+          build-args: |
+            APP_VERSION=${{ steps.backend-image.outputs.version }}
           labels: |
             org.opencontainers.image.title=MomoBox NAS backend
             org.opencontainers.image.description=MomoBox Go backend for NAS deployment
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.backend-image.outputs.version }}
 
       - name: Create or update GitHub Release and upload packages
         if: needs.prepare.outputs.release_required == 'true'

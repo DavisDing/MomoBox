@@ -36,6 +36,15 @@ func NewRouter(deps Dependencies) http.Handler { return NewHandler(deps).Routes(
 
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/media/upload", h.uploadMedia)
+	mux.HandleFunc("/api/v1/media", h.listMedia)
+	mux.HandleFunc("/api/v1/media/{media_id}", h.getMedia)
+	mux.HandleFunc("/api/v1/media/{media_id}/delete", h.deleteMedia)
+	mux.HandleFunc("/api/v1/media/{media_id}/reassign", h.reassignMedia)
+	mux.HandleFunc("/api/v1/media/{media_id}/ocr", h.ocrMedia)
+	mux.HandleFunc("/api/v1/ai/analyze", h.analyze)
+	mux.HandleFunc("/api/v1/media/manual/search", h.searchManual)
+	mux.HandleFunc("/api/v1/inventory/history", h.operationHistory)
 	mux.HandleFunc("/api/v1/auth/register", h.register)
 	mux.HandleFunc("/api/v1/auth/login", h.login)
 	mux.HandleFunc("/api/v1/auth/refresh", h.refresh)

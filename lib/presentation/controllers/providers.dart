@@ -10,11 +10,13 @@ import '../../application/ai_draft_service.dart';
 import '../../application/ai_usage_service.dart';
 import '../../application/backup_service.dart';
 import '../../application/barcode_lookup_service.dart';
+import '../../application/calendar_refresh_scheduler.dart';
 import '../../application/inventory_service.dart';
 import '../../application/initial_import_service.dart';
 import '../../application/inventory_statistics_service.dart';
 import '../../application/manual_qa_service.dart';
 import '../../application/media_service.dart';
+import '../../application/backend_processing_service.dart';
 import '../../application/nas_connection_service.dart';
 import '../../application/nas_auth_service.dart';
 import '../../presentation/controllers/nas_account_controller.dart';
@@ -78,6 +80,20 @@ final inventoryServiceProvider = Provider<InventoryService>(
 final inventoryProvider = StreamProvider<List<InventoryItem>>(
   (ref) => ref.watch(inventoryServiceProvider).watchInventory(),
 );
+
+final calendarClockProvider = Provider<DateTime Function()>((ref) => DateTime.now);
+
+final calendarRefreshSchedulerProvider = Provider<CalendarRefreshScheduler>((ref) {
+  final scheduler = CalendarRefreshScheduler(
+    clock: ref.watch(calendarClockProvider),
+    onRefresh: () {
+      ref.invalidate(inventoryProvider);
+      ref.invalidate(inventoryStatisticsProvider);
+    },
+  );
+  ref.onDispose(scheduler.dispose);
+  return scheduler;
+});
 
 final shoppingRepositoryProvider = Provider<ShoppingRepository>((ref) {
   final database = ref.watch(databaseProvider);
@@ -247,6 +263,8 @@ final manualQaServiceProvider = Provider<ManualQaService>((ref) {
     ref.watch(mediaRepositoryProvider),
     ref.watch(settingsRepositoryProvider),
     ref.watch(secureSettingsServiceProvider),
+    backendResolver: ref.watch(backendResolverProvider),
+    fallbackExecutor: AiFallbackExecutor(backendResolver: ref.watch(backendResolverProvider)),
   );
   ref.onDispose(service.close);
   return service;
@@ -275,11 +293,39 @@ final localOcrServiceProvider = Provider<LocalOcrService>(
   (ref) => LocalOcrService(),
 );
 
+final backendResolverProvider = Provider<BackendResolver>((ref) => () async {
+  final selected = (await ref.read(settingsRepositoryProvider).getValue(nasServerUrlKey))
+      ?.trim().isNotEmpty == true;
+  if (!selected) return null;
+  await ref.read(syncWorkspaceAccessProvider.future);
+  final api = ref.read(nasSyncApiProvider);
+  if (api == null) throw StateError('后端已选择，请先登录并确认当前家庭同步；暂不支持改绑迁移。');
+  final family = ref.read(nasAccountProvider).family.familyId!;
+  final mode = await SyncOutboxRepository(ref.read(databaseProvider)).getConfirmedBootstrapMode(family);
+  if (mode != 'join_and_merge' && mode != 'create_new_family') {
+    throw StateError('请先明确启用当前家庭的后端同步；仅保留本地时不上传图片或 AI 请求。');
+  }
+  api.assertCurrentSession();
+  return api;
+});
+
+final backendProcessingServiceProvider = Provider<BackendProcessingService>((ref) =>
+  BackendProcessingService(ref.watch(databaseProvider), ref.watch(mediaRepositoryProvider),
+    ref.watch(mediaStorageServiceProvider), resolveApi: ref.watch(backendResolverProvider),
+    scopeId: () => ref.read(nasAccountProvider).family.familyId));
+
+final backendAiExecutorProvider = Provider<AiFallbackExecutor>((ref) {
+  final executor = AiFallbackExecutor(backendResolver: ref.watch(backendResolverProvider));
+  ref.onDispose(executor.close);
+  return executor;
+});
+
 final mediaServiceProvider = Provider<MediaService>(
   (ref) => MediaService(
     ref.watch(mediaRepositoryProvider),
     ref.watch(mediaStorageServiceProvider),
     ref.watch(localOcrServiceProvider),
+    backend: ref.watch(backendProcessingServiceProvider),
   ),
 );
 
@@ -307,6 +353,7 @@ final aiDraftServiceProvider = Provider<AiDraftService>(
     ref.watch(settingsRepositoryProvider),
     ref.watch(secureSettingsServiceProvider),
     usageService: ref.watch(aiUsageServiceProvider),
+    fallbackExecutor: ref.watch(backendAiExecutorProvider),
   ),
 );
 
@@ -317,6 +364,7 @@ final aiAssistantServiceProvider = Provider<AiAssistantService>(
     ref.watch(inventoryRepositoryProvider),
     usageService: ref.watch(aiUsageServiceProvider),
     actionService: ref.watch(aiInventoryActionServiceProvider),
+    fallbackExecutor: ref.watch(backendAiExecutorProvider),
   ),
 );
 
@@ -349,7 +397,7 @@ final aiConversationStoreProvider = ChangeNotifierProvider<AiConversationStore>(
 });
 
 final aiConnectionTestExecutorProvider = Provider<AiFallbackExecutor>((ref) {
-  final executor = AiFallbackExecutor();
+  final executor = AiFallbackExecutor(backendResolver: ref.watch(backendResolverProvider));
   ref.onDispose(executor.close);
   return executor;
 });
@@ -360,9 +408,24 @@ final aiInventoryPermissionProvider = StreamProvider<bool>((ref) => ref
 
 // Configured does not imply reachable: the home page must never claim online
 // based on a URL alone, nor reuse the mock smart-home status.
-final aiConfigurationStatusProvider = StreamProvider<bool>((ref) => ref
-    .watch(settingsServiceProvider).watchValue(AiDraftService.modelKey)
-    .map((value) => value?.trim().isNotEmpty == true));
+final aiConfigurationStatusProvider = StreamProvider<bool>((ref) async* {
+  ref.watch(nasAccountProvider);
+  ref.watch(nasConnectionProvider);
+  final resolver = ref.watch(backendResolverProvider);
+  final settings = ref.watch(settingsServiceProvider);
+  try {
+    final api = await resolver();
+    if (api != null) {
+      final capability = await api.processingRequest('/capabilities', method: 'GET');
+      yield capability['backend_ai'] == true;
+      return;
+    }
+    yield* settings.watchValue(AiDraftService.modelKey)
+      .map((value) => value?.trim().isNotEmpty == true);
+  } catch (_) {
+    yield false;
+  }
+});
 
 final nasSmartHomeRepositoryProvider = Provider<NasSmartHomeRepository>((ref) {
   ref.watch(nasAccountProvider.select((account) => (
@@ -507,7 +570,17 @@ final nasSyncApiProvider = Provider<NasSyncApi?>((ref) {
         !latest.isLoading && latest.asData?.value.canSync == true &&
         latest.asData?.value.owner?.matches(current) == true;
   });
-  if (api != null) ref.onDispose(api.close);
+  if (api != null) {
+    api.setProcessingGuard(() async {
+      final configured = (await ref.read(settingsRepositoryProvider).getValue(nasServerUrlKey))?.trim();
+      final mode = await SyncOutboxRepository(ref.read(databaseProvider)).getConfirmedBootstrapMode(identity.familyId);
+      if (!active || configured == null || !api.matchesEndpoint(configured) ||
+          (mode != 'join_and_merge' && mode != 'create_new_family')) {
+        throw StateError('后端处理模式已改变，请重新确认。');
+      }
+    });
+    ref.onDispose(api.close);
+  }
   return api;
 });
 
@@ -537,6 +610,15 @@ final syncEngineProvider = Provider<SyncEngine?>((ref) {
     deviceId: deviceId,
     familyId: familyId,
     localWorkspaceId: localWorkspaceId,
+    afterInventorySync: () async {
+      final capability = await api.processingRequest('/capabilities', method: 'GET');
+      if (capability['operation_history'] == true) {
+        await ref.read(backendProcessingServiceProvider).syncHistory(api);
+      }
+      if (capability['media_upload'] == true) {
+        await ref.read(mediaServiceProvider).syncBackend(api);
+      }
+    },
     prepareFeatureSupport: () async {
       try {
         final capability = await api.importCapabilities(deviceId: deviceId);

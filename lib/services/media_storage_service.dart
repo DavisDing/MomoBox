@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path/path.dart' as p;
@@ -48,6 +49,33 @@ class MediaStorageService {
       sizeBytes: output.length,
       sha256: sha256.convert(output).toString(),
     );
+  }
+
+  /// Stage the original camera result for durable retry. All normalization and
+  /// OCR happen on the backend; the staged copy is a display/upload cache.
+  Future<StoredImageFile> storeUploadSource(XFile source) async {
+    final bytes = await source.readAsBytes();
+    if (bytes.isEmpty || bytes.length > 8 * 1024 * 1024) {
+      throw StateError('请选择不超过 8 MiB 的 JPEG 或 PNG 图片。');
+    }
+    return _storeBytes('${_uuid.v4()}.jpg', bytes);
+  }
+
+  Future<StoredImageFile> storeBackendImage(String id, List<int> bytes) async {
+    if (!RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(id) || bytes.isEmpty || bytes.length > 8 * 1024 * 1024) {
+      throw const FormatException('后端图片无效。');
+    }
+    return _storeBytes('$id.jpg', bytes);
+  }
+
+  Future<StoredImageFile> _storeBytes(String name, List<int> bytes) async {
+    final directory = await _mediaDirectory();
+    final file = File(p.join(directory.path, name));
+    await file.writeAsBytes(Uint8List.fromList(bytes), flush: true);
+    final mimeType = bytes.length >= 4 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4e && bytes[3] == 0x47
+        ? 'image/png' : 'image/jpeg';
+    return StoredImageFile(path: file.path, mimeType: mimeType,
+      sizeBytes: bytes.length, sha256: sha256.convert(bytes).toString());
   }
 
   Future<bool> deleteIfExists(String path) async {

@@ -79,6 +79,7 @@ class BackupFormat {
 
   static const _deviceSettingKeys = {
     'ai_assistant_context_consent_v2',
+    'ai_assistant_context_consent_backend_v1',
     'device_id',
     'user_id',
     'family_id',

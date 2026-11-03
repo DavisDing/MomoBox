@@ -18,6 +18,7 @@ import (
 	"github.com/momobox/backend/internal/homeassistant"
 	"github.com/momobox/backend/internal/httpapi"
 	"github.com/momobox/backend/internal/platform"
+	"github.com/momobox/backend/internal/processing"
 	"github.com/momobox/backend/internal/securetoken"
 	"github.com/momobox/backend/internal/store/authpostgres"
 	"github.com/momobox/backend/internal/store/familypostgres"
@@ -357,6 +358,7 @@ func serve(ctx context.Context) error {
 	syncService := syncservice.NewService(syncRepository)
 
 	businessRoutes := httpapi.NewRouter(httpapi.Dependencies{
+		Processing:    processing.New(db, processing.AIFromEnv()),
 		Auth:          authService,
 		Family:        familyService,
 		Devices:       deviceService,
@@ -370,6 +372,11 @@ func serve(ctx context.Context) error {
 		},
 	})
 	server := platform.NewHTTPServerWithRoutes(cfg, db, businessRoutes)
+	server.SchemaReadiness = func(ctx context.Context) error {
+		return platform.CheckMigrationSchema(ctx, os.Getenv("MIGRATIONS_DIR"), func(ctx context.Context) ([]platform.MigrationRecord, error) {
+			return platform.ReadMigrationSchema(ctx, db)
+		})
+	}
 
 	fmt.Printf("momo-backend %s listening on %s\n", cfg.AppVersion, cfg.HTTPAddr)
 	return serveHTTP(ctx, server.HTTPServer, httpShutdownTimeout)
@@ -388,7 +395,7 @@ func migrate(ctx context.Context) error {
 }
 
 func healthcheck(ctx context.Context) error {
-	cfg, err := platform.LoadConfig()
+	cfg, err := platform.LoadConfigReadOnly()
 	if err != nil {
 		return err
 	}
@@ -417,7 +424,7 @@ func healthcheck(ctx context.Context) error {
 }
 
 func schemaCheck(ctx context.Context) error {
-	cfg, err := platform.LoadConfig()
+	cfg, err := platform.LoadConfigReadOnly()
 	if err != nil {
 		return err
 	}

@@ -12,7 +12,7 @@
 
 ## 固定部署身份与 client
 
-每次操作必须显式提供以下六项；只提供一部分会拒绝运行：
+每次操作必须明确以下六项；client 也可由选中 `.env` 的单一 `PG_CLIENT_IMAGE` 值提供，其余身份参数必须显式传入：
 
 ```sh
 TOOLS=/volume1/docker/momobox-tools
@@ -55,6 +55,8 @@ momo_op backup --output-dir /volume1/backups/momobox
 ```
 
 默认写入选中部署目录的 `backups/`。只导出 DSN 指向且身份断言一致的专属库，custom archive 不带 owner/privilege。0600 临时文件经非空和 `pg_restore --list` 检查后同目录改名；新模式同时输出 `.dump.meta`，记录库/角色、PG major、连接地址、数据库 OID、managed 集群、client digest、ledger 摘要及 dump SHA256。两文件须一起保存，元数据不含密码。
+
+备份默认在成功生成新归档后保留最近30份未固定的 `momobox-postgres-TIMESTAMP-PID.dump`，同步删除相应 `.meta` 和 `.owner`。新归档的0600 `.owner` 记录稳定部署归属，只有归属一致的文件才纳入清理；历史无归属标记、其他部署归档都保留，需管理员另行核对处理。使用 `backup --retain-count N` 调整（0禁用）；update 的两次嵌套备份沿用默认30份。需长期保存的演练来源或升级恢复点，在旁创建同名 `.dump.keep` 文件，固定文件不计入30份，不被清理；管理员须另外监控这些固定文件及异地副本容量。清理仅发生在已持有部署锁且备份验证/改名成功后，忽略手工命名、符号链接和临时文件；失败备份不清理。正常更新仍生成在线与停写后两份恢复点。
 
 在线备份允许本项目 backend 运行；同库其他写入者和完整跨对象业务一致性仍需运维控制。dump-list 仅证明归档可读，SHA256 仅证明文件一致，均不等于可恢复或完整灾备。角色权限、应用密钥、备份加密与异地副本另行保管。
 

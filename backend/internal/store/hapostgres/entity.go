@@ -35,6 +35,17 @@ func (r *EntityRepository) ReplaceForIntegration(ctx context.Context, familyID, 
 		return fmt.Errorf("begin Home Assistant entity replacement: %w", err)
 	}
 	defer rollback(tx)
+	// Discovery can overlap. Serialize replacement for this integration, including
+	// the absent-row case which cannot be protected by an entity row lock.
+	var lockedID string
+	err = tx.QueryRowContext(ctx, `SELECT id::text FROM ha_integrations
+WHERE id = $1 AND family_id = $2 AND deleted_at IS NULL FOR UPDATE`, integrationID, familyID).Scan(&lockedID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return notFound("Home Assistant integration", err)
+	}
+	if err != nil {
+		return fmt.Errorf("lock Home Assistant discovery: %w", err)
+	}
 
 	seen := make([]string, 0, len(entities))
 	for _, entity := range entities {
@@ -71,6 +82,18 @@ WHERE e.family_id = $1
 }
 
 func upsertEntity(ctx context.Context, tx *sql.Tx, familyID, integrationID string, entity homeassistant.HAEntity) error {
+	// Reuse the persisted identity even when the previous discovery hid the row.
+	// Prefer the active row on legacy databases that already contain duplicates;
+	// do not silently combine potentially different historical grants.
+	var existingID string
+	err := tx.QueryRowContext(ctx, `SELECT id::text FROM ha_entities
+WHERE family_id = $1 AND integration_id = $2 AND entity_id = $3
+ORDER BY (deleted_at IS NULL) DESC, created_at, id LIMIT 1 FOR UPDATE`, familyID, integrationID, entity.EntityID).Scan(&existingID)
+	if err == nil {
+		entity.ID = existingID
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("lock Home Assistant entity identity: %w", err)
+	}
 	if entity.DeviceID != "" {
 		var exists bool
 		err := tx.QueryRowContext(ctx, `
@@ -108,7 +131,7 @@ INSERT INTO ha_entities (
     $8, $9::jsonb, $10, $11::jsonb, $12,
     $13, $14, $15, $16, NULL
 )
-ON CONFLICT (integration_id, entity_id) WHERE deleted_at IS NULL
+ON CONFLICT (id)
 DO UPDATE SET
     ha_device_id = EXCLUDED.ha_device_id,
     domain = EXCLUDED.domain,
@@ -121,7 +144,10 @@ DO UPDATE SET
     is_controllable = EXCLUDED.is_controllable,
     last_state_at = EXCLUDED.last_state_at,
     updated_at = EXCLUDED.updated_at,
-    deleted_at = NULL`,
+    deleted_at = NULL
+WHERE ha_entities.family_id = EXCLUDED.family_id
+  AND ha_entities.integration_id = EXCLUDED.integration_id
+  AND ha_entities.entity_id = EXCLUDED.entity_id`,
 		entity.ID,
 		familyID,
 		integrationID,

@@ -28,6 +28,12 @@ type EntityRepository interface {
 	DeleteEntity(ctx context.Context, mutation EntityMutation) (EntityRecord, error)
 }
 
+// ChangeApplicationTransaction rolls back a failed change before a durable
+// rejection is written. Infrastructure errors must still abort the request.
+type ChangeApplicationTransaction interface {
+	WithinChange(context.Context, func() (StoredOutcome, error)) (StoredOutcome, error)
+}
+
 type InventoryRepository interface {
 	ExecuteInventoryCommand(ctx context.Context, change SyncChange) (InventoryCommandResult, error)
 }

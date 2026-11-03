@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'initial_import_schema.dart';
+import 'backend_processing_schema.dart';
 
 part 'app_database.g.dart';
 
@@ -245,12 +246,13 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (migrator) async {
           await migrator.createAll();
+          await _createBackendProcessingTables();
           await _createInitialImportTables();
           await _createOcrSearchIndex();
         },
@@ -281,6 +283,9 @@ class AppDatabase extends _$AppDatabase {
             await _createOcrSearchIndex();
             await _rebuildOcrSearchIndex();
           }
+          if (from < 7) {
+            await _createBackendProcessingTables();
+          }
           if (from < 6) {
             await _createInitialImportTables();
           }
@@ -293,6 +298,12 @@ class AppDatabase extends _$AppDatabase {
           await _createOcrSearchIndex();
         },
       );
+
+  Future<void> _createBackendProcessingTables() async {
+    for (final statement in backendProcessingSchema) {
+      await customStatement(statement);
+    }
+  }
 
   Future<void> _createInitialImportTables() async {
     for (final statement in initialImportSchema) {

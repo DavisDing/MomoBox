@@ -444,17 +444,6 @@ class ThemeSettingsScreen extends ConsumerWidget {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 6),
-                          Wrap(
-                            spacing: 6,
-                            runSpacing: 4,
-                            children: [
-                              _buildPaletteTag('Logo', Icon(palette.appLogoIcon, size: 14, color: palette.primary)),
-                              _buildPaletteTag(palette.inventoryLabel, Icon(palette.inventoryIcon, size: 14, color: palette.primary)),
-                              _buildPaletteTag(palette.alertLabel, Icon(palette.alertIcon, size: 14, color: palette.primary)),
-                              _buildPaletteTag(palette.shoppingLabel, Icon(palette.shoppingIcon, size: 14, color: palette.primary)),
-                            ],
-                          ),
                         ],
                       ),
                     ),
@@ -472,23 +461,6 @@ class ThemeSettingsScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildPaletteTag(String text, Widget icon) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          icon,
-          const SizedBox(width: 2),
-          Text(text, style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.black87)),
-        ],
-      ),
-    );
-  }
 }
 
 class BarcodeSettingsScreen extends ConsumerStatefulWidget {
@@ -1338,7 +1310,8 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                           String result;
                           var succeeded = false;
                           try {
-                            final key = enteredKey.isNotEmpty
+                            final backend = await ref.read(backendResolverProvider)();
+                            final key = backend != null ? 'backend-managed' : enteredKey.isNotEmpty
                                 ? enteredKey
                                 : duplicate
                                 ? copiedKey
@@ -1350,9 +1323,9 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                                             )) ??
                                       '';
                             if (!isCurrent()) return;
-                            if (endpoint.isEmpty ||
+                            if (backend == null && (endpoint.isEmpty ||
                                 model.isEmpty ||
-                                key.isEmpty) {
+                                key.isEmpty)) {
                               result = '测试失败：请填写 API 地址、模型和 API Key 后测试。';
                             } else {
                               final response = await executor.execute(
@@ -1371,7 +1344,7 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                               succeeded = true;
                               result =
                                   '测试通过 · ${response.actualProtocol} · '
-                                  '${response.traceLogs.last.durationMs} ms（尚未保存）';
+                                  '${response.traceLogs.last.durationMs} ms${backend == null ? '（尚未保存）' : '（NAS 当前服务；手机表单未保存）'}';
                             }
                           } catch (error) {
                             result = '测试失败：${aiFailureMessage(error)}';

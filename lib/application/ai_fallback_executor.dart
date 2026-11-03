@@ -6,6 +6,8 @@ import 'package:http/http.dart' as http;
 
 import 'ai_client_helper.dart';
 import 'failover_executor.dart';
+import 'backend_processing_service.dart';
+import 'package:uuid/uuid.dart';
 
 enum AiApiLevel { primary, secondary, fallback }
 
@@ -116,11 +118,17 @@ class _AiApiCallResult {
 class AiFallbackExecutor {
   AiFallbackExecutor({
     http.Client? client,
+    this.backendResolver,
     bool Function(String content)? contentFilter,
   })  : _client = client ?? http.Client(),
         _contentFilter = contentFilter;
 
   void close() => _client.close();
+
+  final BackendResolver? backendResolver;
+  Future<bool> usesBackend() async => await backendResolver?.call() != null;
+  static const backendConfig = AiEndpointConfig(level: AiApiLevel.primary,
+    endpoint: 'backend', apiKey: 'backend-managed', model: 'backend');
 
   final http.Client _client;
   final bool Function(String content)? _contentFilter;
@@ -134,6 +142,34 @@ class AiFallbackExecutor {
     List<Map<String, String>> chatHistory = const [],
     double temperature = 0.2,
   }) async {
+    final api = await backendResolver?.call();
+    if (api != null) {
+      final capabilities = await api.processingRequest('/capabilities', method: 'GET');
+      if (capabilities['backend_ai'] != true) {
+        throw StateError('请先在 NAS 配置 AI 服务，连接后端后不会使用手机 AI 凭据。');
+      }
+      final result = await api.processingRequest('/ai/analyze', body: {
+        'request_id': const Uuid().v4(), 'system_prompt': systemPrompt,
+        'user_prompt': userPrompt, 'history': chatHistory, 'temperature': temperature,
+      });
+      api.assertCurrentSession();
+      final content = result['content'] as String;
+      if (content.trim().isEmpty || (_contentFilter != null && !_contentFilter(content))) {
+        throw const FormatException('后端 AI 返回内容无效。');
+      }
+      final level = switch (result['level']) {
+        'secondary' => AiApiLevel.secondary, 'fallback' => AiApiLevel.fallback,
+        _ => AiApiLevel.primary,
+      };
+      final config = AiEndpointConfig(level: level, endpoint: 'backend',
+        apiKey: 'backend-managed', model: result['model'] as String);
+      return AiFallbackResponse(content: content,
+        rawDecoded: {'usage': result['usage']}, usedLevel: level,
+        usedConfig: config, actualProtocol: result['protocol'] as String,
+        traceLogs: [AiExecutionAttemptLog(level: level,
+          model: config.model, endpoint: 'backend', durationMs: result['elapsed_ms'] as int,
+          isSuccess: true)]);
+    }
     try {
       final response = await _executor.execute(
         configs: configs,

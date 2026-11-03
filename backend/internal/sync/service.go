@@ -130,11 +130,23 @@ func (s *Service) ListConflicts(ctx context.Context, request ConflictListRequest
 }
 
 func (s *Service) GetConflict(ctx context.Context, deviceID, conflictID string) (SyncConflict, error) {
-	if err := validateDeviceID(deviceID); err != nil { return SyncConflict{}, err }
-	if strings.TrimSpace(conflictID) == "" { return SyncConflict{}, fmt.Errorf("%w: conflict_id is required", ErrInvalidRequest) }
-	scope, err := s.repository.ResolveDevice(ctx, deviceID); if err != nil { return SyncConflict{}, err }
-	if scope.Revoked || !validCurrentRole(scope.Role) { return SyncConflict{}, ErrDeviceNotFound }
-	query, ok := s.repository.(ConflictQueryRepository); if !ok { return SyncConflict{}, errors.New("sync conflict repository is not configured") }
+	if err := validateDeviceID(deviceID); err != nil {
+		return SyncConflict{}, err
+	}
+	if strings.TrimSpace(conflictID) == "" {
+		return SyncConflict{}, fmt.Errorf("%w: conflict_id is required", ErrInvalidRequest)
+	}
+	scope, err := s.repository.ResolveDevice(ctx, deviceID)
+	if err != nil {
+		return SyncConflict{}, err
+	}
+	if scope.Revoked || !validCurrentRole(scope.Role) {
+		return SyncConflict{}, ErrDeviceNotFound
+	}
+	query, ok := s.repository.(ConflictQueryRepository)
+	if !ok {
+		return SyncConflict{}, errors.New("sync conflict repository is not configured")
+	}
 	if scoped, ok := s.repository.(ScopedConflictQueryRepository); ok {
 		return scoped.GetConflictForScope(ctx, conflictID, scope)
 	}
@@ -142,11 +154,23 @@ func (s *Service) GetConflict(ctx context.Context, deviceID, conflictID string) 
 }
 
 func (s *Service) ResolveConflict(ctx context.Context, request ConflictResolveRequest) (ConflictResolveResponse, error) {
-	if err := validateConflictResolve(request); err != nil { return ConflictResolveResponse{}, err }
-	scope, err := s.repository.ResolveDevice(ctx, request.DeviceID); if err != nil { return ConflictResolveResponse{}, err }
-	if scope.Revoked || !validCurrentRole(scope.Role) { return ConflictResolveResponse{}, ErrDeviceNotFound }
-	if !canResolveConflict(scope.Role) { return ConflictResolveResponse{}, NewBusinessError("FORBIDDEN", "only family owner or admin can resolve sync conflicts", nil) }
-	query, ok := s.repository.(ConflictQueryRepository); if !ok { return ConflictResolveResponse{}, errors.New("sync conflict repository is not configured") }
+	if err := validateConflictResolve(request); err != nil {
+		return ConflictResolveResponse{}, err
+	}
+	scope, err := s.repository.ResolveDevice(ctx, request.DeviceID)
+	if err != nil {
+		return ConflictResolveResponse{}, err
+	}
+	if scope.Revoked || !validCurrentRole(scope.Role) {
+		return ConflictResolveResponse{}, ErrDeviceNotFound
+	}
+	if !canResolveConflict(scope.Role) {
+		return ConflictResolveResponse{}, NewBusinessError("FORBIDDEN", "only family owner or admin can resolve sync conflicts", nil)
+	}
+	query, ok := s.repository.(ConflictQueryRepository)
+	if !ok {
+		return ConflictResolveResponse{}, errors.New("sync conflict repository is not configured")
+	}
 	return query.ResolveConflict(ctx, request, scope)
 }
 
@@ -254,7 +278,16 @@ func (s *Service) processChange(ctx context.Context, scope DeviceScope, baseCurs
 			return tx.PutIdempotency(ctx, scope.DeviceID, change.IdempotencyKey, IdempotencyRecord{Fingerprint: fingerprint, Outcome: outcome})
 		}
 
-		outcome, err = s.applyChange(ctx, tx, change, currentCursor)
+		if guarded, ok := tx.(ChangeApplicationTransaction); ok {
+			outcome, err = guarded.WithinChange(ctx, func() (StoredOutcome, error) {
+				return s.applyChange(ctx, tx, change, currentCursor)
+			})
+			if err != nil {
+				outcome, err = s.businessOutcomeOrError(ctx, tx, change, err, currentCursor)
+			}
+		} else {
+			outcome, err = s.applyChange(ctx, tx, change, currentCursor)
+		}
 		if err != nil {
 			return err
 		}
@@ -584,7 +617,15 @@ func canResolveConflict(role string) bool {
 	return role == "owner" || role == "admin"
 }
 
-func minConflictLimit(value int) int { if value <= 0 { return 50 }; if value > 200 { return 200 }; return value }
+func minConflictLimit(value int) int {
+	if value <= 0 {
+		return 50
+	}
+	if value > 200 {
+		return 200
+	}
+	return value
+}
 
 func validateBootstrapConfirm(request BootstrapConfirmRequest) error {
 	if err := validateDeviceID(request.DeviceID); err != nil {
@@ -601,6 +642,9 @@ func validateBootstrapConfirm(request BootstrapConfirmRequest) error {
 func validateChange(change SyncChange) error {
 	if strings.TrimSpace(change.ChangeID) == "" {
 		return fmt.Errorf("change_id is required")
+	}
+	if !importUUID(strings.ToLower(change.ChangeID)) {
+		return fmt.Errorf("change_id must be a UUID")
 	}
 	if len(change.IdempotencyKey) < 16 || len(change.IdempotencyKey) > 255 {
 		return fmt.Errorf("idempotency_key must contain 16 to 255 characters")
@@ -642,6 +686,9 @@ func validateChange(change SyncChange) error {
 func validateEntityIdentity(change SyncChange) error {
 	if strings.TrimSpace(change.Entity) == "" || strings.TrimSpace(change.EntityID) == "" {
 		return fmt.Errorf("entity and entity_id are required")
+	}
+	if !importUUID(strings.ToLower(change.EntityID)) {
+		return fmt.Errorf("entity_id must be a UUID")
 	}
 	return nil
 }

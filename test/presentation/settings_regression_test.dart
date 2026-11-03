@@ -557,6 +557,12 @@ class _ControlledAiExecutor implements AiFallbackExecutor {
   final results = <Completer<AiFallbackResponse>>[];
 
   @override
+  BackendResolver? get backendResolver => null;
+
+  @override
+  Future<bool> usesBackend() async => false;
+
+  @override
   Future<AiFallbackResponse> execute({
     required List<AiEndpointConfig> configs,
     required String systemPrompt,

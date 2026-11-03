@@ -363,7 +363,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
             entityId: _mediaDraftId,
             type: choice.type,
           );
-      if (mounted) _message('${choice.type.label}已保存到本机。');
+      if (mounted) _message('${choice.type.label}已保存；连接后端时已上传。');
     } catch (error) {
       if (mounted) _message('保存图片失败：$error');
     }
@@ -389,7 +389,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
         }
       }
       if (mounted) {
-        final summary = '本地 OCR 完成：$textCount/${images.length} 张图片识别到文字。';
+        final summary = 'OCR 完成：$textCount/${images.length} 张图片识别到文字。';
         _message(failedCount == 0 ? summary : '$summary 另有 $failedCount 张未能识别，可手动填写。');
       }
     } finally {
@@ -403,7 +403,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
         .map((asset) => asset.ocrText!.trim())
         .join('\n\n');
     if (text.isEmpty) {
-      _message('请先对说明书或包装图片执行本地 OCR。');
+      _message('请先对说明书或包装图片执行 OCR。');
       return;
     }
     final confirmed = await _confirmAiUpload(text.length);
@@ -426,7 +426,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
         builder: (context) => AlertDialog(
           title: const Text('确认发送 OCR 文本？'),
           content: Text(
-            '将仅发送本地 OCR 文本（约 $textLength 字），不上传原图。会发送到你配置的主 AI 服务；主服务失败时，也可能发送到你配置的副服务或兜底服务。只生成可编辑草稿，不会自动入库。',
+            '将仅发送OCR 文本（约 $textLength 字），不向模型发送原图。连接后端时由 NAS 使用其配置的 AI 服务；单机模式使用手机配置的主服务及失败回退服务。只生成可编辑草稿，不会自动入库。',
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
@@ -980,7 +980,7 @@ class _MediaDraftSection extends StatelessWidget {
             ),
             _IntakeToolButton(
               label: 'OCR',
-              tooltip: '本地识别图片文字',
+              tooltip: '识别图片文字；连接后端时由 NAS 处理',
               icon: Icons.document_scanner_outlined,
               loading: recognizing,
               onPressed: enabled && !parsingAi ? onOcr : null,
@@ -995,7 +995,10 @@ class _MediaDraftSection extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        Text('图片留本机 · OCR 本地识别 · AI 发送前需确认', style: theme.textTheme.bodySmall),
+        Text('单机时图片与 OCR 留本机；连接后端后上传图片，由 NAS 执行 OCR/AI；AI 发送前需确认', style: theme.textTheme.bodySmall),
+        for (final asset in assets.where((a) => a.backendStatusLabel != null))
+          Text('${asset.type.label}：${asset.backendStatusLabel}${asset.backendError == null ? '' : '，${asset.backendError}'}',
+            style: theme.textTheme.bodySmall),
         if (loading)
           const Padding(padding: EdgeInsets.only(top: 8), child: LinearProgressIndicator()),
         if (assets.isNotEmpty) ...[
@@ -1045,7 +1048,7 @@ class _MediaDraftSection extends StatelessWidget {
                               const Positioned(
                                 left: 4, top: 4,
                                 child: Tooltip(
-                                  message: '已保存本地 OCR 文字',
+                                  message: '已保存 OCR 文字',
                                   child: DecoratedBox(
                                     decoration: BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
                                     child: Padding(

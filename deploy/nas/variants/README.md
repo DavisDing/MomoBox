@@ -9,7 +9,7 @@
 | `with-postgres` | 全新部署，尚无可复用 PostgreSQL | 后端 + PostgreSQL 18.6 + 新数据卷 |
 | `external-postgres` | 已有 PostgreSQL，例如 LiteLLM 使用的实例 | 仅 MomoBox 后端；不创建、停止、升级或清理现有 PostgreSQL |
 
-两套都是完整的 `docker-compose.yaml`，不是 overlay，不要用多个 `-f` 合并。原 `deploy/nas/docker-compose.yaml` 的 PG16 镜像与数据卷保持不变；共享运维脚本已增加显式部署上下文，原无参数入口保留兼容。
+两套都是完整的 `docker-compose.yaml`，不是 overlay，不要用多个 `-f` 合并。原 `deploy/nas/docker-compose.yaml` 保持 PG16.4 及原数据卷路径，镜像现按官方 registry digest 固定；共享运维脚本已增加显式部署上下文，原无参数入口保留兼容。
 
 “最新”指2026-10-11已核实稳定版本 **18.6**，固定镜像 `postgres:18.6-alpine3.24`，不使用浮动 `latest` 或19 beta。版本需定期审核，但不能随App升级自动跨PostgreSQL大版本。PG18官方镜像卷挂载 `/var/lib/postgresql`；本模板使用新命名卷 `postgres18_data`，不接旧的 `postgres_data`。既有PG16/17数据须另做经过验证的dump/restore或pg_upgrade，不能直接替换镜像/挂原数据目录，也不能用`down -v`处理启动错误。
 
@@ -22,7 +22,7 @@
 
 ### 自带数据库版
 
-`POSTGRES_PASSWORD`与`DATABASE_URL`密码一致；密码中的特殊字符在URL中编码。该版本数据库不映射宿主5432端口，后端使用项目内`postgres:5432`。官方镜像的`POSTGRES_USER`是初始化管理账号；此全新专用实例沿用现有单应用模板，不应拿该管理员账号给LiteLLM共用。将来共享时创建独立应用角色并另定权限。
+新的 `.env.example` 先定义 `POSTGRES_DB/POSTGRES_USER/POSTGRES_PASSWORD`，`DATABASE_URL` 用 Compose 变量引用它们，只填写一次密码；推荐 `openssl rand -hex 32` 生成 URL 安全密码。已有部署必须保留现有凭据；更改环境变量不会修改已初始化数据库密码。UGOS 若不支持 `.env` 内变量展开，需人工生成编码后的完整 URL 并核对凭据一致，再执行初始化。该版本数据库不映射宿主5432端口，后端使用项目内`postgres:5432`。官方镜像的`POSTGRES_USER`是初始化管理账号；此全新专用实例沿用现有单应用模板，不应拿该管理员账号给LiteLLM共用。将来共享时创建独立应用角色并另定权限。
 
 ### 复用已有数据库版
 
@@ -75,6 +75,21 @@ dc ps
 ```
 
 命令仅为操作入口，未在本机执行；migration连接启动检查有界，外部数据库未就绪时会失败，不承诺无限等待。失败/任务结果未知需保持停止并检查；不能跳过schema-check或反复执行恢复解决。
+
+## 运维 client 是首次升级的前置条件
+
+external 模板只启动后端，不含 PostgreSQL 工具。**首次升级前**下载同版本 operations 包并配置显式 `--pg-client-image`；直接运行无参数 `update.sh` 会选择旧版默认部署，不能用于这两套模板。
+
+2026-11-02 已从官方 Docker Hub registry 核对的多架构 manifest digest（部署前仍须核对 NAS 架构和目标服务器主版本）：
+
+- PG16：`docker.io/library/postgres@sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c`（16.4-alpine）。
+- PG18：`docker.io/library/postgres@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5`（18.6-alpine3.24）。
+
+external `.env.example` 已提供匹配 PG16 的 `PG_CLIENT_IMAGE`；服务器为 PG18 时将其改为上表的 PG18 digest。共享脚本从 `.env` 中严格读取且校验该单一键，不执行或加载其他环境文件代码；也可显式传 `--pg-client-image IMAGE` 覆盖。同样必须明确 project、deployment-dir、database-mode、库和角色。先成功执行 backup 和候选空库恢复演练，再带证明执行 update；不跳过备份。
+
+## 容器加固与容量
+
+三套模板及 one-off client 均用 `json-file` 日志轮转，每容器 `10m × 3`。自带 PostgreSQL 根文件系统只读，数据库卷保持可写；`/tmp` 与 `/var/run/postgresql` 为有界 tmpfs，禁止提权，删除默认 capabilities 后仅留官方入口初始化卷及降权所需的 CHOWN/DAC_OVERRIDE/FOWNER/SETGID/SETUID。入口最初以 root 修正卷权限后降权到 postgres，不能声称整个启动阶段都非 root。未强制覆盖 user，避免破坏既有卷所有权；真实容器空卷/旧卷启动、备份及重启还需验收。
 
 ## 已有数据升级、备份与恢复
 

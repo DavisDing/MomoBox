@@ -2,6 +2,7 @@ package syncpostgres
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -475,11 +476,59 @@ func (r *Repository) ResolveConflict(ctx context.Context, request syncdomain.Con
 	if actor.FamilyID == "" || actor.DeviceID == "" || actor.UserID == "" {
 		return syncdomain.ConflictResolveResponse{}, syncdomain.ErrDeviceNotFound
 	}
-	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		return syncdomain.ConflictResolveResponse{}, fmt.Errorf("begin conflict resolution: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	requestRaw, err := json.Marshal(struct {
+		Request syncdomain.ConflictResolveRequest
+		UserID  string
+	}{request, actor.UserID})
+	if err != nil {
+		return syncdomain.ConflictResolveResponse{}, err
+	}
+	fingerprint := fmt.Sprintf("%x", sha256.Sum256(requestRaw))
+	if request.IdempotencyKey != "" {
+		// Lock before reading under READ COMMITTED so a concurrent retry sees
+		// the first transaction's committed receipt instead of a stale snapshot.
+		if _, err := tx.ExecContext(ctx, lockIdempotencySQL, "conflict-resolution:"+actor.FamilyID+":"+actor.DeviceID+":"+request.IdempotencyKey); err != nil {
+			return syncdomain.ConflictResolveResponse{}, err
+		}
+		var storedFingerprint string
+		var raw []byte
+		err := tx.QueryRowContext(ctx, `SELECT fingerprint, response_payload FROM sync_conflict_resolution_receipts
+WHERE family_id=$1::uuid AND device_id=$2::uuid AND idempotency_key=$3`, actor.FamilyID, actor.DeviceID, request.IdempotencyKey).Scan(&storedFingerprint, &raw)
+		if err == nil {
+			if fingerprint != storedFingerprint {
+				return syncdomain.ConflictResolveResponse{}, syncdomain.NewBusinessError("IDEMPOTENCY_KEY_REUSE", "idempotency key was used for another resolution request", nil)
+			}
+			var response syncdomain.ConflictResolveResponse
+			if err := json.Unmarshal(raw, &response); err != nil {
+				return response, err
+			}
+			return response, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return syncdomain.ConflictResolveResponse{}, err
+		}
+	}
+	finish := func(response syncdomain.ConflictResolveResponse) (syncdomain.ConflictResolveResponse, error) {
+		if request.IdempotencyKey != "" {
+			raw, err := json.Marshal(response)
+			if err != nil {
+				return syncdomain.ConflictResolveResponse{}, err
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT INTO sync_conflict_resolution_receipts
+(family_id,device_id,idempotency_key,fingerprint,response_payload) VALUES($1::uuid,$2::uuid,$3,$4,$5::jsonb)`, actor.FamilyID, actor.DeviceID, request.IdempotencyKey, fingerprint, raw); err != nil {
+				return syncdomain.ConflictResolveResponse{}, err
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return syncdomain.ConflictResolveResponse{}, fmt.Errorf("commit conflict resolution: %w", err)
+		}
+		return response, nil
+	}
 	conflict, err := scanConflict(tx.QueryRowContext(ctx, `
 SELECT id::text, change_id::text, operation, device_id::text, entity, entity_id::text,
        reason, status, resolution::text, created_at, resolved_at,
@@ -507,12 +556,9 @@ FOR UPDATE`, request.ConflictID, actor.FamilyID))
 		if err := writeSyncAuditTx(ctx, tx, actor.FamilyID, actor.DeviceID, actor.UserID, "conflict_deferred", "sync_conflict", request.ConflictID, resolution); err != nil {
 			return syncdomain.ConflictResolveResponse{}, err
 		}
-		if err := tx.Commit(); err != nil {
-			return syncdomain.ConflictResolveResponse{}, fmt.Errorf("commit deferred conflict: %w", err)
-		}
 		conflict.Status = syncdomain.ConflictStatusOpen
 		conflict.Resolution = resolution
-		return syncdomain.ConflictResolveResponse{Conflict: conflict, Accepted: false}, nil
+		return finish(syncdomain.ConflictResolveResponse{Conflict: conflict, Accepted: false})
 	}
 	if request.ExpectedVersion > 0 && request.ExpectedVersion != conflict.ServerVersion {
 		return syncdomain.ConflictResolveResponse{}, syncdomain.NewBusinessError("VERSION_CONFLICT", "conflict server version changed", map[string]any{"server_version": conflict.ServerVersion, "expected_version": request.ExpectedVersion})
@@ -525,12 +571,9 @@ FOR UPDATE`, request.ConflictID, actor.FamilyID))
 		if err := writeSyncAuditTx(ctx, tx, actor.FamilyID, actor.DeviceID, actor.UserID, "conflict_resolved", "sync_conflict", request.ConflictID, resolution); err != nil {
 			return syncdomain.ConflictResolveResponse{}, err
 		}
-		if err := tx.Commit(); err != nil {
-			return syncdomain.ConflictResolveResponse{}, fmt.Errorf("commit remote conflict resolution: %w", err)
-		}
 		conflict.Status = syncdomain.ConflictStatusResolved
 		conflict.Resolution = resolution
-		return syncdomain.ConflictResolveResponse{Conflict: conflict, Accepted: true, Result: &syncdomain.AcceptedChange{EntityID: conflict.EntityID, ServerVersion: conflict.ServerVersion, Result: cloneMap(conflict.ServerPayload), Status: syncdomain.PushStatusAccepted}}, nil
+		return finish(syncdomain.ConflictResolveResponse{Conflict: conflict, Accepted: true, Result: &syncdomain.AcceptedChange{EntityID: conflict.EntityID, ServerVersion: conflict.ServerVersion, Result: cloneMap(conflict.ServerPayload), Status: syncdomain.PushStatusAccepted}})
 	}
 	if conflict.Operation != syncdomain.OperationEntityUpsert && conflict.Operation != syncdomain.OperationEntityDelete && conflict.Operation == syncdomain.OperationInventoryCommand {
 		return syncdomain.ConflictResolveResponse{}, syncdomain.NewBusinessError("CONFLICT_ACTION_UNSUPPORTED", "inventory conflicts must be resolved by retrying the command against the authoritative result", nil)
@@ -579,12 +622,9 @@ FOR UPDATE`, request.ConflictID, actor.FamilyID))
 	if err := writeSyncAuditTx(ctx, tx, actor.FamilyID, actor.DeviceID, actor.UserID, "conflict_resolved", "sync_conflict", request.ConflictID, resolution); err != nil {
 		return syncdomain.ConflictResolveResponse{}, err
 	}
-	if err := tx.Commit(); err != nil {
-		return syncdomain.ConflictResolveResponse{}, fmt.Errorf("commit entity conflict resolution: %w", err)
-	}
 	conflict.Status = syncdomain.ConflictStatusResolved
 	conflict.Resolution = resolution
-	return syncdomain.ConflictResolveResponse{Conflict: conflict, Accepted: true, Result: &syncdomain.AcceptedChange{ChangeID: changeID, EntityID: updated.EntityID, ServerVersion: updated.Version, ServerCursor: entry.Cursor, Result: cloneMap(updated.Payload), Status: syncdomain.PushStatusAccepted}}, nil
+	return finish(syncdomain.ConflictResolveResponse{Conflict: conflict, Accepted: true, Result: &syncdomain.AcceptedChange{ChangeID: changeID, EntityID: updated.EntityID, ServerVersion: updated.Version, ServerCursor: entry.Cursor, Result: cloneMap(updated.Payload), Status: syncdomain.PushStatusAccepted}})
 }
 
 func updateConflictResolution(ctx context.Context, tx *sql.Tx, conflictID, userID, status string, resolution map[string]any) error {
@@ -696,6 +736,9 @@ type transactionRepository struct {
 var _ syncdomain.SyncTransaction = (*transactionRepository)(nil)
 
 func (r *transactionRepository) GetEntity(ctx context.Context, entity, entityID string) (syncdomain.EntityRecord, error) {
+	if !isUUID(entityID) {
+		return syncdomain.EntityRecord{}, syncdomain.NewBusinessError("VALIDATION_FAILED", "entity_id must be a UUID", nil)
+	}
 	spec, ok := entitySpecs[entity]
 	if !ok {
 		return syncdomain.EntityRecord{}, syncdomain.ErrNotFound
@@ -840,6 +883,15 @@ func (r *transactionRepository) ExecuteInventoryCommand(ctx context.Context, cha
 	}
 	if len(result.Allocations) == 0 {
 		return syncdomain.InventoryCommandResult{}, errors.New("inventory command returned no allocations")
+	}
+	if change.ClientUpdatedAt != "" {
+		occurred, parseErr := time.Parse(time.RFC3339, change.ClientUpdatedAt)
+		if parseErr != nil {
+			return syncdomain.InventoryCommandResult{}, parseErr
+		}
+		if _, err := r.tx.ExecContext(ctx, `UPDATE consumption_records SET client_occurred_at=$4 WHERE family_id=$1::uuid AND device_id=$2::uuid AND operation_id=$3::uuid`, r.familyID, r.deviceID, change.OperationID, occurred); err != nil {
+			return syncdomain.InventoryCommandResult{}, err
+		}
 	}
 	entityID := result.Allocations[0].BatchID
 	var version int64
@@ -1070,7 +1122,14 @@ func nullableInt64(value any) any {
 	if value == nil {
 		return ""
 	}
-	return value
+	switch number := value.(type) {
+	case int64:
+		return strconv.FormatInt(number, 10)
+	case int:
+		return strconv.Itoa(number)
+	default:
+		return fmt.Sprint(value)
+	}
 }
 
 func (r *transactionRepository) nextServerChangeID(ctx context.Context) (string, error) {

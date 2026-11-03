@@ -6,6 +6,11 @@ services:
     stop_grace_period: 15s
     image: ${MOMO_BACKEND_IMAGE:?set MOMO_BACKEND_IMAGE to a pinned GHCR tag or digest in .env}
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777
@@ -24,7 +29,19 @@ services:
       REGISTRATION_MODE: ${REGISTRATION_MODE:-first_setup}
       ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-15m}
       REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL:-720h}
-      MAX_REQUEST_BODY_BYTES: ${MAX_REQUEST_BODY_BYTES:-1048576}
+      AI_ENDPOINT: ${AI_ENDPOINT:-}
+      AI_MODEL: ${AI_MODEL:-}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_PROTOCOL: ${AI_PROTOCOL:-auto}
+      AI_SECONDARY_ENDPOINT: ${AI_SECONDARY_ENDPOINT:-}
+      AI_SECONDARY_MODEL: ${AI_SECONDARY_MODEL:-}
+      AI_SECONDARY_API_KEY: ${AI_SECONDARY_API_KEY:-}
+      AI_SECONDARY_PROTOCOL: ${AI_SECONDARY_PROTOCOL:-auto}
+      AI_FALLBACK_ENDPOINT: ${AI_FALLBACK_ENDPOINT:-}
+      AI_FALLBACK_MODEL: ${AI_FALLBACK_MODEL:-}
+      AI_FALLBACK_API_KEY: ${AI_FALLBACK_API_KEY:-}
+      AI_FALLBACK_PROTOCOL: ${AI_FALLBACK_PROTOCOL:-auto}
+      MAX_REQUEST_BODY_BYTES: ${MAX_REQUEST_BODY_BYTES:-12582912}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     networks:
       - default

@@ -292,7 +292,10 @@ func TestServeHTTPDrainsRealRequestBeforeReturning(t *testing.T) {
 	defer server.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	result := runHTTPLifecycle(ctx, server, 5*time.Second)
+	if httpShutdownTimeout <= 0 || httpShutdownTimeout >= 10*time.Second {
+		t.Fatal("default drain must leave time for cleanup before Docker's stop deadline")
+	}
+	result := runHTTPLifecycle(ctx, server, httpShutdownTimeout)
 	clientResult := make(chan error, 1)
 	transport := &http.Transport{Proxy: nil}
 	defer transport.CloseIdleConnections()
