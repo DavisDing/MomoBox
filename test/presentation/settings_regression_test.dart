@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:momo_box/app/momo_theme.dart';
 import 'package:momo_box/application/ai_draft_service.dart';
 import 'package:momo_box/application/ai_fallback_executor.dart';
+import 'package:momo_box/application/backend_processing_service.dart';
 import 'package:momo_box/application/storage_management_service.dart';
 import 'package:momo_box/application/settings_service.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -557,7 +558,7 @@ class _ControlledAiExecutor implements AiFallbackExecutor {
   final results = <Completer<AiFallbackResponse>>[];
 
   @override
-  dynamic get backendResolver => null;
+  BackendResolver? get backendResolver => null;
 
   @override
   Future<bool> usesBackend() async => false;
