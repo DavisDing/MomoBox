@@ -29,13 +29,14 @@ void main() {
       name: '米', category: '食品生鲜', quantity: 7, lowStockThreshold: 1));
     final local = (await inventory.loadMovements(productId)).single;
     final source = await db.customSelect('SELECT operation_id FROM stock_movement_sources').getSingle();
+    final batch = await db.customSelect('SELECT batch_id FROM stock_movements WHERE id = ?', variables: [Variable.withString(local.id)]).getSingle();
     var current = true;
     final api = NasSyncApi('https://nas.example', accessToken: 'test',
       isSessionCurrent: () => current,
       client: MockClient((request) async => http.Response(jsonEncode({
         'records': [{
           'cursor': 1, 'id': 'server-record', 'product_id': productId,
-          'batch_id': local.batchId, 'operation_id': source.read<String>('operation_id'),
+          'batch_id': batch.read<String>('batch_id'), 'operation_id': source.read<String>('operation_id'),
           'type': 'restock', 'quantity': 7, 'note': 'server restock',
           'created_at': DateTime.now().toUtc().toIso8601String(),
         }], 'next_cursor': 1, 'until': 1, 'has_more': false,
