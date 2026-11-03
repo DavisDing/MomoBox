@@ -118,7 +118,8 @@ void main() {
         return http.Response(jsonEncode({'id': asset.id, 'deleted_at': null}), 200);
       }
       ocrCalls++;
-      return http.Response(jsonEncode({'id': asset.id, 'ocr_status': 'complete', 'ocr_text': '后端文字'}), 200);
+      return http.Response(jsonEncode({'id': asset.id, 'ocr_status': 'complete', 'ocr_text': '后端文字'}), 200,
+        headers: {'content-type': 'application/json; charset=utf-8'});
     }));
     addTearDown(api.close);
     final backend = BackendProcessingService(db, repository, MediaStorageService(),

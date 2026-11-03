@@ -143,8 +143,8 @@ void main() {
 
   testWidgets('loading or failed acknowledgement reads preserve existing plans until fresh data arrives', (tester) async {
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-    final items = StreamController<List<InventoryItem>>();
-    final acknowledgements = StreamController<List<ReminderAcknowledgement>>();
+    final items = StreamController<List<InventoryItem>>.broadcast();
+    final acknowledgements = StreamController<List<ReminderAcknowledgement>>.broadcast();
     final notifications = _Notifications()..allowed = true;
     final scheduler = SyncScheduler(engineReader: () => null,
       foregroundPullInterval: Duration.zero, networkStatusSource: _Network());
@@ -200,9 +200,11 @@ void main() {
       container.dispose();
       scheduler.dispose();
       router.dispose();
-      await items.close();
-      await acknowledgements.close();
+      // Drain stream cancellation/done events inside the widget fake clock
+      // before awaiting cleanup; otherwise a pending event can stall the suite.
+      final closed = Future.wait([items.close(), acknowledgements.close()]);
       await tester.pump(Duration.zero);
+      await closed;
     }
   });
 }
