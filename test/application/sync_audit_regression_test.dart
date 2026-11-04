@@ -206,42 +206,61 @@ void main() {
     },
   );
 
-  test(
-    'HA unknown or legacy post-effect failures never become abandonment evidence',
-    () async {
-      for (final code in [
-        'HA_COMMAND_RESULT_UNKNOWN',
-        'HA_UNAVAILABLE',
-        'HA_AUDIT_FAILURE',
-        'IDEMPOTENCY_KEY_REUSE',
-      ]) {
-        final entry = await enqueue(
-          'ha-$code',
-          entityId: code,
-          operation: SyncOperation.homeAssistantCommand,
-        );
-        await outbox.markRejected(
-          changeId: entry.changeId,
-          errorCode: code,
-          errorMessage: 'unconfirmed',
-          confirmedByNas: true,
-        );
-        expect(
-          await outbox.canAbandonRejected(
-            (await outbox.getByChangeId(entry.changeId))!,
-          ),
-          isFalse,
-        );
+  // The November 3 recovery contract permits explicit withdrawal of legacy
+  // transport/audit refusals while retaining their uncertain physical outcome.
+  for (final code in [
+    'HA_COMMAND_RESULT_UNKNOWN',
+    'HA_UNAVAILABLE',
+    'HA_AUDIT_FAILURE',
+    'IDEMPOTENCY_KEY_REUSE',
+  ]) {
+    test('HA rejection $code preserves its recovery and outcome protections', () async {
+      final entry = await enqueue(
+        'ha-$code',
+        entityId: code,
+        operation: SyncOperation.homeAssistantCommand,
+      );
+      await outbox.markRejected(
+        changeId: entry.changeId,
+        errorCode: code,
+        errorMessage: 'unconfirmed',
+        confirmedByNas: true,
+      );
+      final rejected = (await outbox.getByChangeId(entry.changeId))!;
+      final canWithdraw = const {'HA_UNAVAILABLE', 'HA_AUDIT_FAILURE'}.contains(code);
+      expect(await outbox.canAbandonRejected(rejected), canWithdraw);
+      expect(await outbox.hasSnapshotBlockingChanges(scopeId: scope), isTrue);
+      if (!canWithdraw) {
         await expectLater(
           outbox.abandonRejected(scopeId: scope, changeId: entry.changeId),
           throwsStateError,
         );
+        expect(await outbox.hasSnapshotBlockingChanges(scopeId: scope), isTrue);
+        return;
       }
-    },
-  );
+
+      await outbox.abandonRejected(scopeId: scope, changeId: entry.changeId);
+      final after = (await outbox.getByChangeId(entry.changeId))!;
+      expect(after.status, SyncOutboxStatus.rejected);
+      expect(after.lastErrorCode, code);
+      expect(after.lastErrorMessage, rejected.lastErrorMessage);
+      expect(after.requestJson, entry.requestJson);
+      expect(after.idempotencyKey, entry.idempotencyKey);
+      expect(await outbox.claimNext(scopeId: scope), isNull);
+      expect(await outbox.hasSnapshotBlockingChanges(scopeId: scope), isFalse);
+      expect(await outbox.getConflictResolutionRefreshToken(scope), isNotNull);
+      final record = await (database.select(database.appSettings)
+        ..where((row) => row.key.equals('sync_rejected_settlement:${jsonEncode([scope, entry.changeId])}')))
+        .getSingle();
+      final evidence = jsonDecode(record.value) as Map<String, dynamic>;
+      expect(evidence['execution_unknown'], isTrue);
+      expect(evidence['source'], 'nas_rejected');
+      expect(evidence['action'], 'abandon_rejected');
+    });
+  }
 
   test(
-    'only the first proven pre-send parse failure can be abandoned locally',
+    'invalid local changes remain withdrawable across claims without implying no prior execution',
     () async {
       await enqueue('first');
       await outbox.claimNext(scopeId: scope);
@@ -269,10 +288,45 @@ void main() {
         await outbox.canAbandonRejected(
           (await outbox.getByChangeId('retried'))!,
         ),
-        isFalse,
+        isTrue,
       );
+      for (final id in ['first', 'retried']) {
+        final before = (await outbox.getByChangeId(id))!;
+        expect(before.attemptCount, id == 'first' ? 1 : 2);
+        await outbox.abandonRejected(scopeId: scope, changeId: id);
+        final after = (await outbox.getByChangeId(id))!;
+        expect(after.status, SyncOutboxStatus.rejected);
+        expect(after.requestJson, before.requestJson);
+        expect(after.idempotencyKey, before.idempotencyKey);
+        final record = await (database.select(database.appSettings)
+          ..where((row) => row.key.equals('sync_rejected_settlement:${jsonEncode([scope, id])}')))
+          .getSingle();
+        final evidence = jsonDecode(record.value) as Map<String, dynamic>;
+        expect(evidence['source'], 'local_invalid');
+        expect(evidence['execution_unknown'], id == 'retried');
+      }
+      expect(await outbox.claimNext(scopeId: scope), isNull);
+      expect(await outbox.hasSnapshotBlockingChanges(scopeId: scope), isFalse);
+      expect(await outbox.getConflictResolutionRefreshToken(scope), isNotNull);
     },
   );
+
+  test('a transport failure is not evidence of an invalid local request', () async {
+    final entry = await enqueue('network-only');
+    await outbox.claimNext(scopeId: scope);
+    await outbox.markRejected(
+      changeId: entry.changeId,
+      errorCode: 'network',
+      errorMessage: 'outcome unknown',
+      failedBeforeFirstSend: true,
+    );
+    expect(await outbox.canAbandonRejected((await outbox.getByChangeId(entry.changeId))!), isFalse);
+    await expectLater(
+      outbox.abandonRejected(scopeId: scope, changeId: entry.changeId),
+      throwsStateError,
+    );
+    expect(await outbox.hasSnapshotBlockingChanges(scopeId: scope), isTrue);
+  });
 
   test(
     'NAS settlement retires exact local guards while newer remote data awaits a fresh snapshot',
