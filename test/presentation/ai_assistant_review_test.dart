@@ -4,12 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:momo_box/application/ai_assistant_service.dart';
-import 'package:momo_box/data/repositories/mock_smart_home_repository.dart';
 import 'package:momo_box/domain/models/smart_home_models.dart';
 import 'package:momo_box/presentation/controllers/providers.dart';
 import 'package:momo_box/presentation/screens/home_assistant_settings_screen.dart';
 import 'package:momo_box/presentation/screens/nas_settings_screen.dart';
-import 'package:momo_box/presentation/widgets/ai_assistant_dialog.dart';
+import 'package:momo_box/presentation/screens/assistant_screen.dart';
 
 import '../support/memory_settings_repository.dart';
 
@@ -116,7 +115,7 @@ void main() {
       await tester.pumpAndSettle();
       if (clearLast) {
         // The composer sits behind the history route. Verify it only after the
-        // sheet closes, when the reset dialog is active and has rebuilt.
+        // sheet closes, when the assistant page is active and has rebuilt.
         final sendButton = tester.widget<IconButton>(
           find.widgetWithIcon(IconButton, Icons.send_rounded),
         );
@@ -140,10 +139,15 @@ void main() {
     });
   }
 
-  test('未实现的连接默认不能显示在线或已同步', () {
-    final repository = MockSmartHomeRepository();
-    expect(repository.nasOnline, isFalse);
-    expect(repository.haStatus, HaConnectionStatus.unconfigured);
+  testWidgets('真实控制器未配置连接时不能显示在线或示例设备', (tester) async {
+    final service = _ControlledAssistant();
+    await _pumpAssistant(tester, service);
+    final container = ProviderScope.containerOf(tester.element(find.byType(AssistantScreen)));
+    final controller = container.read(smartHomeControllerProvider.notifier);
+    await controller.refresh();
+    expect(controller.state.nasOnline, isFalse);
+    expect(controller.state.haStatus, HaConnectionStatus.unconfigured);
+    expect(controller.state.devices, isEmpty);
   });
 
   for (final nas in [true, false]) {
@@ -200,7 +204,7 @@ Future<void> _pumpAssistant(WidgetTester tester, _ControlledAssistant service) a
       themeNameProvider.overrideWith((ref) => Stream.value('default')),
       aiAssistantServiceProvider.overrideWithValue(service),
     ],
-    child: const MaterialApp(home: Scaffold(body: AiAssistantDialog())),
+    child: const MaterialApp(home: AssistantScreen()),
   ));
   await tester.pumpAndSettle();
 }

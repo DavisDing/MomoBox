@@ -1,13 +1,12 @@
 import '../widgets/momo_mobile_layout.dart';
 import '../widgets/momo_floating_dock.dart';
-import '../widgets/momo_glass_components.dart';
+import '../widgets/momo_components.dart';
 import '../../app/momo_typography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../widgets/app_feedback.dart';
 
-import '../../app/momo_theme.dart';
 import '../../domain/models/smart_home_models.dart';
 import '../controllers/providers.dart';
 import '../controllers/smart_home_controller.dart';
@@ -19,7 +18,6 @@ class SmartHomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
     final homeState = ref.watch(smartHomeControllerProvider);
     final controller = ref.read(smartHomeControllerProvider.notifier);
 
@@ -64,21 +62,9 @@ class SmartHomeScreen extends ConsumerWidget {
                   _buildSectionHeader(context, title:'家里的设备',
                     subtitle:'已授权设备 · 点击卡片查看详细控制',icon:Icons.devices_other_rounded),
                   const SizedBox(height:10),
-                  _buildRoomsAndDevices(context, ref, homeState.devices, palette),
+                  _buildRoomsAndDevices(context, ref, homeState.devices),
                   const SizedBox(height:16),
-                  // 1. 场景快捷区
-                  _buildSectionHeader(
-                    context,
-                    title: '常用全屋场景',
-                    subtitle: '查看已同步的场景，快捷执行暂未接入',
-                    icon: Icons.auto_awesome_mosaic_outlined,
-                  ),
-                  const SizedBox(height: 10),
-                  _buildScenesRow(context, homeState.scenes, palette),
-
-                  const SizedBox(height: 24),
-
-                  // 2. 耗材联动建议与日志入口 (洗衣机耗材、制冰机等)
+                  // 耗材联动建议与日志入口 (洗衣机耗材、制冰机等)
                   _buildSectionHeader(
                     context,
                     title: '设备耗材联动与建议',
@@ -86,7 +72,7 @@ class SmartHomeScreen extends ConsumerWidget {
                     icon: Icons.recycling_rounded,
                   ),
                   const SizedBox(height: 10),
-                  _buildConsumableLinkageCard(context, ref, homeState.logs, palette),
+                  _buildConsumableLinkageCard(context, ref, homeState.logs),
 
                   const SizedBox(height: 24),
 
@@ -103,7 +89,7 @@ class SmartHomeScreen extends ConsumerWidget {
     final text = error ?? state.message!;
     final isError = error != null || state.haStatus == HaConnectionStatus.offline;
     final color = isError ? Colors.red : Colors.amber.shade800;
-    return MomoGlassCard(
+    return MomoCard(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(12),
         child: Row(
@@ -200,70 +186,15 @@ class SmartHomeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildScenesRow(BuildContext context, List<SmartScene> scenes, MomoPalette palette) {
-    final theme = Theme.of(context);
-    final displayScenes = scenes.take(4).toList();
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final columns = MomoMobileLayout.stack(context, constraints.maxWidth, minimum: 480) ? 1 : 2;
-        return Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: displayScenes.map(
-                    (scene) => SizedBox(
-                      width: (constraints.maxWidth - (columns - 1) * 12) / columns,
-          child: MomoGlassCard(
-                        palette: palette,
-                        padding: const EdgeInsets.all(16),
-                        onTap: () {
-              showAppSnackBar(context,
-                SnackBar(
-                  content: Text('场景快捷执行尚未接入，未执行【${scene.name}】。'),
-                ),
-              );
-            },
-                        child: Row(
-                children: [
-                            Text(scene.icon, style: const TextStyle(fontSize: 22)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                        Text(
-                          scene.name,
-                          style: theme.textTheme.titleSmall,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          scene.description,
-                          style: theme.textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-                    ),
-                  )
-                  .toList(),
-        );
-      },
-    );
-  }
-
   Widget _buildConsumableLinkageCard(
     BuildContext context,
     WidgetRef ref,
     List<ConsumableLinkageLog> logs,
-    MomoPalette palette,
   ) {
     final theme = Theme.of(context);
     final controller = ref.read(smartHomeControllerProvider.notifier);
     if (logs.isEmpty) {
-      return MomoGlassCard(
+      return MomoCard(
           padding: const EdgeInsets.all(16),
         margin: EdgeInsets.zero,
           child: Text(
@@ -273,7 +204,7 @@ class SmartHomeScreen extends ConsumerWidget {
         );
     }
 
-    return MomoGlassCard(
+    return MomoCard(
         padding: const EdgeInsets.all(16),
       margin: EdgeInsets.zero,
         child: Column(
@@ -291,7 +222,7 @@ class SmartHomeScreen extends ConsumerWidget {
                     ? '已扣减'
                     : (isInsufficient ? '库存不足' : '已忽略'));
 
-            return MomoGlassCard(
+            return MomoCard(
               margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.all(12),
                 borderRadius: 16,
@@ -335,7 +266,7 @@ class SmartHomeScreen extends ConsumerWidget {
                   const SizedBox(height: 8),
                   Text(
                     '耗材建议：${log.consumableName} × ${log.quantity} ${log.unit}',
-                    style: TextStyle(fontSize: MomoTextSize.caption, fontWeight: FontWeight.w600, color: palette.primary),
+                    style: TextStyle(fontSize: MomoTextSize.caption, fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.primary),
                   ),
                   if (isInsufficient && log.purchaseSuggestions.isNotEmpty) ...[
                     const SizedBox(height: 8),
@@ -407,7 +338,6 @@ class SmartHomeScreen extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     List<SmartDevice> devices,
-    MomoPalette palette,
   ) {
     final rooms = devices.map((device) => device.room).toSet().toList()..sort();
 
@@ -437,7 +367,7 @@ class SmartHomeScreen extends ConsumerWidget {
                 ),
               ),
               MomoAdaptiveTiles(minimumWidth:148,
-                children:roomDevices.map((dev) => _buildDeviceCard(context,ref,dev,palette)).toList()),
+                children:roomDevices.map((dev) => _buildDeviceCard(context,ref,dev)).toList()),
             ],
           ),
         );
@@ -449,7 +379,6 @@ class SmartHomeScreen extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     SmartDevice device,
-    MomoPalette palette,
   ) {
     final theme = Theme.of(context);
     final controller = ref.read(smartHomeControllerProvider.notifier);
@@ -463,10 +392,10 @@ class SmartHomeScreen extends ConsumerWidget {
       DeviceType.switchDevice => Icons.power_settings_new_rounded,
     };
 
-    return MomoGlassCard(
+    return MomoCard(
       margin:EdgeInsets.zero,
       color:device.isOn ? theme.colorScheme.primaryContainer.withValues(alpha:.45) : null,
-      onTap:() => _showDeviceControlSheet(context,device,palette),
+      onTap:() => _showDeviceControlSheet(context,device),
       padding:const EdgeInsets.all(14),
       child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
         Wrap(spacing:8,runSpacing:4,crossAxisAlignment:WrapCrossAlignment.center,children:[
@@ -492,7 +421,6 @@ class SmartHomeScreen extends ConsumerWidget {
   void _showDeviceControlSheet(
     BuildContext context,
     SmartDevice device,
-    MomoPalette palette,
   ) {
     final theme = Theme.of(context);
 
@@ -580,7 +508,7 @@ class SmartHomeScreen extends ConsumerWidget {
                     ),
                     isThreeLine: homeState.commandError != null,
                     value: latestDevice.isOn,
-                    activeTrackColor: palette.primary,
+                    activeTrackColor: Theme.of(context).colorScheme.primary,
                     key: ValueKey('smart-home-sheet-power-${latestDevice.id}'),
                     onChanged: controller.powerUnavailableReason(latestDevice.id, turnOn: !latestDevice.isOn) != null
                         ? null
@@ -614,7 +542,7 @@ class SmartHomeScreen extends ConsumerWidget {
                         return ChoiceChip(
                           label: Text(m),
                           selected: isSelected,
-                          selectedColor: palette.primary.withValues(alpha: 0.18),
+                          selectedColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.18),
                           onSelected: latestDevice.isOn
                               ? (sel) {
                                   if (sel) {
@@ -635,7 +563,7 @@ class SmartHomeScreen extends ConsumerWidget {
                         return ChoiceChip(
                           label: Text(s),
                           selected: isSelected,
-                          selectedColor: palette.primary.withValues(alpha: 0.18),
+                          selectedColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.18),
                           onSelected: latestDevice.isOn
                               ? (sel) {
                                   if (sel) {
@@ -686,7 +614,7 @@ class SmartHomeScreen extends ConsumerWidget {
                       value: latestDevice.brightness.clamp(1, 100).toDouble(),
                       min: 1,
                       max: 100,
-                      activeColor: palette.primary,
+                      activeColor: Theme.of(context).colorScheme.primary,
                       onChanged: latestDevice.isOn
                           ? (val) => controller.updateLightBrightness(latestDevice.id, val.toInt())
                           : null,
@@ -749,7 +677,7 @@ class SmartHomeScreen extends ConsumerWidget {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: palette.primary.withValues(alpha: 0.08),
+                        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(

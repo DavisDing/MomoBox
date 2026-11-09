@@ -1,5 +1,5 @@
 import '../widgets/momo_mobile_layout.dart';
-import '../widgets/momo_glass_components.dart';
+import '../widgets/momo_components.dart';
 import '../../app/momo_typography.dart';
 import 'dart:io';
 
@@ -24,7 +24,7 @@ class ProductDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final inventory = ref.watch(inventoryProvider);
     return Scaffold(
-      appBar: MomoGlassAppBar.adaptive(context, title: const Text('商品详情')),
+      appBar: MomoAppBar.adaptive(context, title: const Text('商品详情')),
       body: inventory.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _DetailMessage(
@@ -166,7 +166,7 @@ class _ProductOverview extends StatelessWidget {
   Widget build(BuildContext context) {
     final nearestBatch = item.nearestDatedBatch;
     final theme = Theme.of(context);
-    return MomoGlassCard(
+    return MomoCard(
       padding: const EdgeInsets.all(16),
       margin: EdgeInsets.zero,
         child: Column(
@@ -287,7 +287,7 @@ class _BatchCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final canConsume = batch.isAvailable && batch.expiryStatus != ExpiryStatus.expired;
     final canReplenish = !batch.isDiscarded;
-    return MomoGlassCard(
+    return MomoCard(
         padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
       margin: EdgeInsets.zero,
         child: Row(
@@ -464,7 +464,7 @@ class _ManualQaSectionState extends ConsumerState<_ManualQaSection> {
 
   @override
   Widget build(BuildContext context) {
-    return MomoGlassCard(
+    return MomoCard(
         padding: const EdgeInsets.all(14),
       margin: EdgeInsets.zero,
         child: Row(
@@ -982,7 +982,7 @@ class _ProductMediaSectionState extends ConsumerState<_ProductMediaSection> {
   Widget build(BuildContext context) {
     final media = ref.watch(mediaAssetsProvider((entityType: 'product', entityId: widget.item.id)));
     final assets = media.valueOrNull ?? const <MediaAsset>[];
-    return MomoGlassCard(
+    return MomoCard(
         padding: const EdgeInsets.all(14),
       margin: EdgeInsets.zero,
         child: Column(

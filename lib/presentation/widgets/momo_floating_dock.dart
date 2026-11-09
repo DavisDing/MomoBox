@@ -3,7 +3,6 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
-import '../../app/momo_theme.dart';
 import '../../app/momo_typography.dart';
 
 /// Space a page must include at the end of its scrollable content.
@@ -119,7 +118,6 @@ class MomoFloatingCapsuleDock extends StatelessWidget {
     required this.selectedIndex,
     required this.onDestinationSelected,
     required this.destinations,
-    required this.palette,
     this.layout,
     super.key,
   });
@@ -127,7 +125,6 @@ class MomoFloatingCapsuleDock extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onDestinationSelected;
   final List<NavigationDestination> destinations;
-  final MomoPalette palette;
   final MomoDockLayout? layout;
 
   @override
@@ -138,7 +135,7 @@ class MomoFloatingCapsuleDock extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final highContrast = MediaQuery.highContrastOf(context) || MediaQuery.accessibleNavigationOf(context);
-    final baseSurface = isDark ? theme.colorScheme.surface : palette.surface;
+    final baseSurface = theme.colorScheme.surface;
     final borderColor =
         isDark
             ? Colors.white.withValues(alpha: 0.12)

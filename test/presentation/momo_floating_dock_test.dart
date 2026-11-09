@@ -60,7 +60,6 @@ void main() {
                           selectedIndex: selected,
                           onDestinationSelected: (_) {},
                           destinations: destinations,
-                          palette: palette,
                         ),
                       ),
                     ),
@@ -187,7 +186,6 @@ void main() {
                     selectedIndex: 0,
                     onDestinationSelected: (_) {},
                     destinations: _destinations,
-                    palette: palette,
                   ),
                 ),
               ),
@@ -245,7 +243,6 @@ void main() {
                     onDestinationSelected:
                         (value) => setState(() => selected = value),
                     destinations: _destinations,
-                    palette: MomoPalette.defaultPalette,
                   ),
                 ),
           ),

@@ -16,7 +16,6 @@ class MomoPalette {
     required this.mascot,
     required this.mascotName,
     required this.appLogoIcon,
-    required this.inventoryIcon,
     required this.shoppingIcon,
   });
 
@@ -30,7 +29,6 @@ class MomoPalette {
   final String mascot;
   final String mascotName;
   final IconData appLogoIcon;
-  final IconData inventoryIcon;
   final IconData shoppingIcon;
 
   static const defaultPalette = MomoPalette(
@@ -44,7 +42,6 @@ class MomoPalette {
     mascot: '📦',
     mascotName: '箱宝',
     appLogoIcon: Icons.all_inbox_rounded,
-    inventoryIcon: Icons.inventory_2_outlined,
     shoppingIcon: Icons.shopping_bag_outlined,
   );
 
@@ -59,7 +56,6 @@ class MomoPalette {
     mascot: '👵',
     mascotName: '嬷嬷',
     appLogoIcon: Icons.inventory_rounded,
-    inventoryIcon: Icons.archive_outlined,
     shoppingIcon: Icons.assignment_outlined,
   );
 
@@ -74,7 +70,6 @@ class MomoPalette {
     mascot: '🔔',
     mascotName: '哆啦叮当',
     appLogoIcon: Icons.card_giftcard_rounded,
-    inventoryIcon: Icons.widgets_outlined,
     shoppingIcon: Icons.receipt_long_outlined,
   );
 
@@ -89,7 +84,6 @@ class MomoPalette {
     mascot: '🌲',
     mascotName: '森灵',
     appLogoIcon: Icons.eco_rounded,
-    inventoryIcon: Icons.park_outlined,
     shoppingIcon: Icons.shopping_basket_outlined,
   );
 
@@ -104,7 +98,6 @@ class MomoPalette {
     mascot: '🌸',
     mascotName: '小樱',
     appLogoIcon: Icons.local_florist_rounded,
-    inventoryIcon: Icons.favorite_border_rounded,
     shoppingIcon: Icons.card_giftcard_outlined,
   );
 
@@ -322,7 +315,7 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
     ),
     appBarTheme: AppBarTheme(
       // Navigation belongs to the page canvas, not the raised card surface.
-      // Keep native/sliver bars consistent with the shared glass app bar.
+      // Keep native/sliver bars consistent with the shared app bar.
       backgroundColor: background,
       surfaceTintColor: Colors.transparent,
       foregroundColor: text,

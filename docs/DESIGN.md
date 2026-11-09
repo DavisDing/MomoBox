@@ -1295,7 +1295,7 @@ AI_CONTEXT局部更新建议：新模板上线及对应CI/NAS验证后记录“P
 
 - `domain/models/ai_action.dart` 定义操作种类及各自字段白名单，校验整数数量、真实日期、主题/字号枚举和设备命令参数；未知 kind、额外字段、SQL、系统命令和删库不进入执行器。模型只生成一条待确认建议，不能声明成功或下发任意工具。
 - `AiInventoryActionService` 复用库存、采购、提醒、家务和设置服务。描述从真实对象生成；确认前后比较对象快照，执行时重新生成描述并检查权限和快照。库存快照含批次身份/数量/日期/报废状态；采购快照含 id、关联商品、名称、分类、数量、原因和完成状态，增量合并还覆盖现有匹配项，不能因数量相同沿用旧确认；家务及提醒使用各自记录/指纹。采购合并保留现有分类和原因，确认文案与实际服务一致。
-- `AiAssistantDialog` 在打开确认页面前锁住单条建议；取消及写入前失败释放锁，已经提交或结果不明保留持久化回执并提示核实。原会话删除后拒绝尚未提交的操作；关闭页面仍记录已提交结果，回执保存失败不得假称库存未写入。
+- `AssistantScreen` 在打开确认页面前锁住单条建议；取消及写入前失败释放锁，已经提交或结果不明保留持久化回执并提示核实。原会话删除后拒绝尚未提交的操作；关闭页面仍记录已提交结果，回执保存失败不得假称库存未写入。
 - 入库使用 `IntakeSheet.initialDraft`，沿用可编辑字段、相似商品合并/新建选择和实际入库服务，不覆盖独立手动草稿。权限和回执保存失败发生在库存写入前时允许重试；库存提交之后的回执/媒体失败独立提示，避免重复入库。
 - 设备操作适配 `SmartHomeController` 的现有 NAS typed command，检查成员权限、实体能力和新鲜状态，按设备支持范围校验亮度/温度/模式，核对返回目标状态后才报告完成；HA 管理凭据仍只在 NAS。Provider 统一在 `providers.dart` 组装，控制器不反向导入 Provider。scene/script、混合任务与事件自动执行没有因此开放。
 - 备份、恢复、存储清理、服务/账号配置等通过白名单页面入口继续用户选择文件、填写配置及确认；打开页面不等于执行。保留已有 `ai_allow_inventory_writes=false`，未设置时允许生成建议，每项写入仍逐次确认。
@@ -1388,7 +1388,7 @@ App Drift schema 5→6，新增可查询计划/条目/归档表和两个 nullabl
 | 模块 | 源码入口 | 责任 |
 | --- | --- | --- |
 | 全局主题 | `lib/app/momo_theme.dart`、`momo_typography.dart` | 普通卡片、胶囊按钮、表单、列表、开关、标签、Sheet、Dialog、Toast 的统一深浅色与排版 |
-| 公共组件 | `lib/presentation/widgets/momo_glass_components.dart` | `MomoCapsuleButton`、`MomoGlassCard`、`MomoGlassSearchBar`、`MomoGlassAppBar`；原生键盘/读屏、动态高度与局部模糊 |
+| 公共组件（2026-11-09 更新路径） | `lib/presentation/widgets/momo_components.dart` | `MomoCapsuleButton`、`MomoCard`、`MomoSearchField`、`MomoAppBar`；原生键盘/读屏、动态高度；材质规则见第38节 |
 | 导航和占位 | `lib/presentation/widgets/momo_floating_dock.dart`、`app_scaffold.dart` | 共享测量、指示器边界、悬浮材质、键盘/宽屏避让 |
 | 主要内容页 | `home_screen.dart`、`inventory_screen.dart`、`smart_home_screen.dart`、`shopping_screen.dart`、`alerts_screen.dart`、`statistics_screen.dart`、`product_detail_screen.dart` | 实际接入卡片/搜索/按钮/顶部导航，保留业务入口、数据与必要状态 |
 | 配置和操作弹层 | `settings_screen.dart`、NAS/HA/同步配置与 AI 用量页、入库/家务/AI 等已有弹层 | 通过公共组件与主题消除旧局部材质，保留权限及逐次确认 |
@@ -1407,7 +1407,7 @@ App Drift schema 5→6，新增可查询计划/条目/归档表和两个 nullabl
 
 ### 24.5 顶部导航背景一致性修复（2026-10-25）
 
-- 顶部导航与状态栏区域属于页面背景层，不能使用卡片表面色形成独立白色/深灰横条。`MomoGlassAppBar` 使用当前 Theme 的 `scaffoldBackgroundColor` 作为玻璃底色，保留背景模糊；顶部与内容之间不绘制额外底部分隔线，避免页面出现断层。高对比度时使用同色不透明背景。
+- 顶部导航与状态栏区域属于页面背景层，不能使用卡片表面色形成独立白色/深灰横条。`MomoAppBar` 使用当前 Theme 的 `scaffoldBackgroundColor` 作为玻璃底色，保留背景模糊；顶部与内容之间不绘制额外底部分隔线，避免页面出现断层。高对比度时使用同色不透明背景。
 - 全局 `AppBarTheme` 同步使用页面背景色，覆盖库存数据态的 `SliverAppBar`；保留零滚动抬升、透明 Material tint 和透明系统状态栏及相应亮暗图标。适用于所有皮肤和深浅模式，不改变页面布局或业务行为。
 - 新增 `test/presentation/top_bar_background_test.dart`，检查普通/Sliver 顶部在五皮肤、深浅色、高对比度及滚动前后的合成像素与状态栏图标配置。**本次未执行 Flutter analyze/test 或重新渲染**：此前 `/private/tmp` 中的临时 Flutter SDK 和依赖缓存已不存在，当前 PATH 亦无 Flutter/Dart。第24.4节结果和既有预览仅对应之前的版本，不能作为本次修复通过的证据；真机验证仍待执行。
 
@@ -1594,8 +1594,8 @@ App Drift schema 5→6，新增可查询计划/条目/归档表和两个 nullabl
 用户明确要求理解业务需求、放弃旧UI，并按指定 `apple-design` 技能重构、适配手机显示尺寸；AC-031记录本次目标。第24、27节的旧视觉保护在本次范围内被替代，业务规则及确认边界继续适用。开始时 `main` 工作区干净。
 
 - `momo_mobile_layout.dart`：统一手机页边距与横屏安全区、720dp阅读宽度、可换行页面大标题、按实际宽度与字号选择一/两列的内容网格。保留12/14/16/18/22/28/36基础字号，主页面使用28dp大标题，应用缩放叠加系统缩放。
-- `momo_theme.dart` / `momo_glass_components.dart`：默认系统蓝与中性分组底色、轻实色卡片、16dp搜索文字、48dp最小搜索/主要按钮、44dp最小图标按钮。移除普通卡片阴影和次按钮叠加模糊，浮动层与内容层分离；深色动作色提高亮度。
-- 二级页面统一使用 `MomoGlassAppBar.adaptive`：在Scaffold读取preferredSize前，按当前主题、文字缩放、返回/操作区域和标题实际测量计算工具栏高度；标题允许换行。侧栏内容区获得实际pane的MediaQuery尺寸，避免按整块横屏宽度误算。
+- `momo_theme.dart` / `momo_components.dart`（2026-11-09 迁移后的路径）：当时采用系统蓝与中性分组底色，默认配色已由第37节替代；轻实色卡片、16dp搜索文字、48dp最小搜索/主要按钮、44dp最小图标按钮继续保留。普通卡片不叠加阴影或模糊，浮动层与内容层分离；深色动作色提高亮度。
+- 二级页面统一使用 `MomoAppBar.adaptive`：在Scaffold读取preferredSize前，按当前主题、文字缩放、返回/操作区域和标题实际测量计算工具栏高度；标题允许换行。侧栏内容区获得实际pane的MediaQuery尺寸，避免按整块横屏宽度误算。
 - `momo_press_scale.dart`：复用Flutter原生按钮状态和语义，按下时立即产生原生highlight；缩放使用临界阻尼附近的 `SpringSimulation`（mass 1 / stiffness 440 / damping 42），从当前呈现值和速度重新定向。`disableAnimations` 或辅助导航时不缩放，仍保留按下颜色。
 - `app_scaffold.dart` / `momo_floating_dock.dart`：五个稳定语义入口、较小导航边距和24dp圆角，保留动态标签测量与底部占位。移除库存可拖动悬浮按钮，入库移到页面标题区；键盘弹出仍隐藏底栏。侧栏允许垂直滚动，以适应横屏和大字号。
 
@@ -1695,7 +1695,7 @@ UGREEN单文件模板位于deploy/nas/ugreen-v0.12.67/docker-compose.yaml：late
 
 ### 页面与复用
 
-`AppScaffold` 改为助手/物品/今日/家居/设置，路由 `/assistant` 复用 `AiAssistantDialog(fullPage:true)` 的业务状态与确认流程，默认 `/` 高亮中央今日；兼容已有弹层调用。两种展示均可进入原 `AiSettingsScreen`。共享默认主题改为已确认的暖白/鼠尾草绿；其他主题与字体缩放保留。
+`AppScaffold` 改为助手/物品/今日/家居/设置，路由 `/assistant` 使用独立 `AssistantScreen`，复用应用级会话业务状态与确认流程，默认 `/` 高亮中央今日。助手可进入原 `AiSettingsScreen`。共享默认主题改为已确认的暖白/鼠尾草绿；其他主题与字体缩放保留。首次落地时保留的弹层兼容路径已按第38节删除。
 
 今日增加真实提醒概览与关注物品，保留其余模块和用户排序。物品改为自适应一/两列，读取已有商品图片流，无图用中性图标，不生成假商品图；原指定批次消耗、快捷消耗/补充/采购和详情入口保留。家居按实体实际区域分组，设备摘要在上，详细亮度/温度控制仍在原控制面板。`sensor`/`weather` 不再投影成可控开关。设置增加直达AI服务并保留原设置分类和数据/诊断入口。
 
@@ -1717,3 +1717,15 @@ UGREEN单文件模板位于deploy/nas/ugreen-v0.12.67/docker-compose.yaml：late
 Flutter/Dart不在PATH且旧package_config指向的临时SDK/依赖缓存已不存在。官方与中国镜像的发布清单均404；官方Git下载无完成进展，仓库探测又因RPC传输中断失败，停止临时SDK尝试。本轮未能执行flutter analyze/test/build或原生截图。已执行的Dart语法解析、相对导入与差异空白检查单列在VALIDATION，不称为完整验收。无提交、推送、发布。
 
 AI_CONTEXT更新建议：完成Flutter/设备验收后更新默认主题、五入口、独立助手及环境来源规则；本轮不将源码状态升级为已验收长期事实。
+
+## 38. 2026-11-09：旧 UI 路径收敛
+
+用户明确要求删除无引用的旧代码，并将有引用的旧展示迁到当前体系后移除旧实现。本节替代第37节最初保留助手弹层兼容的决定。
+
+- `AssistantScreen` 移入 `presentation/screens/assistant_screen.dart`，删除旧助手 Widget 文件、弹层打开 API、`fullPage` 分支和关闭助手按钮。应用路由及会话/库存操作/深色/视口测试全部迁移；离开助手页继续接收在途回复仍由 `AiConversationStore` 负责。
+- 混合计划的局部状态只有清空和基于旧值复制，没有创建计划入口；删除其模型、状态枚举、确认/取消回调及卡片。真实 AI 建议的权限检查、快照确认、入库草稿与执行回执继续使用原业务流程。
+- `momo_components.dart` 为唯一共享组件入口，提供 `MomoCard`、`MomoSearchField`、`MomoAppBar` 和原生语义的 `MomoCapsuleButton`。迁移全部调用方，不提供旧名字的 typedef/export 包装；删除卡片磨砂开关、逐组件皮肤覆盖和无引用的库存皮肤图标字段。
+- 卡片/搜索/导航表面色与页面强调色统一由 Theme 提供，消除深色模式下直接使用浅色皮肤 primary 的另一套颜色来源。主题中心保留皮肤色样，吉祥物名称/图标保留用户偏好；标题栏和 Dock 的浮层模糊、高对比度及减少动态效果处理不变。
+- 删除没有调用方的 `/profile` 重复页面路由及导航特判；仅保留当前五入口。删除始终为空的演示场景状态、展示容器与 `SmartScene` 类型，真实设备/耗材联动/环境读取不变。仅被一个旧测试引用的 `MockSmartHomeRepository` 删除，改测真实控制器的未配置状态；scene/script 回归覆盖今日和家居两页不能伪装开关。
+
+没有数据库、配置键、后端接口或依赖变化，存档与主题偏好不需迁移。历史设计稿/审计材料保留。AI_CONTEXT 的长期事实更新仍建议在 Flutter/设备验收后进行；本节与 VALIDATION 记录当前源码及验证边界。

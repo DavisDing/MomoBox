@@ -13,9 +13,9 @@ import 'package:momo_box/presentation/controllers/providers.dart';
 import 'package:momo_box/presentation/screens/inventory_screen.dart';
 import 'package:momo_box/presentation/screens/settings_screen.dart';
 import 'package:momo_box/presentation/widgets/momo_floating_dock.dart';
-import 'package:momo_box/presentation/widgets/momo_glass_components.dart';
+import 'package:momo_box/presentation/widgets/momo_components.dart';
 import 'package:momo_box/presentation/widgets/momo_mobile_layout.dart';
-import 'package:momo_box/presentation/widgets/ai_assistant_dialog.dart';
+import 'package:momo_box/presentation/screens/assistant_screen.dart';
 
 void main() {
   for (final size in [const Size(320, 640), const Size(390, 844), const Size(430, 932), const Size(844, 390)]) {
@@ -49,8 +49,9 @@ void main() {
               router.go(route);
               await _frames(tester);
               if (route == '/assistant') {
-                expect(find.byType(AiAssistantDialog),findsOneWidget);
-                expect(tester.widget<AiAssistantDialog>(find.byType(AiAssistantDialog)).fullPage,isTrue);
+                expect(find.byType(AssistantScreen),findsOneWidget);
+                expect(find.byTooltip('关闭助手'), findsNothing);
+                expect(find.byType(BottomSheet), findsNothing);
                 expect(find.byType(TextField),findsOneWidget);
                 expect(tester.takeException(),isNull,reason:route);
                 continue;
@@ -176,7 +177,7 @@ void main() {
       home: MediaQuery(
         data: const MediaQueryData(size: Size(320, 640), textScaler: TextScaler.linear(3.4)),
         child: Builder(builder: (context) => Scaffold(
-          appBar: MomoGlassAppBar.adaptive(context,
+          appBar: MomoAppBar.adaptive(context,
             title: const Text('AI 解析与模型配置'),
             actions: [IconButton(tooltip: '完成', onPressed: () {}, icon: const Icon(Icons.check))],
           ),

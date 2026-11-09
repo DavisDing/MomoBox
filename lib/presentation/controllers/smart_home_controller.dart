@@ -14,13 +14,12 @@ const _unset = Object();
 
 /// The HA controller deliberately owns the remote-to-UI mapping.
 ///
-/// No device is created until it has come from the NAS entity endpoint. The
-/// previous mock repository is not used here, so an unavailable NAS/HA cannot
-/// be rendered as an online or successfully controlled device.
+/// No device is created until it has come from the NAS entity endpoint. An
+/// unavailable NAS/HA cannot be rendered as an online or successfully
+/// controlled device.
 class SmartHomeState {
   const SmartHomeState({
     required this.devices,
-    required this.scenes,
     required this.logs,
     required this.haStatus,
     required this.haAddress,
@@ -46,10 +45,8 @@ class SmartHomeState {
   });
 
   final List<SmartDevice> devices;
-  // Scenes remain empty because no real NAS scene contract is defined yet.
   // Linkage logs are always projected from NAS suggestions; local inventory
   // matching and local deduction are intentionally not performed.
-  final List<SmartScene> scenes;
   final List<ConsumableLinkageLog> logs;
   final HaConnectionStatus haStatus;
   final String haAddress;
@@ -77,7 +74,6 @@ class SmartHomeState {
 
   SmartHomeState copyWith({
     List<SmartDevice>? devices,
-    List<SmartScene>? scenes,
     List<ConsumableLinkageLog>? logs,
     HaConnectionStatus? haStatus,
     String? haAddress,
@@ -103,7 +99,6 @@ class SmartHomeState {
   }) {
     return SmartHomeState(
       devices: devices ?? this.devices,
-      scenes: scenes ?? this.scenes,
       logs: logs ?? this.logs,
       haStatus: haStatus ?? this.haStatus,
       haAddress: haAddress ?? this.haAddress,
@@ -144,7 +139,6 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
         super(
           SmartHomeState(
             devices: const <SmartDevice>[],
-            scenes: const <SmartScene>[],
             logs: const <ConsumableLinkageLog>[],
             haStatus: HaConnectionStatus.unconfigured,
             haAddress: '',

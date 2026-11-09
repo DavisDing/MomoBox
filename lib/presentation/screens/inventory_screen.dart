@@ -1,6 +1,6 @@
 import '../widgets/momo_mobile_layout.dart';
 import '../widgets/momo_floating_dock.dart';
-import '../widgets/momo_glass_components.dart';
+import '../widgets/momo_components.dart';
 import '../../app/momo_typography.dart';
 import 'dart:ui';
 import 'dart:io';
@@ -13,7 +13,6 @@ import '../widgets/app_feedback.dart';
 import '../../domain/inventory/expiry_rules.dart';
 import '../../domain/inventory/inventory_sorting.dart';
 import '../../domain/models/inventory_models.dart';
-import '../../app/momo_theme.dart';
 import '../controllers/providers.dart';
 import '../widgets/intake_sheet.dart';
 import '../widgets/status_badge.dart';
@@ -47,7 +46,6 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
     final inventory = ref.watch(inventoryProvider);
     final summary = ref.watch(reminderSummaryProvider);
     final insets = MomoMobileLayout.pageInsets(context);
@@ -102,10 +100,9 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                   ),
                   SliverPadding(
                     padding: insets.add(const EdgeInsets.only(bottom: 16)),
-                    sliver: SliverToBoxAdapter(child: MomoGlassSearchBar(
+                    sliver: SliverToBoxAdapter(child: MomoSearchField(
                       hintText: '搜索物品、品牌或位置',
                       controller: _searchController, focusNode: _searchFocusNode,
-                      palette: palette,
                       onChanged: (value) => setState(() => _query = value),
                       suffixIcon: _query.isEmpty ? null : IconButton(
                         tooltip: '清除搜索', icon: const Icon(Icons.cancel_rounded, size: 20),
@@ -215,7 +212,7 @@ class _SummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return MomoGlassCard(
+    return MomoCard(
         onTap: onTap,
       padding: const EdgeInsets.all(16),
       margin: EdgeInsets.zero,
@@ -288,7 +285,7 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
     final images = media?.where((asset)=>asset.type==MediaAssetType.productImage).toList();
     final path = images?.isNotEmpty==true ? images!.first.localPath : null;
     Widget placeholder() => Center(child:Icon(Icons.inventory_2_outlined,size:42,color:theme.colorScheme.primary));
-    return MomoGlassCard(
+    return MomoCard(
       onTap:()=>context.push('/inventory/${item.id}'),padding:EdgeInsets.zero,margin:EdgeInsets.zero,
       child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
         Container(height:128,clipBehavior:Clip.antiAlias,

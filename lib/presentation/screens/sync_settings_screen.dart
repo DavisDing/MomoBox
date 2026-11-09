@@ -13,7 +13,7 @@ import '../../domain/models/nas_sync_models.dart';
 import '../../domain/models/sync_models.dart';
 import '../controllers/nas_account_controller.dart';
 import '../controllers/providers.dart';
-import '../widgets/momo_glass_components.dart';
+import '../widgets/momo_components.dart';
 import '../widgets/momo_floating_dock.dart';
 import '../widgets/initial_import_card.dart';
 
@@ -59,7 +59,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           ]);
 
     return Scaffold(
-      appBar: MomoGlassAppBar.adaptive(context, title: const Text('同步设置')),
+      appBar: MomoAppBar.adaptive(context, title: const Text('同步设置')),
       body: ListView(
         padding: EdgeInsets.fromLTRB(16, 12, 16, 32 + MomoDockInsets.bottomOf(context)),
         children: [
@@ -98,8 +98,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     final enabled = engine != null;
     final workspaceAccess = ref.watch(syncWorkspaceAccessProvider);
     final access = workspaceAccess.asData?.value;
-    return MomoGlassCard(
-      frosted: false,
+    return MomoCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

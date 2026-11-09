@@ -4,7 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../domain/models/home_environment.dart';
 import '../../domain/models/nas_homeassistant_models.dart';
 import '../controllers/providers.dart';
-import '../widgets/momo_glass_components.dart';
+import '../widgets/momo_components.dart';
 import '../widgets/momo_mobile_layout.dart';
 
 class EnvironmentSettingsScreen extends ConsumerStatefulWidget {
@@ -83,7 +83,7 @@ class _EnvironmentSettingsScreenState extends ConsumerState<EnvironmentSettingsS
       final remote = home.entityStates['${entity.integrationId}::${entity.entityId}'];
       return remote?.attributes['device_class'] == deviceClass;
     });
-    return Scaffold(appBar:MomoGlassAppBar.adaptive(context,title:const Text('环境数据来源')),
+    return Scaffold(appBar:MomoAppBar.adaptive(context,title:const Text('环境数据来源')),
       body: stored.isLoading && _draft==null ? const Center(child:CircularProgressIndicator()) :
       ListView(padding:MomoMobileLayout.pageInsets(context).add(EdgeInsets.only(top:16,bottom:24+MediaQuery.viewPaddingOf(context).bottom)),children:[
         ExpansionTile(tilePadding:EdgeInsets.zero,title:const Text('当前来源与读取时间'),

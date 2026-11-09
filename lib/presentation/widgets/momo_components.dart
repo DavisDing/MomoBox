@@ -4,7 +4,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
-import '../../app/momo_theme.dart';
 import 'momo_floating_dock.dart';
 import 'momo_press_scale.dart';
 
@@ -144,16 +143,14 @@ class _MomoCapsuleButtonState extends State<MomoCapsuleButton> {
 }
 
 /// Ordinary content uses a light solid material; only floating layers blur.
-class MomoGlassCard extends StatefulWidget {
-  const MomoGlassCard({
+class MomoCard extends StatefulWidget {
+  const MomoCard({
     required this.child,
     this.onTap,
     this.padding = const EdgeInsets.all(16),
     this.margin,
     this.borderRadius = 18,
-    this.palette,
     this.color,
-    this.frosted = false,
     super.key,
   });
 
@@ -162,15 +159,13 @@ class MomoGlassCard extends StatefulWidget {
   final EdgeInsetsGeometry padding;
   final EdgeInsetsGeometry? margin;
   final double borderRadius;
-  final MomoPalette? palette;
   final Color? color;
-  final bool frosted;
 
   @override
-  State<MomoGlassCard> createState() => _MomoGlassCardState();
+  State<MomoCard> createState() => _MomoCardState();
 }
 
-class _MomoGlassCardState extends State<MomoGlassCard> {
+class _MomoCardState extends State<MomoCard> {
   bool _pressed = false;
 
   @override
@@ -179,23 +174,12 @@ class _MomoGlassCardState extends State<MomoGlassCard> {
     final scheme = theme.colorScheme;
     final highContrast = MediaQuery.highContrastOf(context) || MediaQuery.accessibleNavigationOf(context);
     final radius = BorderRadius.circular(widget.borderRadius);
-    final surface =
-        widget.color ??
-        (theme.brightness == Brightness.light
-            ? widget.palette?.surface
-            : null) ??
-        scheme.surface;
-    final background =
-        widget.frosted && !highContrast
-            ? (theme.brightness == Brightness.dark
-                ? scheme.onSurface.withValues(alpha: 0.08)
-                : surface.withValues(alpha: 0.82))
-            : surface;
+    final surface = widget.color ?? scheme.surface;
     final border = scheme.onSurface.withValues(
       alpha: highContrast ? 0.5 : 0.08,
     );
-    Widget content = Card(
-      color: background,
+    final content = Card(
+      color: surface,
       surfaceTintColor: Colors.transparent,
       margin: EdgeInsets.zero,
       elevation: 0,
@@ -212,15 +196,6 @@ class _MomoGlassCardState extends State<MomoGlassCard> {
         child: Padding(padding: widget.padding, child: widget.child),
       ),
     );
-    if (widget.frosted && !highContrast) {
-      content = ClipRRect(
-        borderRadius: radius,
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-          child: content,
-        ),
-      );
-    }
     return Padding(
       padding: widget.margin ?? const EdgeInsets.symmetric(vertical: 6),
       child: MomoPressScale(
@@ -239,8 +214,8 @@ class _MomoGlassCardState extends State<MomoGlassCard> {
 }
 
 /// A rounded search field with no fixed-height constraint on scaled text.
-class MomoGlassSearchBar extends StatelessWidget {
-  const MomoGlassSearchBar({
+class MomoSearchField extends StatelessWidget {
+  const MomoSearchField({
     required this.hintText,
     this.controller,
     this.focusNode,
@@ -250,7 +225,6 @@ class MomoGlassSearchBar extends StatelessWidget {
     this.suffixIcon,
     this.autofocus = false,
     this.textInputAction,
-    this.palette,
     super.key,
   });
 
@@ -263,7 +237,6 @@ class MomoGlassSearchBar extends StatelessWidget {
   final Widget? suffixIcon;
   final bool autofocus;
   final TextInputAction? textInputAction;
-  final MomoPalette? palette;
 
   @override
   Widget build(BuildContext context) {
@@ -304,7 +277,7 @@ class MomoGlassSearchBar extends StatelessWidget {
           enabledBorder: shape,
           focusedBorder: shape.copyWith(
             borderSide: BorderSide(
-              color: palette?.primary ?? scheme.primary,
+              color: scheme.primary,
               width: 2,
             ),
           ),
@@ -316,8 +289,8 @@ class MomoGlassSearchBar extends StatelessWidget {
 }
 
 /// Native AppBar navigation/actions over a clipped translucent material.
-class MomoGlassAppBar extends StatelessWidget implements PreferredSizeWidget {
-  const MomoGlassAppBar({
+class MomoAppBar extends StatelessWidget implements PreferredSizeWidget {
+  const MomoAppBar({
     this.title,
     this.leading,
     this.actions,
@@ -332,7 +305,7 @@ class MomoGlassAppBar extends StatelessWidget implements PreferredSizeWidget {
   /// Scaffold reads preferredSize before building the toolbar. Resolve the
   /// title at the call site so large text gets real space, including back and
   /// action buttons, instead of merely painting beyond a fixed 56dp bar.
-  factory MomoGlassAppBar.adaptive(
+  factory MomoAppBar.adaptive(
     BuildContext context, {
     Widget? title,
     Widget? leading,
@@ -363,7 +336,7 @@ class MomoGlassAppBar extends StatelessWidget implements PreferredSizeWidget {
       height = math.max(height, painter.height.ceilToDouble() + 16);
       painter.dispose();
     }
-    return MomoGlassAppBar(
+    return MomoAppBar(
       key: key,
       title: title == null ? null : DefaultTextStyle.merge(
         softWrap: true, overflow: TextOverflow.visible, child: title,

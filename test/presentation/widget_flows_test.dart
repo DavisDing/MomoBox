@@ -21,7 +21,7 @@ import 'package:momo_box/presentation/screens/shopping_screen.dart';
 import 'package:momo_box/presentation/screens/inventory_screen.dart';
 import 'package:momo_box/presentation/screens/settings_screen.dart';
 import 'package:momo_box/presentation/widgets/intake_sheet.dart';
-import 'package:momo_box/presentation/widgets/ai_assistant_dialog.dart';
+import 'package:momo_box/presentation/screens/assistant_screen.dart';
 import 'package:momo_box/presentation/widgets/momo_floating_dock.dart';
 
 void main() {
@@ -77,8 +77,9 @@ void main() {
     expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,2);
     final assistant=find.descendant(of:find.byType(NavigationBar),matching:find.byType(NavigationDestination)).at(0);
     await tester.tap(assistant);
-    await _pumpUntilFound(tester,find.byType(AiAssistantDialog));
-    expect(tester.widget<AiAssistantDialog>(find.byType(AiAssistantDialog)).fullPage,isTrue);
+    await _pumpUntilFound(tester,find.byType(AssistantScreen));
+    expect(find.byTooltip('关闭助手'), findsNothing);
+    expect(find.byType(BottomSheet), findsNothing);
     expect(find.byType(IntakeSheet),findsNothing);
     expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,0);
     final container=ProviderScope.containerOf(tester.element(find.byType(MomoBoxApp)));
@@ -149,7 +150,6 @@ void main() {
     final container = ProviderScope.containerOf(tester.element(find.byType(MomoBoxApp)));
     final state = container.read(smartHomeControllerProvider);
     // The NAS-backed controller must not populate the preview with mock data.
-    expect(state.scenes, isEmpty);
     expect(state.devices, isEmpty);
     expect(state.nasOnline, isFalse);
     expect(find.byType(Switch), findsNothing);

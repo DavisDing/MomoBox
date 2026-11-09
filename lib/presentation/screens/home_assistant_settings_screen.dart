@@ -2,12 +2,11 @@ import '../../app/momo_typography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../app/momo_theme.dart';
 import '../../application/nas_connection_service.dart';
 import '../../domain/models/nas_homeassistant_models.dart';
 import '../../domain/models/smart_home_models.dart';
 import '../controllers/providers.dart';
-import '../widgets/momo_glass_components.dart';
+import '../widgets/momo_components.dart';
 import '../widgets/momo_floating_dock.dart';
 import '../controllers/smart_home_controller.dart';
 
@@ -138,13 +137,12 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
 
   @override
   Widget build(BuildContext context) {
-    final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
     final homeState = ref.watch(smartHomeControllerProvider);
     final nasState = ref.watch(nasConnectionProvider);
     _hydrateFromState(homeState);
 
     return Scaffold(
-      appBar: MomoGlassAppBar.adaptive(
+      appBar: MomoAppBar.adaptive(
         context,
         title: const Text('Home Assistant 连接配置'),
         actions: [
@@ -165,9 +163,9 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
           if (homeState.message != null || homeState.commandError != null)
             _buildFeedbackCard(homeState),
           if (homeState.message != null || homeState.commandError != null) const SizedBox(height: 12),
-          _buildConnectionForm(homeState, palette),
+          _buildConnectionForm(homeState),
           const SizedBox(height: 12),
-          _buildEntitiesCard(homeState, palette),
+          _buildEntitiesCard(homeState),
           const SizedBox(height: 12),
           _buildSecurityCard(),
         ],
@@ -179,8 +177,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
     final status = _statusPresentation(state, nasState);
     final integration = state.integrations.firstOrNull;
 
-    return MomoGlassCard(
-      frosted: false,
+    return MomoCard(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -273,7 +270,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
     );
   }
 
-  Widget _buildConnectionForm(SmartHomeState state, MomoPalette palette) {
+  Widget _buildConnectionForm(SmartHomeState state) {
     final isLoading = state.isLoading;
     return Card(
       child: Padding(
@@ -379,7 +376,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
     );
   }
 
-  Widget _buildEntitiesCard(SmartHomeState state, MomoPalette palette) {
+  Widget _buildEntitiesCard(SmartHomeState state) {
     final entities = state.entities;
     return Card(
       child: Padding(
@@ -412,14 +409,14 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
             else if (entities.isEmpty)
               const _EmptyHint(icon: Icons.devices_other_outlined, text: '当前没有可显示的实体，或账号没有查看权限。')
             else
-              ...entities.map((entity) => _buildEntityTile(state, entity, palette)),
+              ...entities.map((entity) => _buildEntityTile(state, entity)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildEntityTile(SmartHomeState state, NasHaEntity entity, MomoPalette palette) {
+  Widget _buildEntityTile(SmartHomeState state, NasHaEntity entity) {
     final permission = _permissionFor(state, entity);
     final remoteState = _stateFor(state, entity);
     final key = '${entity.integrationId}::${entity.entityId}';
@@ -436,7 +433,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
       child: ExpansionTile(
         tilePadding: const EdgeInsets.symmetric(horizontal: 12),
         childrenPadding: const EdgeInsets.only(left: 12, right: 12, bottom: 8),
-        leading: Icon(_entityIcon(entity.domain), color: palette.primary),
+        leading: Icon(_entityIcon(entity.domain), color: Theme.of(context).colorScheme.primary),
         title: Text(entity.name, style: const TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.w600)),
         subtitle: Text(
           '${entity.entityId} · ${stale ? '状态可能过期' : _localizedEntityState(currentState)}',
@@ -472,7 +469,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
               title: const Text('允许查看状态', style: TextStyle(fontSize: MomoTextSize.caption)),
               subtitle: Text('角色：${permission.role}', style: const TextStyle(fontSize: MomoTextSize.caption)),
               value: permission.canView,
-              activeThumbColor: palette.primary,
+              activeThumbColor: Theme.of(context).colorScheme.primary,
               onChanged: state.isLoading ? null : (value) => _updatePermission(permission, canView: value),
             ),
             SwitchListTile.adaptive(
@@ -486,7 +483,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
                 style: const TextStyle(fontSize: MomoTextSize.caption),
               ),
               value: permission.canControl,
-              activeThumbColor: palette.primary,
+              activeThumbColor: Theme.of(context).colorScheme.primary,
               onChanged: state.isLoading || !permission.canView
                   ? null
                   : (value) => _updatePermission(permission, canControl: value),

@@ -8,7 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:uuid/uuid.dart';
 import 'app_feedback.dart';
-import 'momo_glass_components.dart';
+import 'momo_components.dart';
 
 import '../../domain/inventory/expiry_rules.dart';
 import '../../domain/inventory/product_categories.dart';
@@ -1267,7 +1267,7 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: MomoGlassAppBar.adaptive(
+      appBar: MomoAppBar.adaptive(
         context,
         title: const Text('扫描商品条码'),
         leading: IconButton(
@@ -1415,7 +1415,7 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen>
                 alignment: WrapAlignment.center,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  MomoGlassCard(
+                  MomoCard(
                     margin: EdgeInsets.zero,
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     child: Row(

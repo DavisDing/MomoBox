@@ -2,9 +2,8 @@ import '../../app/momo_typography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app_feedback.dart';
-import 'momo_glass_components.dart';
+import 'momo_components.dart';
 
-import '../../app/momo_theme.dart';
 import '../../domain/models/chore_models.dart';
 import '../controllers/providers.dart';
 
@@ -30,7 +29,6 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
     final theme = Theme.of(context);
     final choresAsync = ref.watch(choresProvider);
 
@@ -61,7 +59,7 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Row(
                   children: [
-                    Icon(Icons.repeat_rounded, color: palette.primary, size: 24),
+                    Icon(Icons.repeat_rounded, color: Theme.of(context).colorScheme.primary, size: 24),
                     const SizedBox(width: 8),
                     const Expanded(
                       child: Text(
@@ -71,7 +69,7 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                     ),
                     IconButton(
                       tooltip: '添加新提醒',
-                      icon: Icon(Icons.add_circle_outline_rounded, color: palette.primary),
+                      icon: Icon(Icons.add_circle_outline_rounded, color: Theme.of(context).colorScheme.primary),
                       onPressed: () => _showChoreEditDialog(context),
                     ),
                     IconButton(
@@ -174,8 +172,7 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                         final isDue = item.isDue();
                         final days = item.daysUntil();
 
-                        return MomoGlassCard(
-                          frosted: false,
+                        return MomoCard(
                           padding: const EdgeInsets.all(12),
                           onTap: () => _showChoreEditDialog(context, item: item),
                           child: Column(
@@ -186,7 +183,7 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: palette.primary.withValues(alpha: 0.12),
+                                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
                                       borderRadius: BorderRadius.circular(6),
                                     ),
                                     child: Text(
@@ -194,7 +191,7 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                                       style: TextStyle(
                                         fontSize: MomoTextSize.caption,
                                         fontWeight: FontWeight.bold,
-                                        color: palette.primary,
+                                        color: Theme.of(context).colorScheme.primary,
                                       ),
                                     ),
                                   ),
@@ -301,7 +298,7 @@ class _ChoresSheetState extends ConsumerState<ChoresSheet> {
                                     style: TextStyle(
                                       fontSize: MomoTextSize.caption,
                                       fontWeight: FontWeight.bold,
-                                      color: isDue ? Colors.redAccent : palette.primary,
+                                      color: isDue ? Colors.redAccent : Theme.of(context).colorScheme.primary,
                                     ),
                                   ),
                                 ],

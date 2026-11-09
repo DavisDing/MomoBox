@@ -16,7 +16,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:uuid/uuid.dart';
 import '../widgets/app_feedback.dart';
-import '../widgets/momo_glass_components.dart';
+import '../widgets/momo_components.dart';
 import '../widgets/momo_floating_dock.dart';
 
 import '../../app/momo_theme.dart';
@@ -207,7 +207,7 @@ class SettingsCategoryScreen extends ConsumerWidget {
       ],
     };
     return Scaffold(
-      appBar: MomoGlassAppBar.adaptive(context, title: Text(category.title)),
+      appBar: MomoAppBar.adaptive(context, title: Text(category.title)),
       body: ListView(
         key: PageStorageKey('settings-${category.name}'),
         padding: MomoMobileLayout.pageInsets(context).add(
@@ -357,7 +357,7 @@ class _DiagnosticExportScreenState extends State<DiagnosticExportScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: MomoGlassAppBar.adaptive(context, title: const Text('本地诊断导出')),
+    appBar: MomoAppBar.adaptive(context, title: const Text('本地诊断导出')),
     body: ListView(
       padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
       children: [
@@ -388,7 +388,7 @@ class ThemeSettingsScreen extends ConsumerWidget {
     final currentTheme = ref.watch(themeNameProvider).valueOrNull;
 
     return Scaffold(
-      appBar: MomoGlassAppBar.adaptive(context, title: const Text('主题中心')),
+      appBar: MomoAppBar.adaptive(context, title: const Text('主题中心')),
       body: ListView(
         padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
         children: MomoPalette.allPalettes.map((palette) {
@@ -635,7 +635,7 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: MomoGlassAppBar.adaptive(context, title: const Text('外部条码 API')),
+      appBar: MomoAppBar.adaptive(context, title: const Text('外部条码 API')),
       body: ListView(
         padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
         children: [
@@ -1437,7 +1437,7 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: MomoGlassAppBar.adaptive(context, title: const Text('AI 解析与模型配置')),
+      appBar: MomoAppBar.adaptive(context, title: const Text('AI 解析与模型配置')),
       body: ListView(
         padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
         children: [
@@ -1687,7 +1687,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: MomoGlassAppBar.adaptive(context, title: const Text('数据备份与迁移')),
+        appBar: MomoAppBar.adaptive(context, title: const Text('数据备份与迁移')),
         body: ListView(
           padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
           children: [
@@ -1733,7 +1733,7 @@ class FontScaleSettingsScreen extends ConsumerWidget {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: MomoGlassAppBar.adaptive(context, title: const Text('字体大小设置')),
+      appBar: MomoAppBar.adaptive(context, title: const Text('字体大小设置')),
       body: ListView(
         padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
         children: [
@@ -1945,7 +1945,7 @@ class _NotificationSettingsScreenState extends ConsumerState<NotificationSetting
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: MomoGlassAppBar.adaptive(context, title: const Text('提醒与通知')),
+        appBar: MomoAppBar.adaptive(context, title: const Text('提醒与通知')),
         body: ListView(
           padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
           children: [
@@ -2109,7 +2109,7 @@ class _StorageManagementScreenState extends ConsumerState<StorageManagementScree
   Widget build(BuildContext context) {
     final usage = _usage;
     return Scaffold(
-      appBar: MomoGlassAppBar.adaptive(
+      appBar: MomoAppBar.adaptive(
         context,
         title: const Text('数据与存储空间'),
         actions: [IconButton(onPressed: _busy ? null : _reload, icon: const Icon(Icons.refresh), tooltip: '刷新')],
@@ -2270,7 +2270,7 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: MomoGlassAppBar.adaptive(context, title: const Text('隐私与密钥')),
+        appBar: MomoAppBar.adaptive(context, title: const Text('隐私与密钥')),
         body: ListView(
           padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
           children: [
@@ -2429,15 +2429,15 @@ class _AboutSettingsScreenState extends ConsumerState<AboutSettingsScreen> {
     final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
     final release = _checkResult?.release;
     return Scaffold(
-      appBar: MomoGlassAppBar.adaptive(context, title: const Text('关于嬷嬷的小箱子')),
+      appBar: MomoAppBar.adaptive(context, title: const Text('关于嬷嬷的小箱子')),
       body: ListView(
         padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
         children: [
           Card(
             child: ListTile(
               leading: CircleAvatar(
-                backgroundColor: palette.primary.withValues(alpha: 0.15),
-                child: Icon(palette.appLogoIcon, color: palette.primary),
+                backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
+                child: Icon(palette.appLogoIcon, color: Theme.of(context).colorScheme.primary),
               ),
               title: const Text('嬷嬷的小箱子'),
               subtitle: const Text('本地优先的家庭物品效期与库存管理工具'),
@@ -2474,7 +2474,7 @@ class _AboutSettingsScreenState extends ConsumerState<AboutSettingsScreen> {
                   ),
                   if (_updateMessage != null) ...[
                     const SizedBox(height: 4),
-                    Text(_updateMessage!, style: TextStyle(fontSize: MomoTextSize.caption, color: palette.primary)),
+                    Text(_updateMessage!, style: TextStyle(fontSize: MomoTextSize.caption, color: Theme.of(context).colorScheme.primary)),
                   ],
                   if (release != null && _checkResult!.hasUpdate) ...[
                     const SizedBox(height: 10),

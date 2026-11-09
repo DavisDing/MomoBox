@@ -6,7 +6,7 @@ import '../../domain/models/initial_import_models.dart';
 import '../controllers/providers.dart';
 import 'initial_import_history_dialog.dart';
 import 'initial_import_review_dialog.dart';
-import 'momo_glass_components.dart';
+import 'momo_components.dart';
 
 /// Explicit first-import controls. Building the card never uploads a manifest.
 class InitialImportCard extends ConsumerStatefulWidget {
@@ -31,8 +31,7 @@ class _InitialImportCardState extends ConsumerState<InitialImportCard> {
   Widget build(BuildContext context) {
     final service = ref.watch(initialImportServiceProvider);
     final progress = ref.watch(initialImportProgressProvider);
-    return MomoGlassCard(
-      frosted: false,
+    return MomoCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

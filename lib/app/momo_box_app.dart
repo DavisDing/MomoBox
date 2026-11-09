@@ -8,6 +8,7 @@ import '../application/calendar_refresh_scheduler.dart';
 import '../domain/models/inventory_models.dart';
 import '../presentation/controllers/providers.dart';
 import '../presentation/screens/alerts_screen.dart';
+import '../presentation/screens/assistant_screen.dart';
 import '../presentation/screens/home_screen.dart';
 import '../presentation/screens/inventory_screen.dart';
 import '../presentation/screens/product_detail_screen.dart';
@@ -17,7 +18,6 @@ import '../presentation/screens/smart_home_screen.dart';
 import '../presentation/screens/statistics_screen.dart';
 import '../presentation/widgets/app_scaffold.dart';
 import '../presentation/widgets/app_back_guard.dart';
-import '../presentation/widgets/ai_assistant_dialog.dart';
 import 'momo_theme.dart';
 import 'momo_typography.dart';
 
@@ -28,16 +28,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ShellRoute(
         builder: (context, state, child) => AppBackGuard(child: AppScaffold(child: child)),
         routes: [
-          // 1. 首页 (Home / Dashboard)
-          GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
-          GoRoute(path: '/assistant', builder: (context, state) => const AiAssistantDialog(fullPage: true)),
-          // 2. 库存 (Inventory)
+          // Match the five navigation destinations; 今日 remains the default.
+          GoRoute(path: '/assistant', builder: (context, state) => const AssistantScreen()),
           GoRoute(path: '/inventory', builder: (context, state) => const InventoryScreen()),
-          // 3. 家居 (Home Assistant 设备与场景)
+          GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
           GoRoute(path: '/smart-home', builder: (context, state) => const SmartHomeScreen()),
-          // 4. 我的 (Settings / Profile)
           GoRoute(path: '/settings', builder: (context, state) => const SettingsScreen()),
-          GoRoute(path: '/profile', builder: (context, state) => const SettingsScreen()),
         ],
       ),
       // 二级独立路由

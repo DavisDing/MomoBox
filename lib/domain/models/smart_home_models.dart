@@ -86,20 +86,6 @@ class SmartDevice {
   }
 }
 
-class SmartScene {
-  const SmartScene({
-    required this.id,
-    required this.name,
-    required this.icon,
-    required this.description,
-  });
-
-  final String id;
-  final String name;
-  final String icon;
-  final String description;
-}
-
 enum ConsumableActionStatus {
   pending, // 待确认
   deducted, // 已由 NAS 服务端扣减

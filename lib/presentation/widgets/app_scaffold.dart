@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../app/momo_theme.dart';
-import '../controllers/providers.dart';
 import 'momo_floating_dock.dart';
 
-class AppScaffold extends ConsumerWidget {
+class AppScaffold extends StatelessWidget {
   const AppScaffold({required this.child, super.key});
   final Widget child;
 
@@ -16,10 +13,9 @@ class AppScaffold extends ConsumerWidget {
     Icons.home_outlined, Icons.chair_outlined, Icons.tune_rounded];
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
+  Widget build(BuildContext context) {
     final location = GoRouterState.of(context).uri.path;
-    final selected = location == '/profile' ? 4 : paths.indexOf(location);
+    final selected = paths.indexOf(location);
     final index = selected < 0 ? 2 : selected;
     final media = MediaQuery.of(context);
     final rail = media.size.width >= 840;
@@ -55,7 +51,7 @@ class AppScaffold extends ConsumerWidget {
         ]) : child,
         bottomNavigationBar: showDock ? MomoFloatingCapsuleDock(
           selectedIndex: index, onDestinationSelected: navigate,
-          destinations: destinations, palette: palette, layout: geometry,
+          destinations: destinations, layout: geometry,
         ) : null,
       ),
     );

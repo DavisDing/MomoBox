@@ -5,7 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:momo_box/app/momo_theme.dart';
-import 'package:momo_box/presentation/widgets/momo_glass_components.dart';
+import 'package:momo_box/presentation/widgets/momo_components.dart';
 
 void main() {
   testWidgets('顶部玻璃栏不绘制额外底部分隔线', (tester) async {
@@ -13,7 +13,7 @@ void main() {
       MaterialApp(
         theme: buildMomoTheme(MomoPalette.defaultPalette, Brightness.light),
         home: const Scaffold(
-          appBar: MomoGlassAppBar(title: Text('Page')),
+          appBar: MomoAppBar(title: Text('Page')),
         ),
       ),
     );
@@ -63,7 +63,7 @@ void main() {
                     child: Scaffold(
                       appBar: sliver
                           ? null
-                          : const MomoGlassAppBar(title: Text('Page')),
+                          : const MomoAppBar(title: Text('Page')),
                       body: sliver
                           ? CustomScrollView(
                               slivers: [

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:momo_box/app/momo_theme.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:momo_box/presentation/widgets/momo_glass_components.dart';
+import 'package:momo_box/presentation/widgets/momo_components.dart';
 
 void main() {
   testWidgets('大字体下操作和搜索可增长，按钮保留键盘操作能力', (tester) async {
@@ -26,7 +26,7 @@ void main() {
             children: [
               MomoCapsuleButton(label: '确认保存当前配置', onPressed: () => presses++),
               const SizedBox(height: 16),
-              const MomoGlassSearchBar(hintText: '搜索'),
+              const MomoSearchField(hintText: '搜索'),
             ],
           ),
         ),
@@ -66,15 +66,15 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('所有皮肤在深色模式下卡片保持暗色，保留可点击语义', (tester) async {
+  testWidgets('所有皮肤卡片统一跟随深色主题，保留可点击语义', (tester) async {
     final semantics = tester.ensureSemantics();
     for (final palette in MomoPalette.allPalettes) {
+      final theme = buildMomoTheme(palette, Brightness.dark);
       await tester.pumpWidget(
         MaterialApp(
-          theme: buildMomoTheme(palette, Brightness.dark),
+          theme: theme,
           home: Scaffold(
-            body: MomoGlassCard(
-              palette: palette,
+            body: MomoCard(
               onTap: () {},
               child: const Text('打开详情'),
             ),
@@ -84,11 +84,13 @@ void main() {
       await tester.pumpAndSettle();
       final material = tester.widget<Material>(
         find.descendant(
-          of: find.byType(MomoGlassCard),
+          of: find.byType(MomoCard),
           matching: find.byType(Material),
         ),
       );
+      expect(material.color, theme.colorScheme.surface);
       expect(material.color!.computeLuminance(), lessThan(0.1));
+      expect(find.descendant(of: find.byType(MomoCard), matching: find.byType(BackdropFilter)), findsNothing);
       expect(
         tester
             .getSemantics(find.text('打开详情'))
@@ -101,7 +103,7 @@ void main() {
     semantics.dispose();
   });
 
-  group('MomoGlassComponents Tests', () {
+  group('MomoComponents Tests', () {
     testWidgets(
       'MomoCapsuleButton renders primary and secondary styles with callbacks',
       (tester) async {
@@ -137,12 +139,12 @@ void main() {
       },
     );
 
-    testWidgets('MomoGlassCard renders and responds to tap', (tester) async {
+    testWidgets('MomoCard renders and responds to tap', (tester) async {
       bool cardTapped = false;
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: MomoGlassCard(
+            body: MomoCard(
               onTap: () => cardTapped = true,
               child: const Text('卡片内容'),
             ),
@@ -155,12 +157,12 @@ void main() {
       expect(cardTapped, isTrue);
     });
 
-    testWidgets('MomoGlassSearchBar inputs text', (tester) async {
+    testWidgets('MomoSearchField inputs text', (tester) async {
       String submitted = '';
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: MomoGlassSearchBar(
+            body: MomoSearchField(
               hintText: '搜索商品...',
               onSubmitted: (val) => submitted = val,
             ),

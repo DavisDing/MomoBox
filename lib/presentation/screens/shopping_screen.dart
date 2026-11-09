@@ -1,5 +1,5 @@
 import '../widgets/momo_mobile_layout.dart';
-import '../widgets/momo_glass_components.dart';
+import '../widgets/momo_components.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -27,7 +27,7 @@ class _ShoppingScreenState extends ConsumerState<ShoppingScreen> {
   Widget build(BuildContext context) {
     final shopping = ref.watch(shoppingProvider);
     return Scaffold(
-      appBar: MomoGlassAppBar.adaptive(
+      appBar: MomoAppBar.adaptive(
         context,
         title: const Text('待采买清单'),
         actions: [
@@ -142,7 +142,7 @@ class _ShoppingScreenState extends ConsumerState<ShoppingScreen> {
         children: [
           Text(title, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 6),
-          ...entries.map((entry) => MomoGlassCard(
+          ...entries.map((entry) => MomoCard(
               padding: EdgeInsets.zero,
               margin: const EdgeInsets.only(bottom: 8),
               child: ListTile(

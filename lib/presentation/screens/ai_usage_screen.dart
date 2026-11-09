@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/ai_usage_models.dart';
 import '../controllers/providers.dart';
-import '../widgets/momo_glass_components.dart';
+import '../widgets/momo_components.dart';
 import '../widgets/momo_floating_dock.dart';
 
 class AiUsageScreen extends ConsumerStatefulWidget {
@@ -30,7 +30,7 @@ class _AiUsageScreenState extends ConsumerState<AiUsageScreen> {
     final summary = AiUsageSummary.aggregate(filteredLogs);
 
     return Scaffold(
-      appBar: MomoGlassAppBar.adaptive(
+      appBar: MomoAppBar.adaptive(
         context,
         title: const Text('AI 用量统计与日志'),
         actions: [
@@ -85,8 +85,7 @@ class _AiUsageScreenState extends ConsumerState<AiUsageScreen> {
           const SizedBox(height: 16),
 
           // 核心汇总数据卡片
-          MomoGlassCard(
-            frosted: false,
+          MomoCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -185,11 +184,10 @@ class _AiUsageScreenState extends ConsumerState<AiUsageScreen> {
     final timeStr = '${log.timestamp.month.toString().padLeft(2, '0')}-${log.timestamp.day.toString().padLeft(2, '0')} ${log.timestamp.hour.toString().padLeft(2, '0')}:${log.timestamp.minute.toString().padLeft(2, '0')}:${log.timestamp.second.toString().padLeft(2, '0')}';
     final isQa = log.purpose == 'qa';
 
-    return MomoGlassCard(
+    return MomoCard(
       key: ValueKey('ai-log-${log.id}'),
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
-      frosted: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

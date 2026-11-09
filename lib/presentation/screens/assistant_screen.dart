@@ -1,87 +1,33 @@
-import '../widgets/momo_mobile_layout.dart';
-import 'momo_floating_dock.dart';
-import '../../app/momo_typography.dart';
-import '../screens/alerts_screen.dart';
-import '../screens/home_assistant_settings_screen.dart';
-import '../screens/inventory_screen.dart';
-import '../screens/nas_settings_screen.dart';
-import '../screens/settings_screen.dart';
-import '../screens/shopping_screen.dart';
-import '../screens/statistics_screen.dart';
-import '../screens/sync_settings_screen.dart';
-import 'intake_sheet.dart';
-import 'momo_glass_components.dart';
-import '../../application/ai_inventory_action_service.dart';
-import '../../application/ai_conversation_store.dart';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../app/momo_theme.dart';
-import '../controllers/providers.dart';
-import 'package:uuid/uuid.dart';
+import '../../app/momo_typography.dart';
 import '../../application/ai_assistant_service.dart';
+import '../../application/ai_conversation_store.dart';
+import '../../application/ai_inventory_action_service.dart';
+import '../controllers/providers.dart';
+import '../widgets/intake_sheet.dart';
+import '../widgets/momo_floating_dock.dart';
+import '../widgets/momo_mobile_layout.dart';
+import 'alerts_screen.dart';
+import 'home_assistant_settings_screen.dart';
+import 'inventory_screen.dart';
+import 'nas_settings_screen.dart';
+import 'settings_screen.dart';
+import 'shopping_screen.dart';
+import 'statistics_screen.dart';
+import 'sync_settings_screen.dart';
 
-enum AiPlanStatus {
-  idle,
-  proposed,
-  confirmed,
-  cancelled,
-}
-
-class MixedPlanData {
-  const MixedPlanData({
-    required this.taskTitle,
-    required this.deviceAction,
-    required this.consumables,
-    required this.selectedConsumable,
-    this.status = AiPlanStatus.proposed,
-  });
-
-  final String taskTitle;
-  final String deviceAction;
-  final List<String> consumables;
-  final String selectedConsumable;
-  final AiPlanStatus status;
-
-  MixedPlanData copyWith({
-    String? selectedConsumable,
-    AiPlanStatus? status,
-  }) {
-    return MixedPlanData(
-      taskTitle: taskTitle,
-      deviceAction: deviceAction,
-      consumables: consumables,
-      selectedConsumable: selectedConsumable ?? this.selectedConsumable,
-      status: status ?? this.status,
-    );
-  }
-}
-
-
-class AiAssistantDialog extends ConsumerStatefulWidget {
-  const AiAssistantDialog({this.fullPage = false, super.key});
-
-  final bool fullPage;
-
-  static Future<void> show(BuildContext context) {
-    return showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-        child: const AiAssistantDialog(),
-      ),
-    );
-  }
+class AssistantScreen extends ConsumerStatefulWidget {
+  const AssistantScreen({super.key});
 
   @override
-  ConsumerState<AiAssistantDialog> createState() => _AiAssistantDialogState();
+  ConsumerState<AssistantScreen> createState() => _AssistantScreenState();
 }
 
-class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
+class _AssistantScreenState extends ConsumerState<AssistantScreen> {
   AiConversationStore get _store => ref.read(aiConversationStoreProvider);
   List<AiSession> get _sessions => _store.sessions;
   String get _currentSessionId => _store.currentId;
@@ -89,7 +35,6 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
   final _textController = TextEditingController();
   final _scrollController = ScrollController();
 
-  MixedPlanData? _currentPlan;
   bool _checkingConsent = false;
 
   AiSession get _currentSession {
@@ -103,7 +48,6 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
 
   void _createNewSession() {
     _store.create();
-    setState(() => _currentPlan = null);
     _scrollToBottom();
   }
 
@@ -130,13 +74,11 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
 
   void _switchSession(String sessionId) {
     _store.select(sessionId);
-    setState(() => _currentPlan = null);
     _scrollToBottom();
   }
 
   void _deleteSession(String sessionId) {
     _store.delete(sessionId);
-    setState(() => _currentPlan = null);
   }
 
   @override
@@ -317,35 +259,6 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
     _ => const SettingsScreen(),
   };
 
-  void _confirmPlan() {
-    if (_currentPlan == null) return;
-    setState(() {
-      _currentPlan = _currentPlan!.copyWith(status: AiPlanStatus.cancelled);
-      _messages.add(ChatMessage(
-        id: const Uuid().v4(),
-        role: 'assistant',
-        content: '混合计划执行尚未支持。未发送设备指令，也未扣减耗材。',
-        timestamp: DateTime.now(),
-      ));
-    });
-    _scrollToBottom();
-  }
-
-  void _cancelPlan() {
-    setState(() {
-      _currentPlan = _currentPlan?.copyWith(status: AiPlanStatus.cancelled);
-      _messages.add(
-        ChatMessage(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          role: 'assistant',
-          content: '已取消本次洗衣服混合计划。',
-          timestamp: DateTime.now(),
-        ),
-      );
-    });
-    _scrollToBottom();
-  }
-
   @override
   Widget build(BuildContext context) {
     ref.watch(aiConversationStoreProvider);
@@ -353,10 +266,9 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
     final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
     final theme = Theme.of(context);
 
-    final welcome = widget.fullPage && _messages.length == 1 && _messages.first.content.startsWith('你好呀！');
+    final welcome = _messages.length == 1 && _messages.first.content.startsWith('你好呀！');
     final content = SafeArea(
-          top: widget.fullPage,
-          bottom: !widget.fullPage,
+          bottom: false,
           child: Column(
             children: [
               // Session tools share one menu when text or screen size needs space.
@@ -372,7 +284,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                         icon: const Icon(Icons.more_horiz_rounded),
                         onSelected: (value) {
                           if (value == 'new') _createNewSession();
-                          if (value == 'history') _showHistorySessionsSheet(context, palette);
+                          if (value == 'history') _showHistorySessionsSheet(context);
                         },
                         itemBuilder: (_) => const [
                           PopupMenuItem(value: 'new', child: Text('新建会话')),
@@ -382,7 +294,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                     else ...[
                       IconButton(tooltip: '新建会话', icon: const Icon(Icons.add_comment_outlined), onPressed: _createNewSession),
                       IconButton(tooltip: '历史会话', icon: const Icon(Icons.history_rounded),
-                        onPressed: () => _showHistorySessionsSheet(context, palette)),
+                        onPressed: () => _showHistorySessionsSheet(context)),
                     ],
                     if (compact)
                       IconButton(tooltip:'AI 服务',icon:const Icon(Icons.tune_rounded),
@@ -393,8 +305,6 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                       onPressed:()=>Navigator.of(context,rootNavigator:true).push(
                         MaterialPageRoute<void>(builder:(_)=>const AiSettingsScreen())),
                     ),
-                    if (!widget.fullPage) IconButton(tooltip: '关闭助手', icon: const Icon(Icons.close_rounded),
-                      onPressed: () => Navigator.of(context).pop()),
                   ]);
                 }),
               ),
@@ -441,56 +351,51 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                 child: ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.all(16),
-                  itemCount: _messages.length + (_currentPlan != null ? 1 : 0),
+                  itemCount: _messages.length,
                   itemBuilder: (context, index) {
                     if (welcome && index == 0) return _buildWelcome(theme);
-                    if (index < _messages.length) {
-                      final msg = _messages[index];
-                      final isUser = msg.role == 'user';
-                      return Align(
-                        alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-                        child: Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.82),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: isUser ? theme.colorScheme.surfaceContainerHighest : theme.colorScheme.surface,
-                            borderRadius: BorderRadius.only(
-                              topLeft: const Radius.circular(16),
-                              topRight: const Radius.circular(16),
-                              bottomLeft: Radius.circular(isUser ? 16 : 4),
-                              bottomRight: Radius.circular(isUser ? 4 : 16),
-                            ),
-                            border: isUser
-                                ? null
-                                : Border.all(
-                                    color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
-                                  ),
+                    final msg = _messages[index];
+                    final isUser = msg.role == 'user';
+                    return Align(
+                      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.82),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: isUser ? theme.colorScheme.surfaceContainerHighest : theme.colorScheme.surface,
+                          borderRadius: BorderRadius.only(
+                            topLeft: const Radius.circular(16),
+                            topRight: const Radius.circular(16),
+                            bottomLeft: Radius.circular(isUser ? 16 : 4),
+                            bottomRight: Radius.circular(isUser ? 4 : 16),
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [SelectableText(
-                            isUser ? msg.content : AiInventoryAction.displayText(msg.content),
-                            style: TextStyle(
-                              color: theme.colorScheme.onSurface,
-                              fontSize: MomoTextSize.title,
-                              height: 1.5,
-                            ),
-                          ),
-                          if (!isUser && AiInventoryAction.parse(msg.content) != null)
-                            TextButton(
-                              onPressed: _store.actionReceipts.containsKey(msg.id) ||
-                                  !(ref.watch(aiInventoryPermissionProvider).valueOrNull ?? false)
-                                  ? null : () => _confirmInventoryAction(msg),
-                              child: Text(_store.actionReceipts[msg.id] ?? '查看并确认操作'),
-                            ),
-                          ],),
+                          border: isUser
+                              ? null
+                              : Border.all(
+                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
+                                ),
                         ),
-                      );
-                    } else {
-                      // 渲染混合任务确认卡片
-                      return _buildPlanConfirmCard(palette);
-                    }
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [SelectableText(
+                          isUser ? msg.content : AiInventoryAction.displayText(msg.content),
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurface,
+                            fontSize: MomoTextSize.title,
+                            height: 1.5,
+                          ),
+                        ),
+                        if (!isUser && AiInventoryAction.parse(msg.content) != null)
+                          TextButton(
+                            onPressed: _store.actionReceipts.containsKey(msg.id) ||
+                                !(ref.watch(aiInventoryPermissionProvider).valueOrNull ?? false)
+                                ? null : () => _confirmInventoryAction(msg),
+                            child: Text(_store.actionReceipts[msg.id] ?? '查看并确认操作'),
+                          ),
+                        ],),
+                      ),
+                    );
                   },
                 ),
               ),
@@ -504,7 +409,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                       SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: palette.primary),
+                        child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.primary),
                       ),
                       const SizedBox(width: 8),
                       Flexible(child: Text('${palette.mascotName} 正在思考…', style: theme.textTheme.bodySmall)),
@@ -543,17 +448,10 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
             ],
           ),
         );
-    if (widget.fullPage) {
-      return Scaffold(body: Padding(
-        padding: EdgeInsets.only(bottom: MomoDockInsets.bottomOf(context)),
-        child: content,
-      ));
-    }
-    return SizedBox(
-      height: (MediaQuery.sizeOf(context).height - MediaQuery.viewInsetsOf(context).bottom) * .92,
-      child: MomoGlassCard(borderRadius: 28, margin: EdgeInsets.zero,
-        padding: EdgeInsets.zero, child: content),
-    );
+    return Scaffold(body: Padding(
+      padding: EdgeInsets.only(bottom: MomoDockInsets.bottomOf(context)),
+      child: content,
+    ));
   }
 
   Widget _buildWelcome(ThemeData theme) => Padding(
@@ -588,110 +486,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
     );
   }
 
-  Widget _buildPlanConfirmCard(MomoPalette palette) {
-    final plan = _currentPlan;
-    if (plan == null) return const SizedBox.shrink();
-
-    final isProposed = plan.status == AiPlanStatus.proposed;
-
-    return MomoGlassCard(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      frosted: false,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.assignment_turned_in_outlined, color: palette.primary, size: 20),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  plan.taskTitle,
-                  style: const TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.bold),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: isProposed ? Colors.orange.withValues(alpha: 0.15) : Colors.green.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  isProposed ? '待确认计划' : (plan.status == AiPlanStatus.confirmed ? '已执行' : '已取消'),
-                  style: TextStyle(
-                    fontSize: MomoTextSize.caption,
-                    fontWeight: FontWeight.bold,
-                    color: isProposed ? Colors.orange.shade800 : Colors.green,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text('1. 设备联动：${plan.deviceAction}', style: const TextStyle(fontSize: MomoTextSize.body)),
-          const SizedBox(height: 8),
-          const Text('2. 耗材扣减配方（请确认使用耗材）：', style: TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 6),
-          ...plan.consumables.map((c) {
-            final isSelected = c == plan.selectedConsumable;
-            return InkWell(
-              onTap: isProposed
-                  ? () {
-                      setState(() {
-                        _currentPlan = plan.copyWith(selectedConsumable: c);
-                      });
-                    }
-                  : null,
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  children: [
-                    Icon(
-                      isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
-                      size: 18,
-                      color: isSelected ? palette.primary : Colors.grey,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        c,
-                        style: TextStyle(
-                          fontSize: MomoTextSize.body,
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }),
-          if (isProposed) ...[
-            const SizedBox(height: 14),
-            Wrap(
-              alignment: WrapAlignment.end,
-              spacing: 12,
-              runSpacing: 8,
-              children: [
-                OutlinedButton(
-                  onPressed: _cancelPlan,
-                  child: const Text('取消'),
-                ),
-                FilledButton.icon(
-                  onPressed: _confirmPlan,
-                  icon: const Icon(Icons.check_rounded, size: 18),
-                  label: const Text('确认执行计划'),
-                ),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  void _showHistorySessionsSheet(BuildContext context, MomoPalette palette) {
+  void _showHistorySessionsSheet(BuildContext context) {
     final theme = Theme.of(context);
 
     showModalBottomSheet<void>(
@@ -756,7 +551,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
 
                         return Material(
                           color: isCurrent
-                              ? palette.primary.withValues(alpha: 0.12)
+                              ? theme.colorScheme.primary.withValues(alpha: 0.12)
                               : theme.colorScheme.surface,
                           borderRadius: BorderRadius.circular(14),
                           child: InkWell(
@@ -772,7 +567,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                                   Icon(
                                     isCurrent ? Icons.chat_bubble : Icons.chat_bubble_outline,
                                     size: 18,
-                                    color: isCurrent ? palette.primary : Colors.grey,
+                                    color: isCurrent ? theme.colorScheme.primary : Colors.grey,
                                   ),
                                   const SizedBox(width: 12),
                                   Expanded(
@@ -784,7 +579,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                                           style: TextStyle(
                                             fontSize: MomoTextSize.body,
                                             fontWeight: isCurrent ? FontWeight.bold : FontWeight.w500,
-                                            color: isCurrent ? palette.primary : null,
+                                            color: isCurrent ? theme.colorScheme.primary : null,
                                           ),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,

@@ -16,7 +16,7 @@ import 'package:momo_box/domain/models/recognition_models.dart';
 import 'package:momo_box/presentation/controllers/providers.dart';
 import 'package:momo_box/presentation/screens/ai_usage_screen.dart';
 import 'package:momo_box/presentation/screens/settings_screen.dart';
-import 'package:momo_box/presentation/widgets/ai_assistant_dialog.dart';
+import 'package:momo_box/presentation/screens/assistant_screen.dart';
 import 'package:momo_box/services/secure_settings_service.dart';
 
 void main() {
@@ -324,12 +324,12 @@ void main() {
         child: MaterialApp(
           theme: buildMomoTheme(MomoPalette.defaultPalette, Brightness.light),
           darkTheme: darkTheme,
-          home: const Scaffold(body: AiAssistantDialog()),
+          home: const AssistantScreen(),
         ),
       ),
     );
     await tester.pumpAndSettle();
-    final assistant = find.byType(AiAssistantDialog);
+    final assistant = find.byType(AssistantScreen);
     expect(Theme.of(tester.element(assistant)).brightness, Brightness.dark);
     for (final container in tester.widgetList<Container>(
       find.descendant(of: assistant, matching: find.byType(Container)),

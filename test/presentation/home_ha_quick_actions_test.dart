@@ -812,21 +812,25 @@ void main() {
       await _unmountHome(tester);
     });
 
-    testWidgets('scene/script 实体不会作为开关；场景沿用家居页未接入语义', (tester) async {
-      final repository = _FakeHaRepository()
-        ..entities = [_entity(entityId: 'scene.night', domain: 'scene')]
-        ..permissions = [_permission(entityId: 'scene.night')];
-      final controller = _SceneTestController(repository);
-      await controller.refresh();
-      controller.seedScene();
-      await _pumpHome(tester, controller);
-      expect(find.byType(Switch), findsNothing);
-      await tester.tap(find.text('晚安'));
-      await tester.pumpAndSettle();
-      expect(find.text('场景快捷执行尚未接入，未执行【晚安】。'), findsOneWidget);
-      expect(repository.commands, isEmpty);
-      await _unmountHome(tester);
-    });
+    for (final domain in ['scene', 'script']) {
+      for (final home in [true, false]) {
+        testWidgets('${home ? '今日' : '家居'}：$domain 实体不生成演示卡片或设备开关', (tester) async {
+          final entityId = '$domain.night';
+          final repository = _FakeHaRepository()
+            ..entities = [_entity(entityId: entityId, domain: domain)]
+            ..permissions = [_permission(entityId: entityId)]
+            ..remoteState = _state(entityId: entityId);
+          final controller = await _controller(repository);
+          await _pumpHome(tester, controller, screen: home ? const HomeScreen() : const SmartHomeScreen());
+          expect(find.byType(Switch), findsNothing);
+          expect(find.text('常用全屋场景'), findsNothing);
+          expect(find.text('晚安'), findsNothing);
+          expect(repository.commands, isEmpty);
+          expect(tester.takeException(), isNull);
+          await _unmountHome(tester);
+        });
+      }
+    }
 
     testWidgets('首页 HA 服务行读取真实控制器状态，而非固定未接入', (tester) async {
       final controller = await _controller(_FakeHaRepository());
@@ -1092,14 +1096,4 @@ class _FakeNasConnectionService extends NasConnectionService {
   @override
   Future<NasConnectionState> loadState() async =>
       const NasConnectionState(status: NasConnectionStatus.unconfigured);
-}
-
-class _SceneTestController extends SmartHomeController {
-  _SceneTestController(super.repository)
-      : super(nasAddress: 'http://nas.local', role: 'member');
-  void seedScene() {
-    state = state.copyWith(scenes: const [SmartScene(
-      id: 'ha::scene.night', name: '晚安', icon: '🌙', description: '测试场景',
-    )]);
-  }
 }

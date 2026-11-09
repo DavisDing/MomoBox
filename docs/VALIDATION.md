@@ -683,3 +683,23 @@ Docker/Compose运行与镜像构建、实际PG18/NAS初始化和重启/升级、
 - 本会话HTML效果图是已确认设计参考，不能用作本次Flutter代码运行截图或设备验收。
 
 实现已经落盘，运行验收仍待完成。临时解析器只证明语法，不能证明Flutter API兼容、布局无溢出或业务用例通过。
+
+## 2026-11-09：旧 UI 删除与引用迁移
+
+范围：用户明确要求删除无引用的旧 UI，并将有引用的旧代码迁到当前设计后删除。开始时 `HEAD=9c7e7c1`，工作区干净；本记录仅针对本轮未提交改动，不代表远端 CI 或安装包结果。
+
+已完成源码调整：独立 `AssistantScreen` 取代旧弹层与展示分支；删除不可达混合计划卡片、`/profile` 重复路由、演示场景状态/卡片及旧模拟家居仓库；页面和测试迁至 `momo_components.dart`，去掉卡片磨砂/皮肤覆盖分支。页面颜色统一使用 Theme，皮肤色样与用户偏好保留。没有数据库、后端 API 或依赖变化。
+
+### 已执行
+
+- Dart tree-sitter语法解析：PASS，`lib/`、`test/` 共205个文件，0解析错误。
+- 项目内相对及 `package:momo_box/` 的 import/export/part 目标检查：PASS，共955处，0缺失。
+- 从 `lib/main.dart` 按导入/导出/part 扫描：32个 presentation 文件均可达；私有 Widget 方法未发现仅有声明的符号。文件可达不等于每个运行分支都经过实机验证。
+- 对 `lib/`、`test/` 搜索已删除的助手类型/文件、混合计划类型/状态/回调、`fullPage`、旧共享组件类型/文件、`frosted`、`SmartScene`/场景字段、旧模拟仓库、`/profile` 和 `inventoryIcon`：0残留引用。
+- 差异复核与 `git diff --check`：PASS。历史设计稿和审计材料保留，不作为运行代码。
+
+### NOT_EXECUTED
+
+- Flutter analyze、Widget测试、Android/iOS构建、运行截图和真机视觉验收：本机Flutter/Dart不在PATH；已配置的 `/private/tmp/momobox-audit-toolchains/flutter` 及此前临时Flutter目录均没有SDK可执行文件。本轮未安装工具链或新增依赖。
+- 已迁移会话/在途回复/库存确认/导航/深色/视口测试；离页重开用例增加会话ID与数量不变断言，场景边界改用真实控制器覆盖今日/家居的scene/script，卡片测试检查Theme颜色、语义及不叠加模糊。这些是测试源码变更，尚未运行，不能称测试通过。
+- 后续按CI先执行 `flutter pub get`、`dart run build_runner build --delete-conflicting-outputs`，再执行 `flutter analyze`、`flutter test test/presentation/`。本轮没有提交、推送或发布。

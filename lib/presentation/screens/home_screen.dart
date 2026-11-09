@@ -1,6 +1,6 @@
 import '../widgets/momo_mobile_layout.dart';
 import '../widgets/momo_floating_dock.dart';
-import '../widgets/momo_glass_components.dart';
+import '../widgets/momo_components.dart';
 import '../../app/momo_typography.dart';
 import '../widgets/calendar_sync_dialog.dart';
 import '../widgets/chores_sheet.dart';
@@ -61,9 +61,9 @@ class HomeScreen extends ConsumerWidget {
               case 'shopping_summary':
                 return _buildShoppingSummaryCard(context, shoppingAsync, summary, palette);
               case 'chores_card':
-                return _buildChoresCard(context, ref, palette);
+                return _buildChoresCard(context, ref);
               case 'smart_home_quick':
-                return _buildSmartHomeQuickSection(context, ref, homeState, palette);
+                return _buildSmartHomeQuickSection(context, ref, homeState);
               default:
                 return const SizedBox.shrink();
             }
@@ -139,7 +139,7 @@ class HomeScreen extends ConsumerWidget {
   Widget _buildTodayHero(BuildContext context, ReminderSummary summary) {
     final theme = Theme.of(context);
     final count = summary.expiring.length + summary.expired.length;
-    return MomoGlassCard(color: theme.colorScheme.primaryContainer.withValues(alpha: .45),
+    return MomoCard(color: theme.colorScheme.primaryContainer.withValues(alpha: .45),
       borderRadius: 24, margin: EdgeInsets.zero, padding: const EdgeInsets.all(22),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [Icon(Icons.eco_outlined, size: 16, color: theme.colorScheme.primary),
@@ -284,7 +284,7 @@ class HomeScreen extends ConsumerWidget {
     required Color color, required VoidCallback onTap,
   }) {
     final theme = Theme.of(context);
-    return MomoGlassCard(
+    return MomoCard(
       onTap: onTap,
       margin: EdgeInsets.zero,
       padding: const EdgeInsets.all(16),
@@ -309,7 +309,7 @@ class HomeScreen extends ConsumerWidget {
   ) {
     final theme = Theme.of(context);
 
-    return MomoGlassCard(
+    return MomoCard(
         padding: const EdgeInsets.all(16),
       margin: EdgeInsets.zero,
       child: Column(
@@ -317,7 +317,7 @@ class HomeScreen extends ConsumerWidget {
           children: [
           _HomeFlowRow(
               children: [
-                Icon(palette.shoppingIcon, color: palette.primary, size: 20),
+                Icon(palette.shoppingIcon, color: Theme.of(context).colorScheme.primary, size: 20),
                 const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -367,7 +367,7 @@ class HomeScreen extends ConsumerWidget {
                                 height: 6,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  color: palette.secondary,
+                                  color: Theme.of(context).colorScheme.secondary,
                                 ),
                               ),
                               const SizedBox(width: 8),
@@ -392,7 +392,7 @@ class HomeScreen extends ConsumerWidget {
                         padding: const EdgeInsets.only(top: 6),
                         child: Text(
                           '等共计 ${pending.length} 项待采购...',
-                          style: TextStyle(fontSize: MomoTextSize.caption, color: palette.primary),
+                          style: TextStyle(fontSize: MomoTextSize.caption, color: Theme.of(context).colorScheme.primary),
                         ),
                       ),
                   ],
@@ -408,12 +408,9 @@ class HomeScreen extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     SmartHomeState homeState,
-    MomoPalette palette,
   ) {
     final theme = Theme.of(context);
 
-    // 取前两个常用场景 + 前两个常用设备
-    final quickScenes = homeState.scenes.take(2).toList();
     // Scenes/scripts have no confirmed execution flow on the smart-home page;
     // do not accidentally expose them as toggleable device switches here.
     final sceneEntityIds = homeState.entities
@@ -426,7 +423,7 @@ class HomeScreen extends ConsumerWidget {
         .toList();
     final controller = ref.read(smartHomeControllerProvider.notifier);
 
-    return MomoGlassCard(
+    return MomoCard(
         padding: const EdgeInsets.all(16),
       margin: EdgeInsets.zero,
       child: Column(
@@ -450,51 +447,6 @@ class HomeScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 10),
 
-            // 常用场景胶囊
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final scale =
-                  MediaQuery.textScalerOf(context).scale(MomoTextSize.body) /
-                  MomoTextSize.body;
-              final columns =
-                  constraints.maxWidth >= 480 && scale <= 1.3 ? 2 : 1;
-              final itemWidth =
-                  (constraints.maxWidth - (columns - 1) * 8) / columns;
-              return Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: quickScenes.map((scene) {
-                return SizedBox(
-                        width: itemWidth,
-                        child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: MomoCapsuleButton(
-                            isPrimary: false,
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            label: scene.name,
-                            icon: Text(
-                              scene.icon,
-                              style: const TextStyle(fontSize: 16),
-                      ),
-                      onPressed: homeState.isLoading || homeState.isCommandLoading
-                          ? null
-                          : () {
-                              // Preserve the current smart-home page's explicit
-                              // unsupported semantics; never claim execution.
-                              showAppSnackBar(context, SnackBar(
-                                content: Text('场景快捷执行尚未接入，未执行【${scene.name}】。'),
-                              ));
-                            },
-                          ),
-                  ),
-                );
-              }).toList(),
-            );
-            },
-          ),
-
-          const SizedBox(height: 12),
-
             // 常用设备小开关
           LayoutBuilder(
             builder: (context, constraints) {
@@ -516,7 +468,7 @@ class HomeScreen extends ConsumerWidget {
                     homeState.commandDeviceId == device.id;
                 return SizedBox(
                         width: itemWidth,
-                        child: MomoGlassCard(
+                        child: MomoCard(
                     margin: const EdgeInsets.symmetric(horizontal: 4),
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                           child: _HomeFlowRow(
@@ -542,7 +494,7 @@ class HomeScreen extends ConsumerWidget {
                           child: Switch.adaptive(
                             key: ValueKey('home-ha-toggle-${device.id}'),
                             value: device.isOn,
-                            activeTrackColor: palette.primary,
+                            activeTrackColor: Theme.of(context).colorScheme.primary,
                             onChanged: unavailable != null ? null : (turnOn) async {
                               // The controller rechecks at submission time and
                               // changes state only from a matching NAS response.
@@ -572,7 +524,7 @@ class HomeScreen extends ConsumerWidget {
           ),
             if (homeState.isLoading) const LinearProgressIndicator(),
             if (homeState.message != null || homeState.commandError != null ||
-                (quickDevices.isEmpty && quickScenes.isEmpty))
+                quickDevices.isEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
@@ -585,11 +537,11 @@ class HomeScreen extends ConsumerWidget {
       );
   }
 
-  Widget _buildChoresCard(BuildContext context, WidgetRef ref, MomoPalette palette) {
+  Widget _buildChoresCard(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final choresAsync = ref.watch(choresProvider);
 
-    return MomoGlassCard(
+    return MomoCard(
         padding: const EdgeInsets.all(16),
       margin: EdgeInsets.zero,
       child: Column(
@@ -597,7 +549,7 @@ class HomeScreen extends ConsumerWidget {
           children: [
           _HomeFlowRow(
               children: [
-                Icon(Icons.repeat_rounded, color: palette.primary, size: 20),
+                Icon(Icons.repeat_rounded, color: Theme.of(context).colorScheme.primary, size: 20),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -629,12 +581,12 @@ class HomeScreen extends ConsumerWidget {
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       child: _HomeFlowRow(
                         children: [
-                          Icon(Icons.add_circle_outline_rounded, size: 16, color: palette.primary),
+                          Icon(Icons.add_circle_outline_rounded, size: 16, color: Theme.of(context).colorScheme.primary),
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
                               '设置常规定期家务（如换床单、洗浴巾、换滤芯）',
-                              style: TextStyle(fontSize: MomoTextSize.body, color: palette.primary),
+                              style: TextStyle(fontSize: MomoTextSize.body, color: Theme.of(context).colorScheme.primary),
                             ),
                           ),
                         ],
@@ -691,7 +643,7 @@ class HomeScreen extends ConsumerWidget {
                                   );
                                 }
                               },
-                              icon: Icon(Icons.check_circle_outline, size: 24, color: palette.primary),
+                              icon: Icon(Icons.check_circle_outline, size: 24, color: Theme.of(context).colorScheme.primary),
                             ),
                           ],
                         ),

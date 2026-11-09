@@ -2,14 +2,13 @@ import '../../app/momo_typography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../app/momo_theme.dart';
 import '../../application/nas_connection_service.dart';
 import '../../application/nas_auth_service.dart';
 import '../../domain/models/nas_family_device_models.dart';
 import '../../domain/models/nas_models.dart';
 import '../controllers/nas_account_controller.dart';
 import '../controllers/providers.dart';
-import '../widgets/momo_glass_components.dart';
+import '../widgets/momo_components.dart';
 import '../widgets/momo_floating_dock.dart';
 import '../widgets/app_feedback.dart';
 
@@ -382,7 +381,6 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
     final connection = ref.watch(nasConnectionProvider);
     final account = ref.watch(nasAccountProvider);
     final statusColor = _statusColor(context, connection.status);
@@ -394,7 +392,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
     }
 
     return Scaffold(
-      appBar: MomoGlassAppBar.adaptive(context, title: const Text('NAS 协同与家庭共享')),
+      appBar: MomoAppBar.adaptive(context, title: const Text('NAS 协同与家庭共享')),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
           16, 16, 16, 16 + MomoDockInsets.bottomOf(context),
@@ -402,15 +400,15 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
         children: [
           _buildConnectionSummary(context, connection, statusColor),
           const SizedBox(height: 12),
-          _buildConnectionCard(context, palette, connection),
+          _buildConnectionCard(context, connection),
           const SizedBox(height: 12),
           _buildAccountCard(context, account, connection),
           if (account.isAuthenticated) ...[
             const SizedBox(height: 12),
-            _buildFamilyCard(context, account, palette),
+            _buildFamilyCard(context, account),
             if (account.family.hasFamily) ...[
               const SizedBox(height: 12),
-              _buildDeviceCard(context, account, palette),
+              _buildDeviceCard(context, account),
             ],
           ],
           const SizedBox(height: 12),
@@ -425,8 +423,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
     NasConnectionState state,
     Color statusColor,
   ) {
-    return MomoGlassCard(
-      frosted: false,
+    return MomoCard(
       child: Row(
         children: [
           Container(
@@ -471,7 +468,6 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
 
   Widget _buildConnectionCard(
     BuildContext context,
-    MomoPalette palette,
     NasConnectionState state,
   ) {
     final isChecking = state.status == NasConnectionStatus.checking;
@@ -512,7 +508,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
               title: const Text('局域网自动双向同步', style: TextStyle(fontSize: MomoTextSize.body)),
               subtitle: const Text('保存偏好；具体同步由 NAS 账户与同步协议状态决定', style: TextStyle(fontSize: MomoTextSize.caption)),
               value: _autoSync,
-              activeTrackColor: palette.primary,
+              activeTrackColor: Theme.of(context).colorScheme.primary,
               onChanged: (v) => setState(() => _autoSync = v),
             ),
             SwitchListTile.adaptive(
@@ -520,7 +516,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
               title: const Text('同步物资照片与包装原图', style: TextStyle(fontSize: MomoTextSize.body)),
               subtitle: const Text('保存偏好；服务端未开放媒体同步时不会上传', style: TextStyle(fontSize: MomoTextSize.caption)),
               value: _syncImages,
-              activeTrackColor: palette.primary,
+              activeTrackColor: Theme.of(context).colorScheme.primary,
               onChanged: (v) => setState(() => _syncImages = v),
             ),
             const SizedBox(height: 12),
@@ -627,7 +623,6 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
   Widget _buildFamilyCard(
     BuildContext context,
     NasAccountState account,
-    MomoPalette palette,
   ) {
     final family = account.family;
     final isLoading = family.status == NasFamilyStatus.loading;
@@ -713,7 +708,6 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
   Widget _buildDeviceCard(
     BuildContext context,
     NasAccountState account,
-    MomoPalette palette,
   ) {
     final devices = account.devices;
     final isLoading = devices.status == NasDeviceStatus.loading;
@@ -739,7 +733,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(
                     device.id == devices.currentDeviceId ? Icons.phone_android : Icons.devices_other,
-                    color: device.id == devices.currentDeviceId ? palette.primary : null,
+                    color: device.id == devices.currentDeviceId ? Theme.of(context).colorScheme.primary : null,
                   ),
                   title: Text(device.deviceName),
                   subtitle: Text('${device.platform}${device.isCurrent == true ? ' · 当前设备' : ''}'),

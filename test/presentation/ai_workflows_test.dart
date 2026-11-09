@@ -23,7 +23,7 @@ import 'package:momo_box/domain/models/ai_usage_models.dart';
 import 'package:momo_box/presentation/controllers/providers.dart';
 import 'package:momo_box/presentation/screens/ai_usage_screen.dart';
 import 'package:momo_box/presentation/screens/settings_screen.dart';
-import 'package:momo_box/presentation/widgets/ai_assistant_dialog.dart';
+import 'package:momo_box/presentation/screens/assistant_screen.dart';
 import 'package:momo_box/presentation/widgets/intake_sheet.dart';
 
 import '../support/memory_settings_repository.dart';
@@ -63,7 +63,7 @@ void main() {
       inventoryServiceProvider.overrideWithValue(inventory),
       aiConversationStoreProvider.overrideWith((ref) => store),
       aiInventoryActionServiceProvider.overrideWithValue(AiInventoryActionService(settings, inventory)),
-    ], child: const MaterialApp(home: Scaffold(body: AiAssistantDialog()))));
+    ], child: const MaterialApp(home: AssistantScreen())));
     Future<void> flush() async {
       await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
       await tester.pumpAndSettle();
@@ -124,7 +124,7 @@ void main() {
       inventoryServiceProvider.overrideWithValue(inventory),
       aiConversationStoreProvider.overrideWith((ref) => store),
       aiInventoryActionServiceProvider.overrideWithValue(AiInventoryActionService(settings, inventory)),
-    ], child: const MaterialApp(home: Scaffold(body: AiAssistantDialog()))));
+    ], child: const MaterialApp(home: AssistantScreen())));
     Future<void> flush() async {
       await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
       await tester.pumpAndSettle();
@@ -166,7 +166,7 @@ void main() {
     await flush();
   });
 
-  testWidgets('关闭并重新打开弹窗保留在途回复和历史，无需新增会话', (tester) async {
+  testWidgets('离开并重开助手页面保留在途回复和历史，无需新增会话', (tester) async {
     final settings = MemorySettingsRepository();
     settings.values['ai_assistant_context_consent_v2'] = 'true';
     addTearDown(settings.close);
@@ -182,7 +182,9 @@ void main() {
             builder:
                 (context) => Scaffold(
                   body: TextButton(
-                    onPressed: () => AiAssistantDialog.show(context),
+                    onPressed: () => Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(builder: (_) => const AssistantScreen()),
+                    ),
                     child: const Text('打开助手'),
                   ),
                 ),
@@ -196,13 +198,20 @@ void main() {
     await tester.tap(find.byIcon(Icons.send_rounded));
     await tester.pump();
     await tester.pump();
+    final container = ProviderScope.containerOf(tester.element(find.byType(AssistantScreen)));
+    final store = container.read(aiConversationStoreProvider);
+    final sessionId = store.currentId;
+    final sessionCount = store.sessions.length;
     await tester.binding.handlePopRoute();
     await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(AssistantScreen), findsNothing);
     assistant.reply.complete('后台完成的库存回复');
     await tester.pumpAndSettle();
     await tester.tap(find.text('打开助手'));
     await tester.pumpAndSettle();
     expect(find.text('后台完成的库存回复'), findsOneWidget);
+    expect(store.currentId, sessionId);
+    expect(store.sessions.length, sessionCount);
     expect(
       settings.values[AiConversationStore.storageKey],
       contains('后台完成的库存回复'),
@@ -293,7 +302,7 @@ void main() {
             AiInventoryActionService(settings, inventory),
           ),
         ],
-        child: const MaterialApp(home: Scaffold(body: AiAssistantDialog())),
+        child: const MaterialApp(home: AssistantScreen()),
       ),
     );
     await tester.pumpAndSettle();

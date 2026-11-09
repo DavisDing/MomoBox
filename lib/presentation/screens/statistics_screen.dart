@@ -1,4 +1,4 @@
-import '../widgets/momo_glass_components.dart';
+import '../widgets/momo_components.dart';
 import '../../app/momo_typography.dart';
 import 'dart:math' as math;
 
@@ -26,7 +26,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
   Widget build(BuildContext context) {
     final statistics = ref.watch(inventoryStatisticsProvider(_days));
     return Scaffold(
-      appBar: MomoGlassAppBar.adaptive(
+      appBar: MomoAppBar.adaptive(
         context,
         title: const Text('库存统计'),
         actions: [
@@ -145,7 +145,7 @@ class _SummaryCard extends StatelessWidget {
   final Color color;
 
   @override
-  Widget build(BuildContext context) => MomoGlassCard(
+  Widget build(BuildContext context) => MomoCard(
         margin: EdgeInsets.zero,
     padding: const EdgeInsets.all(10),
           child: Column(
@@ -172,7 +172,7 @@ class _StatisticsChart extends StatelessWidget {
       Colors.green,
       Colors.orange,
     ];
-    return MomoGlassCard(
+    return MomoCard(
         padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
       margin: EdgeInsets.zero,
         child: Column(
@@ -337,7 +337,7 @@ class _TopConsumedProducts extends StatelessWidget {
   final List<InventoryProductStatistic> products;
 
   @override
-  Widget build(BuildContext context) => MomoGlassCard(
+  Widget build(BuildContext context) => MomoCard(
           padding: const EdgeInsets.all(14),
     margin: EdgeInsets.zero,
           child: Column(

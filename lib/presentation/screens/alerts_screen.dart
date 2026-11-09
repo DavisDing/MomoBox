@@ -1,5 +1,5 @@
 import '../widgets/momo_mobile_layout.dart';
-import '../widgets/momo_glass_components.dart';
+import '../widgets/momo_components.dart';
 import '../../app/momo_typography.dart';
 import '../widgets/calendar_sync_dialog.dart';
 import 'package:flutter/material.dart';
@@ -36,7 +36,7 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
     final summary = ref.watch(reminderSummaryProvider);
 
     return Scaffold(
-      appBar: MomoGlassAppBar.adaptive(
+      appBar: MomoAppBar.adaptive(
         context,
         title: const Text('效期与库存提醒'),
         actions: [
@@ -191,7 +191,7 @@ class _AlertDashboard extends StatelessWidget {
       _ => ('🧺', '留意库存，按需补货即可。', theme.colorScheme.primary),
     };
 
-    return MomoGlassCard(
+    return MomoCard(
         padding: const EdgeInsets.all(16),
       margin: EdgeInsets.zero,
         child: Column(
@@ -246,7 +246,7 @@ class _StatTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MomoGlassCard(
+    return MomoCard(
       onTap: onTap,
       color:
           isSelected
@@ -315,7 +315,7 @@ class _AlertSection extends ConsumerWidget {
           ...items.map((item) {
             final candidate = _candidateFor(item);
             final batch = candidate.batch ?? item.nearestDatedBatch;
-            return MomoGlassCard(
+            return MomoCard(
               padding: EdgeInsets.zero,
               margin: EdgeInsets.zero,
               child: ListTile(
