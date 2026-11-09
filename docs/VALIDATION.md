@@ -663,3 +663,23 @@ AI_CONTEXT长期更新建议：设备验收后局部记录双模式的图片/OCR
 Docker/Compose运行与镜像构建、实际PG18/NAS初始化和重启/升级、备份恢复及设备联调为NOT_EXECUTED（本机无Docker及目标设备访问）；本地Go/文件系统测试不能代替这些验收。工作区未提交/推送/发布，线上latest是否含本批功能未核实；必须发布对应镜像后才使用无手填密钥模板。
 
 全显式旧部署继续沿用原环境变量，不自动写入密钥文件，也不能删除后对旧库重新生成。新部署的./data/secrets.json须与数据库配套备份；现有.env运维脚本并未在本批扩展成该单文件模板的完整灾备流程。AI_CONTEXT长期事实建议在发布/设备验证后补充此部署约定。
+
+## 2026-11-09：五入口重构与紧凑家居环境
+
+范围：用户已确认V2原型与紧凑环境摘要，授权实现。工作区开始只有本会话两版未跟踪的mockups，无其他业务未提交修改。未连接用户真实库存/NAS/HA/模型，未提交推送或发布。
+
+### 已执行
+
+- `git diff --check`：PASS。
+- 临时 `tree-sitter==0.25.2` + `tree-sitter-dart==0.1.0`，安装于 `/private/tmp/momobox-implementation-syntax`，未加入项目依赖；对 `lib/` 与 `test/` 全部206个Dart文件语法解析：PASS，0解析错误。
+- 相对import/export路径检查：PASS，0缺失路径。
+- 源码接线复核：默认`/`、`/assistant`独立页、五入口/宽屏侧栏一致；原库存/采购/AI确认与typed HA控制复用，实体仍经NAS授权；公共天气从城市选择显式启用，室内不使用天气回退；配置沿用ha_备份排除，未增加schema/依赖。
+
+### NOT_EXECUTED
+
+- `flutter analyze`、`flutter test`、Android/iOS构建、Flutter实际渲染/截图：本机无Flutter/Dart；旧临时SDK与pub缓存已丢失。官方存储和Flutter中国镜像发布清单curl均返回404；官方git浅克隆持续无完成进展后停止，ls-remote出现RPC/partial transfer失败。没有系统安装或变更项目依赖来绕过。
+- 新增service/card测试、现有移动端/AI/库存/导航/设置回归尚未运行。后续入口为 `flutter test test/application/home_environment_service_test.dart test/presentation/home_environment_card_test.dart test/presentation/` 与 `flutter analyze`；应先按CI入口`flutter pub get`、Drift build_runner，再验证。
+- Open-Meteo城市/天气真实响应、HA传感器/混合来源/权限变更/离线恢复、真实触屏与读屏：未联调。
+- 本会话HTML效果图是已确认设计参考，不能用作本次Flutter代码运行截图或设备验收。
+
+实现已经落盘，运行验收仍待完成。临时解析器只证明语法，不能证明Flutter API兼容、布局无溢出或业务用例通过。

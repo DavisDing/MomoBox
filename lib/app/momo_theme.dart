@@ -35,12 +35,12 @@ class MomoPalette {
 
   static const defaultPalette = MomoPalette(
     skin: MomoSkin.defaultSkin,
-    label: '默认主题（极简蓝）',
-    primary: Color(0xFF0066CC),
-    secondary: Color(0xFF248A3D),
-    background: Color(0xFFF2F2F7),
-    surface: Colors.white,
-    text: Color(0xFF1C1C1E),
+    label: '日常有序（鼠尾草绿）',
+    primary: Color(0xFF51674B),
+    secondary: Color(0xFFAD6940),
+    background: Color(0xFFF8F8F4),
+    surface: Color(0xFFFFFEFA),
+    text: Color(0xFF252D28),
     mascot: '📦',
     mascotName: '箱宝',
     appLogoIcon: Icons.all_inbox_rounded,
@@ -138,11 +138,12 @@ class MomoPalette {
 ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
   final isDark = brightness == Brightness.dark;
   // Material colors live here so every skin and component shares dark mode.
-  final background = isDark ? Colors.black : palette.background;
-  final surface = isDark ? const Color(0xFF1C1C1E) : palette.surface;
-  final text = isDark ? Colors.white : palette.text;
+  final natural = palette.skin == MomoSkin.defaultSkin;
+  final background = isDark ? (natural ? const Color(0xFF262C25) : const Color(0xFF151715)) : palette.background;
+  final surface = isDark ? (natural ? const Color(0xFF30362C) : const Color(0xFF222522)) : palette.surface;
+  final text = isDark ? const Color(0xFFE7EADE) : palette.text;
   final action = isDark
-      ? Color.lerp(palette.primary, Colors.white, 0.35)!
+      ? (natural ? const Color(0xFFBECDA8) : Color.lerp(palette.primary, Colors.white, 0.35)!)
       : palette.primary;
   final onAction = isDark ? Colors.black : Colors.white;
   final outline = text.withValues(alpha: isDark ? 0.14 : 0.08);

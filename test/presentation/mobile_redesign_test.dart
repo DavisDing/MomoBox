@@ -15,6 +15,7 @@ import 'package:momo_box/presentation/screens/settings_screen.dart';
 import 'package:momo_box/presentation/widgets/momo_floating_dock.dart';
 import 'package:momo_box/presentation/widgets/momo_glass_components.dart';
 import 'package:momo_box/presentation/widgets/momo_mobile_layout.dart';
+import 'package:momo_box/presentation/widgets/ai_assistant_dialog.dart';
 
 void main() {
   for (final size in [const Size(320, 640), const Size(390, 844), const Size(430, 932), const Size(844, 390)]) {
@@ -44,9 +45,16 @@ void main() {
             await _frames(tester);
             final container = ProviderScope.containerOf(tester.element(find.byType(MomoBoxApp)));
             final router = container.read(appRouterProvider);
-            for (final route in ['/', '/inventory', '/smart-home', '/settings']) {
+            for (final route in ['/', '/assistant', '/inventory', '/smart-home', '/settings']) {
               router.go(route);
               await _frames(tester);
+              if (route == '/assistant') {
+                expect(find.byType(AiAssistantDialog),findsOneWidget);
+                expect(tester.widget<AiAssistantDialog>(find.byType(AiAssistantDialog)).fullPage,isTrue);
+                expect(find.byType(TextField),findsOneWidget);
+                expect(tester.takeException(),isNull,reason:route);
+                continue;
+              }
               expect(find.byType(MomoPageHeader), findsOneWidget);
               expect(MediaQuery.textScalerOf(tester.element(find.byType(MomoPageHeader))).scale(14), closeTo(14 * scale, 0.01));
               expect(tester.takeException(), isNull, reason: route);
@@ -79,7 +87,7 @@ void main() {
               if (route == '/settings') {
                 final scrollable = find.descendant(of: find.byType(SettingsScreen), matching: find.byType(Scrollable)).first;
                 expect(find.text('AI 解析与模型配置'), findsNothing);
-                for (final category in SettingsCategory.values) {
+                for (final category in [SettingsCategory.intelligence,SettingsCategory.household,SettingsCategory.appearance,SettingsCategory.data]) {
                   final entry = find.text(category.title);
                   await tester.scrollUntilVisible(entry, 200, scrollable: scrollable);
                   await _revealAboveDock(tester, entry, scrollable);

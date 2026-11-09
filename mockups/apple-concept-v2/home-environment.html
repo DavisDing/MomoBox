@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MomoBox · 家居环境概览</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="v2.css">
+  <link rel="stylesheet" href="environment.css">
+  <script src="icons.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body class="environment-study">
+  <header class="studio-header">
+    <a class="wordmark" href="#" aria-label="MomoBox 概念预览"><span class="brand-mark"><i data-lucide="box"></i></span>MomoBox<span class="edition">DESIGN HOME ENVIRONMENT / 02.1</span></a>
+    <div class="studio-actions"><span class="prototype-tag">概念预览 · 演示数据</span><button id="theme-toggle" aria-label="切换深浅色"><i data-lucide="moon"></i></button></div>
+  </header>
+  <main>
+    <div class="intro"><div><p class="eyebrow">A LITTLE ORDER. A LOT MORE LIFE.</p><h1>家的温度，一眼就懂。</h1></div><p class="intro-note">室内传感器与室外天气，各有来源。<br>公共天气补充室外，室内缺失则留空。</p></div>
+    <div class="preview-tabs" aria-label="预览页面"><button data-preview="0">传感器与家庭天气</button><button class="selected" data-preview="1">公共天气回退</button><button data-preview="2">暂无数据</button></div>
+    <div class="device-board" id="device-board">
+      <section class="device-column"><div class="device-caption"><span>01 / ASSISTANT</span><span>随时开口，都有回应</span></div><div class="phone" data-start="smartHome" data-env-mode="ha"></div></section>
+      <section class="device-column"><div class="device-caption"><span>02 / TODAY</span><span>居中的今日，日常的起点</span></div><div class="phone" data-start="smartHome" data-env-mode="public"></div></section>
+      <section class="device-column"><div class="device-caption"><span>03 / SMART HOME</span><span>家的每一处，触手可及</span></div><div class="phone" data-start="smartHome" data-env-mode="offline"></div></section>
+    </div>
+    <footer class="studio-footer"><span>WARM NEUTRALS &nbsp; / &nbsp; QUIET TYPOGRAPHY &nbsp; / &nbsp; TACTILE MOTION</span><span>来源与缺失状态对照 · 全部为演示数据</span></footer>
+  </main>
+</body>
+</html>

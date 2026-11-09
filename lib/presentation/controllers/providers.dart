@@ -1,8 +1,12 @@
 import '../../application/ai_inventory_action_service.dart';
 import '../../application/ai_fallback_executor.dart';
 import '../../application/ai_conversation_store.dart';
+import '../../application/home_environment_service.dart';
+import '../../domain/models/home_environment.dart';
+import '../../domain/models/smart_home_models.dart' show HaConnectionStatus;
 import 'smart_home_controller.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/widgets.dart' show WidgetsBinding, AppLifecycleState;
 import 'package:uuid/uuid.dart';
 
 import '../../application/ai_assistant_service.dart';
@@ -765,4 +769,44 @@ final nasFamilyErrorProvider = Provider<String?>((ref) {
 
 final nasDeviceErrorProvider = Provider<String?>((ref) {
   return ref.watch(nasDeviceStateProvider).errorMessage;
+});
+
+final publicWeatherServiceProvider = Provider<PublicWeatherService>((ref) {
+  final service = PublicWeatherService();
+  ref.onDispose(service.close);
+  return service;
+});
+
+final homeEnvironmentConfigProvider = StreamProvider<HomeEnvironmentConfig>((ref) => ref
+    .watch(settingsRepositoryProvider).watchValue(HomeEnvironmentConfig.settingsKey)
+    .map(HomeEnvironmentConfig.decode));
+
+// Only retained while the environment is visible. The weather service caches
+// requests for ten minutes; this tick updates age/expiry without extra traffic.
+final environmentClockProvider = StreamProvider.autoDispose<DateTime>((ref) async* {
+  yield DateTime.now();
+  yield* Stream.periodic(const Duration(minutes: 1), (_) => DateTime.now());
+});
+
+final homeEnvironmentProvider = FutureProvider.autoDispose<HomeEnvironment>((ref) async {
+  final config = ref.watch(homeEnvironmentConfigProvider).valueOrNull;
+  if (config == null) return const HomeEnvironment();
+  final home = ref.watch(smartHomeControllerProvider);
+  final now = ref.watch(environmentClockProvider).valueOrNull ?? DateTime.now();
+  final ha = environmentFromHa(config, home.entities, home.entityStates, now:now,
+    staleEntityKeys:home.staleEntityIds,
+    forceStale:!home.nasOnline || {HaConnectionStatus.offline,HaConnectionStatus.unconfigured}.contains(home.haStatus));
+  final lifecycle = WidgetsBinding.instance.lifecycleState;
+  if (lifecycle != null && lifecycle != AppLifecycleState.resumed) return ha;
+  if (config.place == null ||
+      (ha.outdoorTemperature != null && !ha.outdoorTemperature!.isStale(now) &&
+       ha.apparentTemperature != null && !ha.apparentTemperature!.isStale(now))) return ha;
+  try {
+    final weather = await ref.watch(publicWeatherServiceProvider).current(config.place!);
+    return mergeHomeEnvironment(ha,weather,now);
+  } catch (_) {
+    return HomeEnvironment(indoorTemperature:ha.indoorTemperature, indoorHumidity:ha.indoorHumidity,
+      outdoorTemperature:ha.outdoorTemperature, apparentTemperature:ha.apparentTemperature,
+      message:'公共天气暂不可用，可下拉重试');
+  }
 });

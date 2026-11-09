@@ -48,9 +48,15 @@ class SettingsScreen extends StatelessWidget {
           EdgeInsets.only(bottom: 20 + MomoDockInsets.bottomOf(context))),
         children: [
           const MomoPageHeader(
-            title: '我的',
-            subtitle: Text('偏好、服务与数据'),
+            title: '一切，按你喜欢。',
+            subtitle: Text('设置 · 你的家，你的习惯。'),
           ),
+          _SettingsGroup(title: '服务与协同', children: [
+            _SettingsLink(icon: Icons.auto_awesome_outlined, title: 'AI 服务',
+              subtitle: '配置服务、模型与连接方式', destination: (_) => const AiSettingsScreen()),
+            _categoryLink(SettingsCategory.intelligence),
+            _categoryLink(SettingsCategory.household),
+          ]),
           _SettingsGroup(title: '使用偏好', children: [
             _categoryLink(SettingsCategory.appearance),
             _SettingsLink(
@@ -59,10 +65,6 @@ class SettingsScreen extends StatelessWidget {
               subtitle: '权限与测试提醒',
               destination: (_) => const NotificationSettingsScreen(),
             ),
-          ]),
-          _SettingsGroup(title: '服务与协同', children: [
-            _categoryLink(SettingsCategory.intelligence),
-            _categoryLink(SettingsCategory.household),
           ]),
           _SettingsGroup(title: '数据与应用', children: [
             _categoryLink(SettingsCategory.data),

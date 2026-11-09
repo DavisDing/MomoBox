@@ -3,6 +3,8 @@ import '../widgets/momo_floating_dock.dart';
 import '../widgets/momo_glass_components.dart';
 import '../../app/momo_typography.dart';
 import 'dart:ui';
+import 'dart:io';
+import '../../domain/models/recognition_models.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -85,7 +87,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                   SliverPadding(
                     padding: insets,
                     sliver: SliverToBoxAdapter(child: MomoPageHeader(
-                      title: '库存',
+                      title: '家里的物品',
                       subtitle: Text('${items.length} 种物品'),
                       actions: [
                         _SortSelector(current: _sortOption,
@@ -159,13 +161,19 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                     ))
                   else SliverPadding(
                     padding: insets.add(const EdgeInsets.only(top: 12)),
-                    sliver: SliverList(delegate: SliverChildBuilderDelegate(
-                      (context, index) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _InventoryCard(item: sorted[index]),
-                      ),
-                      childCount: sorted.length,
-                    )),
+                    sliver: SliverLayoutBuilder(builder:(context,constraints) {
+                      final columns = MomoMobileLayout.stack(context,constraints.crossAxisExtent,minimum:330) ? 1 : 2;
+                      return SliverList(delegate:SliverChildBuilderDelegate((context,index) => Padding(
+                        padding:const EdgeInsets.only(bottom:16),
+                        child:Row(crossAxisAlignment:CrossAxisAlignment.start,children:[
+                          for(var column=0;column<columns;column++) ...[
+                            if(column>0) const SizedBox(width:12),
+                            Expanded(child:index*columns+column<sorted.length ?
+                              _InventoryCard(key:ValueKey(sorted[index*columns+column].id),item:sorted[index*columns+column]) : const SizedBox.shrink()),
+                          ],
+                        ]),
+                      ),childCount:(sorted.length/columns).ceil()));
+                    }),
                   ),
                   SliverToBoxAdapter(child: SizedBox(height: 20 + MomoDockInsets.bottomOf(context))),
                 ],
@@ -255,7 +263,7 @@ class _SortSelector extends StatelessWidget {
 }
 
 class _InventoryCard extends ConsumerStatefulWidget {
-  const _InventoryCard({required this.item});
+  const _InventoryCard({required this.item,super.key});
   final InventoryItem item;
 
   @override
@@ -276,63 +284,40 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
     );
     final canReplenish = item.batches.any((candidate) => !candidate.isDiscarded);
     final theme = Theme.of(context);
+    final media = ref.watch(mediaAssetsProvider((entityType:'product',entityId:item.id))).valueOrNull;
+    final images = media?.where((asset)=>asset.type==MediaAssetType.productImage).toList();
+    final path = images?.isNotEmpty==true ? images!.first.localPath : null;
+    Widget placeholder() => Center(child:Icon(Icons.inventory_2_outlined,size:42,color:theme.colorScheme.primary));
     return MomoGlassCard(
-      onTap: () => context.push('/inventory/${item.id}'),
-      padding: const EdgeInsets.all(16),
-      margin: EdgeInsets.zero,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Container(
-              width: 40, height: 40, alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primary.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(_categoryEmoji(item.category), style: const TextStyle(fontSize: 22)),
-            ),
-            const SizedBox(width: 12),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(item.name, style: theme.textTheme.titleMedium),
-              const SizedBox(height: 4),
-              Text('${item.location ?? '未设置位置'} · ${item.batches.length} 个批次',
-                style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-            ])),
-            IconButton(
-              tooltip: _actionsVisible ? '收起快捷操作' : '物品快捷操作',
-              onPressed: _busy ? null : () => setState(() => _actionsVisible = !_actionsVisible),
-              icon: Icon(_actionsVisible ? Icons.expand_less_rounded : Icons.more_horiz_rounded),
-            ),
+      onTap:()=>context.push('/inventory/${item.id}'),padding:EdgeInsets.zero,margin:EdgeInsets.zero,
+      child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+        Container(height:128,clipBehavior:Clip.antiAlias,
+          decoration:BoxDecoration(color:theme.colorScheme.primaryContainer.withValues(alpha:.4),
+            borderRadius:const BorderRadius.vertical(top:Radius.circular(18))),
+          child:path==null ? placeholder() : Image.file(File(path),fit:BoxFit.cover,
+            errorBuilder:(_,__,___)=>placeholder())),
+        Padding(padding:const EdgeInsets.all(12),child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+          Text(item.name,style:theme.textTheme.titleMedium),
+          const SizedBox(height:5),
+          Text('${item.totalStock} ${item.unit} · ${item.category}',style:theme.textTheme.bodyMedium),
+          const SizedBox(height:5),
+          Text(item.location??'未设置位置',style:theme.textTheme.bodySmall?.copyWith(color:theme.colorScheme.onSurfaceVariant)),
+          const SizedBox(height:8),
+          Wrap(spacing:6,runSpacing:6,children:[
+            StatusBadge(status:item.overallExpiryStatus,days:batch?.daysUntilExpiry),
+            if(item.isLowStock) Text('库存偏低',style:theme.textTheme.bodySmall?.copyWith(color:theme.colorScheme.error)),
           ]),
-          const SizedBox(height: 16),
-          Wrap(spacing: 12, runSpacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
-            Text('${item.totalStock} ${item.unit}', style: theme.textTheme.titleMedium),
-            StatusBadge(status: item.overallExpiryStatus, days: batch?.daysUntilExpiry),
-            if (item.isLowStock) Text('库存偏低', style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.error)),
+          Wrap(alignment:WrapAlignment.spaceBetween,crossAxisAlignment:WrapCrossAlignment.center,children:[
+            TextButton(onPressed:canConsume&&!_busy?()=>_showConsumeDialog(context):null,child:const Text('消耗')),
+            IconButton(tooltip:_actionsVisible?'收起快捷操作':'物品快捷操作',
+              onPressed:_busy?null:()=>setState(()=>_actionsVisible=!_actionsVisible),
+              icon:Icon(_actionsVisible?Icons.expand_less_rounded:Icons.more_horiz_rounded)),
           ]),
-          const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerRight,
-            child: MomoCapsuleButton(
-              onPressed: canConsume && !_busy ? () => _showConsumeDialog(context) : null,
-              label: '消耗', isPrimary: false,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              icon: const Icon(Icons.remove_circle_outline, size: 20),
-            ),
-          ),
-          if (_actionsVisible) ...[
-            const Divider(height: 24),
-            _QuickActions(
-              busy: _busy, canConsume: canConsume, canReplenish: canReplenish,
-              onConsume: () => _consumeOne(context),
-              onReplenish: () => _replenishOne(context),
-              onShopping: () => _addToShopping(context),
-              onClose: () => setState(() => _actionsVisible = false),
-            ),
-          ],
-        ],
-      ),
+          if(_actionsVisible) ...[const Divider(),_QuickActions(busy:_busy,canConsume:canConsume,
+            canReplenish:canReplenish,onConsume:()=>_consumeOne(context),onReplenish:()=>_replenishOne(context),
+            onShopping:()=>_addToShopping(context),onClose:()=>setState(()=>_actionsVisible=false))],
+        ])),
+      ]),
     );
   }
 
@@ -693,13 +678,5 @@ class _ErrorState extends StatelessWidget {
         ),
       );
 }
-
-String _categoryEmoji(String category) => switch (category) {
-      '药品保健' => '💊',
-      '食品生鲜' => '🥛',
-      '美妆个护' => '🧴',
-      '母婴用品' => '🧸',
-      _ => '📦',
-    };
 
 String _dateText(DateTime date) => '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';

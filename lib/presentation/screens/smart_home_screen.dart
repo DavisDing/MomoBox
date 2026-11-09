@@ -11,6 +11,8 @@ import '../../app/momo_theme.dart';
 import '../../domain/models/smart_home_models.dart';
 import '../controllers/providers.dart';
 import '../controllers/smart_home_controller.dart';
+import '../widgets/home_environment_card.dart';
+import 'home_assistant_settings_screen.dart';
 
 class SmartHomeScreen extends ConsumerWidget {
   const SmartHomeScreen({super.key});
@@ -25,14 +27,18 @@ class SmartHomeScreen extends ConsumerWidget {
       body: SafeArea(
         left: false, right: false, bottom: false,
         child: RefreshIndicator(
-          onRefresh: () => controller.refresh(),
+          onRefresh: () async {
+            await controller.refresh();
+            ref.read(publicWeatherServiceProvider).expireCache();
+            ref.invalidate(homeEnvironmentProvider);
+          },
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: MomoMobileLayout.pageInsets(context).add(
               EdgeInsets.only(bottom: 20 + MomoDockInsets.bottomOf(context))),
             children: [
               MomoPageHeader(
-                title: '智能家居',
+                title: '让家，懂你。',
                 subtitle: Align(alignment: Alignment.centerLeft,
                   child: _buildHaBadge(context, homeState.haStatus)),
                 actions: [
@@ -44,14 +50,22 @@ class SmartHomeScreen extends ConsumerWidget {
                     onPressed: homeState.isLoading ? null : () => controller.refresh(),
                   ),
                   IconButton(tooltip: 'HA 连接配置', icon: const Icon(Icons.tune_rounded),
-                    onPressed: () => context.push('/settings')),
+                    onPressed: () => Navigator.of(context,rootNavigator:true).push(MaterialPageRoute<void>(
+                      builder:(_) => const HomeAssistantSettingsScreen()))),
                 ],
               ),
+              const HomeEnvironmentCard(),
+              const SizedBox(height: 18),
               if (homeState.haStatus == HaConnectionStatus.unconfigured)
                 _buildUnconfiguredState(context)
               else ...[
                   if (homeState.message != null || homeState.commandError != null || homeState.linkageError != null)
                     _buildStateNotice(context, homeState),
+                  _buildSectionHeader(context, title:'家里的设备',
+                    subtitle:'已授权设备 · 点击卡片查看详细控制',icon:Icons.devices_other_rounded),
+                  const SizedBox(height:10),
+                  _buildRoomsAndDevices(context, ref, homeState.devices, palette),
+                  const SizedBox(height:16),
                   // 1. 场景快捷区
                   _buildSectionHeader(
                     context,
@@ -76,15 +90,6 @@ class SmartHomeScreen extends ConsumerWidget {
 
                   const SizedBox(height: 24),
 
-                  // 3. 房间与设备卡片 (客厅 / 厨房 / 阳台)
-                  _buildSectionHeader(
-                    context,
-                    title: '房间设备控制',
-                    subtitle: '已授权白名单设备控制项（点击卡片查看高级控制）',
-                    icon: Icons.devices_other_rounded,
-                  ),
-                  const SizedBox(height: 10),
-                  _buildRoomsAndDevices(context, ref, homeState.devices, palette),
               ],
             ],
           ),
@@ -404,7 +409,7 @@ class SmartHomeScreen extends ConsumerWidget {
     List<SmartDevice> devices,
     MomoPalette palette,
   ) {
-    final rooms = ['客厅', '厨房', '阳台'];
+    final rooms = devices.map((device) => device.room).toSet().toList()..sort();
 
     return Column(
       children: rooms.map((room) {
@@ -431,7 +436,8 @@ class SmartHomeScreen extends ConsumerWidget {
                   ],
                 ),
               ),
-              ...roomDevices.map((dev) => _buildDeviceCard(context, ref, dev, palette)),
+              MomoAdaptiveTiles(minimumWidth:148,
+                children:roomDevices.map((dev) => _buildDeviceCard(context,ref,dev,palette)).toList()),
             ],
           ),
         );
@@ -458,134 +464,28 @@ class SmartHomeScreen extends ConsumerWidget {
     };
 
     return MomoGlassCard(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-        onTap: () => _showDeviceControlSheet(context, device, palette),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: (device.isOn ? palette.primary : Colors.grey).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      icon,
-                      color: device.isOn ? palette.primary : Colors.grey,
-                      size: 22,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                        Flexible(
-                          child: Text(
-                              device.name,
-                              style: const TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                            ),
-                            const SizedBox(width: 6),
-                            const Icon(Icons.tune_rounded, size: 14, color: Colors.grey),
-                          ],
-                        ),
-                        Text(
-                          device.statusText,
-                          style: TextStyle(
-                            fontSize: MomoTextSize.caption,
-                            color: device.isOn ? palette.primary : theme.textTheme.bodySmall?.color,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Switch.adaptive(
-                    value: device.isOn,
-                    activeTrackColor: palette.primary,
-                    key: ValueKey('smart-home-power-${device.id}'),
-                    onChanged: controller.powerUnavailableReason(device.id, turnOn: !device.isOn) != null
-                        ? null
-                        : (val) => controller.setDevicePower(device.id, val),
-                  ),
-                ],
-              ),
-
-              // 空调专属模式与快捷温度调节
-              if (device.type == DeviceType.climate && device.isOn) ...[
-                const Divider(height: 16),
-                Wrap(
-                  spacing: 12, runSpacing: 12, crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Wrap(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: palette.primary.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            device.mode,
-                            style: TextStyle(fontSize: MomoTextSize.caption, color: palette.primary, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Text('风速: ${device.windSpeed}', style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey)),
-                      ],
-                    ),
-                    Wrap(
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        IconButton(
-                          visualDensity: VisualDensity.compact,
-                          icon: const Icon(Icons.remove_circle_outline, size: 20),
-                          onPressed: () => controller.updateClimateTemperature(device.id, -1.0),
-                        ),
-                        Text(
-                          '${device.temperature.toStringAsFixed(0)}°C',
-                          style: const TextStyle(fontSize: MomoTextSize.title, fontWeight: FontWeight.bold),
-                        ),
-                        IconButton(
-                          visualDensity: VisualDensity.compact,
-                          icon: const Icon(Icons.add_circle_outline, size: 20),
-                          onPressed: () => controller.updateClimateTemperature(device.id, 1.0),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ],
-
-              // 灯光专属亮度调节
-              if (device.type == DeviceType.light && device.isOn) ...[
-                const Divider(height: 16),
-                Row(
-                  children: [
-                    const Icon(Icons.brightness_low, size: 16, color: Colors.grey),
-                    Expanded(
-                      child: Slider(
-                        value: device.brightness.toDouble(),
-                        min: 1,
-                        max: 100,
-                        activeColor: palette.primary,
-                        onChanged: (val) {
-                          controller.updateLightBrightness(device.id, val.toInt());
-                        },
-                      ),
-                    ),
-                    Text('${device.brightness}%', style: const TextStyle(fontSize: MomoTextSize.caption)),
-                  ],
-                ),
-              ],
-            ],
-          ),
-        );
+      margin:EdgeInsets.zero,
+      color:device.isOn ? theme.colorScheme.primaryContainer.withValues(alpha:.45) : null,
+      onTap:() => _showDeviceControlSheet(context,device,palette),
+      padding:const EdgeInsets.all(14),
+      child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+        Wrap(spacing:8,runSpacing:4,crossAxisAlignment:WrapCrossAlignment.center,children:[
+          Icon(icon,size:24,color:theme.colorScheme.primary),
+          Switch.adaptive(value:device.isOn,
+            key:ValueKey('smart-home-power-${device.id}'),
+            onChanged:controller.powerUnavailableReason(device.id,turnOn:!device.isOn)!=null ? null :
+              (value)=>controller.setDevicePower(device.id,value)),
+        ]),
+        const SizedBox(height:8),
+        Text(device.name,style:theme.textTheme.titleSmall),
+        const SizedBox(height:4),
+        Text(device.statusText,style:theme.textTheme.bodySmall?.copyWith(color:theme.colorScheme.onSurfaceVariant)),
+        if(device.type==DeviceType.climate && device.isOn)
+          Text('设定 ${device.temperature.toStringAsFixed(0)}° · ${device.mode}',style:theme.textTheme.bodySmall),
+        if(device.type==DeviceType.light && device.isOn)
+          Text('亮度 ${device.brightness}%',style:theme.textTheme.bodySmall),
+      ]),
+    );
   }
 
   /// 弹出设备精细化操作弹窗 (BottomSheet)

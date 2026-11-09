@@ -12,7 +12,7 @@ void main() {
     final settings = MemorySettingsRepository();
     try {
       await _mount(tester, settings);
-      expect(find.text('我的'), findsOneWidget);
+      expect(find.text('一切，按你喜欢。'), findsOneWidget);
       expect(find.text('本地诊断导出'), findsNothing);
       await tester.scrollUntilVisible(find.text('数据与隐私'), 200);
       final overview = tester.state<ScrollableState>(find.byType(Scrollable).first);

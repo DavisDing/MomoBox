@@ -53,7 +53,11 @@ class HomeScreen extends ConsumerWidget {
               case 'quick_intake':
                 return _buildQuickIntakeBar(context, ref);
               case 'alert_summary':
-                return _buildAlertSummaryCard(context, summary);
+                return Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+                  _buildAttentionList(context,summary),
+                  ExpansionTile(tilePadding:EdgeInsets.zero,title:const Text('提醒汇总'),
+                    children:[_buildAlertSummaryCard(context,summary)]),
+                ]);
               case 'shopping_summary':
                 return _buildShoppingSummaryCard(context, shoppingAsync, summary, palette);
               case 'chores_card':
@@ -66,6 +70,10 @@ class HomeScreen extends ConsumerWidget {
           }
 
           final insets = MomoMobileLayout.pageInsets(context);
+          final ordered = [...sectionOrder];
+          // Present the next useful action first while preserving the user's
+          // explicit module ordering after the hero.
+
           return SafeArea(
             left: false, right: false, bottom: false,
             child: CustomScrollView(
@@ -75,8 +83,8 @@ class HomeScreen extends ConsumerWidget {
                   padding: insets,
                   sliver: SliverToBoxAdapter(
                     child: MomoPageHeader(
-                      title: '家庭总览',
-                      subtitle: Text('${items.length} 种物品，让生活井然有序'),
+                      title: '日常，有序。',
+                      subtitle: Text('家里的小事，都在这里。 · ${items.length} 种物品'),
                       actions: [
                         IconButton(
                           tooltip: '自定义首页模块排序',
@@ -87,7 +95,9 @@ class HomeScreen extends ConsumerWidget {
                     ),
                   ),
                 ),
-                ...sectionOrder.map((key) => SliverPadding(
+                SliverPadding(padding: insets.add(const EdgeInsets.only(bottom: 18)),
+                  sliver: SliverToBoxAdapter(child: _buildTodayHero(context, summary))),
+                ...ordered.map((key) => SliverPadding(
                   padding: insets.add(const EdgeInsets.only(bottom: 24)),
                   sliver: SliverToBoxAdapter(child: buildSectionByKey(key)),
                 )),
@@ -100,6 +110,50 @@ class HomeScreen extends ConsumerWidget {
         },
       ),
     );
+  }
+
+  Widget _buildAttentionList(BuildContext context,ReminderSummary summary) {
+    final unique = <String,InventoryItem>{};
+    for (final item in [...summary.expired,...summary.expiring,...summary.lowStock]) {
+      unique[item.id] = item;
+    }
+    final attention = unique.values.take(3).toList();
+    final theme = Theme.of(context);
+    return Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+      _HomeFlowRow(children:[Expanded(child:Text('最近需要关注',style:theme.textTheme.titleLarge)),
+        TextButton(onPressed:()=>context.push('/alerts'),child:const Text('查看全部'))]),
+      if(attention.isEmpty) Padding(padding:const EdgeInsets.symmetric(vertical:12),
+        child:Text('目前没有需要关注的物品。',style:theme.textTheme.bodyMedium)),
+      for(final item in attention) ListTile(contentPadding:EdgeInsets.zero,
+        leading:Container(width:46,height:50,decoration:BoxDecoration(
+          color:theme.colorScheme.primaryContainer.withValues(alpha:.45),borderRadius:BorderRadius.circular(13)),
+          child:Icon(Icons.inventory_2_outlined,color:theme.colorScheme.primary)),
+        title:Text(item.name),subtitle:Text('${item.location??'未设置位置'} · ${item.totalStock} ${item.unit}'),
+        trailing:const Icon(Icons.chevron_right_rounded,size:18),
+        onTap:()=>context.push('/inventory/${item.id}')),
+      TextButton.icon(onPressed:()=>context.go('/assistant'),
+        icon:const Icon(Icons.auto_awesome_outlined,size:18),label:const Text('家里有什么，可以问问我')),
+    ]);
+  }
+
+  Widget _buildTodayHero(BuildContext context, ReminderSummary summary) {
+    final theme = Theme.of(context);
+    final count = summary.expiring.length + summary.expired.length;
+    return MomoGlassCard(color: theme.colorScheme.primaryContainer.withValues(alpha: .45),
+      borderRadius: 24, margin: EdgeInsets.zero, padding: const EdgeInsets.all(22),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [Icon(Icons.eco_outlined, size: 16, color: theme.colorScheme.primary),
+          const SizedBox(width: 6), Expanded(child:Text('今天，先照顾这些', style: theme.textTheme.bodySmall))]),
+        const SizedBox(height: 14),
+        Text(count > 0 ? '别让好东西，\n被时间忘记。' : '物品有归处，\n日子有秩序。',
+          style: theme.textTheme.headlineMedium),
+        const SizedBox(height: 10),
+        Text(count > 0 ? '$count 项提醒需要留意效期。' : '暂时没有效期提醒，安心过好今天。',
+          style: theme.textTheme.bodyMedium),
+        const SizedBox(height: 8),
+        TextButton.icon(onPressed: () => context.push('/alerts'),
+          label: const Text('全部提醒'), icon: const Icon(Icons.north_east_rounded, size: 16)),
+      ]));
   }
 
   Widget _buildStatusDot(
@@ -162,43 +216,25 @@ class HomeScreen extends ConsumerWidget {
     final aiConfigured = ref.watch(aiConfigurationStatusProvider).valueOrNull == true;
     final nasState = ref.watch(nasConnectionProvider);
     final homeState = ref.watch(smartHomeControllerProvider);
-    return MomoGlassCard(
-      margin: EdgeInsets.zero,
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          MomoCapsuleButton(
-            label: '入库',
-            icon: const Icon(Icons.add_rounded, size: 24),
-            onPressed: () => showModalBottomSheet<void>(
-              context: context,
-              isScrollControlled: true,
-              useSafeArea: true,
-              builder: (_) => const IntakeSheet(),
-            ),
-          ),
-          const SizedBox(height: 8),
-          ExpansionTile(
-            tilePadding: EdgeInsets.zero,
-            childrenPadding: const EdgeInsets.only(bottom: 4),
-            shape: const Border(),
-            collapsedShape: const Border(),
-            title: Text('服务状态', style: Theme.of(context).textTheme.bodyMedium),
-            subtitle: Text(nasState.isConnected ? 'NAS 协同模式' : '单机模式 · 本地可用'),
-            children: [
-              _buildStatusDot(context, label: 'NAS服务',
-                isConnected: nasState.isConnected, detail: _nasStatusLabel(nasState.status)),
-              _buildStatusDot(context, label: 'HA服务',
-                isConnected: homeState.nasOnline && homeState.haStatus == HaConnectionStatus.online && !homeState.isLoading,
-                detail: _haStatusLabel(homeState)),
-              _buildStatusDot(context, label: 'AI服务', isConnected: false,
-                detail: aiConfigured ? '待验证' : '未配置'),
-            ],
-          ),
-        ],
-      ),
-    );
+    return Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+      MomoAdaptiveTiles(minimumWidth:128,children:[
+        MomoCapsuleButton(label:'记录新物品',icon:const Icon(Icons.qr_code_scanner,size:18),
+          isPrimary:false,padding:const EdgeInsets.symmetric(horizontal:10,vertical:12),
+          onPressed:()=>showModalBottomSheet<void>(context:context,isScrollControlled:true,useSafeArea:true,
+            builder:(_)=>const IntakeSheet())),
+        MomoCapsuleButton(label:'采买清单',icon:const Icon(Icons.checklist_rounded,size:18),
+          isPrimary:false,padding:const EdgeInsets.symmetric(horizontal:10,vertical:12),
+          onPressed:()=>context.push('/shopping')),
+      ]),
+      ExpansionTile(tilePadding:EdgeInsets.zero,childrenPadding:const EdgeInsets.only(bottom:4),
+        shape:const Border(),collapsedShape:const Border(),title:const Text('服务状态'),
+        subtitle:Text(nasState.isConnected?'NAS 协同模式':'单机模式 · 本地可用'),
+        children:[
+          _buildStatusDot(context,label:'NAS服务',isConnected:nasState.isConnected,detail:_nasStatusLabel(nasState.status)),
+          _buildStatusDot(context,label:'HA服务',isConnected:homeState.nasOnline && homeState.haStatus==HaConnectionStatus.online && !homeState.isLoading,detail:_haStatusLabel(homeState)),
+          _buildStatusDot(context,label:'AI服务',isConnected:false,detail:aiConfigured?'待验证':'未配置'),
+        ]),
+    ]);
   }
 
   Widget _buildAlertSummaryCard(BuildContext context, ReminderSummary summary) {
@@ -215,7 +251,7 @@ class HomeScreen extends ConsumerWidget {
             icon: const Icon(Icons.calendar_month_outlined, size: 22),
             onPressed: () => CalendarSyncDialog.show(context),
           ),
-          TextButton(onPressed: () => context.push('/alerts'), child: const Text('全部提醒')),
+          TextButton(onPressed: () => context.push('/alerts'), child: const Text('提醒明细')),
         ]),
         const SizedBox(height: 8),
         MomoAdaptiveTiles(

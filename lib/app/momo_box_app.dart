@@ -17,6 +17,7 @@ import '../presentation/screens/smart_home_screen.dart';
 import '../presentation/screens/statistics_screen.dart';
 import '../presentation/widgets/app_scaffold.dart';
 import '../presentation/widgets/app_back_guard.dart';
+import '../presentation/widgets/ai_assistant_dialog.dart';
 import 'momo_theme.dart';
 import 'momo_typography.dart';
 
@@ -29,6 +30,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         routes: [
           // 1. 首页 (Home / Dashboard)
           GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
+          GoRoute(path: '/assistant', builder: (context, state) => const AiAssistantDialog(fullPage: true)),
           // 2. 库存 (Inventory)
           GoRoute(path: '/inventory', builder: (context, state) => const InventoryScreen()),
           // 3. 家居 (Home Assistant 设备与场景)

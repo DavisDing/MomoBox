@@ -1,3 +1,4 @@
+import 'package:momo_box/presentation/screens/home_screen.dart';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -37,31 +38,33 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await SettingsRepository(database).setValue(homeSectionOrderKey, 'quick_intake');
     await _pumpApp(tester, database);
-    await _pumpUntilFound(tester, find.text('入库'));
-    expect(find.text('入库'), findsOneWidget);
+    await _pumpUntilFound(tester, find.text('记录新物品'));
+    expect(find.text('记录新物品'), findsOneWidget);
     expect(find.text('扫码入库'), findsNothing);
     expect(find.text('拍照识别'), findsNothing);
     expect(find.text('手动录入'), findsNothing);
     expect(find.text('单机模式 · 本地可用'), findsOneWidget);
+    await tester.ensureVisible(find.text('服务状态'));
     await tester.tap(find.text('服务状态'));
     await _pumpForUi(tester);
     final nas = tester.getTopLeft(find.text('NAS服务'));
     final ha = tester.getTopLeft(find.text('HA服务'));
     final ai = tester.getTopLeft(find.text('AI服务'));
-    expect(nas.dy, greaterThan(tester.getTopLeft(find.text('入库')).dy));
+    expect(nas.dy, greaterThan(tester.getTopLeft(find.text('记录新物品')).dy));
     expect(nas.dx, ha.dx);
     expect(ha.dx, ai.dx);
     expect(nas.dy, lessThan(ha.dy));
     expect(ha.dy, lessThan(ai.dy));
     expect(find.text('未接入'), findsNWidgets(2));
     expect(find.text('未配置'), findsOneWidget);
-    await tester.tap(find.text('入库'));
+    await tester.ensureVisible(find.text('记录新物品'));
+    await tester.tap(find.text('记录新物品'));
     await _pumpUntilFound(tester, find.byType(IntakeSheet));
     expect(tester.takeException(), isNull);
     await _disposeWidgetTree(tester);
   });
 
-  testWidgets('Dock中央入口打开AI助手并保留当前页面，不打开入库', (tester) async {
+  testWidgets('今日位于中央且为默认首页，助手有独立路由', (tester) async {
     await _pumpApp(tester, database);
     await _pumpUntilFound(tester, find.byType(NavigationBar));
     final central = find
@@ -70,21 +73,19 @@ void main() {
           matching: find.byType(NavigationDestination),
         )
         .at(2);
-    expect(tester.getSemantics(central).label, contains('AI 助手'));
+    expect(tester.getSemantics(central).label, contains('今日'));
+    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,2);
+    final assistant=find.descendant(of:find.byType(NavigationBar),matching:find.byType(NavigationDestination)).at(0);
+    await tester.tap(assistant);
+    await _pumpUntilFound(tester,find.byType(AiAssistantDialog));
+    expect(tester.widget<AiAssistantDialog>(find.byType(AiAssistantDialog)).fullPage,isTrue);
+    expect(find.byType(IntakeSheet),findsNothing);
+    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,0);
+    final container=ProviderScope.containerOf(tester.element(find.byType(MomoBoxApp)));
+    expect(container.read(appRouterProvider).routeInformationProvider.value.uri.path,'/assistant');
     await tester.tap(central);
-    await _pumpUntilFound(tester, find.byType(AiAssistantDialog));
-    expect(find.byType(IntakeSheet), findsNothing);
-    expect(
-      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
-      0,
-    );
-    final container = ProviderScope.containerOf(
-      tester.element(find.byType(MomoBoxApp)),
-    );
-    expect(
-      container.read(appRouterProvider).routeInformationProvider.value.uri.path,
-      '/',
-    );
+    await _pumpUntilFound(tester,find.byType(HomeScreen));
+    expect(container.read(appRouterProvider).routeInformationProvider.value.uri.path,'/');
     await _disposeWidgetTree(tester);
   });
 
@@ -100,7 +101,7 @@ void main() {
     await tester.tap(
       find.descendant(
         of: find.byType(NavigationBar),
-        matching: find.text('我的'),
+        matching: find.text('设置'),
       ),
     );
     await _pumpUntilFound(tester, find.byType(SettingsScreen));
@@ -339,7 +340,7 @@ void main() {
       final app = tester.widget<MaterialApp>(find.byType(MaterialApp));
       expect(app.theme!.colorScheme.primary, palette.primary);
       expect(app.darkTheme!.colorScheme.primary,
-          Color.lerp(palette.primary, Colors.white, 0.35));
+          palette.skin == MomoSkin.defaultSkin ? const Color(0xFFBECDA8) : Color.lerp(palette.primary, Colors.white, 0.35));
       final destinations = tester.widgetList<NavigationDestination>(
         find.descendant(
           of: find.byType(NavigationBar),
@@ -347,7 +348,7 @@ void main() {
         ),
       );
       expect(destinations.map((destination) => destination.label),
-          ['首页', '库存', 'AI 助手', '家居', '我的']);
+          ['助手', '物品', '今日', '家居', '设置']);
     }
     await _disposeWidgetTree(tester);
   });
@@ -530,7 +531,7 @@ testWidgets('提醒支持单条和分组已处理，确认状态持久化', (tes
     // 切换到底栏“库存”Tab
     await tester.tap(find.descendant(
       of: find.byType(NavigationBar),
-      matching: find.text('库存'),
+      matching: find.text('物品'),
     ));
     await _pumpUntilFound(tester, find.byType(InventoryScreen));
     await _pumpUntilFound(tester, find.byTooltip('入库'));

@@ -248,9 +248,9 @@ class MomoFloatingCapsuleDock extends StatelessWidget {
                                 MediaQuery.disableAnimationsOf(context)
                                     ? Duration.zero
                                     : const Duration(milliseconds: 250),
-                            indicatorColor: palette.primary.withValues(
-                              alpha: isDark ? 0.32 : 0.18,
-                            ),
+                            indicatorColor: selectedIndex == 2
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.primary.withValues(alpha: isDark ? 0.25 : 0.12),
                             indicatorShape: indicatorShape,
                             labelTextStyle: labelStyle,
                             labelPadding: const EdgeInsets.only(

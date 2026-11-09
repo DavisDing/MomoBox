@@ -1,4 +1,5 @@
 import '../widgets/momo_mobile_layout.dart';
+import 'momo_floating_dock.dart';
 import '../../app/momo_typography.dart';
 import '../screens/alerts_screen.dart';
 import '../screens/home_assistant_settings_screen.dart';
@@ -59,7 +60,9 @@ class MixedPlanData {
 
 
 class AiAssistantDialog extends ConsumerStatefulWidget {
-  const AiAssistantDialog({super.key});
+  const AiAssistantDialog({this.fullPage = false, super.key});
+
+  final bool fullPage;
 
   static Future<void> show(BuildContext context) {
     return showModalBottomSheet<void>(
@@ -350,23 +353,19 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
     final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
     final theme = Theme.of(context);
 
-    return SizedBox(
-      height: (MediaQuery.sizeOf(context).height - MediaQuery.viewInsetsOf(context).bottom) * 0.92,
-      child: MomoGlassCard(
-        borderRadius: 28,
-        margin: EdgeInsets.zero,
-        padding: EdgeInsets.zero,
-        child: SafeArea(
-          top: false,
+    final welcome = widget.fullPage && _messages.length == 1 && _messages.first.content.startsWith('你好呀！');
+    final content = SafeArea(
+          top: widget.fullPage,
+          bottom: !widget.fullPage,
           child: Column(
             children: [
               // Session tools share one menu when text or screen size needs space.
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: LayoutBuilder(builder: (context, constraints) {
-                  final compact = MomoMobileLayout.stack(context, constraints.maxWidth, minimum: 280);
+                  final compact = MomoMobileLayout.stack(context, constraints.maxWidth, minimum: 390);
                   return Row(children: [
-                    Expanded(child: Text(palette.mascotName, style: theme.textTheme.titleMedium)),
+                    Expanded(child: Text(compact ? '助手' : 'AI 助手', style: theme.textTheme.titleMedium)),
                     if (compact)
                       PopupMenuButton<String>(
                         tooltip: '会话选项',
@@ -385,7 +384,16 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                       IconButton(tooltip: '历史会话', icon: const Icon(Icons.history_rounded),
                         onPressed: () => _showHistorySessionsSheet(context, palette)),
                     ],
-                    IconButton(tooltip: '关闭助手', icon: const Icon(Icons.close_rounded),
+                    if (compact)
+                      IconButton(tooltip:'AI 服务',icon:const Icon(Icons.tune_rounded),
+                        onPressed:()=>Navigator.of(context,rootNavigator:true).push(
+                          MaterialPageRoute<void>(builder:(_)=>const AiSettingsScreen())))
+                    else TextButton.icon(
+                      icon:const Icon(Icons.tune_rounded,size:16),label:const Text('AI 服务'),
+                      onPressed:()=>Navigator.of(context,rootNavigator:true).push(
+                        MaterialPageRoute<void>(builder:(_)=>const AiSettingsScreen())),
+                    ),
+                    if (!widget.fullPage) IconButton(tooltip: '关闭助手', icon: const Icon(Icons.close_rounded),
                       onPressed: () => Navigator.of(context).pop()),
                   ]);
                 }),
@@ -408,7 +416,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                 ),
               if (_store.isRecoveringArchive) const LinearProgressIndicator(),
               // Keep the composer and conversation usable above a phone keyboard.
-              if (MediaQuery.sizeOf(context).height - MediaQuery.viewInsetsOf(context).bottom > 480 &&
+              if (!welcome && MediaQuery.sizeOf(context).height - MediaQuery.viewInsetsOf(context).bottom > 480 &&
                   MediaQuery.textScalerOf(context).scale(MomoTextSize.body) <= MomoTextSize.body * 1.5)
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
@@ -435,6 +443,7 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                   padding: const EdgeInsets.all(16),
                   itemCount: _messages.length + (_currentPlan != null ? 1 : 0),
                   itemBuilder: (context, index) {
+                    if (welcome && index == 0) return _buildWelcome(theme);
                     if (index < _messages.length) {
                       final msg = _messages[index];
                       final isUser = msg.role == 'user';
@@ -512,13 +521,13 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
                       child: TextField(
                         controller: _textController,
                         decoration: InputDecoration(
-                          hintText: '查询、入库、采购或控制设备…',
+                          hintText: '问问家里的事…',
                           hintStyle: const TextStyle(fontSize: MomoTextSize.body),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                           isDense: true,
                         ),
                         minLines: 1,
-                        maxLines: 3,
+                        maxLines: MediaQuery.sizeOf(context).height - MediaQuery.viewInsetsOf(context).bottom > 480 ? 3 : 1,
                         onSubmitted: (_) => _sendMessage(),
                       ),
                     ),
@@ -533,10 +542,44 @@ class _AiAssistantDialogState extends ConsumerState<AiAssistantDialog> {
               ),
             ],
           ),
-        ),
-      ),
+        );
+    if (widget.fullPage) {
+      return Scaffold(body: Padding(
+        padding: EdgeInsets.only(bottom: MomoDockInsets.bottomOf(context)),
+        child: content,
+      ));
+    }
+    return SizedBox(
+      height: (MediaQuery.sizeOf(context).height - MediaQuery.viewInsetsOf(context).bottom) * .92,
+      child: MomoGlassCard(borderRadius: 28, margin: EdgeInsets.zero,
+        padding: EdgeInsets.zero, child: content),
     );
   }
+
+  Widget _buildWelcome(ThemeData theme) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 20),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Container(padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(color: theme.colorScheme.primaryContainer,
+          borderRadius: BorderRadius.circular(24)),
+        child: Icon(Icons.auto_awesome_outlined, size: 32, color: theme.colorScheme.primary)),
+      const SizedBox(height: 28),
+      Text('生活的小事，\n一起理清楚。', style: theme.textTheme.headlineLarge),
+      const SizedBox(height: 12),
+      Text('找物品、记采买、照顾你的家。\n想起什么，就问一句。',
+        style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+      const SizedBox(height: 24),
+      for (final entry in [
+        (Icons.schedule_outlined, '哪些物品需要先用？'),
+        (Icons.shopping_bag_outlined, '帮我整理下次采买清单'),
+        (Icons.chair_outlined, '家里有哪些已授权设备？'),
+      ]) ListTile(contentPadding: EdgeInsets.zero,
+        leading: Icon(entry.$1, color: theme.colorScheme.primary),
+        title: Text(entry.$2, style: theme.textTheme.bodyMedium),
+        trailing: const Icon(Icons.north_east_rounded, size: 16),
+        onTap: _isLoading ? null : () => _sendMessage(entry.$2)),
+    ]),
+  );
 
   Widget _buildQuickChip(String label) {
     return ActionChip(

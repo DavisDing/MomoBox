@@ -20,17 +20,11 @@ const _palettes = [
 ];
 
 const _destinations = [
-  NavigationDestination(icon: Icon(Icons.home_outlined), label: '首页'),
-  NavigationDestination(
-    icon: Icon(Icons.inventory_2_outlined),
-    label: '库存',
-  ),
-  NavigationDestination(
-    icon: Icon(Icons.auto_awesome_outlined),
-    label: 'AI 助手',
-  ),
-  NavigationDestination(icon: Icon(Icons.cottage_outlined), label: '家居'),
-  NavigationDestination(icon: Icon(Icons.person_outline_rounded), label: '我的'),
+  NavigationDestination(icon:Icon(Icons.auto_awesome_outlined),label:'助手'),
+  NavigationDestination(icon:Icon(Icons.grid_view_outlined),label:'物品'),
+  NavigationDestination(icon:Icon(Icons.home_outlined),label:'今日'),
+  NavigationDestination(icon:Icon(Icons.chair_outlined),label:'家居'),
+  NavigationDestination(icon:Icon(Icons.tune_rounded),label:'设置'),
 ];
 
 void main() {
@@ -257,7 +251,7 @@ void main() {
           ),
         ),
       );
-      final homeNode = tester.getSemantics(find.text('首页'));
+      final homeNode = tester.getSemantics(find.text('助手'));
       expect(homeNode.flagsCollection.isSelected, ui.Tristate.isTrue);
       expect(homeNode.flagsCollection.isButton, isTrue);
       expect(
@@ -265,18 +259,18 @@ void main() {
         isTrue,
       );
       expect(homeNode.label, contains('Tab 1 of 5'));
-      await tester.tap(find.text('我的'));
+      await tester.tap(find.text('设置'));
       await tester.pumpAndSettle();
       expect(selected, 4);
       expect(
-        tester.getSemantics(find.text('我的')).flagsCollection.isSelected,
+        tester.getSemantics(find.text('设置')).flagsCollection.isSelected,
         ui.Tristate.isTrue,
       );
       expect(
-        tester.getSemantics(find.text('首页')).flagsCollection.isSelected,
+        tester.getSemantics(find.text('助手')).flagsCollection.isSelected,
         ui.Tristate.isFalse,
       );
-      Focus.of(tester.element(find.text('首页'))).requestFocus();
+      Focus.of(tester.element(find.text('助手'))).requestFocus();
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
@@ -441,22 +435,12 @@ void main() {
       tester.view.physicalSize = const Size(1024, 768);
       await tester.pumpAndSettle();
       expect(find.byType(NavigationRail), findsOneWidget);
-      expect(find.byTooltip('AI 助手'), findsOneWidget);
-      final aiNode = tester.getSemantics(
-        find.byWidgetPredicate(
-          (widget) => widget is IconButton && widget.tooltip == 'AI 助手',
-        ),
-      );
-      expect(aiNode.getSemanticsData().tooltip, 'AI 助手');
-      expect(aiNode.flagsCollection.isButton, isTrue);
-      final railHome = tester.getSemantics(
-        find.descendant(
-          of: find.byType(NavigationRail),
-          matching: find.text('首页'),
-        ),
-      );
-      expect(railHome.label, contains('Tab 1 of 4'));
-      expect(railHome.flagsCollection.isSelected, ui.Tristate.isTrue);
+      final railAssistant=tester.getSemantics(find.descendant(of:find.byType(NavigationRail),matching:find.text('助手')));
+      expect(railAssistant.label,contains('Tab 1 of 5'));
+      expect(railAssistant.flagsCollection.isButton,isTrue);
+      final railHome=tester.getSemantics(find.descendant(of:find.byType(NavigationRail),matching:find.text('今日')));
+      expect(railHome.label,contains('Tab 3 of 5'));
+      expect(railHome.flagsCollection.isSelected,ui.Tristate.isTrue);
       expect(inset(probe), 0);
       router.go('/independent');
       await tester.pumpAndSettle();
@@ -472,7 +456,7 @@ GoRouter _router(Widget page) => GoRouter(
     ShellRoute(
       builder: (_, _, child) => AppScaffold(child: child),
       routes: [
-        for (final path in ['/', '/inventory', '/settings', '/smart-home'])
+        for (final path in ['/', '/assistant', '/inventory', '/settings', '/smart-home'])
           GoRoute(path: path, builder: (_, _) => page),
       ],
     ),
