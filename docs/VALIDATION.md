@@ -703,3 +703,11 @@ Docker/Compose运行与镜像构建、实际PG18/NAS初始化和重启/升级、
 - Flutter analyze、Widget测试、Android/iOS构建、运行截图和真机视觉验收：本机Flutter/Dart不在PATH；已配置的 `/private/tmp/momobox-audit-toolchains/flutter` 及此前临时Flutter目录均没有SDK可执行文件。本轮未安装工具链或新增依赖。
 - 已迁移会话/在途回复/库存确认/导航/深色/视口测试；离页重开用例增加会话ID与数量不变断言，场景边界改用真实控制器覆盖今日/家居的scene/script，卡片测试检查Theme颜色、语义及不叠加模糊。这些是测试源码变更，尚未运行，不能称测试通过。
 - 后续按CI先执行 `flutter pub get`、`dart run build_runner build --delete-conflicting-outputs`，再执行 `flutter analyze`、`flutter test test/presentation/`。本轮没有提交、推送或发布。
+
+## 2026-11-09：修复 GitHub 构建 #87 的静态检查阻塞
+
+通过 GitHub 插件读取工作流 run `42589831158`（#87，提交 `a2b9a85246e03086eeda2cb6469b9db989cbdc14`）及 job `129068655894` 日志。当前本地HEAD与该提交一致，开始时工作区干净。失败步骤为 `flutter analyze`，报告4处 `curly_braces_in_flow_control_structures` 和1处 `deprecated_member_use`；Unit tests、Android debug、release打包与发布均跳过。该提交的iOS unsigned build和后端检查通过，不代表本轮修改的验证结果。
+
+- 修复：`home_environment_service.dart` 两处、`home_environment.dart` 一处及 `providers.dart` 一处多行if补显式块；`environment_settings_screen.dart` 的 `DropdownButtonFormField` 改用 `initialValue`，保留原选择值、key与回调。不改业务条件、UI布局、依赖或检查门禁。
+- 已执行：全205个Dart文件tree-sitter语法解析PASS，955处本地import/export/part目标检查PASS；4处诊断对应if均已核对为块结构，弃用参数已替换；`git diff --check` PASS。
+- NOT_EXECUTED：本机Flutter/Dart不在PATH，未执行Flutter analyze/test/build，未重新运行GitHub工作流；不能据此宣称安装包已通过。本轮未提交、推送或发布。

@@ -70,7 +70,7 @@ class _EnvironmentSettingsScreenState extends ConsumerState<EnvironmentSettingsS
       final rows=choices.toList();
       final exists=rows.any((e)=>'${e.integrationId}::${e.entityId}'==value);
       return Padding(padding:const EdgeInsets.only(bottom:16),child:DropdownButtonFormField<String>(
-        key:ValueKey('$title:$value:${rows.length}'),value:exists ? value : '',isExpanded:true,
+        key:ValueKey('$title:$value:${rows.length}'),initialValue:exists ? value : '',isExpanded:true,
         decoration:InputDecoration(labelText:title,helperText:value?.isNotEmpty==true&&!exists?'原实体当前不可用，请重新选择':null),
         items:[const DropdownMenuItem(value:'',child:Text('未选择')),
           ...rows.map((e)=>DropdownMenuItem(value:'${e.integrationId}::${e.entityId}',

@@ -59,8 +59,10 @@ class PublicWeatherService {
     } catch (_) {
       EnvironmentReading? previous(EnvironmentReading? value) => value == null ? null :
         EnvironmentReading(value.value,value.source,value.observedAt,stale:true);
-      if (cached != null) return HomeEnvironment(outdoorTemperature:previous(cached.$2.outdoorTemperature),
-        apparentTemperature:previous(cached.$2.apparentTemperature), message:'天气刷新失败，显示上次数据');
+      if (cached != null) {
+        return HomeEnvironment(outdoorTemperature:previous(cached.$2.outdoorTemperature),
+          apparentTemperature:previous(cached.$2.apparentTemperature), message:'天气刷新失败，显示上次数据');
+      }
       rethrow;
     }
   }
@@ -78,7 +80,9 @@ HomeEnvironment environmentFromHa(HomeEnvironmentConfig config,
     final entity = matches.single, remote = states[key];
     if (remote == null || remote.entityId != entity.entityId ||
         {'unknown','unavailable'}.contains(remote.state) ||
-        remote.fetchedAt.toUtc().isAfter(instant.add(const Duration(minutes: 5)))) return null;
+        remote.fetchedAt.toUtc().isAfter(instant.add(const Duration(minutes: 5)))) {
+      return null;
+    }
     final attrs = remote.attributes;
     double? value;
     if (entity.domain == 'weather' && {'outdoor','feels'}.contains(kind)) {

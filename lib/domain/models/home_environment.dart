@@ -29,7 +29,9 @@ class WeatherPlace {
     if (raw is! Map) return null;
     final lat = raw['latitude'], lon = raw['longitude'], name = raw['name'];
     if (name is! String || name.trim().isEmpty || lat is! num || lon is! num ||
-        !lat.isFinite || !lon.isFinite || lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+        !lat.isFinite || !lon.isFinite || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      return null;
+    }
     return WeatherPlace(name, lat.toDouble(), lon.toDouble());
   }
 }

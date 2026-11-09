@@ -800,7 +800,9 @@ final homeEnvironmentProvider = FutureProvider.autoDispose<HomeEnvironment>((ref
   if (lifecycle != null && lifecycle != AppLifecycleState.resumed) return ha;
   if (config.place == null ||
       (ha.outdoorTemperature != null && !ha.outdoorTemperature!.isStale(now) &&
-       ha.apparentTemperature != null && !ha.apparentTemperature!.isStale(now))) return ha;
+       ha.apparentTemperature != null && !ha.apparentTemperature!.isStale(now))) {
+    return ha;
+  }
   try {
     final weather = await ref.watch(publicWeatherServiceProvider).current(config.place!);
     return mergeHomeEnvironment(ha,weather,now);
