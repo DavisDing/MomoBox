@@ -1,0 +1,27 @@
+{
+  "household": {
+    "top": 24.0,
+    "height": 56.0,
+    "bottom": 80.0
+  },
+  "header": {
+    "top": 80.0,
+    "height": 96.0,
+    "bottom": 176.0
+  },
+  "hero": {
+    "top": 176.0,
+    "height": 177.0,
+    "bottom": 353.0
+  },
+  "quickIntake": {
+    "top": 365.0,
+    "height": 49.0,
+    "bottom": 414.0
+  },
+  "attentionHeading": {
+    "top": 442.5,
+    "height": 23.0,
+    "bottom": 465.5
+  }
+}

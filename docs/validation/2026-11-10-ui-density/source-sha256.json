@@ -1,0 +1,19 @@
+{
+  "baseCommit": "c3af13b03f2cc0598271548dffa21fc16ba0dcf7",
+  "afterWorktreeSha256": {
+    "lib/presentation/screens/home_screen.dart": "1c1919d6c0cde227e87ac194975d11b5d1aac83b130299b06306b2075d416df7",
+    "lib/presentation/widgets/momo_mobile_layout.dart": "4b1a56d64a4b56595581c57432680ccc11372df5d2b501f3e6cbdbf35f86edd9",
+    "test/presentation/v2_visual_capture_test.dart": "9696bcb46aba59dcb5129094f4d512cd6d20d544813fb35bb5b24e21b3d945d1"
+  },
+  "beforeProductionSha256": {
+    "lib/presentation/screens/home_screen.dart": "f635f538c1f3fa96a7f364037ac837571693fe7c67ac745b730bcc9a2725466b",
+    "lib/presentation/widgets/momo_mobile_layout.dart": "9ef1e969b3875c181e4cb4e205a9e28c554e31d81196795253f2d69d584bd203"
+  },
+  "fontSha256": "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b",
+  "viewport": [
+    390,
+    844
+  ],
+  "theme": "momo",
+  "fixtureData": true
+}

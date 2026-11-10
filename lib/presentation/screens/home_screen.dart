@@ -103,10 +103,10 @@ class HomeScreen extends ConsumerWidget {
                     ),
                   ),
                 ),
-                SliverPadding(padding: insets.add(const EdgeInsets.only(bottom: 18)),
+                SliverPadding(padding: insets.add(const EdgeInsets.only(bottom: 12)),
                   sliver: SliverToBoxAdapter(child: _buildTodayHero(context, summary))),
                 ...ordered.map((key) => SliverPadding(
-                  padding: insets.add(const EdgeInsets.only(bottom: 24)),
+                  padding: insets.add(const EdgeInsets.only(bottom: 16)),
                   sliver: SliverToBoxAdapter(child: buildSectionByKey(key)),
                 )),
                 SliverToBoxAdapter(
@@ -146,20 +146,19 @@ class HomeScreen extends ConsumerWidget {
       child: LayoutBuilder(builder: (context, constraints) {
         final showArt = constraints.maxWidth >= 280 && MediaQuery.textScalerOf(context).scale(14) <= 18.2;
         return Stack(children: [
-          if (showArt) const Positioned(right: 4, bottom: 12, width: 112, height: 150, child: MomoStillLife()),
-          Padding(padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+          if (showArt) const Positioned(right: 4, bottom: 8, width: 112, height: 150, child: MomoStillLife()),
+          Padding(padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [Icon(Icons.eco_outlined, size: 16, color: theme.colorScheme.primary),
           const SizedBox(width: 6), Expanded(child:Text('今天，先照顾这些', style: theme.textTheme.bodySmall))]),
-        const SizedBox(height: 14),
+        const SizedBox(height: 8),
         Padding(padding: EdgeInsets.only(right: showArt ? 85 : 0),
           child: Text(count > 0 ? '别让好东西，\n被时间忘记。' : '物品有归处，\n日子有秩序。',
-          style: theme.textTheme.headlineMedium?.copyWith(height: 1.4))),
-        const SizedBox(height: 10),
+          style: theme.textTheme.headlineMedium)),
+        const SizedBox(height: 6),
         Padding(padding: EdgeInsets.only(right: showArt ? 92 : 0),
           child: Text(count > 0 ? '$count 件物品需要留意效期。' : '暂时没有效期提醒。',
           style: theme.textTheme.bodySmall)),
-        const SizedBox(height: 8),
         TextButton.icon(onPressed: () => context.push('/alerts'),
           style: TextButton.styleFrom(padding: EdgeInsets.zero, alignment: Alignment.centerLeft),
           label: const Text('看看是哪几件'), icon: const Icon(Icons.north_east_rounded, size: 16)),
@@ -783,15 +782,21 @@ class _HomeShortcut extends StatelessWidget {
     return MomoCard(
       onTap: onPressed,
       margin: EdgeInsets.zero,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: EdgeInsets.zero,
       borderRadius: 16,
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 48),
-        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(icon, size: 18, color: theme.colorScheme.primary),
-          const SizedBox(width: 8),
-          Flexible(child: Text(label, style: theme.textTheme.labelLarge, textAlign: TextAlign.center)),
-        ]),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 18, color: theme.colorScheme.primary),
+              const SizedBox(width: 8),
+              Flexible(child: Text(label, style: theme.textTheme.labelLarge, textAlign: TextAlign.center)),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -823,7 +828,7 @@ class _AttentionItem extends StatelessWidget {
         onTap: () => context.push('/inventory/${item.id}'),
         borderRadius: BorderRadius.circular(14),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.symmetric(vertical: 6),
           child: Row(children: [
             SizedBox(width: 52, height: 52, child: ClipRRect(
               borderRadius: BorderRadius.circular(13),

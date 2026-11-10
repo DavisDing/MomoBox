@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -13,12 +14,15 @@ import 'package:momo_box/application/network_status_source.dart';
 import 'package:momo_box/core/database/app_database.dart';
 import 'package:momo_box/data/repositories/nas_smart_home_repository.dart';
 import 'package:momo_box/data/repositories/inventory_repository.dart';
+import 'package:momo_box/data/repositories/settings_repository.dart';
 import 'package:momo_box/domain/models/home_environment.dart';
 import 'package:momo_box/domain/models/inventory_models.dart';
 import 'package:momo_box/domain/models/nas_homeassistant_models.dart';
 import 'package:momo_box/presentation/controllers/providers.dart';
 import 'package:momo_box/presentation/controllers/smart_home_controller.dart';
 import 'package:momo_box/presentation/widgets/momo_still_life.dart';
+import 'package:momo_box/presentation/widgets/momo_components.dart';
+import 'package:momo_box/presentation/widgets/momo_mobile_layout.dart';
 
 // These are actual Flutter pages, with isolated local test data. Captures are
 // rendering evidence, not an installed APK or a live NAS/HA acceptance test.
@@ -52,6 +56,10 @@ void main() {
 
         final database = AppDatabase.forTesting(NativeDatabase.memory());
         try {
+          final theme = Platform.environment['MOMO_UI_THEME'];
+          if (theme != null) {
+            await SettingsRepository(database).setValue('theme', theme);
+          }
           final service = InventoryService(InventoryRepository(database));
           for (final (name, category, location, unit, days) in [
             ('有机纯牛奶', '食品生鲜', '厨房 · 冷藏区', '盒', 3),
@@ -158,6 +166,7 @@ void main() {
             }
             final directory = Platform.environment['MOMO_UI_CAPTURE_DIR'];
             if (directory != null) {
+              final todayLayout = route == '/' ? _todayLayout(tester) : null;
               final boundary =
                   boundaryKey.currentContext!.findRenderObject()!
                       as RenderRepaintBoundary;
@@ -170,6 +179,11 @@ void main() {
                 await File(
                   '$directory/${brightness.name}-$name-fixture.png',
                 ).writeAsBytes(bytes!.buffer.asUint8List());
+                if (todayLayout != null) {
+                  await File(
+                    '$directory/${brightness.name}-today-layout.json',
+                  ).writeAsString(todayLayout);
+                }
                 image.dispose();
               });
             }
@@ -186,6 +200,33 @@ void main() {
       },
     );
   }
+}
+
+String _todayLayout(WidgetTester tester) {
+  final regions = {
+    'household': find.byType(MomoHouseholdBar),
+    'header': find.byType(MomoPageHeader),
+    'hero':
+        find
+            .ancestor(
+              of: find.text('今天，先照顾这些'),
+              matching: find.byType(MomoCard),
+            )
+            .first,
+    'quickIntake':
+        find
+            .ancestor(of: find.text('记录新物品'), matching: find.byType(MomoCard))
+            .first,
+    'attentionHeading': find.text('最近需要关注'),
+  };
+  return const JsonEncoder.withIndent('  ').convert({
+    for (final entry in regions.entries)
+      entry.key: {
+        'top': tester.getRect(entry.value).top,
+        'height': tester.getRect(entry.value).height,
+        'bottom': tester.getRect(entry.value).bottom,
+      },
+  });
 }
 
 Future<void> _frames(WidgetTester tester) async {

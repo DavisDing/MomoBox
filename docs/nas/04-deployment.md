@@ -171,7 +171,7 @@ AI_PROXY_URL
 
 - 使用多阶段构建；
 - 最终镜像不包含 Go 工具链；
-- 使用非 root 用户运行；
+- 默认使用 root（UID 0）运行（2026-11-10 用户确认，替代此前非 root 默认），无需在 Compose 中另设 `user`；镜像内 `/data` 由 root 持有且权限 `0700`，运行时挂载目录保留宿主权限，不自动修改已有密钥；
 - 不复制 Flutter、Android、iOS 或仓库根目录内容；
 - 使用固定 Go 基础镜像版本；
 - 构建产物支持 `linux/amd64` 和 `linux/arm64`；

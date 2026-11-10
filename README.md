@@ -1,65 +1,75 @@
 # MomoBox / 嬷嬷的小箱子
 
-本仓库是「嬷嬷的小箱子」的 Flutter 客户端源码。产品采用**本地优先**架构：单机模式由 SQLite（Drift）作为离线数据源，NAS 同步、OCR、扫码和 AI 均不阻塞本地库存核心流程。
+MomoBox 是一款 Flutter 家庭库存管理应用。它以本地 SQLite（Drift）为核心，可离线管理物品、批次、效期、消耗和采购；NAS 是可选的家庭同步与后端处理增强，而不是单机使用的前提。
 
-2026-11-02后端模式补充：明确启用家庭后端同步后，普通操作历史只读跨端恢复，已有图片/OCR迁入NAS，新图片处理、OCR、说明书检索及AI模型调用由NAS承担，手机保留展示、草稿校验和逐次确认。NAS模型配置来自部署环境，单机模式保留原能力；不实现多工作区或改绑迁移。协议与验证边界见[后端处理说明](docs/nas/06-backend-processing.md)。
+> 本仓库有已接入但尚未完成全环境验收的功能。源码、静态检查或历史 CI 记录不能替代当前提交的 Flutter 构建、真机、Docker、PostgreSQL、NAS 与多设备验收。各项证据和未执行项见 [验证基线](docs/VALIDATION.md)。
 
-## 当前范围
+## 能力与边界
 
-已实现、验证待执行的单机能力：商品/批次入库、多批次库存、到期/临期/低库存提醒计划、FEFO 消耗、批次补充与报废、变动历史、采购清单、主题设置、日期计算、JSON 备份导入导出和本地通知调度；实时相机、拍照和相册条码识别；可选外部条码查询及本地缓存；商品/说明书图片、本地 OCR；以及用户自行配置兼容 OpenAI 服务后的 OCR 文本入库草稿与库存问答。
+- 本地核心：商品与多批次库存、效期与低库存提醒、FEFO 消耗、补充/报废、变动历史、采购清单、JSON 备份恢复和本地通知计划。
+- 本地辅助：扫码、可选条码查询、图片、本地 OCR，以及由用户自行配置兼容 OpenAI 服务的 AI 草稿和库存问答。它们失败或未配置时，手动库存流程仍可用。
+- NAS 增强：家庭账号、设备同步、冲突处理和 Home Assistant 基础接入；确认使用家庭后端处理后，历史、图片、OCR 和 AI 的处理契约见 [后端处理说明](docs/nas/06-backend-processing.md)。
+- 安全与确认：AI 结果只可作为可编辑草稿，任何库存或设备写入都需要用户逐次确认；不内置 Ollama、AI 代理或条码代理。
 
-条码查询和 AI 均不是本地核心流程的前置条件：外部查询失败、AI 未配置或请求失败时，仍可继续手动录入和管理库存。AI 草稿只会在用户确认后填入表单，正式入库仍需用户确认；OCR 文本发送前会再次征得确认，原图不会发送。发起库存问答时，问题、近期对话和当前本地库存/批次快照会发送至用户自己配置的 AI 服务，不包含原图。
+业务规则、已确认范围和待决事项以 [需求文档](docs/REQUIREMENT.md) 为准；当前技术方案以 [设计文档](docs/DESIGN.md) 为准。主题资源仅限私人设备使用；公开分发前须重新完成授权与合规审查。
 
-已完成本轮前四阶段的代码接入：本地业务写入与同步 outbox 原子组合、应用启动/前台恢复/引擎可用和网络恢复时的 best-effort 调度、稳定 local workspace ID、bootstrap/snapshot、增量 push/pull、延迟冲突游标、远端冲突最小解决 UI，以及 NAS API/认证/家庭设备/同步网络层、Flutter NAS 账号状态、同步业务适配/Provider 组装、HA 客户端 Repository 与 HA 页面真实接入。说明书外部搜索、本地 OCR 片段问答、7/30/90 天统计图表、采购建议基础和 Home Assistant 耗材联动基础也已接入；社区共享数据仍未实现。测试、构建、验收、Docker、PostgreSQL、NAS/HA 实机及 Flutter 端到端联调按本轮要求跳过。
+## 快速入口
+
+| 你要做什么 | 从这里开始 |
+| --- | --- |
+| 了解长期架构、代码结构和已核实的项目事实 | [AI_CONTEXT](docs/AI_CONTEXT.md) |
+| 查需求、验收条件和待确认事项 | [REQUIREMENT](docs/REQUIREMENT.md) |
+| 查技术设计、数据/同步/API 方案 | [DESIGN](docs/DESIGN.md) |
+| 查当前验证证据、CI 与真机清单 | [VALIDATION](docs/VALIDATION.md) |
+| 配置 Android 正式发布签名 | [Android 签名说明](docs/ANDROID_RELEASE_SIGNING.md) |
+| 部署标准 NAS 方案或执行备份/更新 | [NAS 部署说明](deploy/nas/README.md) |
 
 ## 开发与验证
 
-本项目**不要求本地安装 Flutter**。仓库不提交 Flutter 自动生成的 Android/iOS 平台目录和 Drift 生成文件，统一由 GitHub Actions 生成并验证：
+仓库不提交 Flutter 自动生成的 Android/iOS 平台壳及 Drift 生成文件。CI 会先运行 `scripts/ci/prepare-flutter-platforms.sh`，再生成 Drift 代码、执行分析/测试，并构建 Android 与 iOS；完整命令、环境版本和验收边界以 [验证基线](docs/VALIDATION.md) 和 [pipeline.yml](.github/workflows/pipeline.yml) 为准。
 
-- 单一 Workflow：先并行完成 Flutter/Android、iOS 与 Go 后端验证，再进入发布包构建和发布节点；
-- Release：默认分支每次推送都会构建并上传 Android APK/AAB，并创建或更新对应的 GitHub Release；PR 和其他分支只做验证；
-- 真机：下载 GitHub Release APK 后执行安装验收。
+具备 Flutter、Dart 与 Go 工具链的开发环境，可按 CI 的同一顺序执行：
 
-平台壳和通知配置由 `scripts/ci/prepare-flutter-platforms.sh` 注入；对应的无 Flutter 回归测试在 `scripts/ci/test-prepare-flutter-platforms.sh`。`.gitignore` 明确排除生成的 Android/iOS 目录和 Drift 文件，防止将 CI 产物误提交。完整流程、当前验证状态和安装清单见 `docs/VALIDATION.md`。
+```sh
+scripts/ci/prepare-flutter-platforms.sh
+flutter pub get
+dart run build_runner build --delete-conflicting-outputs
+flutter analyze
+flutter test
+(cd backend && go test -count=1 ./... && go vet ./...)
+```
 
-## CI 与自动发布
+这些命令会生成未提交的平台/Drift 文件；PostgreSQL 回归必须使用一次性测试库，不能指向生产数据库。没有相应工具链时，不应把未运行的检查记作通过。
 
-- `.github/workflows/pipeline.yml` 是唯一的 Actions 入口，在 Pull Request、分支推送和手动触发时依次执行 `prepare → Flutter/Android + iOS + Go 后端并行验证 → build-release-packages → publish`。发布节点通过 `needs` 串联，任何验证或打包失败都会阻止镜像和 GitHub Release 发布。
-- 默认分支每次推送都会从最近的 `vX.Y.Z` 标签递增 patch 版本，先构建并上传工作流制品，再由最后的 `publish` job 创建或更新 GitHub Release。默认分支的后端变更会在同一条链路末端发布 `latest`/`sha-*` 镜像，正式版本同时发布 `vX.Y.Z` 镜像；PR 和其他分支不会创建 Release。
-- 工作流不硬编码 `main`，使用仓库配置的默认分支；并发推送使用 Actions 运行序号避免版本标签冲突；对同一提交重跑时会复用指向该提交的版本标签并替换 Release 附件，不会重复递增版本。`scripts/release/test-next-version.sh` 覆盖首次发布、每次推送 patch 递增、重跑复用版本以及兼容旧 Conventional Commit 计算逻辑，并在 `prepare` job 中执行。
+## CI 与发布
 
-### 发布范围与预留项
+唯一工作流是 [`.github/workflows/pipeline.yml`](.github/workflows/pipeline.yml)：PR、分支推送和手动触发均会进入验证；默认分支的成功推送才会构建版本化 Android 安装包并创建/更新 GitHub Release。后端变更的发布镜像可用于 NAS 部署，但生产部署必须固定版本标签或 digest，不能以 `latest` 作为默认值。
 
-当前自动发布范围包含 **Android APK/AAB** 与 NAS 后端 Docker 镜像。iOS 发布仍为后续工作：
+发布需要 GitHub Actions 具备仓库内容与包写权限，并按 [Android 签名说明](docs/ANDROID_RELEASE_SIGNING.md) 配置正式 Android 签名。CI 配置存在不等于某个提交已经发布成功；请以对应 Actions run 与 Release 为准。
 
-- **iOS**：CI 保留无签名构建验证；待确定 Bundle ID，并配置 Apple 证书、Provisioning Profile 和 App Store Connect 凭据后，再增加签名 IPA / TestFlight 发布。
-- **后端 Docker**：`backend/` 已提供实际 Go 后端与 Dockerfile。默认分支后端变更在通过 Go 测试、vet 与双架构 Buildx 构建后发布公开 GHCR 的 `latest`/`sha-*` 镜像；正式产品 Release 同时发布 `vX.Y.Z` 标签。NAS 生产部署用同版本 `deploy/nas/scripts/update.sh` 按“在线预备份 → 拉取 → 核验停机 → 最终备份 → migration → schema-check → 启动与health”流程更新，失败保持隔离；`.env` 固定到版本/提交/digest，不使用 `latest`。
+## NAS 部署
 
-### 发布版本规则
+先选择一种模板，再阅读该模板的完整初始化、更新、备份与恢复说明；导入 Compose 不会替你完成数据库 migration 或环境验收。
 
-默认分支每次推送都会创建一个 Release：
+| 场景 | 入口 |
+| --- | --- |
+| 既有的标准双服务部署（后端 + PostgreSQL 16） | [NAS 部署说明](deploy/nas/README.md) |
+| 新建独立 PostgreSQL 18，或复用已有 PostgreSQL 实例 | [NAS 变体说明](deploy/nas/variants/README.md) |
+| 绿联 NAS 上复用现有 PG18、无需 `.env` 的单文件模板 | [UGREEN 外部 PostgreSQL 模板](deploy/nas/ugreen-v0.12.67/README.md) |
 
-- 没有历史版本标签时，使用 `pubspec.yaml` 中的基础版本；
-- 已有 `vX.Y.Z` 标签时，每次新的默认分支推送递增一个 patch 版本，例如 `v0.12.0 → v0.12.1`；
-- 多次推送不会被并发队列合并，重叠运行时使用 Actions 运行序号避免版本标签冲突；
-- 重跑同一个提交的 Workflow 会复用该提交已有的版本标签，更新同一个 Release，不会再次递增；
-- PR、其他分支推送和验证失败不会创建 Release；
-- 版本化 APK/AAB 内的版本号和 Release 标签一致，构建号使用 GitHub Actions 运行序号。
+复用已有 PostgreSQL 时，为 MomoBox 创建专属数据库和非超级用户角色；容器内不能用 `localhost` 指向另一个数据库容器。UGREEN 单文件模板会首次生成并持久化内部密钥到 `data/secrets.json`，应与数据库一起备份；该模板要求使用包含该功能的已发布镜像，实际 NAS/PG18/Docker 验收仍待执行。
 
-历史上的 `scripts/release/next-version.sh` 仍保留 Conventional Commit 计算逻辑，供脚本回归测试和兼容调用；默认分支 Workflow 使用 `RELEASE_EVERY_PUSH=true` 模式。
+## 目录概览
 
-### GitHub 仓库配置
+```text
+lib/          Flutter 客户端、领域规则、Drift 数据和界面
+backend/      Go NAS 后端、PostgreSQL migration、Dockerfile 与后端测试
+deploy/nas/   Compose 模板、环境变量示例、更新/备份/恢复脚本
+docs/         需求、设计、验证记录和 NAS 契约
+test/         Flutter 单元、数据与界面测试
+scripts/ci/   平台壳生成和 CI 辅助脚本
+```
 
-1. 将目标发布分支设为 GitHub 仓库的默认分支。
-2. 在仓库 **Settings → Actions → General → Workflow permissions** 中允许工作流拥有 **Read and write permissions**。`pipeline.yml` 的 `publish` job 显式声明了 `contents: write` 和 `packages: write`，用于创建 Release 与推送 GHCR 镜像。
-3. 按 `docs/ANDROID_RELEASE_SIGNING.md` 配置固定 Android 签名 Secrets 和证书 SHA-256。缺失或不匹配会阻断正式发布，不再回退 debug 签名；PR/debug/iOS unsigned验证不需要这些密钥。
-4. 将需要发布的变更推送到默认分支；每次推送都会触发发布链路。
+## 贡献约定
 
-发布成功后，Release 会附带：
-
-- `MomoBox-vX.Y.Z.apk`：可安装的 Android APK；
-- `MomoBox-vX.Y.Z.aab`：用于提交到 Google Play 等商店的 Android App Bundle；
-- `MomoBox-vX.Y.Z-docker-compose.yaml` 与 `MomoBox-vX.Y.Z-nas.env.example`：版本化NAS配置；部署脚本需另取同版本部署目录；
-- `SHA256SUMS.txt`：上述发布附件的 SHA-256 校验和。
-
-> Android原生工程仍由CI生成，密钥不入库；正式发布要求固定签名配置及APK/AAB证书核验。密钥是否与既有安装一致、应用ID及资源授权、设备升级/商店验收仍需确认，签名配置代码不代表已完成上线；不同证书不得当作可原地升级。iOS仍需要独立Apple签名与发布流程。
+修改前先阅读 [AGENTS.md](AGENTS.md) 与 `docs/` 中的相关权威文档。保护已有未提交改动；数据库结构变化需要兼容性与迁移方案；不要把 mock、脚本语法检查或文档审查当作设备、部署或端到端验收。

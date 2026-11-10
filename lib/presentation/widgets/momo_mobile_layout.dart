@@ -48,14 +48,14 @@ class MomoPageHeader extends StatelessWidget {
         if (eyebrow != null) ...[
           Text(eyebrow!, style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant, letterSpacing: 1.1)),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
         ],
         Semantics(
           header: true,
           child: Text(title, style: theme.textTheme.headlineLarge),
         ),
         if (subtitle != null) ...[
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           DefaultTextStyle(
             style: theme.textTheme.bodyMedium!.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
@@ -66,7 +66,7 @@ class MomoPageHeader extends StatelessWidget {
       ],
     );
     return Padding(
-      padding: const EdgeInsets.only(top: 12, bottom: 20),
+      padding: const EdgeInsets.only(top: 4, bottom: 12),
       child: LayoutBuilder(builder: (context, constraints) {
         if (actions.isEmpty) return heading;
         final controls = Wrap(spacing: 4, runSpacing: 4, children: actions);
@@ -98,7 +98,7 @@ class MomoHouseholdBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(top: 4, bottom: 16),
+    padding: const EdgeInsets.only(top: 4, bottom: 4),
     child: Row(children: [
       Expanded(child: Align(alignment: Alignment.centerLeft, child: TextButton.icon(
         onPressed: onPressed,
