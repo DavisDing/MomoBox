@@ -193,16 +193,17 @@ AI_PROXY_URL
 momo-backend migrate
 momo-backend schema-check
 momo-backend serve
+momo-backend start
 ```
 
 首次启动流程：
 
 ```text
-# 先在 .env 固定 MOMO_BACKEND_IMAGE 与 APP_VERSION
-scripts/update.sh
+# 先固定包含 start 入口的新镜像，并配置专属库连接
+docker compose up -d
 ```
 
-更新脚本会完成拉取、PostgreSQL 就绪等待、migration、启动和后端 healthcheck 等步骤；不要绕过脚本并发执行备份、恢复或更新。
+2026-11-10 用户要求容器内自动判断首次部署：镜像默认 `start`，复用现有 migration runner 初始化空库或执行缺失迁移，成功后进入 `serve`。已有表却缺迁移记录、历史缺口、未知版本和名称/checksum异常拒绝自动处理；不创建数据库/账号、不重新初始化已有数据或密钥。镜像要重新构建发布后生效。已有库升级继续先备份、停止其他同库后端；不要并发执行备份、恢复或更新。
 
 日常升级流程固定为：
 
@@ -219,7 +220,7 @@ scripts/update.sh
 - 不在每个 HTTP 请求中执行迁移；
 - 迁移失败时不启动可写业务服务。
 
-`serve`监听前以有界只读snapshot核对migration ledger与镜像文件的版本/名称/checksum，缺表/缺版本/未知版本/不匹配拒绝服务。`schema-check`提供同一核验而不migration、不写ledger。它们仅证明记录身份，不证明物理schema、恢复历史或epoch；Compose导入不替代首次migration。
+`serve`监听前以有界只读snapshot核对migration ledger与镜像文件的版本/名称/checksum，缺表/缺版本/未知版本/不匹配拒绝服务。`schema-check`提供同一核验而不migration、不写ledger。默认 `start` 先执行受保护的 migration，再进入此只读门禁；显式执行 `serve` 不自动迁移。它们仅证明记录身份，不证明物理schema、恢复历史或epoch。
 
 ## 7. 健康检查
 

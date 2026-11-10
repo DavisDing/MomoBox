@@ -238,6 +238,8 @@ func run(ctx context.Context, args []string) error {
 		command = args[0]
 	}
 	switch command {
+	case "start":
+		return start(ctx)
 	case "serve":
 		return serve(ctx)
 	case "migrate":
@@ -247,10 +249,10 @@ func run(ctx context.Context, args []string) error {
 	case "healthcheck":
 		return healthcheck(ctx)
 	case "help", "-h", "--help":
-		fmt.Println("usage: momo-backend [serve|migrate|schema-check|healthcheck]")
+		fmt.Println("usage: momo-backend [start|serve|migrate|schema-check|healthcheck]")
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q (expected serve, migrate, schema-check, or healthcheck)", command)
+		return fmt.Errorf("unknown command %q (expected start, serve, migrate, schema-check, or healthcheck)", command)
 	}
 }
 

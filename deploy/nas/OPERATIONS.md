@@ -46,7 +46,7 @@ external 必须由管理员预创建 MomoBox 专属库和角色，不能复用 L
 
 ## 首次空库初始化
 
-新模式 `update` 必须已有 ledger 和有效恢复演练证明，因此**不用于首次空库初始化**。按 `variants/README.md` 的明确项目上下文手工初始化：只启动本项目 postgres（external 由管理员保证就绪），确认新专属库无旧数据、所有后端及 one-off 已停止，再逐条运行 `momo-backend migrate`、`schema-check`，成功后才启动并检查 health。不要在 `serve` 里自动迁移，也不要拿初始化指令更新已有数据。
+新模式 `update` 必须已有 ledger 和有效恢复演练证明，因此**不用于首次空库初始化**。包含2026-11-10改动的镜像默认 `start`，在专属库/角色已就绪后自动初始化空库或执行缺失迁移，再进入只读 `serve` 门禁。旧镜像和人工维护仍按 `variants/README.md` 的显式 `migrate`、`schema-check` 步骤操作。已有业务数据升级继续使用备份、隔离和证明流程；默认入口不读取部署目录的恢复隔离标记，不构成恢复准入或完整灾备能力。
 
 ## 备份
 

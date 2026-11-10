@@ -752,3 +752,23 @@ NOT_EXECUTED：本机Flutter/Dart不可用，CI同版本 `3.47.9` macOS arm64官
 运行中发现并修正：环境来源按钮大字号溢出、原型只包图标的Dock选中态、关注行说明拥挤，以及旧测试用图标定位发送按钮/旧提醒文案/旧设置层级/滚动后未等待新布局的问题。新增真实房间筛选回归；保留库存数量、真实控制回执、会话归属、发送失败和操作确认断言。最终全量运行为1011通过，无剩余失败。
 
 可复核文件：`validation/2026-11-10-ui-v2/README.md`、全部PNG、`source-sha256.json` 和 `verification.txt`。源码哈希记录UI/测试/workflow对应状态；截图中读数、商品和HA连接状态均来自明确隔离fixture。新增CI在测试之后、Android打包之前渲染并上传 `momobox-ui-<commit>`，仍需在实际新提交上确认远端结果；截图artifact本身也不是视觉相似度自动验收。
+## 2026-11-10：容器自动初始化与后续迁移
+
+基于 `0e06485d50a2f4353a7bce428a33c992d8e849bf`，启动时工作区干净。用户要求镜像内部自动判断首次部署并初始化，后续沿用数据。新增默认 `start` 入口（Dockerfile CMD），继续保留root、现有ENTRYPOINT及人工维护命令；Compose没有新增命令或服务。对应 REQUIREMENT AC-039 / DESIGN 第41节。
+
+实现：持久化密钥沿用现有逻辑；数据库准备复用原迁移器、advisory transaction lock和单版本事务，成功后才进入serve及其只读校验。自动模式拒绝非空无台账库、空台账掩盖旧表、迁移历史缺口/未知版本/名称或checksum异常。真实回归发现并修正outer-transaction处理遗漏行注释后的空行，防止SQL内部COMMIT提前结束runner事务；既有SQL文件及checksum未修改。
+
+| 验证 | 结果 | 范围与证据 |
+| --- | --- | --- |
+| 全量Go + 真实PG16.4回归 | PASS | 237个顶层测试，含子测试525项通过；0失败、0测试跳过。显式MOMO_TEST_DATABASE_URL指向本机随机端口、隔离临时实例，新增回归在随机新库执行原始10个迁移；包含并发初始化、数据保留、预装pgcrypto、search_path覆盖、无台账拒绝、失败事务回滚/恢复和异常checksum |
+| CLI start端到端烟测 | PASS | PostgreSQL非超级用户（无CREATEDB/CREATEROLE）拥有专属空库，production模式首次start→10条迁移记录→HTTP health 200；SIGTERM后重启仍保留测试用户及完全相同的secrets.json字节，权限0600；台账checksum损坏后非零退出且未监听HTTP |
+| go vet ./... | PASS | 使用项目go.mod既有依赖，没有新增依赖或锁文件变化 |
+| Linux构建 | PASS | Go1.22.8，CGO_ENABLED=0，linux/amd64和linux/arm64，实际后端二进制构建；不等于容器运行 |
+| NAS发布资产回归 | PASS | python3 scripts/ci/test-nas-release-assets.py，1项通过 |
+| gofmt及差异空白 | PASS | 本次修改Go文件已gofmt；git diff --check通过 |
+| Docker镜像构建/运行、PG18、UGOS/NAS现场 | NOT_EXECUTED | 本机没有Docker；临时PG16.4验证不能替代用户现有PG18和NAS挂载权限验收 |
+| 本批次远端CI、推送与发布 | NOT_EXECUTED | 本次代码未提交/推送，已发布v0.12.91不包含本次start入口；固定旧digest不会自动更新 |
+
+本机工具链：官方Go1.22.8归档经官方SHA256校验后解压到 `/private/tmp/momobox-go1.22.8`，既有模块缓存放 `/private/tmp/momobox-go-work`；当前macOS拒绝该旧版Go内部链接器生成的Mach-O（missing LC_UUID），本机测试使用 `go test -ldflags=-linkmode=external -count=1 -json ./...`。未改项目CI或Linux链接方式。初次沙箱内HTTP测试因禁止bind失败，放开本机测试监听后全量通过，不删除相关测试。
+
+PostgreSQL16.4源码经官方SHA256校验，编译到 `/private/tmp/momobox-pg16` 并启用pgcrypto；临时cluster只监听127.0.0.1随机端口，测试结束已经停止，没有安装系统服务或连接NAS。完整Go/PG JSON事件日志 `/private/tmp/momobox-autostart-postgres-tests.jsonl`，CLI/PG启动日志及临时数据目录 `/private/tmp/momobox-autostart-pg-rremn1p8`；临时证据不视为长期存档。没有修改真实数据库、现有密钥或应用UI。

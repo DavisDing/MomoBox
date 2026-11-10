@@ -19,4 +19,4 @@ COPY --from=build /src/migrations /app/migrations
 USER root
 EXPOSE 8080
 ENTRYPOINT ["/app/momo-backend"]
-CMD ["serve"]
+CMD ["start"]

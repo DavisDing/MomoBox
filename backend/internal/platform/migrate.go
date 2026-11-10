@@ -16,12 +16,14 @@ import (
 )
 
 var (
-	ErrNoMigrations               = errors.New("no SQL migrations found")
-	ErrInvalidMigrationFilename   = errors.New("invalid SQL migration filename")
+	ErrNoMigrations              = errors.New("no SQL migrations found")
+	ErrInvalidMigrationFilename  = errors.New("invalid SQL migration filename")
 	ErrDuplicateMigrationVersion = errors.New("duplicate SQL migration version")
 	ErrUnknownAppliedMigration   = errors.New("database contains an unknown applied migration")
 	ErrMigrationNameMismatch     = errors.New("applied migration name does not match the file")
 	ErrMigrationChecksumMismatch = errors.New("applied migration checksum does not match the file")
+	ErrUntrackedDatabase         = errors.New("database has objects but no migration records; refusing automatic initialization")
+	ErrMigrationHistoryGap       = errors.New("database migration history has a gap; refusing automatic migration")
 )
 
 const migrationAdvisoryLockSQL = `SELECT pg_advisory_xact_lock(hashtextextended('momobox:postgres:migrations', 0))`
@@ -61,6 +63,9 @@ type SQLMigrationRunner struct {
 	DatabaseURL string
 	Directory   string
 	Open        func(string) (DB, error)
+	// Automatic startup must not adopt an existing database whose ledger was
+	// lost. The check runs under the same transaction lock as the migration.
+	RequireEmptyBootstrap bool
 }
 
 type migrationFile struct {
@@ -76,8 +81,11 @@ type migrationFile struct {
 
 var migrationFilenamePattern = regexp.MustCompile(`^(\d+)_([A-Za-z0-9][A-Za-z0-9._-]*)\.sql$`)
 var legacyMigrationRecordPattern = regexp.MustCompile(`(?is)INSERT\s+INTO\s+schema_migrations\s*\(\s*version\s*,\s*name\s*,\s*checksum\s*\)\s*VALUES\s*\(\s*(\d+)\s*,\s*'((?:''|[^'])*)'\s*,\s*'([^']*)'\s*\)`)
-var leadingBeginPattern = regexp.MustCompile(`(?is)^\s*(?:(?:--[^\n]*\n)|(?:/\*.*?\*/\s*))*BEGIN\s*;`)
-var trailingCommitPattern = regexp.MustCompile(`(?is);\s*(?:(?:--[^\n]*\n)|(?:/\*.*?\*/\s*))*COMMIT\s*;\s*$`)
+
+const sqlSpaceAndComments = `\s*(?:(?:--[^\n]*(?:\n|$)|/\*.*?\*/)\s*)*`
+
+var leadingBeginPattern = regexp.MustCompile(`(?is)^` + sqlSpaceAndComments + `BEGIN\s*;`)
+var trailingCommitPattern = regexp.MustCompile(`(?is);` + sqlSpaceAndComments + `COMMIT\s*;` + sqlSpaceAndComments + `$`)
 
 // legacyMigrationChecksums contains the exact file checksum for migrations
 // whose SQL historically inserted a non-cryptographic compatibility marker.
@@ -124,7 +132,7 @@ func (r SQLMigrationRunner) Run(ctx context.Context) error {
 	}
 
 	for _, migration := range migrations {
-		if err := applyMigration(ctx, migrationDB, migration, known); err != nil {
+		if err := applyMigration(ctx, migrationDB, migration, known, r.RequireEmptyBootstrap); err != nil {
 			return fmt.Errorf("migration %s: %w", migration.name, err)
 		}
 	}
@@ -188,7 +196,7 @@ func loadMigrationFiles(directory string) ([]migrationFile, error) {
 	return migrations, nil
 }
 
-func applyMigration(ctx context.Context, db MigrationDatabase, migration migrationFile, known map[int64]migrationFile) error {
+func applyMigration(ctx context.Context, db MigrationDatabase, migration migrationFile, known map[int64]migrationFile, requireEmptyBootstrap bool) error {
 	tx, err := db.BeginMigration(ctx)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
@@ -197,6 +205,15 @@ func applyMigration(ctx context.Context, db MigrationDatabase, migration migrati
 
 	if err := tx.AdvisoryLock(ctx); err != nil {
 		return fmt.Errorf("acquire advisory lock: %w", err)
+	}
+	if requireEmptyBootstrap {
+		checker, ok := tx.(interface{ CheckBootstrap(context.Context) error })
+		if !ok {
+			return errors.New("automatic initialization requires a bootstrap checker")
+		}
+		if err := checker.CheckBootstrap(ctx); err != nil {
+			return err
+		}
 	}
 	if err := tx.EnsureSchemaMigrations(ctx); err != nil {
 		return fmt.Errorf("ensure schema_migrations: %w", err)
@@ -208,6 +225,9 @@ func applyMigration(ctx context.Context, db MigrationDatabase, migration migrati
 	}
 	appliedByVersion := make(map[int64]MigrationRecord, len(applied))
 	for _, record := range applied {
+		if _, duplicate := appliedByVersion[record.Version]; duplicate {
+			return fmt.Errorf("%w: recorded version %d", ErrDuplicateMigrationVersion, record.Version)
+		}
 		appliedByVersion[record.Version] = record
 		knownMigration, exists := known[record.Version]
 		if !exists {
@@ -219,6 +239,17 @@ func applyMigration(ctx context.Context, db MigrationDatabase, migration migrati
 		if needsLegacyChecksumUpgrade(record, knownMigration) {
 			if err := tx.UpdateMigrationChecksum(ctx, record.Version, knownMigration.checksum); err != nil {
 				return fmt.Errorf("upgrade legacy checksum for version %d: %w", record.Version, err)
+			}
+		}
+	}
+	if requireEmptyBootstrap {
+		for _, record := range applied {
+			for version := range known {
+				if version < record.Version {
+					if _, exists := appliedByVersion[version]; !exists {
+						return ErrMigrationHistoryGap
+					}
+				}
 			}
 		}
 	}

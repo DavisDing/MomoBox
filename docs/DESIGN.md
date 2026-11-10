@@ -1761,3 +1761,18 @@ Android/iOS构建、真机安装、系统字形/键盘/读屏、实际NAS/HA/天
 根据用户实际安装截图反馈，收紧共享家庭栏/页标题与今日页模块间距，保持V2构图、字号、皮肤和业务入口。家庭栏下边距16→4dp，页标题外边距12/20→4/12dp、内部间距10/6→6/4dp；今日模块间距24→16dp、提醒卡后间距18→12dp。提醒卡减少内边距和段落间距，标题回归既有统一行高；快捷入口移除叠加内边距，最小触控高度仍为48dp，文字增大后自然增长。关注物品行垂直内边距8→6dp，保留52dp图片。
 
 390×844dp实际Flutter渲染中，提醒卡209→177dp，“最近需要关注”标题上移92dp。共享调整同时作用于物品、家居和设置的家庭栏/页标题，助手布局与二级业务页面不另行重构。渲染前后使用同一隔离数据和momo红色主题，证据见 `validation/2026-11-10-ui-density/`。166项相关回归及2项五页深浅色渲染通过，analyze无问题。未打包安装或发布；没有依赖、配置键、数据库或后端变化。
+
+## 41. 2026-11-10：容器默认自动初始化与迁移
+
+用户要求首次启动自行初始化、后续延续，替代第20/21节及此前“不在容器默认入口自动迁移”的范围限制；对应 REQUIREMENT AC-039。参考 PostgreSQL 官方 `docker-entrypoint.sh` 的持久化状态判断和 Gitea `models/db/engine_init.go` 的先迁移后启动方式；MomoBox 以数据库迁移台账为依据，不使用容器文件作为数据库已初始化的唯一证据。
+
+已读取的上游源码：`https://github.com/docker-library/postgres/blob/master/docker-entrypoint.sh`（检查PG_VERSION后决定是否初始化）与 `https://github.com/go-gitea/gitea/blob/main/models/db/engine_init.go`（InitEngineWithMigration先执行migration，再同步表结构）。只参考启动顺序和持久化状态判断，不引入其代码或依赖。
+
+- Dockerfile 默认 `CMD ["start"]`，root运行和二进制 ENTRYPOINT 不变；Compose不添加命令。`start` 沿用现有持久化密钥，使用5分钟可取消上下文运行 `SQLMigrationRunner`，成功才调用 `serve`；直接 `serve`、`schema-check` 的迁移检查仍只读。
+- 自动模式在每个 migration 的 advisory transaction lock 内检查 public schema，与现有SQL明确的search_path一致；首次只接受无业务对象的空schema，允许预装扩展。已有表/函数/枚举等对象却缺失或没有迁移记录即拒绝，不自动收养无台账旧库。数据库或角色仍由部署者预先提供，不自动探测、切库或创建实例。
+- 已有记录核对版本/名称/checksum并要求是镜像迁移的完整前缀，拒绝历史缺口或未知新版本。复用原版本事务，只执行未应用SQL；失败回滚当前版本，已提交版本保留，下次继续。原迁移文件未修改，无新业务表、依赖或密钥轮换。
+- 真实SQL验证发现原outer-transaction正则不能跨过行注释后的空行，导致0002等文件残留BEGIN/COMMIT，提前结束runner事务并释放锁。修复runner中的空白/注释处理并增加原始migration文件回归；不修改已发布SQL及其checksum。
+- 启动日志保留安全错误类型或SQLSTATE，不复制DSN、原始PG错误或业务行；迁移失败不会进入HTTP监听。显式 `migrate` 保留详细人工诊断入口。
+- 自动数据库准备不等于备份或灾备准入，不检测部署目录的`.momobox-restored`标记。已有数据升级继续先备份、停止其他同库后端并遵循恢复隔离；不支持混合版本滚动升级。
+
+新增模拟回归覆盖首次、重启、增量升级、失败后继续及异常台账；真实PostgreSQL回归只读取显式 `MOMO_TEST_DATABASE_URL`，在成功创建的随机新数据库中执行镜像原始迁移，校验并发、数据保留、pgcrypto预装、无台账拒绝及事务重试，清理仅作用于该测试库。测试角色需要CREATEDB，现有CI的专用PostgreSQL初始化角色具备此权限。运行结果及本机工具链限制见VALIDATION；代码落盘不代表新镜像已发布或NAS已验收。

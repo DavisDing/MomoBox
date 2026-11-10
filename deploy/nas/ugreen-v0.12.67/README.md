@@ -2,7 +2,7 @@
 
 只部署 MomoBox 后端，连接 NAS 上已经运行的 PostgreSQL 18。不部署、升级或停止 PostgreSQL，不挂载或修改现有 PostgreSQL 数据卷。不使用 .env，所有部署参数直接填在 docker-compose.yaml。
 
-模板使用2026-11-03从公开GHCR解析的固定manifest digest；更新时需明确更换digest，不随latest漂移。发布流程会把实际构建版本写入二进制。**此精简模板依赖本次新增的密钥自动持久化功能，必须先构建并发布包含该改动的镜像；当前工作区代码尚未发布，不能直接假定该公开镜像已包含本次审计修复。** 它基于项目已有 external-postgres 方案精简，不是正式发布资产的逐字副本。
+模板使用2026-11-03从公开GHCR解析的固定manifest digest；更新时需明确更换digest，不随latest漂移。发布流程会把实际构建版本写入二进制。**容器自动初始化需要包含 `start` 入口的新镜像；本次改动尚未发布，现有固定 digest 不会自动获得此能力。** 它基于项目已有 external-postgres 方案精简，不是正式发布资产的逐字副本。
 
 ## 直接填写 YAML
 
@@ -23,34 +23,36 @@
 
 源码运行或特殊部署可用 `MOMO_DATA_DIR` 改变默认 `/data` 路径；本模板无需设置。
 
-## 首次初始化 MomoBox 专属空库
+## 容器自动初始化与后续启动
 
-UGOS 创建项目时选择本 YAML，项目名为 momobox，暂不启动后端。在NAS项目目录中定义以下命令入口：
+包含本次改动的镜像默认执行 `start`：连接已创建的 MomoBox 专属库，首次空库自动建表并记录迁移；后续启动保留数据和密钥，只执行新增迁移，完成只读校验后才监听 HTTP。无需在 Compose 添加 `command`、初始化服务或手工运行 `migrate`。检测以数据库迁移记录为准，删除或重建后端容器不会重置数据库。
+
+UGOS 创建项目时选择本 YAML；使用已发布且包含此入口的固定镜像后可直接启动。在原 NAS 项目目录也可执行以下命令（项目名需与 UGOS 登记一致）：
 
 ```sh
 dc() { docker compose -p momobox -f docker-compose.yaml "$@"; }
 dc config --quiet
 dc pull momo-backend
-dc stop momo-backend
-dc ps --all
-```
-
-确认现有 PostgreSQL 可达、MomoBox 专属库和角色已就绪，且专属库尚无旧 MomoBox 数据、没有其他 MomoBox 写入者或未完成任务。逐条执行，任一步失败立即停止：
-
-```sh
-dc run --rm --no-deps momo-backend migrate
-dc run --rm --no-deps momo-backend schema-check
 dc up -d momo-backend
 dc ps
 ```
 
-迁移只连接 DATABASE_URL 指定的 MomoBox 专属库；不应指向现有其他应用库。无需停止 PostgreSQL 或其他使用该实例的应用。已有 MomoBox 业务数据应按备份和安全升级流程处理，不使用首次空库初始化步骤替代升级。
+PostgreSQL 实例、专属库、账号和网络仍需预先存在。自动启动不创建 PostgreSQL 实例、数据库或账号，不改密码，不切换连接目标。首次只接受应用 schema 中没有业务对象的空库（允许管理员预装 pgcrypto）；已有表但迁移记录缺失或为空、记录有缺口、校验值不符、出现当前镜像不认识的新版本时拒绝启动。迁移失败回滚当前版本并退出，已完成版本保留，下次从未完成版本继续；数据库锁防止同版本并发重复执行。
+
+人工维护入口继续可用：
+
+```sh
+dc run --rm --no-deps momo-backend migrate
+dc run --rm --no-deps momo-backend schema-check
+```
+
+迁移只连接 DATABASE_URL 指定的 MomoBox 专属库；不应指向其他应用库。已有业务数据升级前仍先备份数据库和 `data/secrets.json`，停止其他使用同一 MomoBox 库的后端，不进行不同镜像版本的滚动升级。备份、恢复隔离及准入流程保持有效，自动启动不代表旧备份恢复可以直接重新开放。
 
 等后端 healthy 后，访问 `http://NAS地址:18473/api/v1/health`（改过映射端口时使用新端口）。健康接口不代表完整业务验收。
 
 ## 初始化页面与运维边界
 
-当前后端提供 API，没有 Web 管理或初始化页面。账号、家庭、成员和 HA 连接使用手机 App 现有入口；数据库连接先填在 YAML，三项内部密钥自动管理。Compose 不自动执行数据库迁移；其他可选功能配置遵循各自现有部署说明，不能假定都可在 Web 中填写。
+当前后端提供 API，没有 Web 管理或初始化页面。账号、家庭、成员和 HA 连接使用手机 App 现有入口；数据库连接先填在 YAML，三项内部密钥自动管理，镜像默认入口负责数据库准备。其他可选功能配置遵循现有部署说明，不能假定都可在 Web 中填写。
 
 原发布运维脚本存在.env前提，未放入此单文件模板，不能声称已适配该模板的升级/备份恢复。需要运维时应按项目外部数据库方案核对固定部署身份、匹配服务器主版本的PG client、备份和恢复证明。
 

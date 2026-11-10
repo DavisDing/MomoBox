@@ -13,15 +13,17 @@ import (
 )
 
 type migrationFakeDB struct {
-	records       map[int64]platform.MigrationRecord
-	executed      []string
-	beginCount    int
-	lockCount     int
-	ensureCount   int
-	commitCount   int
-	rollbackCount int
-	pingErr       error
-	executeErr    error
+	records         map[int64]platform.MigrationRecord
+	executed        []string
+	beginCount      int
+	lockCount       int
+	ensureCount     int
+	commitCount     int
+	rollbackCount   int
+	pingErr         error
+	executeErr      error
+	bootstrapErr    error
+	bootstrapChecks int
 }
 
 func newMigrationFakeDB(records ...platform.MigrationRecord) *migrationFakeDB {
@@ -53,6 +55,11 @@ type migrationFakeTx struct {
 func (tx *migrationFakeTx) AdvisoryLock(context.Context) error {
 	tx.db.lockCount++
 	return nil
+}
+
+func (tx *migrationFakeTx) CheckBootstrap(context.Context) error {
+	tx.db.bootstrapChecks++
+	return tx.db.bootstrapErr
 }
 
 func (tx *migrationFakeTx) EnsureSchemaMigrations(context.Context) error {

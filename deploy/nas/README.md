@@ -41,7 +41,7 @@ HA_TOKEN_ENCRYPTION_KEY=恰好32个ASCII字符
 
 其中 `MOMO_BACKEND_IMAGE` 和 `APP_VERSION` 必须对应同一个已发布版本；生产环境不要使用 `latest`。绿联 NAS 需要能够访问 GHCR，且 `momo-backend` 镜像必须支持 NAS 的 CPU 架构（当前发布镜像为 `linux/amd64` 和 `linux/arm64`）。
 
-创建项目后，先在 UGOS 的 Compose 编辑器中执行配置检查（或保存项目让 UGOS 校验）。**导入 Compose 不会自动执行数据库 migration**：使用同版本部署目录的 `scripts/update.sh` 完成首次迁移再启动后端，不能仅凭“项目已创建”认为初始化完成。后端启动前会只读核对 migration 记录与镜像文件，空库/不匹配时拒绝服务；健康检查通过后访问 `http://NAS地址:映射端口/api/v1/health`。
+创建项目后，先在 UGOS 的 Compose 编辑器中检查配置。包含2026-11-10自动启动改动的镜像默认执行 `start`：专属空库自动初始化，后续启动保留数据并只执行缺失迁移，校验通过后才监听 HTTP，无需在 Compose 添加初始化命令。旧镜像仍须显式 `migrate`；仅导入 YAML 不代表已部署新入口。已有业务数据升级继续按 `scripts/update.sh` 的备份、隔离和迁移流程处理。健康检查通过后访问 `http://NAS地址:映射端口/api/v1/health`。
 
 ## 两种新增独立模板
 
@@ -142,7 +142,7 @@ docker compose \
 
 更新、备份、恢复使用 `deploy/nas/.momobox-deployment.lock` 互斥。发现锁存在时不要直接删除：先检查 owner 元信息、本项目所有容器（含 one-off）、PostgreSQL 活动及仍可能运行的迁移/恢复进程，证明任务已终止后再按运维流程处理；删除锁不代表数据库或同步历史已安全。恢复仍是破坏性原库操作，执行前必须另存当前库备份、验证来源与目标；本脚本不等于完整灾备方案。
 
-后端 `schema-check` 和 `serve` 启动门禁只验证 ledger 的版本、名称、checksum（保留限定 legacy 兼容），不修复记录、不验证物理表结构或数据/历史完整性；`/api/v1/health` 在生产接线中同时验证数据库连接及当前镜像的 migration ledger；缺迁移、checksum不匹配或探测超时返回503，且不泄漏底层错误。它不验证物理表/数据完整性或 restore epoch。
+后端 `schema-check` 和 `serve` 启动门禁只验证 ledger 的版本、名称、checksum（保留限定 legacy 兼容），不修复记录、不验证物理表结构或数据/历史完整性；镜像默认 `start` 在此门禁前执行受保护的自动初始化/迁移。已有对象却缺台账、版本缺口或校验异常会停止启动。`/api/v1/health` 在生产接线中同时验证数据库连接及当前镜像的 migration ledger；异常返回503且不泄漏底层错误。它不验证物理表/数据完整性或 restore epoch。
 
 ## 明确不包含的服务
 
