@@ -117,7 +117,7 @@ void main() {
         // The composer sits behind the history route. Verify it only after the
         // sheet closes, when the assistant page is active and has rebuilt.
         final sendButton = tester.widget<IconButton>(
-          find.widgetWithIcon(IconButton, Icons.send_rounded),
+          find.byWidgetPredicate((widget) => widget is IconButton && widget.tooltip == '发送消息'),
         );
         expect(sendButton.onPressed, isNotNull);
       }
@@ -211,7 +211,7 @@ Future<void> _pumpAssistant(WidgetTester tester, _ControlledAssistant service) a
 
 Future<void> _ask(WidgetTester tester, String text) async {
   await tester.enterText(find.byType(TextField), text);
-  await tester.tap(find.byIcon(Icons.send_rounded));
+  await tester.tap(find.byTooltip('发送消息'));
   await tester.pump();
   await tester.pump();
 }

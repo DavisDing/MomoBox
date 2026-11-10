@@ -1,0 +1,16 @@
+analyze
+Analyzing MomoBox...                                            
+No issues found! (ran in 3.7s)
+
+all-tests
+00:26 +1007: /Users/dinghao/Downloads/MomoBox/test/presentation/intake_layout_test.dart: light Size(320.0, 720.0) 1.0 倍字/键盘下工具和确认按钮可操作，无溢出
+00:26 +1008: /Users/dinghao/Downloads/MomoBox/test/presentation/intake_layout_test.dart: light Size(320.0, 720.0) 3.4 倍字/键盘下工具和确认按钮可操作，无溢出
+00:27 +1009: /Users/dinghao/Downloads/MomoBox/test/presentation/intake_layout_test.dart: light Size(844.0, 390.0) 1.0 倍字/键盘下工具和确认按钮可操作，无溢出
+00:27 +1010: /Users/dinghao/Downloads/MomoBox/test/presentation/intake_layout_test.dart: light Size(844.0, 390.0) 3.4 倍字/键盘下工具和确认按钮可操作，无溢出
+00:27 +1011: All tests passed!
+
+capture
+00:00 +0: loading /Users/dinghao/Downloads/MomoBox/test/presentation/v2_visual_capture_test.dart
+00:00 +0: V2 dark: five production routes render above the dock
+00:02 +1: V2 light: five production routes render above the dock
+00:03 +2: All tests passed!

@@ -27,12 +27,14 @@ abstract final class MomoMobileLayout {
 class MomoPageHeader extends StatelessWidget {
   const MomoPageHeader({
     required this.title,
+    this.eyebrow,
     this.subtitle,
     this.actions = const [],
     super.key,
   });
 
   final String title;
+  final String? eyebrow;
   final Widget? subtitle;
   final List<Widget> actions;
 
@@ -43,6 +45,11 @@ class MomoPageHeader extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (eyebrow != null) ...[
+          Text(eyebrow!, style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant, letterSpacing: 1.1)),
+          const SizedBox(height: 10),
+        ],
         Semantics(
           header: true,
           child: Text(title, style: theme.textTheme.headlineLarge),
@@ -80,6 +87,35 @@ class MomoPageHeader extends StatelessWidget {
       }),
     );
   }
+}
+
+/// The same quiet household entry anchors every collection page.
+class MomoHouseholdBar extends StatelessWidget {
+  const MomoHouseholdBar({required this.onPressed, this.actions = const [], super.key});
+
+  final VoidCallback onPressed;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 4, bottom: 16),
+    child: Row(children: [
+      Expanded(child: Align(alignment: Alignment.centerLeft, child: TextButton.icon(
+        onPressed: onPressed,
+        style: TextButton.styleFrom(
+          foregroundColor: Theme.of(context).colorScheme.onSurface,
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          minimumSize: const Size(44, 44),
+        ),
+        icon: Icon(Icons.home_outlined, size: 18, color: Theme.of(context).colorScheme.primary),
+        label: Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: 5, children: [
+          Text('我的小家', style: Theme.of(context).textTheme.labelLarge),
+          const Icon(Icons.keyboard_arrow_down_rounded, size: 16),
+        ]),
+      ))),
+      ...actions,
+    ]),
+  );
 }
 
 /// Intrinsic-height tiles: a phone gets two columns only when both text and

@@ -148,6 +148,9 @@ ThemeData buildMomoTheme(MomoPalette palette, Brightness brightness) {
     secondary: palette.secondary,
     surface: surface,
     onSurface: text,
+  ).copyWith(
+    primaryContainer: natural ? (isDark ? const Color(0xFF39432F) : const Color(0xFFE9EDDF)) : null,
+    onSurfaceVariant: natural ? (isDark ? const Color(0xFFB5BDAD) : const Color(0xFF73796D)) : null,
   );
   final systemUiOverlayStyle = SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,

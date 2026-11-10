@@ -156,6 +156,26 @@ jobs:
         timeout-minutes: 10
         run: flutter test --coverage --reporter expanded
 
+      - name: Render mobile UI evidence
+        timeout-minutes: 3
+        env:
+          MOMO_UI_CAPTURE_DIR: build/ui-v2
+        run: |
+          curl --fail --location --retry 2 --max-time 60 \
+            https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf \
+            --output "$RUNNER_TEMP/momobox-ui-font.otf"
+          MOMO_UI_FONT="$RUNNER_TEMP/momobox-ui-font.otf" \
+            flutter test --no-pub --reporter expanded test/presentation/v2_visual_capture_test.dart
+
+      - name: Upload Flutter UI screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: momobox-ui-${{ github.sha }}
+          path: build/ui-v2/*.png
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Upload Flutter coverage
         uses: actions/upload-artifact@v4
         with:

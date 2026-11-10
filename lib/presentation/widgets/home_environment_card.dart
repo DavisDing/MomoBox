@@ -46,14 +46,20 @@ class HomeEnvironmentCard extends ConsumerWidget {
     return Container(
       key: const ValueKey('home-environment-summary'),
       padding: const EdgeInsets.fromLTRB(15,4,15,14),
-      decoration:BoxDecoration(color:theme.colorScheme.primaryContainer.withValues(alpha:.45),
+      decoration:BoxDecoration(color:theme.colorScheme.primaryContainer,
         borderRadius:BorderRadius.circular(20)),
       child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
         Row(children:[Expanded(child:Text('环境速览',style:theme.textTheme.bodySmall)),
           if (async.isLoading) const SizedBox.square(dimension:14,child:CircularProgressIndicator(strokeWidth:2)),
-          IconButton(tooltip:'环境数据来源',icon:const Icon(Icons.tune_rounded,size:16),
+          if (MediaQuery.textScalerOf(context).scale(14) > 21)
+            IconButton(tooltip:'环境数据来源',icon:const Icon(Icons.tune_rounded),
+              onPressed:() => Navigator.of(context,rootNavigator:true).push(MaterialPageRoute<void>(
+                builder:(_) => const EnvironmentSettingsScreen())))
+          else Tooltip(message:'环境数据来源',child:TextButton(
+            style:TextButton.styleFrom(minimumSize:const Size(44,44),padding:const EdgeInsets.only(left:8)),
             onPressed:() => Navigator.of(context,rootNavigator:true).push(MaterialPageRoute<void>(
-              builder:(_) => const EnvironmentSettingsScreen()))),
+              builder:(_) => const EnvironmentSettingsScreen())),
+            child:Text('数据来源 ›',style:theme.textTheme.bodySmall))),
         ]),
         LayoutBuilder(builder:(context,constraints) {
           final stack = MediaQuery.textScalerOf(context).scale(14) > 23 || constraints.maxWidth < 250;
@@ -62,7 +68,10 @@ class HomeEnvironmentCard extends ConsumerWidget {
           final outdoor = place(label:'室外',icon:Icons.cloud_outlined,
             main:data.outdoorTemperature,secondary:data.apparentTemperature,secondaryLabel:'体感',secondaryUnit:'°');
           return stack ? Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[indoor,const Divider(height:20),outdoor]) :
-            Row(crossAxisAlignment:CrossAxisAlignment.start,children:[Expanded(child:indoor),const SizedBox(width:16),Expanded(child:outdoor)]);
+            Row(crossAxisAlignment:CrossAxisAlignment.start,children:[Expanded(child:indoor),
+              const SizedBox(width:12),Expanded(child:Container(
+                padding:const EdgeInsets.only(left:14),decoration:BoxDecoration(border:Border(left:BorderSide(
+                  color:theme.colorScheme.primary.withValues(alpha:.15)))),child:outdoor))]);
         }),
         if (data.message != null || async.hasError) ...[const SizedBox(height:8),
           Text(data.message ?? '环境数据暂不可用，可下拉重试',style:theme.textTheme.bodySmall)],

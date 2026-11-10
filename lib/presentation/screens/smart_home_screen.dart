@@ -4,7 +4,6 @@ import '../widgets/momo_components.dart';
 import '../../app/momo_typography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import '../widgets/app_feedback.dart';
 
 import '../../domain/models/smart_home_models.dart';
@@ -13,11 +12,18 @@ import '../controllers/smart_home_controller.dart';
 import '../widgets/home_environment_card.dart';
 import 'home_assistant_settings_screen.dart';
 
-class SmartHomeScreen extends ConsumerWidget {
+class SmartHomeScreen extends ConsumerStatefulWidget {
   const SmartHomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SmartHomeScreen> createState() => _SmartHomeScreenState();
+}
+
+class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
+  String? _selectedRoom;
+
+  @override
+  Widget build(BuildContext context) {
     final homeState = ref.watch(smartHomeControllerProvider);
     final controller = ref.read(smartHomeControllerProvider.notifier);
 
@@ -31,37 +37,35 @@ class SmartHomeScreen extends ConsumerWidget {
             ref.invalidate(homeEnvironmentProvider);
           },
           child: ListView(
+            key: const PageStorageKey('smart-home-page'),
             physics: const AlwaysScrollableScrollPhysics(),
             padding: MomoMobileLayout.pageInsets(context).add(
               EdgeInsets.only(bottom: 20 + MomoDockInsets.bottomOf(context))),
             children: [
+              MomoHouseholdBar(
+                onPressed: () => Navigator.of(context, rootNavigator: true).push(
+                  MaterialPageRoute<void>(builder: (_) => const HomeAssistantSettingsScreen())),
+                actions: [IconButton(
+                  tooltip: '刷新设备状态',
+                  icon: homeState.isLoading
+                      ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.refresh_rounded, size: 20),
+                  onPressed: homeState.isLoading ? null : () => controller.refresh(),
+                )],
+              ),
               MomoPageHeader(
                 title: '让家，懂你。',
-                subtitle: Align(alignment: Alignment.centerLeft,
-                  child: _buildHaBadge(context, homeState.haStatus)),
-                actions: [
-                  IconButton(
-                    tooltip: '刷新设备状态',
-                    icon: homeState.isLoading
-                        ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.refresh_rounded),
-                    onPressed: homeState.isLoading ? null : () => controller.refresh(),
-                  ),
-                  IconButton(tooltip: 'HA 连接配置', icon: const Icon(Icons.tune_rounded),
-                    onPressed: () => Navigator.of(context,rootNavigator:true).push(MaterialPageRoute<void>(
-                      builder:(_) => const HomeAssistantSettingsScreen()))),
-                ],
+                eyebrow: 'HOME, JUST THE WAY YOU LIKE IT.',
+                subtitle: const Text('家里的温度，生活的分寸。'),
               ),
               const HomeEnvironmentCard(),
-              const SizedBox(height: 18),
+              const SizedBox(height: 24),
+              _deviceSectionHeader(context, homeState),
               if (homeState.haStatus == HaConnectionStatus.unconfigured)
                 _buildUnconfiguredState(context)
               else ...[
                   if (homeState.message != null || homeState.commandError != null || homeState.linkageError != null)
                     _buildStateNotice(context, homeState),
-                  _buildSectionHeader(context, title:'家里的设备',
-                    subtitle:'已授权设备 · 点击卡片查看详细控制',icon:Icons.devices_other_rounded),
-                  const SizedBox(height:10),
                   _buildRoomsAndDevices(context, ref, homeState.devices),
                   const SizedBox(height:16),
                   // 耗材联动建议与日志入口 (洗衣机耗材、制冰机等)
@@ -83,6 +87,19 @@ class SmartHomeScreen extends ConsumerWidget {
       ),
     );
   }
+
+  Widget _deviceSectionHeader(BuildContext context, SmartHomeState state) =>
+    Wrap(alignment: WrapAlignment.spaceBetween, crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 8, runSpacing: 4, children: [
+        Text('家里的设备', style: Theme.of(context).textTheme.titleLarge),
+        TextButton.icon(
+          onPressed: () => Navigator.of(context, rootNavigator: true).push(
+            MaterialPageRoute<void>(builder: (_) => const HomeAssistantSettingsScreen())),
+          icon: const Icon(Icons.chevron_right_rounded, size: 16),
+          label: const Text('连接设置'),
+        ),
+        _buildHaBadge(context, state.haStatus),
+      ]);
 
   Widget _buildStateNotice(BuildContext context, SmartHomeState state) {
     final error = state.commandError ?? state.linkageError;
@@ -137,22 +154,23 @@ class SmartHomeScreen extends ConsumerWidget {
   Widget _buildUnconfiguredState(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 32),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.hub_outlined, size: 64, color: Colors.grey),
-            const SizedBox(height: 16),
+            Icon(Icons.home_outlined, size: 30, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(height: 12),
             const Text('Home Assistant 尚未配置', style: TextStyle(fontSize: MomoTextSize.section, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             const Text(
-              '当前没有可用的 NAS/ Home Assistant 集成。请先完成真实连接配置；未连接时不会展示虚假设备或执行控制。',
+              '连接 Home Assistant，查看和照顾家里的设备。',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: MomoTextSize.body, color: Colors.grey),
             ),
             const SizedBox(height: 20),
             MomoCapsuleButton(
-              onPressed: () => context.push('/settings'),
+              onPressed: () => Navigator.of(context, rootNavigator: true).push(
+                MaterialPageRoute<void>(builder: (_) => const HomeAssistantSettingsScreen())),
               label: '打开连接配置',
               icon: const Icon(Icons.settings),
             ),
@@ -340,39 +358,41 @@ class SmartHomeScreen extends ConsumerWidget {
     List<SmartDevice> devices,
   ) {
     final rooms = devices.map((device) => device.room).toSet().toList()..sort();
-
-    return Column(
-      children: rooms.map((room) {
-        final roomDevices = devices.where((d) => d.room == room).toList();
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                child: Wrap(
-                  spacing: 6, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Text(
-                      room,
-                      style: const TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '(${roomDevices.length} 个设备)',
-                      style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey),
-                    ),
-                  ],
-                ),
+    // Permission changes can remove a room while its tab was selected.
+    final selected = rooms.contains(_selectedRoom) ? _selectedRoom : null;
+    final visible = devices.where((device) => selected == null || device.room == selected);
+    final theme = Theme.of(context);
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      SingleChildScrollView(scrollDirection: Axis.horizontal,
+        child: Row(children: [
+          for (final room in <String?>[null, ...rooms]) Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Semantics(selected: selected == room, child: TextButton(
+              key: ValueKey('smart-home-room-${room ?? 'all'}'),
+              style: TextButton.styleFrom(
+                minimumSize: const Size(44, 44),
+                foregroundColor: selected == room ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
+                padding: EdgeInsets.zero,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero,
+                  side: BorderSide.none),
               ),
-              MomoAdaptiveTiles(minimumWidth:148,
-                children:roomDevices.map((dev) => _buildDeviceCard(context,ref,dev)).toList()),
-            ],
+              onPressed: () => setState(() => _selectedRoom = room),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(border: Border(bottom: BorderSide(
+                  color: selected == room ? theme.colorScheme.primary : Colors.transparent,
+                  width: 2))),
+                child: Text(room ?? '全部', style: theme.textTheme.bodySmall),
+              ),
+            )),
           ),
-        );
-      }).toList(),
-    );
+        ])),
+      const SizedBox(height: 12),
+      if (devices.isEmpty) Padding(padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Text('暂无已授权设备', style: theme.textTheme.bodyMedium)),
+      MomoAdaptiveTiles(minimumWidth: 148,
+        children: visible.map((device) => _buildDeviceCard(context, ref, device)).toList()),
+    ]);
   }
 
   Widget _buildDeviceCard(
@@ -394,12 +414,12 @@ class SmartHomeScreen extends ConsumerWidget {
 
     return MomoCard(
       margin:EdgeInsets.zero,
-      color:device.isOn ? theme.colorScheme.primaryContainer.withValues(alpha:.45) : null,
+      color:device.isOn ? theme.colorScheme.primaryContainer : null,
       onTap:() => _showDeviceControlSheet(context,device),
       padding:const EdgeInsets.all(14),
       child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-        Wrap(spacing:8,runSpacing:4,crossAxisAlignment:WrapCrossAlignment.center,children:[
-          Icon(icon,size:24,color:theme.colorScheme.primary),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween,children:[
+          Flexible(child: Icon(icon,size:24,color:theme.colorScheme.primary)),
           Switch.adaptive(value:device.isOn,
             key:ValueKey('smart-home-power-${device.id}'),
             onChanged:controller.powerUnavailableReason(device.id,turnOn:!device.isOn)!=null ? null :

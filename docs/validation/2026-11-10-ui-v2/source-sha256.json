@@ -1,0 +1,26 @@
+{
+  "base_commit": "2f7ceb98e5ce1cbc6fb20d8061722f8a3274a41b",
+  "uncommitted": true,
+  "files": {
+    ".github/workflows/pipeline.yml": "63de243d8625a00a240a81299f2ae8769c9b6e175481b3cfaf58658ea9cff9f2",
+    "lib/app/momo_theme.dart": "c47ffc27fe107aa04c56057dfe2ff405753ca04b6b4a25d92f14d1f90f63c925",
+    "lib/presentation/screens/assistant_screen.dart": "b01e70702bf0b7133cc6989ceed103f9eb21798eb7a2335f5d105844d4743a26",
+    "lib/presentation/screens/home_screen.dart": "f635f538c1f3fa96a7f364037ac837571693fe7c67ac745b730bcc9a2725466b",
+    "lib/presentation/screens/inventory_screen.dart": "f3c6edc198e642cbdea601754646a444d41adf1d12b6568a744b9acb67a017fd",
+    "lib/presentation/screens/settings_screen.dart": "c7759c153f8a9af77feb789bdcfe9fd7d917ca81c6c641d4a091fcc672fb0ce0",
+    "lib/presentation/screens/smart_home_screen.dart": "3159d4e915a2b4c41ee11a38b89c892827afc697af01bad161921a6819e98c51",
+    "lib/presentation/widgets/home_environment_card.dart": "ef7214f11c4dba5151414d318e3912f63de37cd71787fc5d17bea948cde93d93",
+    "lib/presentation/widgets/momo_floating_dock.dart": "48f902f50cd4dc8ddebe8c92ff1866127152a6d6e4a3573d49c31ec75bc82c98",
+    "lib/presentation/widgets/momo_mobile_layout.dart": "9ef1e969b3875c181e4cb4e205a9e28c554e31d81196795253f2d69d584bd203",
+    "lib/presentation/widgets/momo_product_image.dart": "fd5bc5f16b604162d867c6bd6707bddb25dc54ecf4f20687237b04a01e0f0d16",
+    "lib/presentation/widgets/momo_still_life.dart": "42ea977bed42556f2b033f42bae3c0bc0efc8f26ed710fc5e32ff358c7eee786",
+    "test/presentation/ai_assistant_review_test.dart": "b6de4a14e44ab33fa32e74d3b20ea369348c89fbdf04474695d043fa20ca0f40",
+    "test/presentation/ai_workflows_test.dart": "ad6fe0ebd0fb9a38127611ac0e7721b339366c676560eefb18830c73739b3f56",
+    "test/presentation/home_ha_quick_actions_test.dart": "1c467739cf549a5adf3a371078e461f7a41312e497a3fe8513cd59c32ebe8a09",
+    "test/presentation/mobile_redesign_test.dart": "315eff9c57beb3e4a492b4b28a5a057bafa927212c13a4a85aedf406488efdba",
+    "test/presentation/settings_hierarchy_test.dart": "c6a06899952bdd7cffecfc4aa6e81bb6b2693290dc2931d864fa2f683fa02358",
+    "test/presentation/v2_visual_capture_test.dart": "c1a4eb47d3a8baa25677140ef645db07ac6a3c1cbc1368f008fc3a62ae675117",
+    "test/presentation/widget_flows_test.dart": "9e0a4e963f1fbc8c1fb3ee1f353d62e0d10bc12a697133e3f6bab8326bbc2085"
+  },
+  "capture_font_sha256": "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b"
+}

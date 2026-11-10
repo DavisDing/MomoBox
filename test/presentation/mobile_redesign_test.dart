@@ -88,7 +88,7 @@ void main() {
               if (route == '/settings') {
                 final scrollable = find.descendant(of: find.byType(SettingsScreen), matching: find.byType(Scrollable)).first;
                 expect(find.text('AI 解析与模型配置'), findsNothing);
-                for (final category in [SettingsCategory.intelligence,SettingsCategory.household,SettingsCategory.appearance,SettingsCategory.data]) {
+                for (final category in [SettingsCategory.household,SettingsCategory.appearance,SettingsCategory.data]) {
                   final entry = find.text(category.title);
                   await tester.scrollUntilVisible(entry, 200, scrollable: scrollable);
                   await _revealAboveDock(tester, entry, scrollable);
@@ -109,12 +109,31 @@ void main() {
                   expect(tester.state<ScrollableState>(scrollable).position.pixels,
                       closeTo(previousOffset, 0.01));
                 }
+                final dataEntry = find.text(SettingsCategory.data.title);
+                await tester.scrollUntilVisible(dataEntry, 200, scrollable: scrollable);
+                await _revealAboveDock(tester, dataEntry, scrollable);
+                await tester.tap(dataEntry);
+                await _frames(tester);
+                final dataScrollable = find.descendant(of: find.byType(SettingsCategoryScreen), matching: find.byType(Scrollable)).first;
+                final intelligence = find.text(SettingsCategory.intelligence.title);
+                await tester.scrollUntilVisible(intelligence, 200, scrollable: dataScrollable);
+                await _frames(tester);
+                await _revealAboveDock(tester, intelligence, dataScrollable);
+                expect(intelligence.hitTestable(), findsOneWidget);
+                await tester.tap(intelligence);
+                await _frames(tester);
+                expect(tester.widget<SettingsCategoryScreen>(find.byType(SettingsCategoryScreen)).category, SettingsCategory.intelligence);
+                expect(find.text('AI 用量与日志汇总'), findsOneWidget);
+                expect(find.byType(MomoFloatingCapsuleDock), findsNothing);
+                await tester.tap(find.byType(BackButton));
+                await _frames(tester);
                 final about = find.text('关于与存储信息');
-                await tester.scrollUntilVisible(about, 240, scrollable: scrollable);
+                await tester.scrollUntilVisible(about, 240, scrollable: dataScrollable);
+                await _frames(tester);
                 // The last tile can exceed the usable viewport at large text
                 // sizes. Reveal its title instead of forcing the list to its
                 // end, which can scroll that title above the screen.
-                await _revealAboveDock(tester, about, scrollable);
+                await _revealAboveDock(tester, about, dataScrollable);
                 expect(about.hitTestable(), findsOneWidget);
                 await tester.tap(about);
                 await _frames(tester);

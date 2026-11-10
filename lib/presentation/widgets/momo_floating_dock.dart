@@ -171,7 +171,7 @@ class MomoFloatingCapsuleDock extends StatelessWidget {
                   states.contains(WidgetState.disabled)
                       ? theme.colorScheme.onSurface.withValues(alpha: 0.38)
                       : selected
-                      ? theme.colorScheme.primary
+                      ? selectedIndex == 2 ? theme.colorScheme.onPrimary : theme.colorScheme.primary
                       : theme.colorScheme.onSurfaceVariant,
             );
           });
@@ -236,7 +236,23 @@ class MomoFloatingCapsuleDock extends StatelessWidget {
                         removeLeft: true,
                         removeRight: true,
                         child: MediaQuery.withNoTextScaling(
-                          child: NavigationBar(
+                          child: Stack(children: [
+                            Positioned.fill(child: IgnorePointer(child: Row(children: [
+                              for (var index = 0; index < destinations.length; index++)
+                                Expanded(child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+                                  child: AnimatedContainer(
+                                    key: ValueKey('dock-selection-$index'),
+                                    duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 180),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(20),
+                                      color: index != selectedIndex ? Colors.transparent : index == 2
+                                          ? theme.colorScheme.primary : theme.colorScheme.primaryContainer,
+                                    ),
+                                  ),
+                                )),
+                            ]))),
+                            NavigationBar(
                             backgroundColor: Colors.transparent,
                             surfaceTintColor: Colors.transparent,
                             elevation: 0,
@@ -245,9 +261,7 @@ class MomoFloatingCapsuleDock extends StatelessWidget {
                                 MediaQuery.disableAnimationsOf(context)
                                     ? Duration.zero
                                     : const Duration(milliseconds: 250),
-                            indicatorColor: selectedIndex == 2
-                                ? theme.colorScheme.primary
-                                : theme.colorScheme.primary.withValues(alpha: isDark ? 0.25 : 0.12),
+                            indicatorColor: Colors.transparent,
                             indicatorShape: indicatorShape,
                             labelTextStyle: labelStyle,
                             labelPadding: const EdgeInsets.only(
@@ -261,6 +275,7 @@ class MomoFloatingCapsuleDock extends StatelessWidget {
                             onDestinationSelected: onDestinationSelected,
                             destinations: destinations,
                           ),
+                          ]),
                         ),
                       ),
                     ),

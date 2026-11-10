@@ -15,6 +15,8 @@ void main() {
       expect(find.text('一切，按你喜欢。'), findsOneWidget);
       expect(find.text('本地诊断导出'), findsNothing);
       await tester.scrollUntilVisible(find.text('数据与隐私'), 200);
+      await tester.pumpAndSettle();
+      expect(find.text('数据与隐私').hitTestable(), findsOneWidget);
       final overview = tester.state<ScrollableState>(find.byType(Scrollable).first);
       final overviewOffset = overview.position.pixels;
       await tester.tap(find.text('数据与隐私'));
@@ -24,6 +26,7 @@ void main() {
       expect(find.text('隐私与密钥安全'), findsOneWidget);
       final diagnostic = find.text('本地诊断导出');
       await tester.scrollUntilVisible(diagnostic, 200);
+      await tester.pumpAndSettle();
       final category = tester.state<ScrollableState>(find.byType(Scrollable).first);
       final categoryOffset = category.position.pixels;
       await tester.tap(diagnostic);
@@ -52,6 +55,7 @@ void main() {
       final settings = MemorySettingsRepository();
       try {
         await _mount(tester, settings, reduceMotion: reduceMotion);
+        await tester.scrollUntilVisible(find.text('外观与显示'), 160);
         await tester.tap(find.text('外观与显示'));
         await tester.pumpAndSettle();
         final category = find.byType(SettingsCategoryScreen);

@@ -43,14 +43,26 @@ void main() {
     expect(find.text('扫码入库'), findsNothing);
     expect(find.text('拍照识别'), findsNothing);
     expect(find.text('手动录入'), findsNothing);
+    final homeScroll = find.descendant(
+      of: find.byType(HomeScreen),
+      matching: find.byType(Scrollable),
+    ).first;
+    await tester.scrollUntilVisible(find.text('服务状态'), 160, scrollable: homeScroll);
+    await Scrollable.ensureVisible(tester.element(find.text('服务状态')), alignment: 0.15);
+    await _pumpForUi(tester);
+    if (find.text('服务状态').hitTestable().evaluate().isEmpty) {
+      await tester.drag(homeScroll, const Offset(0, -200));
+      await _pumpForUi(tester);
+    }
+    expect(find.text('服务状态').hitTestable(), findsOneWidget);
     expect(find.text('单机模式 · 本地可用'), findsOneWidget);
-    await tester.ensureVisible(find.text('服务状态'));
     await tester.tap(find.text('服务状态'));
     await _pumpForUi(tester);
+    await tester.scrollUntilVisible(find.text('AI服务'), 160, scrollable: homeScroll);
     final nas = tester.getTopLeft(find.text('NAS服务'));
     final ha = tester.getTopLeft(find.text('HA服务'));
     final ai = tester.getTopLeft(find.text('AI服务'));
-    expect(nas.dy, greaterThan(tester.getTopLeft(find.text('记录新物品')).dy));
+    final serviceOffset = tester.state<ScrollableState>(homeScroll).position.pixels;
     expect(nas.dx, ha.dx);
     expect(ha.dx, ai.dx);
     expect(nas.dy, lessThan(ha.dy));
@@ -58,12 +70,9 @@ void main() {
     expect(find.text('未接入'), findsNWidgets(2));
     expect(find.text('未配置'), findsOneWidget);
     final intakeEntry = find.text('记录新物品');
-    final homeScroll = find.descendant(
-      of: find.byType(HomeScreen),
-      matching: find.byType(Scrollable),
-    ).first;
     await tester.scrollUntilVisible(intakeEntry, -160, scrollable: homeScroll);
     await _pumpForUi(tester);
+    expect(tester.state<ScrollableState>(homeScroll).position.pixels, lessThan(serviceOffset));
     expect(intakeEntry.hitTestable(), findsOneWidget);
     await tester.tap(intakeEntry);
     await _pumpUntilFound(tester, find.byType(IntakeSheet));
@@ -114,7 +123,7 @@ void main() {
     );
     await _pumpUntilFound(tester, find.byType(SettingsScreen));
     await _pumpForUi(tester);
-    final last = find.text('关于与存储信息');
+    final last = find.text('数据与隐私');
     final settingsScroll = find.descendant(
       of: find.byType(SettingsScreen),
       matching: find.byType(Scrollable),
@@ -132,6 +141,14 @@ void main() {
     );
     final previousOffset = scrollable.position.pixels;
     await tester.tap(last);
+    await _pumpUntilFound(tester, find.byType(SettingsCategoryScreen));
+    await _pumpForUi(tester);
+    expect(find.byType(MomoFloatingCapsuleDock), findsNothing);
+    final categoryScroll = find.descendant(of: find.byType(SettingsCategoryScreen), matching: find.byType(Scrollable)).first;
+    final about = find.text('关于与存储信息');
+    await tester.scrollUntilVisible(about, 240, scrollable: categoryScroll);
+    await _pumpForUi(tester);
+    await tester.tap(about);
     await _pumpUntilFound(tester, find.byType(AboutSettingsScreen));
     await _pumpForUi(tester);
     expect(
@@ -140,6 +157,9 @@ void main() {
     );
     expect(find.byType(MomoFloatingCapsuleDock), findsNothing);
     expect(find.byType(BackButton).hitTestable(), findsOneWidget);
+    await tester.tap(find.byType(BackButton));
+    await _pumpForUi(tester);
+    expect(find.byType(SettingsCategoryScreen), findsOneWidget);
     await tester.tap(find.byType(BackButton));
     await _pumpForUi(tester);
     expect(find.byType(SettingsScreen), findsOneWidget);
@@ -327,11 +347,11 @@ void main() {
     await _pumpUntilFound(tester, find.text('正常商品'));
     expect(find.text('临期商品'), findsOneWidget);
     expect(find.text('低库存'), findsNothing);
-    await tester.tap(find.textContaining('点击查看异常物品'));
+    await tester.tap(find.byTooltip('查看异常物品'));
     await _pumpForUi(tester);
     expect(find.text('临期商品'), findsOneWidget);
     expect(find.text('正常商品'), findsNothing);
-    await tester.tap(find.textContaining('正在查看异常物品'));
+    await tester.tap(find.byTooltip('查看全部物品'));
     await _pumpForUi(tester);
     expect(find.text('正常商品'), findsOneWidget);
     await _disposeWidgetTree(tester);
@@ -412,8 +432,8 @@ testWidgets('提醒支持单条和分组已处理，确认状态持久化', (tes
     final batchId = (await database.select(database.productBatches).get()).single.id;
 
     await _pumpApp(tester, database);
-    await _pumpUntilFound(tester, find.text('全部提醒'));
-    await tester.tap(find.text('全部提醒'));
+    await _pumpUntilFound(tester, find.text('看看是哪几件'));
+    await tester.tap(find.text('看看是哪几件'));
     final alertItem = find.descendant(
       of: find.byType(AlertsScreen),
       matching: find.text('周期性低库存'),
@@ -527,8 +547,8 @@ testWidgets('提醒支持单条和分组已处理，确认状态持久化', (tes
     expect(tester.takeException(), isNull);
 
     // 访问首页提醒详情
-    await _pumpUntilFound(tester, find.text('全部提醒'));
-    await tester.tap(find.text('全部提醒'));
+    await _pumpUntilFound(tester, find.text('看看是哪几件'));
+    await tester.tap(find.text('看看是哪几件'));
     await _pumpUntilFound(tester, find.text('效期与库存提醒'));
     expect(find.text('效期与库存提醒'), findsOneWidget);
     tester.binding.handlePopRoute();

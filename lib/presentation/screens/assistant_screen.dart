@@ -11,6 +11,7 @@ import '../controllers/providers.dart';
 import '../widgets/intake_sheet.dart';
 import '../widgets/momo_floating_dock.dart';
 import '../widgets/momo_mobile_layout.dart';
+import '../widgets/momo_components.dart';
 import 'alerts_screen.dart';
 import 'home_assistant_settings_screen.dart';
 import 'inventory_screen.dart';
@@ -265,6 +266,7 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
     ref.watch(aiInventoryPermissionProvider);
     final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
     final theme = Theme.of(context);
+    final configured = ref.watch(aiConfigurationStatusProvider).valueOrNull == true;
 
     final welcome = _messages.length == 1 && _messages.first.content.startsWith('你好呀！');
     final content = SafeArea(
@@ -277,7 +279,9 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                 child: LayoutBuilder(builder: (context, constraints) {
                   final compact = MomoMobileLayout.stack(context, constraints.maxWidth, minimum: 390);
                   return Row(children: [
-                    Expanded(child: Text(compact ? '助手' : 'AI 助手', style: theme.textTheme.titleMedium)),
+                    Icon(Icons.auto_awesome_outlined, size: 18, color: theme.colorScheme.primary),
+                    const SizedBox(width: 7),
+                    Expanded(child: Text('AI 助手', style: theme.textTheme.labelLarge)),
                     if (compact)
                       PopupMenuButton<String>(
                         tooltip: '会话选项',
@@ -296,12 +300,15 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                       IconButton(tooltip: '历史会话', icon: const Icon(Icons.history_rounded),
                         onPressed: () => _showHistorySessionsSheet(context)),
                     ],
-                    if (compact)
+                    if (MediaQuery.textScalerOf(context).scale(14) > 21)
                       IconButton(tooltip:'AI 服务',icon:const Icon(Icons.tune_rounded),
                         onPressed:()=>Navigator.of(context,rootNavigator:true).push(
                           MaterialPageRoute<void>(builder:(_)=>const AiSettingsScreen())))
-                    else TextButton.icon(
-                      icon:const Icon(Icons.tune_rounded,size:16),label:const Text('AI 服务'),
+                    else OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(backgroundColor: theme.colorScheme.surface,
+                        padding: const EdgeInsets.symmetric(horizontal: 12), minimumSize: const Size(44, 44),
+                        textStyle: theme.textTheme.bodySmall),
+                      icon:const Icon(Icons.circle, size:5),label:const Text('AI 服务'),
                       onPressed:()=>Navigator.of(context,rootNavigator:true).push(
                         MaterialPageRoute<void>(builder:(_)=>const AiSettingsScreen())),
                     ),
@@ -325,32 +332,11 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                   ]),
                 ),
               if (_store.isRecoveringArchive) const LinearProgressIndicator(),
-              // Keep the composer and conversation usable above a phone keyboard.
-              if (!welcome && MediaQuery.sizeOf(context).height - MediaQuery.viewInsetsOf(context).bottom > 480 &&
-                  MediaQuery.textScalerOf(context).scale(MomoTextSize.body) <= MomoTextSize.body * 1.5)
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: Row(
-                  children: [
-                    _buildQuickChip('📦 入库两盒牛奶'),
-                    const SizedBox(width: 8),
-                    _buildQuickChip('📺 打开电视'),
-                    const SizedBox(width: 8),
-                    _buildQuickChip('❄️ 空调调到 25 度'),
-                    const SizedBox(width: 8),
-                    _buildQuickChip('🧴 还有多少洗衣液？'),
-                    const SizedBox(width: 8),
-                    _buildQuickChip('🛒 采购三包纸巾'),
-                  ],
-                ),
-              ),
-
               // 对话列表
               Expanded(
                 child: ListView.builder(
                   controller: _scrollController,
-                  padding: const EdgeInsets.all(16),
+                  padding: MomoMobileLayout.pageInsets(context).add(const EdgeInsets.only(bottom: 16)),
                   itemCount: _messages.length,
                   itemBuilder: (context, index) {
                     if (welcome && index == 0) return _buildWelcome(theme);
@@ -360,21 +346,16 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
                       child: Container(
                         margin: const EdgeInsets.only(bottom: 12),
-                        constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.82),
+                        constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * (isUser ? 0.82 : 1)),
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         decoration: BoxDecoration(
-                          color: isUser ? theme.colorScheme.surfaceContainerHighest : theme.colorScheme.surface,
+                          color: isUser ? theme.colorScheme.primaryContainer : Colors.transparent,
                           borderRadius: BorderRadius.only(
                             topLeft: const Radius.circular(16),
                             topRight: const Radius.circular(16),
                             bottomLeft: Radius.circular(isUser ? 16 : 4),
                             bottomRight: Radius.circular(isUser ? 4 : 16),
                           ),
-                          border: isUser
-                              ? null
-                              : Border.all(
-                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
-                                ),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -419,8 +400,16 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
 
               // 底部输入栏
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child: Row(
+                padding: MomoMobileLayout.pageInsets(context).add(const EdgeInsets.only(top: 8, bottom: 12)),
+                child: MomoCard(
+                  margin: EdgeInsets.zero, borderRadius: 22,
+                  padding: const EdgeInsets.fromLTRB(14, 10, 8, 8),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                    if (MediaQuery.viewInsetsOf(context).bottom == 0 && MediaQuery.textScalerOf(context).scale(14) <= 21)
+                      Padding(padding: const EdgeInsets.only(bottom: 6),
+                        child: Text('我的小家 · 库存与家居', style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant))),
+                    Row(
                   children: [
                     Expanded(
                       child: TextField(
@@ -428,7 +417,9 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                         decoration: InputDecoration(
                           hintText: '问问家里的事…',
                           hintStyle: const TextStyle(fontSize: MomoTextSize.body),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          border: InputBorder.none, enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none, filled: false,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 10),
                           isDense: true,
                         ),
                         minLines: 1,
@@ -439,10 +430,16 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                     const SizedBox(width: 8),
                     IconButton.filled(
                       tooltip: '发送消息',
-                      icon: const Icon(Icons.send_rounded, size: 20),
+                      icon: const Icon(Icons.arrow_upward_rounded, size: 20),
                       onPressed: _isLoading ? null : () => _sendMessage(),
                     ),
                   ],
+                ),
+                    if (MediaQuery.viewInsetsOf(context).bottom == 0 && MediaQuery.textScalerOf(context).scale(14) <= 21)
+                      Align(alignment: Alignment.center,
+                        child: Text(configured ? '写入前会请你确认' : '连接 AI 服务后开始对话',
+                          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant))),
+                  ]),
                 ),
               ),
             ],
@@ -455,13 +452,16 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
   }
 
   Widget _buildWelcome(ThemeData theme) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 20),
+    padding: const EdgeInsets.only(top: 24, bottom: 12),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Container(padding: const EdgeInsets.all(18),
+      Container(padding: const EdgeInsets.all(17),
         decoration: BoxDecoration(color: theme.colorScheme.primaryContainer,
           borderRadius: BorderRadius.circular(24)),
         child: Icon(Icons.auto_awesome_outlined, size: 32, color: theme.colorScheme.primary)),
-      const SizedBox(height: 28),
+      const SizedBox(height: 22),
+      Text('YOUR EVERYDAY COMPANION', style: theme.textTheme.bodySmall?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant, letterSpacing: 1.3)),
+      const SizedBox(height: 14),
       Text('生活的小事，\n一起理清楚。', style: theme.textTheme.headlineLarge),
       const SizedBox(height: 12),
       Text('找物品、记采买、照顾你的家。\n想起什么，就问一句。',
@@ -471,20 +471,15 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
         (Icons.schedule_outlined, '哪些物品需要先用？'),
         (Icons.shopping_bag_outlined, '帮我整理下次采买清单'),
         (Icons.chair_outlined, '家里有哪些已授权设备？'),
-      ]) ListTile(contentPadding: EdgeInsets.zero,
+      ]) DecoratedBox(decoration: BoxDecoration(border: Border(bottom: BorderSide(
+        color: theme.colorScheme.onSurface.withValues(alpha: .08)))),
+        child: ListTile(contentPadding: EdgeInsets.zero,
         leading: Icon(entry.$1, color: theme.colorScheme.primary),
         title: Text(entry.$2, style: theme.textTheme.bodyMedium),
         trailing: const Icon(Icons.north_east_rounded, size: 16),
-        onTap: _isLoading ? null : () => _sendMessage(entry.$2)),
+        onTap: _isLoading ? null : () => _sendMessage(entry.$2))),
     ]),
   );
-
-  Widget _buildQuickChip(String label) {
-    return ActionChip(
-      label: Text(label, style: const TextStyle(fontSize: MomoTextSize.caption)),
-      onPressed: _isLoading ? null : () => _sendMessage(label.replaceAll(RegExp(r'^[^\s]+\s+'), '')),
-    );
-  }
 
   void _showHistorySessionsSheet(BuildContext context) {
     final theme = Theme.of(context);

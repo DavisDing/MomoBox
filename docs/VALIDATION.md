@@ -729,3 +729,26 @@ Docker/Compose运行与镜像构建、实际PG18/NAS初始化和重启/升级、
 已执行：205个Dart文件tree-sitter语法解析PASS，955处项目内import/export/part目标存在性检查PASS，`git diff --check` PASS。未增加项目依赖、配置键或数据迁移；界面调整仅为剔除不支持的实体开关，没有恢复旧布局/按钮或移除业务断言。复核CI所用Flutter提交的NavigationRail源码，其目的地Semantics设置selected并由InkResponse提供tap，不强制button标志。
 
 NOT_EXECUTED：本机Flutter/Dart不可用，CI同版本 `3.47.9` macOS arm64官方归档探测返回404，未安装工具链；未运行Flutter analyze、相关测试或Android打包，未触发新远端运行。因此本条是日志定位与源码修复记录，不是19项回归已通过的证明。后续按现有CI运行 `flutter analyze`、`flutter test --coverage --reporter expanded`，通过后继续Android构建。本轮未提交、推送或发布。
+
+## 2026-11-10：V2实际页面修正与Flutter渲染
+
+基于 `2f7ceb98e5ce1cbc6fb20d8061722f8a3274a41b` 之后的未提交修改。设计差异和实际修正见DESIGN第39节；以下只覆盖当前本地源码，不扩展成已安装0.12.89或远端Actions的结果。
+
+官方SDK归档仍不可达，改为从Flutter官方stable源码及其engine pin下载Dart/测试引擎，全部置于 `/private/tmp/momobox-v2-toolchain/`，依赖缓存为 `/private/tmp/momobox-v2-pub-cache`。临时源码SDK的Git引导记录不是上游commit。使用官方Flutter工具入口及 `--no-version-check` 直接执行，绕过可选远端更新检查。工具显示Flutter3.47.9、Dart3.13.7；未新增产品依赖，pubspec/lock无变化，未修改系统PATH。
+
+| 检查 | 本地结果 | 证据边界 |
+| --- | --- | --- |
+| `flutter pub get` | PASS | 现有锁定依赖解析成功，未升级锁文件 |
+| `dart run build_runner build --delete-conflicting-outputs` | PASS | 400个生成输出；当前builder提示该旧选项已移除并忽略，不影响生成结果 |
+| `flutter analyze --no-pub` | PASS | No issues found |
+| `flutter test --no-pub --reporter expanded` | PASS | 1011项通过；包含库存/批次/提醒/AI会话/权限/回执及同步回归 |
+| 手机视口与字号 | PASS | 320/390/430竖屏、844横屏，1/1.3/3.4字，深浅色；末项避让和逐级返回保留 |
+| 五页Flutter实际渲染 | PASS | 10张生产页面截图+2张总览，测试数据、Noto CJK字体，非HTML原型；不是安装包/现场设备截图 |
+| 差异空白与workflow YAML | PASS | `git diff --check`、Ruby YAML读取通过；不是远端CI执行 |
+| Android/iOS构建与安装 | NOT_EXECUTED | 本机无Android SDK/完整Xcode；没有新APK |
+| 新增远端CI截图步骤、发布 | NOT_EXECUTED | 未提交/推送/发布 |
+| 真实NAS/HA/公共天气/AI、系统键盘/读屏 | NOT_EXECUTED | 不用测试fixture或本地渲染替代 |
+
+运行中发现并修正：环境来源按钮大字号溢出、原型只包图标的Dock选中态、关注行说明拥挤，以及旧测试用图标定位发送按钮/旧提醒文案/旧设置层级/滚动后未等待新布局的问题。新增真实房间筛选回归；保留库存数量、真实控制回执、会话归属、发送失败和操作确认断言。最终全量运行为1011通过，无剩余失败。
+
+可复核文件：`validation/2026-11-10-ui-v2/README.md`、全部PNG、`source-sha256.json` 和 `verification.txt`。源码哈希记录UI/测试/workflow对应状态；截图中读数、商品和HA连接状态均来自明确隔离fixture。新增CI在测试之后、Android打包之前渲染并上传 `momobox-ui-<commit>`，仍需在实际新提交上确认远端结果；截图artifact本身也不是视觉相似度自动验收。

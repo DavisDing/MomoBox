@@ -195,7 +195,7 @@ void main() {
     await tester.tap(find.text('打开助手'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '有哪些库存？');
-    await tester.tap(find.byIcon(Icons.send_rounded));
+    await tester.tap(find.byTooltip('发送消息'));
     await tester.pump();
     await tester.pump();
     final container = ProviderScope.containerOf(tester.element(find.byType(AssistantScreen)));

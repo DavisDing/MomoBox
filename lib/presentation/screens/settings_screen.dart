@@ -33,8 +33,7 @@ import '../controllers/providers.dart';
 import 'ai_usage_screen.dart';
 import 'statistics_screen.dart';
 
-/// The six primary destinations keep the phone's settings overview short.
-/// Editing and service setup stay in the existing dedicated screens.
+/// Quiet, grouped entry points; editing stays in the dedicated screens.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
@@ -47,17 +46,39 @@ class SettingsScreen extends StatelessWidget {
         padding: MomoMobileLayout.pageInsets(context).add(
           EdgeInsets.only(bottom: 20 + MomoDockInsets.bottomOf(context))),
         children: [
+          MomoHouseholdBar(onPressed: () => _openSettingsPage(context,
+            (_) => const SettingsCategoryScreen(category: SettingsCategory.household))),
           const MomoPageHeader(
+            eyebrow: 'MAKE IT YOURS',
             title: '一切，按你喜欢。',
-            subtitle: Text('设置 · 你的家，你的习惯。'),
+            subtitle: Text('你的家，你的习惯。'),
           ),
-          _SettingsGroup(title: '服务与协同', children: [
+          MomoCard(
+            margin: const EdgeInsets.only(bottom: 24),
+            color: Theme.of(context).colorScheme.primaryContainer,
+            onTap: () => _openSettingsPage(context,
+              (_) => const SettingsCategoryScreen(category: SettingsCategory.household)),
+            child: Row(children: [
+              CircleAvatar(backgroundColor: Theme.of(context).colorScheme.surface,
+                foregroundColor: Theme.of(context).colorScheme.primary,
+                child: const Icon(Icons.home_outlined)),
+              const SizedBox(width: 12),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('我的小家', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 4),
+                Text('物品与日常，都在自己手里。', style: Theme.of(context).textTheme.bodySmall),
+              ])),
+              const Icon(Icons.chevron_right_rounded, size: 18),
+            ]),
+          ),
+          _SettingsGroup(title: '智能与连接', children: [
             _SettingsLink(icon: Icons.auto_awesome_outlined, title: 'AI 服务',
               subtitle: '配置服务、模型与连接方式', destination: (_) => const AiSettingsScreen()),
-            _categoryLink(SettingsCategory.intelligence),
+            _SettingsLink(icon: Icons.hub_outlined, title: '家居连接',
+              subtitle: 'Home Assistant 与设备', destination: (_) => const HomeAssistantSettingsScreen()),
             _categoryLink(SettingsCategory.household),
           ]),
-          _SettingsGroup(title: '使用偏好', children: [
+          _SettingsGroup(title: '日常偏好', children: [
             _categoryLink(SettingsCategory.appearance),
             _SettingsLink(
               icon: Icons.notifications_active_outlined,
@@ -65,15 +86,7 @@ class SettingsScreen extends StatelessWidget {
               subtitle: '权限与测试提醒',
               destination: (_) => const NotificationSettingsScreen(),
             ),
-          ]),
-          _SettingsGroup(title: '数据与应用', children: [
             _categoryLink(SettingsCategory.data),
-            _SettingsLink(
-              icon: Icons.info_outline,
-              title: '关于与存储信息',
-              subtitle: '版本、空间与许可',
-              destination: (_) => const AboutSettingsScreen(),
-            ),
           ]),
         ],
       ),
@@ -90,7 +103,7 @@ class SettingsScreen extends StatelessWidget {
 
 enum SettingsCategory {
   appearance('外观与显示', '主题与字体大小', Icons.palette_outlined),
-  intelligence('智能服务', 'AI、条码与用量', Icons.auto_awesome_outlined),
+  intelligence('识别与用量', 'AI 调用记录与条码查询', Icons.qr_code_scanner),
   household('家庭与同步', 'NAS、家居连接与同步', Icons.home_outlined),
   data('数据与隐私', '统计、备份与安全', Icons.shield_outlined);
 
@@ -129,12 +142,6 @@ class SettingsCategoryScreen extends ConsumerWidget {
       ],
       SettingsCategory.intelligence => [
         _SettingsGroup(title: 'AI 助手', children: [
-          _SettingsLink(
-            icon: Icons.psychology_outlined,
-            title: 'AI 解析与模型配置',
-            subtitle: '管理服务、模型与连接',
-            destination: (_) => const AiSettingsScreen(),
-          ),
           _SettingsLink(
             icon: Icons.analytics_outlined,
             title: 'AI 用量与日志汇总',
@@ -204,6 +211,14 @@ class SettingsCategoryScreen extends ConsumerWidget {
             destination: (_) => const DiagnosticExportScreen(),
           ),
         ]),
+        _SettingsGroup(title: '识别与应用', children: [
+          _SettingsLink(icon: SettingsCategory.intelligence.icon,
+            title: SettingsCategory.intelligence.title,
+            subtitle: SettingsCategory.intelligence.summary,
+            destination: (_) => const SettingsCategoryScreen(category: SettingsCategory.intelligence)),
+          _SettingsLink(icon: Icons.info_outline, title: '关于与存储信息',
+            subtitle: '版本、空间与许可', destination: (_) => const AboutSettingsScreen()),
+        ]),
       ],
     };
     return Scaffold(
@@ -235,7 +250,7 @@ class _SettingsGroup extends StatelessWidget {
         children: [
           if (title != null)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              padding: const EdgeInsets.only(bottom: 4),
               child: Semantics(
                 header: true,
                 child: Text(title!, style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -243,16 +258,12 @@ class _SettingsGroup extends StatelessWidget {
                 )),
               ),
             ),
-          Card(
-            margin: EdgeInsets.zero,
-            clipBehavior: Clip.antiAlias,
-            child: Column(children: [
+          Column(children: [
               for (var i = 0; i < children.length; i++) ...[
-                if (i > 0) Divider(height: 1, indent: largeText ? 16 : 60, endIndent: 16),
+                if (i > 0) Divider(height: 1, indent: largeText ? 0 : 34),
                 children[i],
               ],
             ]),
-          ),
         ],
       ),
     );
@@ -278,17 +289,12 @@ class _SettingsLink extends StatelessWidget {
     final largeText = MediaQuery.textScalerOf(context).scale(MomoTextSize.body) >
         MomoTextSize.body * 1.5;
     return ListTile(
-      minTileHeight: 60,
-      leading: largeText ? null : Container(
-        width: 32, height: 32,
-        decoration: BoxDecoration(
-          color: theme.colorScheme.primary.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Icon(icon, size: 20, color: theme.colorScheme.primary),
-      ),
+      minTileHeight: 68,
+      contentPadding: EdgeInsets.zero,
+      horizontalTitleGap: 12,
+      leading: largeText ? null : Icon(icon, size: 22, color: theme.colorScheme.primary),
       title: Text(title, style: theme.textTheme.titleMedium),
-      subtitle: Text(subtitle, style: theme.textTheme.bodyMedium?.copyWith(
+      subtitle: Text(subtitle, style: theme.textTheme.bodySmall?.copyWith(
         color: theme.colorScheme.onSurfaceVariant,
       )),
       trailing: const Icon(Icons.chevron_right_rounded, size: 20),

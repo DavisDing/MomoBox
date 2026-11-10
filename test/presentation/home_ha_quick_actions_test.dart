@@ -465,6 +465,36 @@ void main() {
   });
 
   group('共享家居页面集成', () {
+    testWidgets('房间标签只筛选实际授权设备，并可返回全部', (tester) async {
+      const bedroomEntity = 'light.bedroom';
+      final repository = _FakeHaRepository()
+        ..entities = [
+          _entity(name: '客厅主灯', areaName: '客厅'),
+          _entity(entityId: bedroomEntity, name: '卧室灯', areaName: '卧室'),
+        ]
+        ..permissions = [
+          _permission(),
+          _permission(entityId: bedroomEntity),
+        ];
+      final controller = await _controller(repository);
+      await _pumpHome(tester, controller, screen: const SmartHomeScreen());
+      expect(find.text('客厅主灯'), findsOneWidget);
+      expect(find.text('卧室灯'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('smart-home-room-卧室')));
+      await tester.pumpAndSettle();
+      expect(find.text('卧室灯'), findsOneWidget);
+      expect(find.text('客厅主灯'), findsNothing);
+      expect(repository.commands, isEmpty);
+
+      await tester.tap(find.byKey(const ValueKey('smart-home-room-all')));
+      await tester.pumpAndSettle();
+      expect(find.text('客厅主灯'), findsOneWidget);
+      expect(find.text('卧室灯'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await _unmountHome(tester);
+    });
+
     testWidgets('未分区设备按真实房间显示并沿用远端控制回执', (tester) async {
       final repository = _FakeHaRepository();
       final controller = await _controller(repository);
@@ -846,6 +876,8 @@ void main() {
       final controller = await _controller(_FakeHaRepository());
       await _pumpHome(tester, controller, sections: ['quick_intake']);
       expect(find.text('HA服务'), findsNothing);
+      await tester.scrollUntilVisible(find.text('服务状态'), 160,
+        scrollable: find.descendant(of: find.byType(HomeScreen), matching: find.byType(Scrollable)).first);
       await tester.tap(find.text('服务状态'));
       await tester.pumpAndSettle();
       expect(find.text('HA服务'), findsOneWidget);
