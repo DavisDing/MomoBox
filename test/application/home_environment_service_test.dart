@@ -70,8 +70,9 @@ void main() {
       calls++;
       expect(request.url.host,'api.open-meteo.com');
       expect(request.url.queryParameters['timeformat'],'unixtime');
-      return http.Response(jsonEncode({'current':{'time':DateTime.now().toUtc().millisecondsSinceEpoch~/1000,
-        'temperature_2m':18,'apparent_temperature':17},'current_units':{'temperature_2m':'°C','apparent_temperature':'°C'}}),200);
+      return http.Response.bytes(utf8.encode(jsonEncode({'current':{'time':DateTime.now().toUtc().millisecondsSinceEpoch~/1000,
+        'temperature_2m':18,'apparent_temperature':17},'current_units':{'temperature_2m':'°C','apparent_temperature':'°C'}})),200,
+        headers:{'content-type':'application/json; charset=utf-8'});
     }));
     addTearDown(service.close);
     final weather=await service.current(const WeatherPlace('示例城市',31,121));
@@ -96,8 +97,9 @@ void main() {
   test('failed weather refresh preserves old data with an explicit stale status',() async {
     var fail=false;
     final service=PublicWeatherService(client:MockClient((_) async => fail ? http.Response('unavailable',503) :
-      http.Response(jsonEncode({'current':{'time':DateTime.now().toUtc().millisecondsSinceEpoch~/1000,
-        'temperature_2m':18,'apparent_temperature':null},'current_units':{'temperature_2m':'°C','apparent_temperature':'°C'}}),200)));
+      http.Response.bytes(utf8.encode(jsonEncode({'current':{'time':DateTime.now().toUtc().millisecondsSinceEpoch~/1000,
+        'temperature_2m':18,'apparent_temperature':null},'current_units':{'temperature_2m':'°C','apparent_temperature':'°C'}})),200,
+        headers:{'content-type':'application/json; charset=utf-8'})));
     addTearDown(service.close);
     const place=WeatherPlace('城市',31,121);
     final before=await service.current(place);

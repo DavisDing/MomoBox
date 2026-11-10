@@ -434,7 +434,10 @@ void main() {
       expect(find.byType(NavigationRail), findsOneWidget);
       final railAssistant=tester.getSemantics(find.descendant(of:find.byType(NavigationRail),matching:find.text('助手')));
       expect(railAssistant.label,contains('Tab 1 of 5'));
-      expect(railAssistant.flagsCollection.isButton,isTrue);
+      expect(
+        railAssistant.getSemanticsData().hasAction(ui.SemanticsAction.tap),
+        isTrue,
+      );
       final railHome=tester.getSemantics(find.descendant(of:find.byType(NavigationRail),matching:find.text('今日')));
       expect(railHome.label,contains('Tab 3 of 5'));
       expect(railHome.flagsCollection.isSelected,ui.Tristate.isTrue);

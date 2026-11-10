@@ -711,3 +711,21 @@ Docker/Compose运行与镜像构建、实际PG18/NAS初始化和重启/升级、
 - 修复：`home_environment_service.dart` 两处、`home_environment.dart` 一处及 `providers.dart` 一处多行if补显式块；`environment_settings_screen.dart` 的 `DropdownButtonFormField` 改用 `initialValue`，保留原选择值、key与回调。不改业务条件、UI布局、依赖或检查门禁。
 - 已执行：全205个Dart文件tree-sitter语法解析PASS，955处本地import/export/part目标检查PASS；4处诊断对应if均已核对为块结构，弃用参数已替换；`git diff --check` PASS。
 - NOT_EXECUTED：本机Flutter/Dart不在PATH，未执行Flutter analyze/test/build，未重新运行GitHub工作流；不能据此宣称安装包已通过。本轮未提交、推送或发布。
+
+## 2026-11-10：修复 GitHub 构建 #88 的测试阻塞
+
+通过 GitHub 插件读取 run `42591532343`（#88，提交 `a7226950198e57f94f15e9c34eeb8cc51a0dcc29`）及 Flutter job `129074245829` 日志。当前本地HEAD与该提交一致，开始时工作区干净。此提交静态分析已通过，测试结果为989通过、19失败；Android debug、release打包与发布均跳过。iOS unsigned与后端检查通过，仅代表该提交。
+
+| 失败组 | 数量 | 根因与本轮调整 |
+| --- | --- | --- |
+| 公共天气缓存/失败保留 | 2 | mock响应以String构造且没有JSON UTF-8编码信息，`°C`成为Latin-1字节，被生产端严格UTF-8解析拒绝。测试改用显式UTF-8 bytes与JSON header；生产解析和失败语义不放宽 |
+| 助手离页在途回复 | 1 | 系统返回及单次大步pump未可靠完成页面退出。测试直接pop页面并等待逆向转场，明确断言页面消失前后请求仍在途，会话ID/数量与持久回复断言保留；系统返回规则仍由独立回归负责 |
+| 宽屏导航语义 | 1 | 旧测试强制原生NavigationRail具有button标志，与当前Flutter原生语义不符。改检验真实tap语义动作，保留目的地序号/选中态与布局占位断言 |
+| 未分区设备 | 1 | 旧三房间布局要求不显示该设备，已被AC-036的真实房间分组替代。改验卡片存在并发送typed turn_on、以匹配回执刷新状态 |
+| 设备详细控制入口 | 11 | 测试helper点击已删除的tune按钮，新版由卡片本身打开。改为真实点击卡片名称并检查可命中，仍执行原零亮度、权限/超时/错配、撤权/登出/控制器替换与真实回执断言 |
+| scene/script错误投影 | 2 | 实际实现缺陷：只排除了sensor/weather，仍把scene/script变成disabled开关。设备投影改为已支持类型白名单（light/switch/climate/media_player/washer）；原实体/权限/环境读取保留。相关测试增加投影为空检查，控制白名单不扩展 |
+| 首页入库入口 | 1 | 展开服务状态后，点击坐标在屏幕上方。明确使用首页主ScrollView向上滚动、等待布局帧并检查hitTestable，再真实点击入库；保留唯一入口与原库存流程断言 |
+
+已执行：205个Dart文件tree-sitter语法解析PASS，955处项目内import/export/part目标存在性检查PASS，`git diff --check` PASS。未增加项目依赖、配置键或数据迁移；界面调整仅为剔除不支持的实体开关，没有恢复旧布局/按钮或移除业务断言。复核CI所用Flutter提交的NavigationRail源码，其目的地Semantics设置selected并由InkResponse提供tap，不强制button标志。
+
+NOT_EXECUTED：本机Flutter/Dart不可用，CI同版本 `3.47.9` macOS arm64官方归档探测返回404，未安装工具链；未运行Flutter analyze、相关测试或Android打包，未触发新远端运行。因此本条是日志定位与源码修复记录，不是19项回归已通过的证明。后续按现有CI运行 `flutter analyze`、`flutter test --coverage --reporter expanded`，通过后继续Android构建。本轮未提交、推送或发布。

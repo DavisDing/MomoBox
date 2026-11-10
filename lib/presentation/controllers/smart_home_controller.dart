@@ -468,7 +468,9 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
     Set<String> staleEntityIds,
   ) {
     return List<SmartDevice>.unmodifiable(
-      entities.where((entity) => entity.domain != 'sensor' && entity.domain != 'weather').map((entity) {
+      entities.where((entity) => const {
+        'light', 'switch', 'climate', 'media_player', 'washer',
+      }.contains(entity.domain.toLowerCase())).map((entity) {
         final key = _key(entity.integrationId, entity.entityId);
         final remoteState = _statesByKey[key];
         final rawState = remoteState?.state ?? entity.currentState;

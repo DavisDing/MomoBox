@@ -202,9 +202,13 @@ void main() {
     final store = container.read(aiConversationStoreProvider);
     final sessionId = store.currentId;
     final sessionCount = store.sessions.length;
-    await tester.binding.handlePopRoute();
-    await tester.pump(const Duration(seconds: 1));
+    expect(store.isLoading, isTrue);
+    // Leave the page explicitly and drain its reverse transition before
+    // checking disposal; keyboard-back handling is a separate interaction.
+    Navigator.of(tester.element(find.byType(AssistantScreen))).pop();
+    await tester.pumpAndSettle();
     expect(find.byType(AssistantScreen), findsNothing);
+    expect(store.isLoading, isTrue);
     assistant.reply.complete('后台完成的库存回复');
     await tester.pumpAndSettle();
     await tester.tap(find.text('打开助手'));

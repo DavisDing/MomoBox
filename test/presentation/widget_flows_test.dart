@@ -57,8 +57,15 @@ void main() {
     expect(ha.dy, lessThan(ai.dy));
     expect(find.text('未接入'), findsNWidgets(2));
     expect(find.text('未配置'), findsOneWidget);
-    await tester.ensureVisible(find.text('记录新物品'));
-    await tester.tap(find.text('记录新物品'));
+    final intakeEntry = find.text('记录新物品');
+    final homeScroll = find.descendant(
+      of: find.byType(HomeScreen),
+      matching: find.byType(Scrollable),
+    ).first;
+    await tester.scrollUntilVisible(intakeEntry, -160, scrollable: homeScroll);
+    await _pumpForUi(tester);
+    expect(intakeEntry.hitTestable(), findsOneWidget);
+    await tester.tap(intakeEntry);
     await _pumpUntilFound(tester, find.byType(IntakeSheet));
     expect(tester.takeException(), isNull);
     await _disposeWidgetTree(tester);

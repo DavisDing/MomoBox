@@ -419,6 +419,7 @@ void main() {
           ..remoteState = _state(entityId: entityId);
         final controller = await _controller(repository);
         addTearDown(controller.dispose);
+        expect(controller.state.devices, isEmpty);
         await controller.toggleDevice('ha::$entityId');
         expect(repository.commands, isEmpty);
         expect(controller.state.commandError, contains('不支持'));
@@ -464,13 +465,21 @@ void main() {
   });
 
   group('共享家居页面集成', () {
-    testWidgets('未分区设备保留真实房间，但既有三房间页面不构造其卡片', (tester) async {
+    testWidgets('未分区设备按真实房间显示并沿用远端控制回执', (tester) async {
       final repository = _FakeHaRepository();
       final controller = await _controller(repository);
       await _pumpHome(tester, controller, screen: const SmartHomeScreen());
       expect(controller.state.devices.single.room, '未分区');
-      expect(find.byKey(const ValueKey('smart-home-power-$_deviceId')), findsNothing);
-      expect(repository.commands, isEmpty);
+      final power = find.byKey(const ValueKey('smart-home-power-$_deviceId'));
+      expect(power, findsOneWidget);
+      expect(tester.widget<Switch>(power).onChanged, isNotNull);
+      await tester.ensureVisible(power);
+      await tester.pump();
+      expect(power.hitTestable(), findsOneWidget);
+      await tester.tap(power);
+      await tester.pumpAndSettle();
+      expect(repository.commands, [NasHaCommand.turnOn]);
+      expect(controller.state.devices.single.isOn, isTrue);
       expect(tester.takeException(), isNull);
       await _unmountHome(tester);
     });
@@ -823,6 +832,7 @@ void main() {
           final controller = await _controller(repository);
           await _pumpHome(tester, controller, screen: home ? const HomeScreen() : const SmartHomeScreen());
           expect(find.byType(Switch), findsNothing);
+          expect(controller.state.devices, isEmpty);
           expect(find.text('常用全屋场景'), findsNothing);
           expect(find.text('晚安'), findsNothing);
           expect(repository.commands, isEmpty);
@@ -903,8 +913,14 @@ Future<void> _unmountHome(WidgetTester tester) async {
 Future<void> _openControlSheet(WidgetTester tester, String deviceId) async {
   final cardPower = find.byKey(ValueKey('smart-home-power-$deviceId'));
   await tester.ensureVisible(cardPower);
+  await tester.pump();
   final card = find.ancestor(of: cardPower, matching: find.byType(Card));
-  await tester.tap(find.descendant(of: card, matching: find.byIcon(Icons.tune_rounded)));
+  // The redesigned card itself opens details; tap its name, clear of power.
+  final name = find.descendant(of: card, matching: find.byType(Text)).first;
+  await tester.ensureVisible(name);
+  await tester.pump();
+  expect(name.hitTestable(), findsOneWidget);
+  await tester.tap(name);
   await tester.pumpAndSettle();
   expect(find.byKey(ValueKey('smart-home-sheet-power-$deviceId')), findsOneWidget);
 }
