@@ -66,6 +66,9 @@ void main() {
             expect(request.headers['Authorization'], 'Bearer access-rotated');
             return _json({'integrations': []});
           }
+          if (request.url.path.endsWith('/families/current')) return _family('family-a');
+          if (request.url.path.endsWith('/families/members')) return _json({'members': []});
+          if (request.url.path.endsWith('/devices')) return _json({'devices': []});
           return _json({}, 404);
         }));
       },
@@ -126,6 +129,9 @@ void main() {
             expect(request.headers['Authorization'], 'Bearer access-b');
             return _json({'integrations': []});
           }
+          if (request.url.path.endsWith('/families/current')) return _family('family-a');
+          if (request.url.path.endsWith('/families/members')) return _json({'members': []});
+          if (request.url.path.endsWith('/devices')) return _json({'devices': []});
           return _json({}, 404);
         })),
       );
@@ -202,7 +208,7 @@ void main() {
     expect(controller.state.family.familyId, 'family-b');
     release.complete(_json({}, 401));
     await rejected;
-    expect(refreshCalls, 0);
+    expect(refreshCalls, 1); // Explicit refresh after joining the new family.
     expect(haRequests, 1);
     await expectLater(oldRepository.listIntegrations(), throwsA(isA<NasApiError>()));
     expect(haRequests, 1);

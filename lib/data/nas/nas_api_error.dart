@@ -75,7 +75,7 @@ class NasApiError implements Exception {
       kind: _kindForStatus(response.statusCode),
       statusCode: response.statusCode,
       code: _redact(code),
-      message: _redact(message) ?? _defaultMessage(response.statusCode),
+      message: _knownMessage(code, message) ?? _redact(message) ?? _defaultMessage(response.statusCode),
       requestId: _redact(requestId),
       details: details,
     );
@@ -111,6 +111,28 @@ class NasApiError implements Exception {
     // Do not include server message, details, cause, request body or headers.
     return 'NasApiError(${kind.name}$status$apiCode)';
   }
+}
+
+String? _knownMessage(String? code, String? message) {
+  switch (code) {
+    case 'HA_UNAUTHORIZED':
+      return 'NAS 家庭身份不可用，请在 NAS 设置中登录并创建或加入家庭；已加入家庭时请重新登录以更新身份。';
+    case 'AUTH_EMAIL_EXISTS':
+      return '该邮箱已注册，请直接登录。';
+    case 'AUTH_INVALID_CREDENTIALS':
+      return '邮箱或密码不正确，请检查后重试。';
+    case 'AUTH_REGISTRATION_CLOSED':
+      return 'NAS 当前未开放账号注册，请联系 NAS 管理员。';
+  }
+  return switch (message) {
+    'password must be at least 12 characters and at most 72 UTF-8 bytes' =>
+      '密码至少 12 个字符，且不能超过 72 个 UTF-8 字节。',
+    'email is invalid' => '请输入有效邮箱。',
+    'nickname must be 1-80 characters' => '昵称须为 1–80 个字符。',
+    'email or password is invalid' => '邮箱或密码不正确，请检查后重试。',
+    'email already exists' => '该邮箱已注册，请直接登录。',
+    _ => null,
+  };
 }
 
 NasApiErrorKind _kindForStatus(int statusCode) {

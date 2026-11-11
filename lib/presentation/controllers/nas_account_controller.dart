@@ -280,7 +280,7 @@ class NasAccountController extends StateNotifier<NasAccountState> {
       isSessionCurrent: () => _isCurrentSession(revision) &&
           state.isAuthenticated && auth?.isAuthenticated == true &&
           client?.hasAccessToken == true &&
-          state.family.status != NasFamilyStatus.loading &&
+          state.family.hasFamily &&
           identical(state.family.current, family),
     );
   }
@@ -714,7 +714,16 @@ class NasAccountController extends StateNotifier<NasAccountState> {
     try {
       final family = await operation();
       if (!_isCurrentSession(revision)) return;
+      // The create/join response has no tokens. Refresh before publishing the
+      // new family so HA, members and devices use its server-issued scope.
+      final auth = await _authService!.refresh();
+      if (!_isCurrentSession(revision)) return;
+      if (!auth.isAuthenticated) {
+        _setSignedOut(auth.error?.message ?? '家庭已保存，请重新登录 NAS 以更新家庭身份。');
+        return;
+      }
       state = state.copyWith(
+        auth: auth,
         family: NasFamilyState(
           status: NasFamilyStatus.available,
           current: family,

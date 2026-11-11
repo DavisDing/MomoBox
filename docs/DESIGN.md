@@ -1782,3 +1782,11 @@ Android/iOS构建、真机安装、系统字形/键盘/读屏、实际NAS/HA/天
 按用户要求，将 `DefaultHTTPAddr` 和Docker EXPOSE改为18473；四套NAS Compose显式设置 `HTTP_ADDR=0.0.0.0:18473`，映射右端18473，三套.env示例及宿主默认值也统一18473。现有healthcheck按同一HTTP_ADDR构造探测地址，无需增加另一份硬编码端口。精简模板也显式设置HTTP_ADDR，因此既有支持该变量的镜像可通过更新Compose调整监听，新镜像自身默认值仍须发布后生效。
 
 手机NAS设置的输入示例和地址格式错误提示同步改为18473，仅更新文案，不改布局或用户已保存的URL。已有部署的旧HTTP_ADDR、端口映射和.env不会被替换镜像自动修改，需同步调整并重建后端；宿主端口仍可按原MOMO_BACKEND_PORT定制。两处Go测试和一个Dart假API中的8080作为自定义地址fixture保留，避免把任意端口支持误改成只允许18473。历史记录的18473:8080不重写，本节替代该默认方案。
+
+## 43. 2026-11-11：注册弹窗保留输入与 HA 家庭身份门禁
+
+注册页面原来仅校验8位密码，并在网络请求之前关闭弹窗；NAS实际注册规则为12个Unicode字符起、72个UTF-8字节封顶。新增NasAuthValidation复用该边界；NasAuthDialog自行管理输入控制器、提交中状态和错误，onSubmit完成且登录成功后才关闭，失败不销毁表单。常见NAS认证错误显示中文说明，不复制请求内容。
+
+HA仍由NAS保存令牌并检查家庭权限，不增加直连或免登录路径。配置页观察NasAccountState，明确未登录、家庭缺失/读取失败及普通成员权限，复用现有NasSettingsScreen作为处理入口，禁用不满足权限的保存/测试。家庭尚未available时，共用会话repository不允许HA请求。创建/加入家庭接口未返回新令牌，NasAccountController在发布available状态之前调用既有refresh；失败保持门禁，旧会话响应仍按revision丢弃。HA保存失败时不重置表单dirty状态。
+
+只调整现有配置反馈和校验，不重设计页面，不改后端API、数据库、现有账号密码或依赖。测试中的HTTP响应只用于验证状态和权限，不作为NAS/HA现场证据。AI_CONTEXT更新建议：完成安装及现场验收后，补充注册密码提示与HA需要NAS家庭身份的约定。

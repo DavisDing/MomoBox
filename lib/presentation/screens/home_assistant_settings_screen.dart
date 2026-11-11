@@ -9,6 +9,8 @@ import '../controllers/providers.dart';
 import '../widgets/momo_components.dart';
 import '../widgets/momo_floating_dock.dart';
 import '../controllers/smart_home_controller.dart';
+import '../controllers/nas_account_controller.dart';
+import 'nas_settings_screen.dart';
 
 class HomeAssistantSettingsScreen extends ConsumerStatefulWidget {
   const HomeAssistantSettingsScreen({super.key});
@@ -81,6 +83,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
   }
 
   Future<void> _saveIntegration() async {
+    if (!_canManageIntegration) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
     final url = _parseHaUrl(_haUrlController.text);
     if (url == null) return;
@@ -92,6 +95,8 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
       accessToken: _tokenController.text.trim(),
     );
     if (!mounted) return;
+    final saved = ref.read(smartHomeControllerProvider);
+    if (saved.commandError != null || saved.integrations.isEmpty) return;
     setState(() {
       _formDirty = false;
       _hydratedIntegrationId = ref.read(smartHomeControllerProvider).integrations.firstOrNull?.id;
@@ -99,7 +104,28 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
   }
 
   Future<void> _testIntegration() async {
+    if (!_canManageIntegration) return;
     await ref.read(smartHomeControllerProvider.notifier).testIntegration();
+  }
+
+  bool get _canManageIntegration {
+    final account = ref.read(nasAccountProvider);
+    final role = account.family.current?.membership.role;
+    return account.isAuthenticated && !account.isLoading &&
+        account.family.hasFamily && (role == 'owner' || role == 'admin');
+  }
+
+  String? _setupRequirement(NasAccountState account) {
+    if (account.isLoading) return '正在核验 NAS 登录和家庭身份，请稍候。';
+    if (!account.isAuthenticated) return '请先配置并连接 NAS、登录 NAS 账号，再创建或加入家庭。';
+    if (!account.family.hasFamily) {
+      return account.family.status == NasFamilyStatus.error
+          ? '家庭身份读取失败，请前往 NAS 设置刷新家庭与设备，必要时重新登录。'
+          : '请先在 NAS 设置中创建或加入家庭，再配置 Home Assistant。';
+    }
+    final role = account.family.current?.membership.role;
+    if (role != 'owner' && role != 'admin') return '仅家庭创建者或管理员可保存和测试 HA 连接；普通成员可使用已授权的设备。';
+    return null;
   }
 
   Future<void> _refresh() async {
@@ -139,6 +165,8 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
   Widget build(BuildContext context) {
     final homeState = ref.watch(smartHomeControllerProvider);
     final nasState = ref.watch(nasConnectionProvider);
+    final account = ref.watch(nasAccountProvider);
+    final setupRequirement = _setupRequirement(account);
     _hydrateFromState(homeState);
 
     return Scaffold(
@@ -160,6 +188,22 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
         children: [
           _buildStatusCard(homeState, nasState),
           const SizedBox(height: 12),
+          if (setupRequirement != null) ...[
+            MomoCard(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(setupRequirement),
+                TextButton.icon(
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => const NasSettingsScreen(),
+                  )),
+                  icon: const Icon(Icons.family_restroom),
+                  label: const Text('前往 NAS 与家庭设置'),
+                ),
+              ],
+            )),
+            const SizedBox(height: 12),
+          ],
           if (homeState.message != null || homeState.commandError != null)
             _buildFeedbackCard(homeState),
           if (homeState.message != null || homeState.commandError != null) const SizedBox(height: 12),
@@ -230,7 +274,15 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
     SmartHomeState state,
     NasConnectionState nasState,
   ) {
-    if (nasState.status != NasConnectionStatus.connected && !state.nasOnline) {
+    final account = ref.read(nasAccountProvider);
+    if (account.isLoading) {
+      return (label: '核验中', description: '正在核验 NAS 登录和家庭身份。', color: Colors.blue);
+    }
+    if (account.isAuthenticated && !account.family.hasFamily) {
+      return (label: '需核验家庭', description: _setupRequirement(account)!, color: Colors.orange);
+    }
+    if (!account.isAuthenticated ||
+        (nasState.status != NasConnectionStatus.connected && !state.nasOnline)) {
       return (
         label: '需先连接 NAS',
         description: '请先在 NAS 设置中登录并连接服务器。',
@@ -344,7 +396,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
                 children: [
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: isLoading ? null : _saveIntegration,
+                      onPressed: isLoading || !_canManageIntegration ? null : _saveIntegration,
                       icon: isLoading
                           ? const SizedBox(
                               width: 16,
@@ -358,7 +410,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
                   const SizedBox(width: 8),
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: isLoading || state.integrations.isEmpty ? null : _testIntegration,
+                      onPressed: isLoading || !_canManageIntegration || state.integrations.isEmpty ? null : _testIntegration,
                       icon: const Icon(Icons.network_check_rounded),
                       label: const Text('测试连接'),
                     ),

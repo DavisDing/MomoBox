@@ -11,6 +11,7 @@ import '../controllers/providers.dart';
 import '../widgets/momo_components.dart';
 import '../widgets/momo_floating_dock.dart';
 import '../widgets/app_feedback.dart';
+import '../widgets/nas_auth_dialog.dart';
 
 class NasSettingsScreen extends ConsumerStatefulWidget {
   const NasSettingsScreen({super.key});
@@ -70,140 +71,37 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
     }
   }
 
-  Future<void> _login() async {
-    final request = await _showAuthDialog(register: false);
-    if (request is! NasLoginRequest || !mounted) return;
-    await ref.read(nasAccountProvider.notifier).login(request);
-    if (!mounted) return;
-    _showAccountResult();
-  }
+  Future<void> _login() => _showAuthDialog(register: false);
 
-  Future<void> _register() async {
-    final request = await _showAuthDialog(register: true);
-    if (request is! NasRegisterRequest || !mounted) return;
-    await ref.read(nasAccountProvider.notifier).register(request);
-    if (!mounted) return;
-    _showAccountResult();
-  }
+  Future<void> _register() => _showAuthDialog(register: true);
 
-  void _showAccountResult() {
-    final account = ref.read(nasAccountProvider);
-    final message = account.errorMessage ??
-        (account.isAuthenticated ? 'NAS 账号已登录。' : 'NAS 账号操作未完成。');
-    showAppSnackBar(context, SnackBar(content: Text(message)));
-  }
-
-  Future<Object?> _showAuthDialog({required bool register}) {
-    final emailController = TextEditingController();
-    final passwordController = TextEditingController();
-    final nicknameController = TextEditingController();
-    final formKey = GlobalKey<FormState>();
-
-    return showDialog<Object?>(
+  Future<void> _showAuthDialog({required bool register}) async {
+    final success = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) {
-        var obscurePassword = true;
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: Text(register ? '注册 NAS 账号' : '登录 NAS 账号'),
-              content: Form(
-                key: formKey,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (register) ...[
-                        TextFormField(
-                          controller: nicknameController,
-                          decoration: const InputDecoration(
-                            labelText: '昵称',
-                            prefixIcon: Icon(Icons.person_outline),
-                          ),
-                          validator: (value) => value == null || value.trim().isEmpty
-                              ? '请输入昵称'
-                              : null,
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                      TextFormField(
-                        controller: emailController,
-                        keyboardType: TextInputType.emailAddress,
-                        decoration: const InputDecoration(
-                          labelText: '邮箱',
-                          prefixIcon: Icon(Icons.email_outlined),
-                        ),
-                        validator: (value) => value == null || !value.contains('@')
-                            ? '请输入有效邮箱'
-                            : null,
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: passwordController,
-                        obscureText: obscurePassword,
-                        decoration: InputDecoration(
-                          labelText: '密码',
-                          prefixIcon: const Icon(Icons.lock_outline),
-                          suffixIcon: IconButton(
-                            tooltip: obscurePassword ? '显示密码' : '隐藏密码',
-                            icon: Icon(obscurePassword
-                                ? Icons.visibility_outlined
-                                : Icons.visibility_off_outlined),
-                            onPressed: () => setDialogState(
-                              () => obscurePassword = !obscurePassword,
-                            ),
-                          ),
-                        ),
-                        validator: (value) => value == null || value.length < 8
-                            ? '密码至少 8 位'
-                            : null,
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        '账号请求会发送到你配置的 NAS。应用不会把密码写入本地设置。',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('取消'),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    if (!(formKey.currentState?.validate() ?? false)) return;
-                    if (register) {
-                      Navigator.of(dialogContext).pop(
-                        NasRegisterRequest(
-                          email: emailController.text.trim(),
-                          password: passwordController.text,
-                          nickname: nicknameController.text.trim(),
-                        ),
-                      );
-                    } else {
-                      Navigator.of(dialogContext).pop(
-                        NasLoginRequest(
-                          email: emailController.text.trim(),
-                          password: passwordController.text,
-                        ),
-                      );
-                    }
-                  },
-                  child: Text(register ? '注册并登录' : '登录'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    ).whenComplete(() {
-      emailController.dispose();
-      passwordController.dispose();
-      nicknameController.dispose();
-    });
+      barrierDismissible: false,
+      builder: (_) => NasAuthDialog(
+        register: register,
+        onSubmit: (email, password, nickname) async {
+          final controller = ref.read(nasAccountProvider.notifier);
+          if (register) {
+            await controller.register(NasRegisterRequest(
+              email: email, password: password, nickname: nickname,
+            ));
+          } else {
+            await controller.login(NasLoginRequest(email: email, password: password));
+          }
+          if (!mounted) return 'NAS 设置页面已关闭，请重试。';
+          final account = ref.read(nasAccountProvider);
+          if (account.isAuthenticated) return null;
+          return account.errorMessage ?? 'NAS 账号操作未完成，请重试。';
+        },
+      ),
+    );
+    if (success != true || !mounted) return;
+    final account = ref.read(nasAccountProvider);
+    showAppSnackBar(context, SnackBar(content: Text(
+      account.family.hasFamily ? 'NAS 账号已登录。' : 'NAS 账号已登录，请创建或加入家庭后配置 HA。',
+    )));
   }
 
   Future<void> _createFamily() async {

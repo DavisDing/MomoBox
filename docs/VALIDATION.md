@@ -782,3 +782,14 @@ PostgreSQL16.4源码经官方SHA256校验，编译到 `/private/tmp/momobox-pg16
 - PASS：四套Compose经Ruby YAML解析并核对HTTP_ADDR、映射目标端口、内置healthcheck一致；`python3 scripts/ci/test-nas-release-assets.py` 1项通过；`git diff --check`。
 - PASS：两处修改的Dart文件使用现有SDK分别执行 `dart analyze`，均No issues found。初次分析器缓存目录写入被沙箱拒绝，改用官方支持的ANALYZER_STATE_LOCATION_OVERRIDE放入/private/tmp后成功；未修改系统HOME或安装工具。Flutter包装入口卡在工具自身pub解析后已停止，不作为Flutter全量analyze/test通过。
 - NOT_EXECUTED：Docker镜像构建/运行、PG18与NAS现场、Flutter测试/打包、远端CI/推送/发布。本轮代码尚未发布；已发布镜像可通过HTTP_ADDR显式覆盖端口，但更新现有NAS项目仍需同步调整映射并重建容器。既有App连接URL不自动改写。
+
+## 2026-11-11：NAS 注册反馈与 HA 家庭身份
+
+用户反馈注册密码不合要求后弹窗退出且需重填，以及HA提示需要已认证家庭成员。本轮修复仅移动端注册/登录表单、家庭令牌更新、HA配置前置引导和错误说明；没有后端、数据库、依赖或现有密码变更。需求/设计见REQUIREMENT第25节和DESIGN第43节。
+
+- PASS：`flutter analyze --no-pub`，全项目No issues found。修正新增测试三处花括号lint后最终通过。
+- PASS：`flutter test --no-pub --reporter expanded` 指定10个相关测试文件，176项全部通过：nas_auth_dialog_test、nas_setup_flow_test、nas_ha_session_test、nas_account_session_test、nas_api_client_test、nas_auth_service_test、nas_smart_home_repository_test、ai_assistant_review_test、home_ha_quick_actions_test、settings_hierarchy_test。
+- 覆盖：12字符/72字节、中文/emoji边界、昵称限制及登录不套用注册长度；提交前显示要求、本地校验不发请求、服务端/异常失败保留输入、显示密码状态保留、重试成功关闭、请求中禁用重复提交及返回；创建/加入家庭的刷新成功和失败、刷新前阻断HA、更新后的令牌用于成员/设备/HA、旧会话迟到响应拒绝；未加入家庭时零HA请求、前往NAS设置、member禁用配置、owner可配置，以及原设备权限/控制回执/设置层级回归。
+- PASS：`git diff --check`。
+- 工具：复用 `/private/tmp/momobox-v2-toolchain/flutter-stable` 的Flutter3.47.9 / Dart3.13.7和既有pub缓存，直接运行flutter_tools.dart及其已有package_config，绕过包装入口的工具pub解析。工具临时配置使用XDG_CONFIG_HOME=/private/tmp/momobox-auth-config，分析缓存放/private/tmp。首次沙箱执行被工具缓存写入及127.0.0.1测试监听权限阻止；允许工具正常运行后取得上述结果，没有修改产品依赖或系统PATH。完整日志 `/private/tmp/momobox-auth-final-tests.log` 与 `/private/tmp/momobox-auth-analyze.log`。
+- NOT_EXECUTED：Android/iOS打包与安装、系统键盘/读屏、真实NAS注册及HA联调、远端CI/推送/发布。MockClient只验证协议和状态，不能证明现场连接成功；现有安装包仍需后续更新。
