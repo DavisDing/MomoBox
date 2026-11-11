@@ -17,7 +17,7 @@
 
 1. 把选中文件夹内的 `docker-compose.yaml` 和 `.env.example` 放进一个新的、固定的NAS项目目录；将后者复制为 `.env`。另一套不要导入同一个项目。
 2. 使用已有发布的固定后端镜像和对应 `APP_VERSION`，不能照搬示例`v0.1.0`。替换数据库密码、JWT、refresh pepper及HA加密密钥；不把真实`.env`提交进Git。
-3. 在UGOS Docker Projects导入Compose并填入对应变量。保留后端固定容器内8080映射，宿主端口有冲突时修改`MOMO_BACKEND_PORT`。
+3. 在UGOS Docker Projects导入Compose并填入对应变量。默认映射`18473:18473`，容器内固定监听18473，宿主端口有冲突时修改`MOMO_BACKEND_PORT`；现有`.env`中的旧端口需按目标配置同步调整。
 4. 包含2026-11-10自动启动改动的镜像默认 `start`：专属空库自动初始化，已有库只执行缺失迁移，成功后监听 HTTP。无需在 Compose 再添加命令；升级已有数据前仍备份并停止其他同库后端。旧镜像不具备此入口，按下节人工步骤处理。UGOS、外部网络及变量文件支持仍需设备验收。
 
 ### 自带数据库版

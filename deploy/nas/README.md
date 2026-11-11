@@ -61,7 +61,7 @@ openssl rand -hex 32  # REFRESH_TOKEN_PEPPER
 openssl rand -hex 16  # HA_TOKEN_ENCRYPTION_KEY：输出恰好 32 个 ASCII 字符
 ```
 
-`POSTGRES_PASSWORD` 与 `DATABASE_URL` 中的密码必须一致；密码包含特殊字符时，需要在 `DATABASE_URL` 中进行 URL 编码。生产 Compose 要求显式设置 `MOMO_BACKEND_IMAGE` 和 `APP_VERSION`，不得留空；宿主机端口通过 `MOMO_BACKEND_PORT` 修改，容器内后端固定监听 `8080`。
+`POSTGRES_PASSWORD` 与 `DATABASE_URL` 中的密码必须一致；密码包含特殊字符时，需要在 `DATABASE_URL` 中进行 URL 编码。生产 Compose 要求显式设置 `MOMO_BACKEND_IMAGE` 和 `APP_VERSION`，不得留空；默认映射 `18473:18473`，容器内后端监听 `18473`，宿主机端口通过 `MOMO_BACKEND_PORT` 修改。更新现有部署时同步检查旧 `.env` 的宿主端口及 NAS 中保存的映射。
 
 3. 在 NAS 的部署目录执行：
 

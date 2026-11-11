@@ -772,3 +772,13 @@ NOT_EXECUTED：本机Flutter/Dart不可用，CI同版本 `3.47.9` macOS arm64官
 本机工具链：官方Go1.22.8归档经官方SHA256校验后解压到 `/private/tmp/momobox-go1.22.8`，既有模块缓存放 `/private/tmp/momobox-go-work`；当前macOS拒绝该旧版Go内部链接器生成的Mach-O（missing LC_UUID），本机测试使用 `go test -ldflags=-linkmode=external -count=1 -json ./...`。未改项目CI或Linux链接方式。初次沙箱内HTTP测试因禁止bind失败，放开本机测试监听后全量通过，不删除相关测试。
 
 PostgreSQL16.4源码经官方SHA256校验，编译到 `/private/tmp/momobox-pg16` 并启用pgcrypto；临时cluster只监听127.0.0.1随机端口，测试结束已经停止，没有安装系统服务或连接NAS。完整Go/PG JSON事件日志 `/private/tmp/momobox-autostart-postgres-tests.jsonl`，CLI/PG启动日志及临时数据目录 `/private/tmp/momobox-autostart-pg-rremn1p8`；临时证据不视为长期存档。没有修改真实数据库、现有密钥或应用UI。
+## 2026-11-11：统一默认端口18473
+
+基于 `067f2993ae3b2b9634b79cbcc91c32c9b5fd10d1` 干净工作区，按用户要求将后端默认监听地址及Docker EXPOSE改为18473，四套Compose的HTTP_ADDR、映射右端及默认宿主端口同步调整为18473；三套.env示例、部署指南和手机NAS地址示例同步更新。健康检查沿用同一HTTP_ADDR，没有新增产品依赖、数据迁移或密钥变更。
+
+- PASS：`go test -ldflags=-linkmode=external -count=1 ./internal/platform ./tests/platform ./cmd/momo-backend`（Go1.22.8，临时工具链/缓存）；相关配置、服务及HTTP生命周期回归通过。此轮未设置MOMO_TEST_DATABASE_URL，Go套件内PG回归为skip，不称全量真实PG通过。
+- PASS：`go vet ./...`；macOS后端可执行文件构建。
+- PASS：独立PG16.4实例和非超级用户专属空库烟测：不设置HTTP_ADDR，实际start日志监听 `0.0.0.0:18473`，访问该端口health返回200，内置healthcheck退出0。测试后后端及临时PG均已停止；证据 `/private/tmp/momobox-port18473-pg-x7bufasy`，未连接NAS数据库。
+- PASS：四套Compose经Ruby YAML解析并核对HTTP_ADDR、映射目标端口、内置healthcheck一致；`python3 scripts/ci/test-nas-release-assets.py` 1项通过；`git diff --check`。
+- PASS：两处修改的Dart文件使用现有SDK分别执行 `dart analyze`，均No issues found。初次分析器缓存目录写入被沙箱拒绝，改用官方支持的ANALYZER_STATE_LOCATION_OVERRIDE放入/private/tmp后成功；未修改系统HOME或安装工具。Flutter包装入口卡在工具自身pub解析后已停止，不作为Flutter全量analyze/test通过。
+- NOT_EXECUTED：Docker镜像构建/运行、PG18与NAS现场、Flutter测试/打包、远端CI/推送/发布。本轮代码尚未发布；已发布镜像可通过HTTP_ADDR显式覆盖端口，但更新现有NAS项目仍需同步调整映射并重建容器。既有App连接URL不自动改写。

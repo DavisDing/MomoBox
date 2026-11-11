@@ -55,7 +55,7 @@ services:
       APP_ENV: ${APP_ENV:-production}
       APP_VERSION: ${APP_VERSION:?set APP_VERSION to the deployed image version in .env}
       GOMEMLIMIT: 512MiB
-      HTTP_ADDR: 0.0.0.0:8080
+      HTTP_ADDR: 0.0.0.0:18473
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       REFRESH_TOKEN_PEPPER: ${REFRESH_TOKEN_PEPPER:?set REFRESH_TOKEN_PEPPER in .env}
@@ -81,7 +81,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "${MOMO_BACKEND_PORT:-8080}:8080"
+      - "${MOMO_BACKEND_PORT:-18473}:18473"
     healthcheck:
       test: ["CMD", "/app/momo-backend", "healthcheck"]
       interval: 15s

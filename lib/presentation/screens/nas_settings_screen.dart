@@ -484,7 +484,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
               keyboardType: TextInputType.url,
               decoration: const InputDecoration(
                 labelText: 'NAS 服务器地址',
-                hintText: 'http://192.168.x.x:8080',
+                hintText: 'http://192.168.x.x:18473',
                 prefixIcon: Icon(Icons.link_rounded),
               ),
             ),

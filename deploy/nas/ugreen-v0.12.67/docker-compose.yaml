@@ -14,11 +14,12 @@ services:
       options: {max-size: "10m", max-file: "3"}
     environment:
       GOMEMLIMIT: 512MiB
+      HTTP_ADDR: 0.0.0.0:18473
       # 必填：已有 PG 的网络别名、专属库/账号及密码；密码中的特殊字符需 URL 编码。
       DATABASE_URL: "postgres://momobox_user:CHANGE_ME_PASSWORD@CHANGE_ME_PG_HOST:5432/momobox?sslmode=disable"
     networks: [default, database_network]
     ports:
-      - "18473:8080"
+      - "18473:18473"
     volumes:
       - ./data:/data
     healthcheck:

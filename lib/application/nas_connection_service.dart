@@ -89,7 +89,7 @@ class NasConnectionService {
         status: NasConnectionStatus.failed,
         serverUrl: serverUrl.trim(),
         familyCode: familyCode.trim(),
-        message: '请输入有效的 NAS 地址，例如 http://192.168.1.20:8080。',
+        message: '请输入有效的 NAS 地址，例如 http://192.168.1.20:18473。',
       );
     }
 

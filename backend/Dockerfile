@@ -17,6 +17,6 @@ WORKDIR /app
 COPY --from=build /out/momo-backend /app/momo-backend
 COPY --from=build /src/migrations /app/migrations
 USER root
-EXPOSE 8080
+EXPOSE 18473
 ENTRYPOINT ["/app/momo-backend"]
 CMD ["start"]

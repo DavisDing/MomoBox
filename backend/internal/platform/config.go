@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	DefaultHTTPAddr            = "0.0.0.0:8080"
+	DefaultHTTPAddr            = "0.0.0.0:18473"
 	DefaultRegistrationMode    = "first_setup"
 	DefaultAccessTokenTTL      = 15 * time.Minute
 	DefaultRefreshTokenTTL     = 30 * 24 * time.Hour

@@ -12,6 +12,7 @@
 - NAS backend：Go 1.22 + PostgreSQL 16；独立 Go module 位于 `backend/`
 - NAS deployment：生产 Compose 从公开 GHCR 拉取 `.env` 明确指定的固定版本标签或 digest；本地开发可通过 override 以 `backend/` 为独立 Docker build context；Compose 仅包含 `momo-backend` 与 `postgres`；生产入口为 `deploy/nas/docker-compose.yaml`，开发叠加文件为 `deploy/nas/docker-compose.local-build.yaml`
 - 2026-11-10 容器启动源码更新：Dockerfile 默认以 root 执行 `start`，在监听前复用 migration runner 初始化专属空库或执行缺失迁移，之后进入 `serve` 只读门禁；`schema-check` 仍只读。有对象但无台账、台账缺口/未知版本/名称或checksum异常拒绝自动处理。此条替代历史“默认启动不迁移”的现状描述；具体发布和NAS验收另行核对，不能由源码推断。
+- 2026-11-11 默认端口源码更新：后端监听 `0.0.0.0:18473`，Docker EXPOSE 及四套 Compose 的容器端口统一18473，默认宿主映射 `18473:18473`；健康检查读取同一HTTP_ADDR。旧部署需同步调整原HTTP_ADDR、映射及宿主端口设置，保存的App连接地址不自动修改；发布和现场验收另行记录。
 - State：flutter_riverpod
 - Routing：go_router
 - Local database：Drift + SQLite

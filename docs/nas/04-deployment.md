@@ -132,7 +132,7 @@ postgres_data:/var/lib/postgresql/data
 APP_ENV=production
 MOMO_BACKEND_IMAGE=ghcr.io/davisding/momobox-backend:v0.1.0
 APP_VERSION=v0.1.0
-MOMO_BACKEND_PORT=8080
+MOMO_BACKEND_PORT=18473
 DATABASE_URL=postgres://momo:change-me@postgres:5432/momo?sslmode=disable
 JWT_SECRET=replace-with-long-random-secret
 REFRESH_TOKEN_PEPPER=replace-with-long-random-secret
@@ -151,7 +151,7 @@ LOG_LEVEL=info
 - `REFRESH_TOKEN_PEPPER`；
 - `HA_TOKEN_ENCRYPTION_KEY`。
 
-推荐使用 `openssl rand -hex 32` 生成 JWT Secret 和 Refresh Token Pepper，使用 `openssl rand -hex 16` 生成 HA Token 加密密钥。后者输出恰好 32 个 ASCII 字符，满足后端“32 bytes”校验；不要把换行或引号计入变量值。`POSTGRES_PASSWORD` 与 `DATABASE_URL` 中的密码必须一致，特殊字符必须进行 URL 编码。Compose 内服务固定监听 `0.0.0.0:8080`，宿主机映射端口只通过 `MOMO_BACKEND_PORT` 调整，避免端口映射与健康检查失配。
+推荐使用 `openssl rand -hex 32` 生成 JWT Secret 和 Refresh Token Pepper，使用 `openssl rand -hex 16` 生成 HA Token 加密密钥。后者输出恰好 32 个 ASCII 字符，满足后端“32 bytes”校验；不要把换行或引号计入变量值。`POSTGRES_PASSWORD` 与 `DATABASE_URL` 中的密码必须一致，特殊字符必须进行 URL 编码。Compose 内服务固定监听 `0.0.0.0:18473`，默认映射 `18473:18473`；宿主机映射端口通过 `MOMO_BACKEND_PORT` 调整，内置健康检查读取同一 `HTTP_ADDR`。更新现有部署时同步调整旧 `.env` 及 NAS 保存的端口映射。
 
 生产 Compose 不设置 `MOMO_BACKEND_IMAGE` 默认值。每次升级前应把 `MOMO_BACKEND_IMAGE` 与 `APP_VERSION` 一起固定到目标版本，然后使用同版本 `scripts/update.sh`；脚本获取锁、在线预备份、拉取镜像、核验停机、最终备份、migration、schema-check后才启动并等待health。拉取失败不停止旧服务，停机后失败保持隔离；未知数据库任务/无法核验隔离时保留锁。回退应用镜像不自动回退数据库schema；旧镜像缺少schema-check时失败关闭，不绕过核验。
 
