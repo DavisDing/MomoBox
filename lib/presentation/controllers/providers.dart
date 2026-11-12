@@ -21,6 +21,7 @@ import '../../application/inventory_statistics_service.dart';
 import '../../application/manual_qa_service.dart';
 import '../../application/media_service.dart';
 import '../../application/backend_processing_service.dart';
+import '../../application/backend_processing_error.dart';
 import '../../application/nas_connection_service.dart';
 import '../../application/nas_auth_service.dart';
 import '../../presentation/controllers/nas_account_controller.dart';
@@ -301,13 +302,20 @@ final backendResolverProvider = Provider<BackendResolver>((ref) => () async {
   final selected = (await ref.read(settingsRepositoryProvider).getValue(nasServerUrlKey))
       ?.trim().isNotEmpty == true;
   if (!selected) return null;
-  await ref.read(syncWorkspaceAccessProvider.future);
+  final account = ref.read(nasAccountProvider);
+  if (!account.isAuthenticated || !account.family.hasFamily) {
+    throw const BackendProcessingSetupException('已选择 NAS 处理，请先在 NAS 设置中登录并创建或加入家庭。');
+  }
+  final access = await ref.read(syncWorkspaceAccessProvider.future);
+  if (!access.canSync) {
+    throw const BackendProcessingSetupException('本机数据尚未与当前 NAS 家庭确认绑定，请前往家庭与同步完成归属确认。');
+  }
   final api = ref.read(nasSyncApiProvider);
-  if (api == null) throw StateError('后端已选择，请先登录并确认当前家庭同步；暂不支持改绑迁移。');
+  if (api == null) throw const BackendProcessingSetupException('NAS 同步设备尚未就绪，请在 NAS 设置中刷新家庭并注册当前设备。');
   final family = ref.read(nasAccountProvider).family.familyId!;
   final mode = await SyncOutboxRepository(ref.read(databaseProvider)).getConfirmedBootstrapMode(family);
   if (mode != 'join_and_merge' && mode != 'create_new_family') {
-    throw StateError('请先明确启用当前家庭的后端同步；仅保留本地时不上传图片或 AI 请求。');
+    throw const BackendProcessingSetupException('请前往家庭与同步，在同步初始化中确认当前家庭的同步模式；仅保留本地时不发送 NAS AI 请求。');
   }
   api.assertCurrentSession();
   return api;
@@ -535,11 +543,19 @@ final nasAccountProvider = StateNotifierProvider<NasAccountController, NasAccoun
 });
 
 final syncWorkspaceIdentityProvider = Provider<SyncWorkspaceIdentity?>((ref) {
-  final account = ref.watch(nasAccountProvider);
+  final account = ref.watch(nasAccountProvider.select((account) => (
+    authenticated: account.isAuthenticated,
+    userId: account.auth.user?.id,
+    familyId: account.family.familyId,
+    familyStatus: account.family.status,
+  )));
   final endpoint = ref.read(nasAccountProvider.notifier).serverIdentity;
-  final userId = account.auth.user?.id;
-  final familyId = account.family.familyId;
-  if (!account.isAuthenticated || endpoint == null || userId == null || familyId == null) return null;
+  final userId = account.userId;
+  final familyId = account.familyId;
+  if (!account.authenticated || endpoint == null || userId == null || familyId == null ||
+      account.familyStatus != NasFamilyStatus.available) {
+    return null;
+  }
   return SyncWorkspaceIdentity(endpoint: endpoint, userId: userId, familyId: familyId);
 });
 
@@ -556,11 +572,22 @@ final syncWorkspaceAccessProvider = FutureProvider<SyncWorkspaceAccess>((ref) as
 /// A transport assembled only while the authenticated account has a live
 /// NAS session. The provider owns the sibling client's HTTP lifecycle.
 final nasSyncApiProvider = Provider<NasSyncApi?>((ref) {
-  ref.watch(nasAccountProvider);
+  // Token rotation updates the shared token provider in place. Rebuilding this
+  // transport on every auth snapshot would cancel its retry and start a new
+  // conflict request from the settings page, causing an endless 401 loop.
+  final account = ref.watch(nasAccountProvider.select((account) => (
+    status: account.status,
+    userId: account.auth.user?.id,
+    familyStatus: account.family.status,
+    familyId: account.family.familyId,
+    deviceStatus: account.devices.status,
+    deviceId: account.devices.currentDeviceId,
+  )));
   final identity = ref.watch(syncWorkspaceIdentityProvider);
   final value = ref.watch(syncWorkspaceAccessProvider);
   final access = value.asData?.value;
-  if (identity == null || value.isLoading || access?.canSync != true ||
+  if (account.deviceStatus != NasDeviceStatus.ready || account.deviceId == null ||
+      identity == null || value.isLoading || access?.canSync != true ||
       access?.owner?.matches(identity) != true) {
     return null;
   }
@@ -580,7 +607,7 @@ final nasSyncApiProvider = Provider<NasSyncApi?>((ref) {
       final mode = await SyncOutboxRepository(ref.read(databaseProvider)).getConfirmedBootstrapMode(identity.familyId);
       if (!active || configured == null || !api.matchesEndpoint(configured) ||
           (mode != 'join_and_merge' && mode != 'create_new_family')) {
-        throw StateError('后端处理模式已改变，请重新确认。');
+        throw const BackendProcessingSetupException('后端处理模式已改变，请重新确认。');
       }
     });
     ref.onDispose(api.close);
@@ -592,13 +619,17 @@ final nasSyncApiProvider = Provider<NasSyncApi?>((ref) {
 /// Manual and App lifecycle requests share [syncSchedulerProvider]; execution,
 /// backoff and durable conflict protection still belong to [SyncEngine].
 final syncEngineProvider = Provider<SyncEngine?>((ref) {
-  final account = ref.watch(nasAccountProvider);
+  final account = ref.watch(nasAccountProvider.select((account) => (
+    authenticated: account.isAuthenticated,
+    familyId: account.family.familyId,
+    deviceId: account.devices.currentDeviceId,
+  )));
   final api = ref.watch(nasSyncApiProvider);
   final localWorkspaceId = ref.watch(localWorkspaceIdProvider).valueOrNull;
-  final familyId = account.family.familyId;
-  final deviceId = account.devices.currentDeviceId;
+  final familyId = account.familyId;
+  final deviceId = account.deviceId;
   if (api == null ||
-      !account.isAuthenticated ||
+      !account.authenticated ||
       familyId == null ||
       deviceId == null ||
       localWorkspaceId == null) {
@@ -660,7 +691,7 @@ final initialImportServiceProvider = Provider<InitialImportService?>((ref) {
   final engine = ref.watch(syncEngineProvider);
   final identity = ref.watch(syncWorkspaceIdentityProvider);
   final workspaceId = ref.watch(localWorkspaceIdProvider).valueOrNull;
-  final deviceId = ref.watch(nasAccountProvider).devices.currentDeviceId;
+  final deviceId = ref.watch(nasAccountProvider.select((account) => account.devices.currentDeviceId));
   if (api == null || engine == null || identity == null || workspaceId == null || deviceId == null) {
     return null;
   }

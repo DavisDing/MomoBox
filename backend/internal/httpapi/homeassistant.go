@@ -273,6 +273,26 @@ func (h *Handler) discover(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, discoveryJSON{IntegrationID: value.IntegrationID, Devices: value.Devices, Entities: value.Entities})
 }
 
+func (h *Handler) listEntityCatalog(w http.ResponseWriter, r *http.Request) {
+	if !h.method(w, r, http.MethodGet) || !h.requireService(w, r, "home_assistant", h.deps.HomeAssistant) {
+		return
+	}
+	actor, ok := h.haActor(w, r)
+	if !ok {
+		return
+	}
+	values, err := h.deps.HomeAssistant.ListEntityCatalog(r.Context(), actor, r.PathValue("integration_id"))
+	if err != nil {
+		h.serviceError(w, r, err)
+		return
+	}
+	result := make([]entityJSON, 0, len(values))
+	for _, value := range values {
+		result = append(result, entityResponse(value))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"entities": result})
+}
+
 func (h *Handler) listEntities(w http.ResponseWriter, r *http.Request) {
 	if !h.method(w, r, http.MethodGet) || !h.requireService(w, r, "home_assistant", h.deps.HomeAssistant) {
 		return

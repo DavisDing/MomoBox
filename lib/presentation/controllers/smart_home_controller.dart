@@ -27,6 +27,8 @@ class SmartHomeState {
     required this.nasOnline,
     this.integrations = const <NasHaIntegration>[],
     this.entities = const <NasHaEntity>[],
+    this.entityCatalog = const <NasHaEntity>[],
+    this.catalogError,
     this.permissions = const <NasHaEntityPermission>[],
     this.consumableGroups = const <NasHaConsumableGroup>[],
     this.consumableRecipes = const <NasHaConsumableRecipe>[],
@@ -54,6 +56,8 @@ class SmartHomeState {
   final bool nasOnline;
   final List<NasHaIntegration> integrations;
   final List<NasHaEntity> entities;
+  final List<NasHaEntity> entityCatalog;
+  final String? catalogError;
   final List<NasHaEntityPermission> permissions;
   final List<NasHaConsumableGroup> consumableGroups;
   final List<NasHaConsumableRecipe> consumableRecipes;
@@ -81,6 +85,8 @@ class SmartHomeState {
     bool? nasOnline,
     List<NasHaIntegration>? integrations,
     List<NasHaEntity>? entities,
+    List<NasHaEntity>? entityCatalog,
+    Object? catalogError = _unset,
     List<NasHaEntityPermission>? permissions,
     List<NasHaConsumableGroup>? consumableGroups,
     List<NasHaConsumableRecipe>? consumableRecipes,
@@ -106,6 +112,8 @@ class SmartHomeState {
       nasOnline: nasOnline ?? this.nasOnline,
       integrations: integrations ?? this.integrations,
       entities: entities ?? this.entities,
+      entityCatalog: entityCatalog ?? this.entityCatalog,
+      catalogError: identical(catalogError, _unset) ? this.catalogError : catalogError as String?,
       permissions: permissions ?? this.permissions,
       consumableGroups: consumableGroups ?? this.consumableGroups,
       consumableRecipes: consumableRecipes ?? this.consumableRecipes,
@@ -218,6 +226,8 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
           nasOnline: true,
           integrations: const <NasHaIntegration>[],
           entities: const <NasHaEntity>[],
+          entityCatalog: const <NasHaEntity>[],
+          catalogError: null,
           permissions: const <NasHaEntityPermission>[],
           entityStates: const <String, NasHaEntityState>{},
           staleEntityIds: const <String>{},
@@ -265,6 +275,18 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
           .where((entity) => entity.isVisible)
           .toList(growable: false);
       final permissions = results[1] as List<NasHaEntityPermission>;
+      var catalog = const <NasHaEntity>[];
+      String? catalogError;
+      if (_canManageIntegration) {
+        try {
+          catalog = await _repository.listEntityCatalog(integration.id);
+        } catch (error) {
+          catalogError = error is NasApiError && error.kind == NasApiErrorKind.notFound
+              ? 'NAS 尚不支持实体授权目录，请更新 NAS 后端后刷新。'
+              : '读取实体授权目录失败，请检查 NAS 连接后刷新。';
+        }
+      }
+      if (!mounted) return;
 
       _entitiesByKey
         ..clear()
@@ -305,6 +327,8 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
         nasOnline: true,
         integrations: List<NasHaIntegration>.unmodifiable(integrations),
         entities: List<NasHaEntity>.unmodifiable(entities),
+        entityCatalog: List<NasHaEntity>.unmodifiable(catalog),
+        catalogError: catalogError,
         permissions: List<NasHaEntityPermission>.unmodifiable(permissions),
         entityStates: nextStates,
         staleEntityIds: Set<String>.unmodifiable(staleEntityIds),
@@ -984,6 +1008,8 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
       nasOnline: false,
       integrations: const <NasHaIntegration>[],
       entities: const <NasHaEntity>[],
+      entityCatalog: const <NasHaEntity>[],
+      catalogError: null,
       permissions: const <NasHaEntityPermission>[],
       entityStates: const <String, NasHaEntityState>{},
       staleEntityIds: const <String>{},
@@ -1010,6 +1036,8 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
       nasOnline: true,
       integrations: List<NasHaIntegration>.unmodifiable(integrations),
       entities: const <NasHaEntity>[],
+      entityCatalog: const <NasHaEntity>[],
+      catalogError: null,
       permissions: const <NasHaEntityPermission>[],
       entityStates: const <String, NasHaEntityState>{},
       staleEntityIds: const <String>{},
@@ -1055,12 +1083,13 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
         return;
       }
       final current = state.integrations.firstOrNull;
+      final NasHaIntegration saved;
       if (current == null) {
-        await _repository.addIntegration(
+        saved = await _repository.addIntegration(
           NasHaIntegrationInput(name: name, baseUrl: baseUrl, accessToken: accessToken),
         );
       } else {
-        await _repository.updateIntegration(
+        saved = await _repository.updateIntegration(
           current.id,
           NasHaIntegrationUpdate(
             name: name,
@@ -1070,13 +1099,46 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
           ),
         );
       }
-      await refresh();
+      if (!mounted) return;
+      state = state.copyWith(integrations: [saved], isLoading: false);
+      await discoverEntities();
     } catch (error) {
-      _setFailure(error);
+      if (mounted) {
+        state = state.copyWith(commandError: error is NasApiError
+            ? error.message : '保存 Home Assistant 配置失败，请重试。');
+      }
     } finally {
       if (mounted && state.isLoading) state = state.copyWith(isLoading: false);
     }
   }
+
+  Future<void> discoverEntities() async {
+    if (!_canManageIntegration || state.isLoading || state.isCommandLoading) return;
+    final integration = state.integrations.firstOrNull;
+    if (integration == null) return;
+    state = state.copyWith(isLoading: true, message: null, commandError: null);
+    try {
+      final result = await _repository.discover(integration.id);
+      if (!mounted) return;
+      await refresh();
+      if (!mounted) return;
+      state = state.copyWith(message: '实体发现完成：${result.entities} 个实体。请在下方按角色授权后使用。');
+    } catch (error) {
+      if (mounted) {
+        state = state.copyWith(commandError: error is NasApiError
+            ? '配置已保存，但实体发现失败：${error.message}'
+            : '配置已保存，但实体发现失败。请检查 HA 连接后点击“发现实体”重试。');
+      }
+    } finally {
+      if (mounted) state = state.copyWith(isLoading: false);
+    }
+  }
+
+  /// Commands available for explicit grants; this does not grant execution.
+  List<String> grantableCommands(NasHaEntity entity) => entity.isControllable
+      ? NasHaCommand.values.where((command) => _supportsCommand(entity, command))
+          .map(nasHaCommandValue).toList(growable: false)
+      : const [];
 
   Future<void> testIntegration() async {
     final integration = state.integrations.firstOrNull;
@@ -1103,12 +1165,16 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
   }
 
   Future<void> updatePermission(NasHaEntityPermission permission) async {
+    if (!_canManageIntegration || state.isLoading || state.isCommandLoading) return;
     state = state.copyWith(isLoading: true, message: null, commandError: null);
     try {
       await _repository.updatePermission(permission);
       await refresh();
     } catch (error) {
-      _setFailure(error);
+      if (mounted) {
+        state = state.copyWith(commandError: error is NasApiError
+            ? error.message : '保存实体权限失败，请重试。');
+      }
     } finally {
       if (mounted && state.isLoading) state = state.copyWith(isLoading: false);
     }

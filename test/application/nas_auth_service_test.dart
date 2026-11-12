@@ -33,6 +33,49 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => FlutterSecureStorage.setMockInitialValues({}));
 
+  test(
+    'device binding queues behind an ordinary refresh without losing rotated credentials',
+    () async {
+      final entered = Completer<void>();
+      final release = Completer<http.Response>();
+      final requests = <Map<String, dynamic>>[];
+      final api = NasApiClient(
+        'https://nas.example',
+        client: MockClient((request) async {
+          if (request.url.path.endsWith('/login')) return _authResponse();
+          requests.add(
+            Map<String, dynamic>.from(jsonDecode(request.body) as Map),
+          );
+          if (requests.length == 1) {
+            entered.complete();
+            return release.future;
+          }
+          return _authResponse(
+            access: 'device-access',
+            refresh: 'device-refresh',
+          );
+        }),
+      );
+      addTearDown(api.close);
+      final credentials = NasCredentialsService();
+      final service = NasAuthService(apiClient: api, credentials: credentials);
+      await service.login(_login);
+      final refresh = service.refresh();
+      await entered.future;
+      final binding = service.refresh(deviceId: 'phone');
+      release.complete(
+        _authResponse(access: 'rotated-access', refresh: 'rotated-refresh'),
+      );
+      await refresh;
+      expect((await binding).isAuthenticated, isTrue);
+      expect(requests, [
+        {'refresh_token': 'refresh-a'},
+        {'refresh_token': 'rotated-refresh', 'device_id': 'phone'},
+      ]);
+      expect((await credentials.read())!.accessToken, 'device-access');
+    },
+  );
+
   test('authentication fixtures preserve Chinese JSON as UTF-8', () {
     for (final response in [_authResponse(), _me()]) {
       expect(response.headers['content-type'], contains('charset=utf-8'));

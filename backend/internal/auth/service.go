@@ -155,6 +155,28 @@ func (s *Service) Refresh(ctx context.Context, request RefreshRequest) (AuthResp
 		// log in with a device again after selecting the new family.
 		deviceID = ""
 	}
+	if request.DeviceID != "" {
+		// Registration does not issue tokens. A refresh may bind the session
+		// only to an active device owned by this user in the current family.
+		if s.devices == nil || scope.FamilyID == "" {
+			return empty, newError(CodeInvalidToken, "registered device is unavailable")
+		}
+		devices, err := s.devices.ListUserDevices(ctx, stored.ID)
+		if err != nil {
+			return empty, err
+		}
+		found := false
+		for _, device := range devices {
+			if device.ID == request.DeviceID && device.RevokedAt == nil {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return empty, newError(CodeInvalidToken, "registered device is unavailable")
+		}
+		deviceID = request.DeviceID
+	}
 	newRecord := RefreshTokenRecord{ID: newID, TokenHash: s.refreshHash.Hash(newRaw), UserID: record.UserID, FamilyID: scope.FamilyID, DeviceID: deviceID, CreatedAt: now, ExpiresAt: now.Add(s.config.RefreshTokenTTL)}
 	access, err := s.issuer.Issue(AccessTokenClaims{UserID: stored.ID, FamilyID: scope.FamilyID, Role: scope.Role, DeviceID: deviceID, IssuedAt: now, ExpiresAt: now.Add(s.config.AccessTokenTTL)})
 	if err != nil {

@@ -85,6 +85,7 @@ type homeAssistantApplication interface {
 	TestIntegration(context.Context, homeassistant.Actor, string) (homeassistant.ConnectionTestDTO, error)
 	Discover(context.Context, homeassistant.Actor, string) (homeassistant.DiscoveryDTO, error)
 	ListEntities(context.Context, homeassistant.Actor, string, bool) ([]homeassistant.EntityDTO, error)
+	ListEntityCatalog(context.Context, homeassistant.Actor, string) ([]homeassistant.EntityDTO, error)
 	GetState(context.Context, homeassistant.Actor, string, string) (homeassistant.StateDTO, error)
 	ExecuteCommand(context.Context, homeassistant.Actor, string, string, homeassistant.CommandRequest) (homeassistant.CommandDTO, error)
 	ListPermissions(context.Context, homeassistant.Actor) ([]homeassistant.PermissionDTO, error)
@@ -134,6 +135,10 @@ func (s *attributedHomeAssistantService) Discover(ctx context.Context, actor hom
 
 func (s *attributedHomeAssistantService) ListEntities(ctx context.Context, actor homeassistant.Actor, integrationID string, visibleOnly bool) ([]homeassistant.EntityDTO, error) {
 	return s.service.ListEntities(contextWithHomeAssistantActor(ctx, actor), actor, integrationID, visibleOnly)
+}
+
+func (s *attributedHomeAssistantService) ListEntityCatalog(ctx context.Context, actor homeassistant.Actor, integrationID string) ([]homeassistant.EntityDTO, error) {
+	return s.service.ListEntityCatalog(contextWithHomeAssistantActor(ctx, actor), actor, integrationID)
 }
 
 func (s *attributedHomeAssistantService) GetState(ctx context.Context, actor homeassistant.Actor, integrationID, entityID string) (homeassistant.StateDTO, error) {

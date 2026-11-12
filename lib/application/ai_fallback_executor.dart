@@ -7,6 +7,8 @@ import 'package:http/http.dart' as http;
 import 'ai_client_helper.dart';
 import 'failover_executor.dart';
 import 'backend_processing_service.dart';
+import 'backend_processing_error.dart';
+import '../data/nas/nas_api_error.dart';
 import 'package:uuid/uuid.dart';
 
 enum AiApiLevel { primary, secondary, fallback }
@@ -146,7 +148,7 @@ class AiFallbackExecutor {
     if (api != null) {
       final capabilities = await api.processingRequest('/capabilities', method: 'GET');
       if (capabilities['backend_ai'] != true) {
-        throw StateError('请先在 NAS 配置 AI 服务，连接后端后不会使用手机 AI 凭据。');
+        throw const BackendProcessingSetupException('当前使用 NAS AI 服务，但 NAS 尚未配置模型。请在 NAS 设置 AI_ENDPOINT、AI_MODEL、AI_API_KEY 后重建后端容器；手机上的模型配置仅用于单机模式。');
       }
       final result = await api.processingRequest('/ai/analyze', body: {
         'request_id': const Uuid().v4(), 'system_prompt': systemPrompt,
@@ -171,7 +173,7 @@ class AiFallbackExecutor {
           isSuccess: true)]);
     }
     if (configs.any((config) => config.endpoint == 'backend')) {
-      throw StateError('NAS 会话或处理模式已变化，请恢复 NAS 连接后重试。');
+      throw const BackendProcessingSetupException('NAS 会话或处理模式已变化，请恢复 NAS 连接后重试。');
     }
     try {
       final response = await _executor.execute(
@@ -356,6 +358,25 @@ String? _safeFailure(String? reason) {
 
 /// Only display sanitized classifications, never upstream bodies or URLs.
 String aiFailureMessage(Object error) {
+  if (error is BackendProcessingSetupException) return error.message;
+  if (error is NasApiError) {
+    return switch (error.code) {
+      'AI_RESULT_UNKNOWN' => 'NAS 上一次 AI 请求结果不明，请核实后再手动发起新请求。',
+      'PROCESSING_BUSY' => 'NAS 正在处理其他请求，请稍后重试。',
+      'PROCESSOR_UNAVAILABLE' => 'NAS AI 服务不可用，请检查 NAS 上的模型地址、模型、密钥及网络。',
+      'PROCESSING_FAILED' => 'NAS AI 处理失败，请检查 NAS 后端日志。',
+      _ => switch (error.kind) {
+        NasApiErrorKind.unauthorized => 'NAS 登录已失效，请在家庭与同步中重新登录。',
+        NasApiErrorKind.forbidden => 'NAS 家庭或同步设备身份不可用，请在 NAS 设置中刷新家庭并注册当前设备。',
+        NasApiErrorKind.notFound => 'NAS 尚不支持此 AI 接口，请更新 NAS 后端。',
+        NasApiErrorKind.network => '无法连接 NAS，请检查手机到 NAS 的网络和服务器地址。',
+        NasApiErrorKind.timeout => 'NAS AI 请求超时，请核实处理结果后再手动重试。',
+        NasApiErrorKind.rateLimited => 'NAS 请求过于频繁，请稍后重试。',
+        NasApiErrorKind.server => 'NAS AI 服务暂时不可用，请检查 NAS 配置和后端日志。',
+        _ => 'NAS AI 请求失败，请检查 NAS 配置、会话及接口版本。',
+      },
+    };
+  }
   if (error is AiFallbackException) {
     return error.traceLogs.map((attempt) {
       final reason = attempt.failureReason ?? '请求失败';
@@ -369,5 +390,6 @@ String aiFailureMessage(Object error) {
     }).join('；');
   }
   if (error is TimeoutException) return '请求超时，请检查网络后重试。';
+  if (error is FormatException) return 'AI 返回的数据格式不兼容或缺少有效文本，请检查接口协议和后端版本。';
   return '请检查「我的」中的 AI 地址、模型、API Key 和网络后重试。';
 }

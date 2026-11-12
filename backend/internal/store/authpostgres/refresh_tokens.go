@@ -82,14 +82,24 @@ func (r *RefreshTokenRepository) Rotate(ctx context.Context, oldHash string, rep
 		if err != nil {
 			return err
 		}
-		if deviceID.Valid {
+		lockDeviceID, lockFamilyID := deviceID.String, familyID.String
+		if replacement.DeviceID != "" {
+			if deviceID.Valid && deviceID.String != replacement.DeviceID {
+				return &auth.ServiceError{Code: auth.CodeConflict, Message: "refresh token cannot switch registered devices"}
+			}
+			lockDeviceID, lockFamilyID = replacement.DeviceID, replacement.FamilyID
+		}
+		// Also lock a newly bound device before the refresh/user rows. The
+		// active owner/membership check must hold until rotation commits, so
+		// revocation cannot race the earlier service-level device lookup.
+		if lockDeviceID != "" {
 			var activeID string
 			err := tx.QueryRowContext(ctx, `
 SELECT d.id::text FROM sync_devices d
 JOIN family_members fm ON fm.family_id = d.family_id AND fm.user_id = d.user_id AND fm.deleted_at IS NULL
 JOIN families f ON f.id = d.family_id AND f.deleted_at IS NULL
 WHERE d.id=$1::uuid AND d.family_id=$2::uuid AND d.user_id=$3::uuid AND d.revoked_at IS NULL AND d.deleted_at IS NULL
-FOR SHARE OF d,fm,f`, deviceID.String, familyID.String, userID).Scan(&activeID)
+FOR SHARE OF d,fm,f`, lockDeviceID, lockFamilyID, userID).Scan(&activeID)
 			if err == sql.ErrNoRows {
 				return &auth.ServiceError{Code: auth.CodeRefreshRevoked, Message: "refresh token device is revoked or membership is inactive"}
 			}
@@ -118,12 +128,12 @@ FOR SHARE OF d,fm,f`, deviceID.String, familyID.String, userID).Scan(&activeID)
 
 		var replacementFamilyID, replacementDeviceID any
 		if replacement.DeviceID != "" {
-			if !familyID.Valid || !deviceID.Valid ||
-				replacement.FamilyID != familyID.String || replacement.DeviceID != deviceID.String {
+			if deviceID.Valid && (!familyID.Valid ||
+				replacement.FamilyID != familyID.String || replacement.DeviceID != deviceID.String) {
 				return &auth.ServiceError{Code: auth.CodeConflict, Message: "refresh token device scope changed during rotation"}
 			}
-			replacementFamilyID = familyID.String
-			replacementDeviceID = deviceID.String
+			replacementFamilyID = replacement.FamilyID
+			replacementDeviceID = replacement.DeviceID
 		} else {
 			// MATCH FULL on (device_id, family_id) requires both values to be
 			// NULL. Dropping an existing device is valid only when its family is

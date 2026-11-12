@@ -74,6 +74,7 @@ REGISTRATION_MODE=first_setup|invite_only|open
 - 数据库只保存哈希和必要元数据；
 - 支持单设备撤销、单用户撤销和全局撤销；
 - 使用后可轮换；
+- 刷新请求可携带可选 `device_id`，用于独立设备注册后的会话绑定。服务端从当前用户/家庭的设备列表核验其存在且未撤销后才签发带设备声明的访问令牌，并把绑定写入替代refresh记录；普通刷新延续绑定。未知、其他用户/家庭、已删除或已撤销设备拒绝绑定。客户端在绑定成功前不得将设备标记为同步就绪。
 - `REFRESH_TOKEN_PEPPER` 来自部署 Secret；
 - 失效 Token 返回统一 `AUTH_REFRESH_REVOKED` 或 `AUTH_TOKEN_EXPIRED`。
 

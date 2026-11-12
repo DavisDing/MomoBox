@@ -455,7 +455,8 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
               return const LinearProgressIndicator();
             }
             if (snapshot.hasError) {
-              return Text('读取远端冲突失败：${snapshot.error}');
+              final error = snapshot.error;
+              return Text('读取远端冲突失败：${error is NasApiError ? error.message : '请稍后重试。'}');
             }
             final response = snapshot.data;
             if (response == null || response.conflicts.isEmpty) {

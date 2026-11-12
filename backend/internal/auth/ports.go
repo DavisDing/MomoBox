@@ -28,6 +28,8 @@ type MembershipReader interface {
 }
 
 type DeviceReader interface {
+	// ListUserDevices returns devices owned by userID in their current family;
+	// deleted devices are excluded and revoked devices carry RevokedAt.
 	ListUserDevices(ctx context.Context, userID string) ([]SyncDevice, error)
 	UpsertDevice(ctx context.Context, record DeviceRecord) error
 }

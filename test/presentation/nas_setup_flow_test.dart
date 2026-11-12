@@ -184,6 +184,92 @@ void main() {
       },
     );
   }
+  testWidgets('owner can grant a newly discovered entity without borrowing another role permission', (tester) async {
+    final grants = <String, Map<String, dynamic>>{};
+    final writes = <Map<String, dynamic>>[];
+    final entity = {'id': 'row', 'integration_id': 'ha', 'entity_id': 'light.kitchen',
+      'domain': 'light', 'name': '厨房灯', 'is_visible': true, 'is_controllable': true,
+      'capabilities': ['on_off']};
+    final fixture = _Fixture((request) async {
+      final path = request.url.path;
+      if (path.endsWith('/auth/login')) return _auth('owner-session');
+      if (path.endsWith('/families/current')) return _family();
+      if (path.endsWith('/families/members')) return _json({'members': []});
+      if (path.endsWith('/devices')) return _json({'devices': []});
+      if (path.endsWith('/integrations')) {
+        return _json({'integrations': [{
+          'id': 'ha', 'name': 'HA', 'base_url': 'http://ha.local:8123',
+          'status': 'healthy', 'created_at': '2026-11-12T00:00:00Z',
+        }]});
+      }
+      if (path.endsWith('/test')) return _json({'connected': true, 'checked_at': DateTime.now().toUtc().toIso8601String()});
+      if (path.endsWith('/catalog')) return _json({'entities': [entity]});
+      if (path.endsWith('/entities')) return _json({'entities': grants['owner']?['can_view'] == true ? [entity] : []});
+      if (path.endsWith('/permissions')) {
+        if (request.method == 'PUT') {
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          writes.add(body);
+          grants[body['role'] as String] = body;
+          return _json(body);
+        }
+        return _json({'permissions': grants.values.toList()});
+      }
+      if (path.endsWith('/state')) return _json({'entity_id': 'light.kitchen', 'state': 'off', 'attributes': {}, 'fetched_at': DateTime.now().toUtc().toIso8601String()});
+      for (final name in ['groups', 'recipes', 'rules', 'suggestions']) {
+        if (path.endsWith('-$name')) return _json({name: []});
+      }
+      return _json({}, 404);
+    });
+    await fixture.login();
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(ProviderScope(overrides: [
+      settingsRepositoryProvider.overrideWithValue(fixture.settingsRepository),
+      nasConnectionServiceProvider.overrideWithValue(fixture.connection),
+      nasAccountProvider.overrideWith((ref) => fixture.account),
+    ], child: const MaterialApp(home: HomeAssistantSettingsScreen())));
+    await tester.pumpAndSettle();
+    expect(writes, isEmpty);
+    await tester.ensureVisible(find.text('厨房灯'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('厨房灯'));
+    await tester.pumpAndSettle();
+    final view = find.widgetWithText(SwitchListTile, '允许查看状态');
+    final control = find.widgetWithText(SwitchListTile, '允许控制实体');
+    expect(tester.widget<SwitchListTile>(view).value, isFalse);
+    expect(tester.widget<SwitchListTile>(control).onChanged, isNull);
+    await tester.ensureVisible(view);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('允许查看状态'));
+    await tester.pumpAndSettle();
+    expect(writes.single['role'], 'owner');
+    expect(writes.single['can_view'], isTrue);
+    await tester.ensureVisible(control);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('允许控制实体'));
+    await tester.pumpAndSettle();
+    expect(writes.last['allowed_commands'], ['turn_on', 'turn_off', 'toggle']);
+    await tester.ensureVisible(view);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('允许查看状态'));
+    await tester.pumpAndSettle();
+    expect(writes.last['can_view'], isFalse);
+    expect(writes.last['can_control'], isFalse);
+    expect(writes.last['allowed_commands'], isEmpty);
+    final roles = find.byType(DropdownButtonFormField<String>);
+    await tester.ensureVisible(roles);
+    await tester.pumpAndSettle();
+    await tester.tap(roles);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('普通成员').last);
+    await tester.pumpAndSettle();
+    expect(tester.widget<SwitchListTile>(view).value, isFalse);
+    expect(writes, hasLength(3));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    await fixture.close(disposeAccount: false);
+  });
 }
 
 class _Fixture {

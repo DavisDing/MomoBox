@@ -793,3 +793,27 @@ PostgreSQL16.4源码经官方SHA256校验，编译到 `/private/tmp/momobox-pg16
 - PASS：`git diff --check`。
 - 工具：复用 `/private/tmp/momobox-v2-toolchain/flutter-stable` 的Flutter3.47.9 / Dart3.13.7和既有pub缓存，直接运行flutter_tools.dart及其已有package_config，绕过包装入口的工具pub解析。工具临时配置使用XDG_CONFIG_HOME=/private/tmp/momobox-auth-config，分析缓存放/private/tmp。首次沙箱执行被工具缓存写入及127.0.0.1测试监听权限阻止；允许工具正常运行后取得上述结果，没有修改产品依赖或系统PATH。完整日志 `/private/tmp/momobox-auth-final-tests.log` 与 `/private/tmp/momobox-auth-analyze.log`。
 - NOT_EXECUTED：Android/iOS打包与安装、系统键盘/读屏、真实NAS注册及HA联调、远端CI/推送/发布。MockClient只验证协议和状态，不能证明现场连接成功；现有安装包仍需后续更新。
+
+## 2026-11-12：同步初始化401刷新循环与设备令牌绑定
+
+从main 780fa12干净工作区修复用户现场conflicts 401→refresh 200循环。设备注册未写入JWT DeviceID，以及整份account观察导致token刷新销毁同步组件，是本次源码定位与回归复现的两个问题。范围见REQUIREMENT第26节、DESIGN第44节及NAS API/安全契约。
+
+- PASS：Flutter3.47.9下 flutter analyze --no-pub 全项目No issues found；修正新增多行分支花括号后通过，未关闭lint。日志 /private/tmp/momobox-sync-analyze347-final.log。
+- PASS：Flutter3.47.9下9个相关测试文件共137项全部通过：nas_device_session_test、sync_workspace_provider_test、nas_auth_service_test、nas_account_session_test、nas_ha_session_test、nas_setup_flow_test、nas_sync_api_test、sync_settings_screen_test、sync_scheduler_test。日志 /private/tmp/momobox-sync-tests347-final.log。
+- 覆盖：新注册/已保存设备等待绑定刷新才ready；绑定拒绝清除无效会话；显式绑定排在已有刷新后使用轮换后的token；一次401只刷新一次，重试成功或再次401均不重建workspace identity/API/engine/import service；真实同步设置Widget在持续401后额外通知/多帧仍只有2次conflict请求和1次refresh；切NAS/账号/家庭使旧会话失效，原冲突结算、游标、数据归属及调度回归保留。测试HTTP是隔离MockClient，不是现场NAS证据。
+- PASS：Go1.22.8下 go test -ldflags=-linkmode=external -count=1 ./... 全量后端回归；go vet ./...。全量运行未配置MOMO_TEST_DATABASE_URL，既有PG opt-in测试skip，不能称全量真实PG通过。日志 /private/tmp/momobox-sync-go-all.log、/private/tmp/momobox-sync-vet.log。
+- PASS：真实PostgreSQL16.4下 go test -ldflags=-linkmode=external -count=1 -v ./internal/store/authpostgres，5个顶层测试通过，含新增真实SQL回归。随机schema执行原始0001 migration（仅改search_path并省略共享pgcrypto安装），首次无device刷新记录→合法当前设备绑定→普通轮换成功；SQL列表排除其他账号/家庭设备，轮换拒绝外部/未知设备；设备撤销后绑定失败回滚，原未绑定session不被消费，无替代token落库。随机schema已删除，临时实例仅监听127.0.0.1随机端口且已停止；未访问NAS/正式库。日志 /private/tmp/momobox-sync-device-pg-final.log。
+- PASS：新增Go文件与修改的生产Go源gofmt、git diff --check，OpenAPI YAML可解析。没有新增产品依赖、schema、migration或既有业务数据变更。
+- 工具边界：原/private/tmp工具链已清理，临时重建官方源码/engine。先用当前stable源码（engine371f772）复现，137项通过但其新Material废弃提示不计入最终基线；最终改用官方3.47.9标签源码、engine89c39edf及Dart3.13.7。归档无Git元数据，临时SDK内创建仅供工具启动的本地Git/tag标记，不是官方framework commit或业务提交。Go与PG归档已校验官方SHA256；未安装系统软件或修改系统PATH。
+- 恢复工具链期间临时解析曾选择vector_math2.4.4；补齐原2.4.2缓存后，最终离线解析保持原pubspec.lock无差异，并按原锁文件组合重跑137项测试及全项目analyze通过。没有产品依赖升级。
+- NOT_EXECUTED：Android/iOS打包与安装、真实NAS/PG18同步、实际App与后端联调、远端CI/提交/推送/镜像及APK发布。本修复需更新App和NAS后端；旧后端不接受新增device_id时App显示更新提示，不把设备标为同步ready。
+
+## 2026-11-12：NAS AI 诊断与 HA 首次实体授权
+
+基于含前序未提交 NAS 注册、家庭身份和设备刷新修复的工作区，新增NAS处理模式的AI可操作错误分类，并修复HA保存后未发现实体及管理员无法查看未授权实体来配置白名单的问题。新增 owner/admin 专用家庭实体目录接口；目录省略状态/时间且不授予任何权限。实体查看和typed command仍经过原服务端授权。需求/设计见REQUIREMENT第27节和DESIGN第45节。
+
+- PASS：Flutter 3.47.9 `flutter analyze --no-pub` 全项目无问题，日志 `/private/tmp/momobox-aiha-analyze-final.log`。
+- PASS：8个AI/HA相关Flutter测试文件共154项通过，涵盖NAS模式无AI配置提示、NAS错误分类与敏感信息剔除、未知结果不重试、HA保存后自动发现/发现失败重试、首次目录只读且无状态、显式权限授予前无状态读取、按角色授权、关闭查看时同时撤销控制与命令、角色切换及既有AI工作流/HA命令权限回归。合并回归日志 `/private/tmp/momobox-aiha-tests-final.log`，新增授权Widget回归 `/private/tmp/momobox-aiha-permissions-widget2.log`。
+- PASS：`go test -ldflags=-linkmode=external -count=1 ./...` 全量Go后端测试；新增目录服务、HTTP路由和权限不隐式授予回归。日志 `/private/tmp/momobox-aiha-go.log`。针对HA包、HTTP与入口的再次运行也通过，见 `/private/tmp/momobox-aiha-go2.log`。运行未提供 `MOMO_TEST_DATABASE_URL`，opt-in真实PG用例不代表PG验收。
+- PASS：`go vet ./...`、`git diff --check`、OpenAPI YAML解析。
+- NOT_EXECUTED：Android/iOS构建安装、0.12.94或新包设备验证、真实NAS/HA发现及权限操作、部署新后端镜像、NAS环境AI提供商测试、远端CI/发布。新HA目录端点需要更新NAS后端；本地Mock和编译测试不证明现场设备/模型连通。

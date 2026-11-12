@@ -103,6 +103,9 @@ class NasSmartHomeRepository {
   Future<NasHaDiscoverResult> discover(String integrationId) =>
       _withApi((api) => api.discover(integrationId));
 
+  Future<List<NasHaEntity>> listEntityCatalog(String integrationId) =>
+      _withApi((api) => api.listEntityCatalog(integrationId));
+
   Future<List<NasHaEntity>> listEntities({
     String? integrationId,
     bool controllableOnly = false,

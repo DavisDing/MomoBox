@@ -1337,7 +1337,7 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
                               result = '测试失败：请填写 API 地址、模型和 API Key 后测试。';
                             } else {
                               final response = await executor.execute(
-                                configs: [
+                                configs: backend != null ? [AiFallbackExecutor.backendConfig] : [
                                   AiEndpointConfig(
                                     level: AiApiLevel.primary,
                                     endpoint: endpoint,
@@ -1447,6 +1447,11 @@ class _AiSettingsScreenState extends ConsumerState<AiSettingsScreen> {
       body: ListView(
         padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
         children: [
+          if (ref.watch(nasConnectionProvider).serverUrl.trim().isNotEmpty)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 12),
+              child: Text('当前已选择 NAS 处理：AI 调用和“测试”使用 NAS 的模型配置。下方手机配置仅用于单机模式。NAS 需配置 AI_ENDPOINT、AI_MODEL、AI_API_KEY，并完成家庭与同步初始化。'),
+            ),
           SwitchListTile.adaptive(
             title: const Text('允许 AI 提议应用操作'),
             subtitle: const Text('入库、库存、采购、提醒、家务、已授权设备及显示设置均须逐次确认。禁止删库；关闭后只读。'),

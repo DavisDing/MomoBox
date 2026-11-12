@@ -119,10 +119,12 @@ func (r *membershipRepo) CurrentUserMembership(context.Context, string) (auth.Fa
 
 type deviceRepo struct {
 	upserted []auth.DeviceRecord
+	listed   []auth.SyncDevice
+	listErr  error
 }
 
 func (r *deviceRepo) ListUserDevices(context.Context, string) ([]auth.SyncDevice, error) {
-	return nil, nil
+	return r.listed, r.listErr
 }
 func (r *deviceRepo) UpsertDevice(_ context.Context, record auth.DeviceRecord) error {
 	r.upserted = append(r.upserted, record)

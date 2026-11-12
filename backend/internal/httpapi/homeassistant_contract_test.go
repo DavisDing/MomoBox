@@ -20,6 +20,7 @@ func (v contractHAVerifier) Verify(string, time.Time) (auth.AccessTokenClaims, e
 type contractHAHTTPService struct {
 	create homeassistant.IntegrationDTO
 	createErr error
+	catalog []homeassistant.EntityDTO
 	commandCalls int
 	lastCommand homeassistant.CommandRequest
 	lastActor homeassistant.Actor
@@ -31,6 +32,7 @@ func (*contractHAHTTPService) DeleteIntegration(context.Context, homeassistant.A
 func (*contractHAHTTPService) TestIntegration(context.Context, homeassistant.Actor, string) (homeassistant.ConnectionTestDTO, error) { return homeassistant.ConnectionTestDTO{}, nil }
 func (*contractHAHTTPService) Discover(context.Context, homeassistant.Actor, string) (homeassistant.DiscoveryDTO, error) { return homeassistant.DiscoveryDTO{}, nil }
 func (*contractHAHTTPService) ListEntities(context.Context, homeassistant.Actor, string, bool) ([]homeassistant.EntityDTO, error) { return nil, nil }
+func (s *contractHAHTTPService) ListEntityCatalog(context.Context, homeassistant.Actor, string) ([]homeassistant.EntityDTO, error) { return s.catalog, nil }
 func (*contractHAHTTPService) GetState(context.Context, homeassistant.Actor, string, string) (homeassistant.StateDTO, error) { return homeassistant.StateDTO{}, nil }
 func (s *contractHAHTTPService) ExecuteCommand(_ context.Context, actor homeassistant.Actor, _ string, _ string, request homeassistant.CommandRequest) (homeassistant.CommandDTO, error) { s.commandCalls++; s.lastCommand = request; s.lastActor = actor; return homeassistant.CommandDTO{}, nil }
 func (*contractHAHTTPService) ListPermissions(context.Context, homeassistant.Actor) ([]homeassistant.PermissionDTO, error) { return nil, nil }
@@ -85,6 +87,19 @@ func TestHAIntegrationHTTPResponseDoesNotExposeTokenFields(t *testing.T) {
 	for _, forbidden := range []string{"secret-token-123456", "access_token", "key_version", "ciphertext"} {
 		if strings.Contains(body, forbidden) { t.Fatalf("HTTP response contains forbidden field %q: %s", forbidden, body) }
 	}
+}
+
+func TestHAEntityCatalogRouteReturnsDiscoveryMetadata(t *testing.T) {
+	service := &contractHAHTTPService{catalog: []homeassistant.EntityDTO{{ID: "row-1", IntegrationID: "integration-1", EntityID: "light.kitchen", Domain: "light", Name: "Kitchen", IsVisible: true, IsControllable: true}}}
+	handler := NewRouter(Dependencies{HomeAssistant: service, Verifier: contractHAVerifier{claims: contractHAClaims()}})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/home-assistant/integrations/integration-1/catalog", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK { t.Fatalf("status = %d, body=%s", resp.Code, resp.Body.String()) }
+	var body struct { Entities []entityJSON `json:"entities"` }
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil { t.Fatal(err) }
+	if len(body.Entities) != 1 || body.Entities[0].EntityID != "light.kitchen" { t.Fatalf("catalog = %#v", body.Entities) }
 }
 
 func TestHACommandHTTPRejectsRawServiceDataAndPreservesTypedRequestID(t *testing.T) {

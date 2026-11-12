@@ -76,6 +76,14 @@ class NasHomeAssistantApi {
     return NasHaDiscoverResult.fromJson(json);
   }
 
+  Future<List<NasHaEntity>> listEntityCatalog(String integrationId) async {
+    final json = await _requestJson(
+      method: 'GET',
+      path: '/home-assistant/integrations/${_pathSegment(integrationId)}/catalog',
+    );
+    return _parseList(json['entities'], NasHaEntity.fromJson);
+  }
+
   Future<List<NasHaEntity>> listEntities({
     String? integrationId,
     bool controllableOnly = false,

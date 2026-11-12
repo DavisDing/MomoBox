@@ -1790,3 +1790,21 @@ Android/iOS构建、真机安装、系统字形/键盘/读屏、实际NAS/HA/天
 HA仍由NAS保存令牌并检查家庭权限，不增加直连或免登录路径。配置页观察NasAccountState，明确未登录、家庭缺失/读取失败及普通成员权限，复用现有NasSettingsScreen作为处理入口，禁用不满足权限的保存/测试。家庭尚未available时，共用会话repository不允许HA请求。创建/加入家庭接口未返回新令牌，NasAccountController在发布available状态之前调用既有refresh；失败保持门禁，旧会话响应仍按revision丢弃。HA保存失败时不重置表单dirty状态。
 
 只调整现有配置反馈和校验，不重设计页面，不改后端API、数据库、现有账号密码或依赖。测试中的HTTP响应只用于验证状态和权限，不作为NAS/HA现场证据。AI_CONTEXT更新建议：完成安装及现场验收后，补充注册密码提示与HA需要NAS家庭身份的约定。
+
+## 44. 2026-11-12：设备令牌绑定与同步Provider稳定性
+
+现场日志为sync/conflicts 401→auth/refresh 200反复发生。两个源码原因叠加：独立POST /devices只登记设备，不更新登录的DeviceID；原refresh延续空DeviceID，HTTP同步门禁currentDeviceID持续拒绝。另一方面，nasSyncApiProvider、syncWorkspaceIdentityProvider等观察整个NasAccountState，每次refresh发布新的auth对象都会销毁API，使在途重试失败，页面又按新API重新加载冲突列表。
+
+RefreshRequest增加可选device_id；服务通过现有DeviceReader读取当前用户/家庭设备并排除撤销状态。PG轮换事务允许未绑定→同账号当前家庭已登记设备；目标device/family/member先FOR SHARE，再锁refresh/user并复查当前家庭，保留撤销与轮换一致性及旧锁顺序，已绑定会话不允许换设备。刷新记录的MATCH FULL约束与普通刷新/跨家庭丢弃旧设备规则不放宽，无schema变化。
+
+NasAccountController在注册返回后以及_loadDevices找到本机设备后调用显式绑定刷新，设备loading期间不提供同步API，失败显示错误或登出；不采用客户端解析JWT来推定权限。NasAuthService把显式绑定排在已有刷新后，使用轮换后的refresh值，并继续检查会话代次。Provider只观察与身份/设备就绪有关的字段；动态token provider提供新令牌，纯auth对象更新不会重建API、engine、workspace identity或initial import service。真实身份/设备/工作区变化继续销毁旧transport，迟到响应检查不移除。
+
+同步页读取远端冲突失败展示净化后的NasApiError.message，包含设备绑定缺失时的处理步骤；只调整错误文案，不重设计UI，不改库存、outbox、冲突、同步模式或游标。没有新增依赖或数据库迁移。AI_CONTEXT更新建议：在App/NAS现场验收后补充设备绑定就绪与纯token轮换保持同步组件稳定的长期约定。
+
+## 45. 2026-11-12：AI 后端错误说明与 HA 初始实体目录
+
+AI连接测试复用backendResolver，但对选中NAS处理的认证、家庭绑定、设备就绪、工作区归属、首次同步模式使用明确安全说明；不读取手机密钥用于后端模式。能力接口backend_ai=false提示仅NAS部署模型配置是生效配置。NAS错误按HTTP安全分类与已知错误码提示；AI_RESULT_UNKNOWN要求先核实，不自动重发。仍不展示响应正文、令牌、密钥或上游地址。
+
+HA新增owner/admin专用 GET /home-assistant/integrations/{id}/catalog，返回当前家庭已发现实体的权限设置目录，主动省略缓存状态及状态时间。常规 entities/state/commands保持原授权过滤。保存HA后先保留服务端返回的integration ID，再调用discover，刷新目录；发现失败保留已保存配置及可重试入口。配置页可为owner/admin自己或其他角色分别修改can_view/can_control及已有typed-command allowlist，默认不授予未记录的权限。没有数据库迁移或依赖变化。
+
+错误映射与本地模拟回归不代表现场NAS/HA或真实模型通过；接口需随NAS后端镜像更新，旧后端由404提示更新。

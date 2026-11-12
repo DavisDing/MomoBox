@@ -469,6 +469,8 @@ class NasAccountController extends StateNotifier<NasAccountState> {
       final currentDeviceId = await _readDeviceId();
       if (!_isCurrentSession(revision) || !state.isAuthenticated) return;
       final matched = _currentDeviceId(devices, currentDeviceId);
+      if (matched != null && !await _authorizeSyncDevice(matched, revision)) return;
+      if (!_isCurrentSession(revision)) return;
       state = state.copyWith(
         devices: NasDeviceState(
           status: matched == null
@@ -586,6 +588,8 @@ class NasAccountController extends StateNotifier<NasAccountState> {
         appVersion: appVersion,
       );
       if (!_isCurrentSession(revision)) return;
+      if (!await _authorizeSyncDevice(device.id, revision)) return;
+      if (!_isCurrentSession(revision)) return;
       final devices = <NasDeviceDto>[
         ...state.devices.devices.where((item) => item.id != device.id),
         device,
@@ -601,6 +605,26 @@ class NasAccountController extends StateNotifier<NasAccountState> {
     } catch (error) {
       if (_isCurrentSession(revision)) await _handleDeviceFailure(error);
     }
+  }
+
+  Future<bool> _authorizeSyncDevice(String deviceId, int revision) async {
+    final NasAuthSnapshot auth;
+    try {
+      auth = await _authService!.refresh(deviceId: deviceId);
+    } on NasApiError catch (error) {
+      if (error.kind == NasApiErrorKind.validation) {
+        throw NasApiError(kind: error.kind, code: error.code, statusCode: error.statusCode,
+          message: 'NAS 未接受同步设备身份绑定，请先更新 NAS 后端，再重新登录并注册当前设备。');
+      }
+      rethrow;
+    }
+    if (!_isCurrentSession(revision)) return false;
+    if (!auth.isAuthenticated) {
+      _setSignedOut('设备身份核验失败，请重新登录 NAS 后注册当前设备。');
+      return false;
+    }
+    state = state.copyWith(auth: auth);
+    return true;
   }
 
   Future<void> revokeDevice(String deviceId) async {
@@ -810,7 +834,7 @@ class NasAccountController extends StateNotifier<NasAccountState> {
 
   String? _currentDeviceId(List<NasDeviceDto> devices, String? persistedId) {
     for (final device in devices) {
-      if (device.isCurrent == true) return device.id;
+      if (device.isCurrent == true && device.revokedAt == null) return device.id;
     }
     if (persistedId != null) {
       for (final device in devices) {

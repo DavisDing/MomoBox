@@ -160,28 +160,40 @@ class NasAuthService {
     return ++_sessionGeneration;
   }
 
-  Future<NasAuthSnapshot> refresh() {
-    if (_abandoned || _signingOut || _snapshot.status == NasAuthStatus.signingIn) {
+  Future<NasAuthSnapshot> refresh({String? deviceId}) {
+    if (_abandoned ||
+        _signingOut ||
+        _snapshot.status == NasAuthStatus.signingIn) {
       return Future.value(_snapshot);
     }
     final existing = _refreshInFlight;
-    if (existing != null) return existing;
-    final operation = _refresh(_sessionGeneration);
+    if (existing != null) {
+      if (deviceId == null) return existing;
+      final generation = _sessionGeneration;
+      return existing.then(
+        (_) => _isCurrent(generation) ? refresh(deviceId: deviceId) : _snapshot,
+      );
+    }
+    final operation = _refresh(_sessionGeneration, deviceId: deviceId);
     _refreshInFlight = operation;
     return operation.whenComplete(() {
       if (identical(_refreshInFlight, operation)) _refreshInFlight = null;
     });
   }
 
-  Future<NasAuthSnapshot> _refresh(int generation) async {
+  Future<NasAuthSnapshot> _refresh(int generation, {String? deviceId}) async {
     try {
-      final stored = await _credentials.readForServer(_apiClient.serverIdentity);
+      final stored = await _credentials.readForServer(
+        _apiClient.serverIdentity,
+      );
       if (!_isCurrent(generation)) return _snapshot;
       if (stored == null) {
         _apiClient.setAccessToken(null);
         return _setSnapshot(const NasAuthSnapshot.signedOut());
       }
-      final response = await _apiClient.refresh(NasRefreshRequest(stored.refreshToken));
+      final response = await _apiClient.refresh(
+        NasRefreshRequest(stored.refreshToken, deviceId: deviceId),
+      );
       return await _accept(response, generation);
     } on NasApiError catch (error) {
       if (!_isCurrent(generation)) return _snapshot;

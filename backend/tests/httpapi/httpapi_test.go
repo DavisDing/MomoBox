@@ -25,6 +25,7 @@ func (v verifier) Verify(string, time.Time) (auth.AccessTokenClaims, error) { re
 type authFake struct {
 	loginCalled bool
 	request     auth.LoginRequest
+	refreshRequest auth.RefreshRequest
 }
 
 func (f *authFake) Register(context.Context, auth.RegisterRequest) (auth.AuthResponse, error) {
@@ -35,7 +36,8 @@ func (f *authFake) Login(_ context.Context, request auth.LoginRequest) (auth.Aut
 	f.request = request
 	return auth.AuthResponse{User: auth.User{ID: "user-1", Email: request.Email, Nickname: "Momo"}, AccessToken: "access", RefreshToken: strings.Repeat("r", 32), ExpiresIn: 900}, nil
 }
-func (f *authFake) Refresh(context.Context, auth.RefreshRequest) (auth.AuthResponse, error) {
+func (f *authFake) Refresh(_ context.Context, request auth.RefreshRequest) (auth.AuthResponse, error) {
+	f.refreshRequest = request
 	return auth.AuthResponse{}, nil
 }
 func (f *authFake) Logout(context.Context, auth.RefreshRequest) error { return nil }
@@ -45,6 +47,19 @@ func (f *authFake) CurrentUser(context.Context, string) (auth.MeResponse, error)
 
 func validClaims() auth.AccessTokenClaims {
 	return auth.AccessTokenClaims{UserID: "user-1", FamilyID: "family-1", Role: "owner", DeviceID: "device-1", ExpiresAt: time.Now().Add(time.Hour)}
+}
+
+func TestRefreshAcceptsOptionalRegisteredDeviceBinding(t *testing.T) {
+	for _, deviceJSON := range []string{"", `,"device_id":"phone"`} {
+		service := &authFake{}
+		handler := httpapi.NewRouter(httpapi.Dependencies{Auth: service})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", strings.NewReader(`{"refresh_token":"opaque-refresh"`+deviceJSON+`}`))
+		req.Header.Set("Content-Type", "application/json")
+		res := httptest.NewRecorder()
+		handler.ServeHTTP(res, req)
+		if res.Code != http.StatusOK || service.refreshRequest.RefreshToken != "opaque-refresh" { t.Fatalf("refresh not dispatched: %d", res.Code) }
+		if deviceJSON != "" && service.refreshRequest.DeviceID != "phone" { t.Fatal("device binding was lost") }
+	}
 }
 
 func TestMissingServiceReturnsConfigurationErrorAndRequestID(t *testing.T) {

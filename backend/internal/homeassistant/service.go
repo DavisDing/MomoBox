@@ -310,6 +310,45 @@ func (s *Service) Discover(ctx context.Context, actor Actor, integrationID strin
 	return DiscoveryDTO{IntegrationID: integration.ID, Devices: len(devices), Entities: len(entities)}, nil
 }
 
+// ListEntityCatalog exposes discovery metadata for explicit permission setup.
+// It never grants viewing/control rights or returns cached entity state.
+func (s *Service) ListEntityCatalog(ctx context.Context, actor Actor, integrationID string) ([]EntityDTO, error) {
+	if err := s.readyFor(true, false, true, false, false, false, false); err != nil {
+		return nil, err
+	}
+	if err := validateActor(actor); err != nil {
+		return nil, err
+	}
+	if !actor.Role.CanManagePermissions() {
+		return nil, businessError(CodeForbidden, "only owner or admin can read the discovery catalog", nil)
+	}
+	if err := validateIntegrationID(integrationID); err != nil {
+		return nil, err
+	}
+	integration, err := s.Integrations.Get(ctx, actor.FamilyID, integrationID)
+	if err != nil {
+		return nil, err
+	}
+	if integration.FamilyID != actor.FamilyID || integration.ID != integrationID {
+		return nil, businessError(CodeNotFound, "Home Assistant integration was not found", nil)
+	}
+	entities, err := s.Entities.List(ctx, actor.FamilyID, integrationID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]EntityDTO, 0, len(entities))
+	for _, entity := range entities {
+		if entity.FamilyID != actor.FamilyID || entity.IntegrationID != integrationID {
+			continue
+		}
+		value := entityDTO(entity)
+		value.CurrentState = nil
+		value.LastStateAt = nil
+		result = append(result, value)
+	}
+	return result, nil
+}
+
 func (s *Service) ListEntities(ctx context.Context, actor Actor, integrationID string, controllableOnly bool) ([]EntityDTO, error) {
 	if err := s.readyFor(true, false, true, true, false, false, false); err != nil {
 		return nil, err
@@ -474,7 +513,9 @@ func (s *Service) ExecuteCommand(ctx context.Context, actor Actor, integrationID
 			}
 			switch execution.Status {
 			case "succeeded":
-				if auditErr := s.appendAudit(ctx,actor,entity,req,AuditSucceeded,"");auditErr != nil { return CommandDTO{},auditErr }
+				if auditErr := s.appendAudit(ctx, actor, entity, req, AuditSucceeded, ""); auditErr != nil {
+					return CommandDTO{}, auditErr
+				}
 				return execution.Result, nil
 			case "rejected":
 				return CommandDTO{}, businessError(CodeIntegrationUnavailable, "Home Assistant rejected the original command", nil)

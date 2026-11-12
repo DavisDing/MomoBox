@@ -73,6 +73,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/home-assistant/integrations/{integration_id}", h.integrationRoute)
 	mux.HandleFunc("/api/v1/home-assistant/integrations/{integration_id}/test", h.testIntegration)
 	mux.HandleFunc("/api/v1/home-assistant/integrations/{integration_id}/discover", h.discover)
+	mux.HandleFunc("/api/v1/home-assistant/integrations/{integration_id}/catalog", h.listEntityCatalog)
 	mux.HandleFunc("/api/v1/home-assistant/entities", h.listEntities)
 	mux.HandleFunc("/api/v1/home-assistant/entities/{entity_id}/state", h.getState)
 	mux.HandleFunc("/api/v1/home-assistant/entities/{entity_id}/commands", h.executeCommand)

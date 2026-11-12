@@ -77,6 +77,7 @@ type HomeAssistantService interface {
 	TestIntegration(context.Context, homeassistant.Actor, string) (homeassistant.ConnectionTestDTO, error)
 	Discover(context.Context, homeassistant.Actor, string) (homeassistant.DiscoveryDTO, error)
 	ListEntities(context.Context, homeassistant.Actor, string, bool) ([]homeassistant.EntityDTO, error)
+	ListEntityCatalog(context.Context, homeassistant.Actor, string) ([]homeassistant.EntityDTO, error)
 	GetState(context.Context, homeassistant.Actor, string, string) (homeassistant.StateDTO, error)
 	ExecuteCommand(context.Context, homeassistant.Actor, string, string, homeassistant.CommandRequest) (homeassistant.CommandDTO, error)
 	ListPermissions(context.Context, homeassistant.Actor) ([]homeassistant.PermissionDTO, error)

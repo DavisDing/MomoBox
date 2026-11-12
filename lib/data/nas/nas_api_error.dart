@@ -125,6 +125,10 @@ String? _knownMessage(String? code, String? message) {
       return 'NAS 当前未开放账号注册，请联系 NAS 管理员。';
   }
   return switch (message) {
+    'access token does not identify a device' =>
+      '当前登录尚未绑定同步设备，请更新 NAS 后端并在 NAS 设置中重新登录、注册当前设备。',
+    'registered device is unavailable' =>
+      '当前同步设备不存在、已撤销或不属于此账号和家庭，请重新登录并注册当前设备。',
     'password must be at least 12 characters and at most 72 UTF-8 bytes' =>
       '密码至少 12 个字符，且不能超过 72 个 UTF-8 字节。',
     'email is invalid' => '请输入有效邮箱。',

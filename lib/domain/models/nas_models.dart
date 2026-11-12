@@ -101,13 +101,15 @@ class NasLoginRequest {
 }
 
 class NasRefreshRequest {
-  const NasRefreshRequest(this.refreshToken);
+  const NasRefreshRequest(this.refreshToken, {this.deviceId});
 
   final String refreshToken;
+  final String? deviceId;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'refresh_token': refreshToken,
-      };
+    'refresh_token': refreshToken,
+    if (deviceId != null) 'device_id': deviceId,
+  };
 }
 
 class NasUser {

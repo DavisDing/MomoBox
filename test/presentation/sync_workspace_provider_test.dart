@@ -1,7 +1,11 @@
+import 'dart:convert';
+
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:momo_box/application/nas_auth_service.dart';
 import 'package:momo_box/application/nas_connection_service.dart';
 import 'package:momo_box/application/settings_service.dart';
@@ -18,25 +22,64 @@ import 'package:momo_box/presentation/screens/sync_settings_screen.dart';
 import 'package:momo_box/services/nas_credentials_service.dart';
 
 class Account extends NasAccountController {
-  Account(SettingsService settings) : super(settings: settings,
-      connection: NasConnectionService(settings), credentials: NasCredentialsService());
+  Account(SettingsService settings)
+    : super(
+        settings: settings,
+        connection: NasConnectionService(settings),
+        credentials: NasCredentialsService(),
+      );
   String? endpoint;
+  int apiCreations = 0;
+  int refreshCalls = 0;
+  int conflictCalls = 0;
+  bool rejectConflicts = false;
+  String token = 'initial-token';
+
+  void rotateToken() {
+    token = 'rotated-token';
+    state = state.copyWith(
+      auth: NasAuthSnapshot(
+        status: NasAuthStatus.authenticated,
+        user: state.auth.user,
+        expiresAt: DateTime.utc(2026, 12),
+      ),
+    );
+  }
 
   @override
   String? get serverIdentity => endpoint;
 
-  void select({String server = 'https://nas.example/api/v1', String user = 'user-a', String family = 'family-a'}) {
+  void select({
+    String server = 'https://nas.example/api/v1',
+    String user = 'user-a',
+    String family = 'family-a',
+  }) {
     endpoint = server;
     state = NasAccountState(
       status: NasAccountStatus.authenticated,
-      auth: NasAuthSnapshot(status: NasAuthStatus.authenticated,
-          user: NasUser(id: user, email: 'fixture@example.invalid', nickname: '测试')),
-      family: NasFamilyState(status: NasFamilyStatus.available,
-          current: NasFamilyResponseDto(
-            family: NasFamilyDto(id: family, name: '家庭', createdAt: DateTime.utc(2026)),
-            membership: NasFamilyMembershipDto(familyId: family, role: 'owner'),
-          )),
-      devices: const NasDeviceState(status: NasDeviceStatus.ready, currentDeviceId: 'device'),
+      auth: NasAuthSnapshot(
+        status: NasAuthStatus.authenticated,
+        user: NasUser(
+          id: user,
+          email: 'fixture@example.invalid',
+          nickname: '测试',
+        ),
+      ),
+      family: NasFamilyState(
+        status: NasFamilyStatus.available,
+        current: NasFamilyResponseDto(
+          family: NasFamilyDto(
+            id: family,
+            name: '家庭',
+            createdAt: DateTime.utc(2026),
+          ),
+          membership: NasFamilyMembershipDto(familyId: family, role: 'owner'),
+        ),
+      ),
+      devices: const NasDeviceState(
+        status: NasDeviceStatus.ready,
+        currentDeviceId: 'device',
+      ),
     );
   }
 
@@ -46,8 +89,42 @@ class Account extends NasAccountController {
   }
 
   @override
-  NasSyncApi? createSyncApi({bool Function()? isWorkspaceCurrent}) => NasSyncApi(
-      endpoint!, accessToken: 'fixture-token', isSessionCurrent: isWorkspaceCurrent);
+  NasSyncApi? createSyncApi({bool Function()? isWorkspaceCurrent}) {
+    apiCreations++;
+    final api = NasSyncApi(
+      endpoint!,
+      accessTokenProvider: () => token,
+      isSessionCurrent: isWorkspaceCurrent,
+      client: MockClient((request) async {
+        if (request.url.path.endsWith('/sync/conflicts')) {
+          conflictCalls++;
+          if (rejectConflicts ||
+              request.headers['Authorization'] == 'Bearer initial-token') {
+            return http.Response(
+              jsonEncode({
+                'error': {
+                  'code': 'AUTH_INVALID_TOKEN',
+                  'message': 'access token does not identify a device',
+                },
+              }),
+              401,
+            );
+          }
+          return http.Response(
+            jsonEncode({'conflicts': [], 'has_more': false}),
+            200,
+          );
+        }
+        return http.Response('{}', 404);
+      }),
+    );
+    api.setRefreshHandler(() async {
+      refreshCalls++;
+      rotateToken();
+      return token;
+    });
+    return api;
+  }
 }
 
 void main() {
@@ -93,6 +170,41 @@ void main() {
     expect(container.read(nasSyncApiProvider), isNotNull);
     expect(container.read(syncEngineProvider), isNotNull);
   });
+
+  for (final reject in [false, true]) {
+    test(
+      '401 refresh preserves API/engine/import identity and bounds retry; persistent rejection=$reject',
+      () async {
+        await bind();
+        account.rejectConflicts = reject;
+        final api = container.read(nasSyncApiProvider)!;
+        final engine = container.read(syncEngineProvider);
+        final importer = container.read(initialImportServiceProvider);
+        final identity = container.read(syncWorkspaceIdentityProvider);
+        final pending = api.listConflicts(deviceId: 'device');
+        if (reject) {
+          await expectLater(pending, throwsA(isA<NasApiError>()));
+        } else {
+          expect((await pending).conflicts, isEmpty);
+        }
+        await Future<void>.delayed(Duration.zero);
+        expect(identical(container.read(nasSyncApiProvider), api), isTrue);
+        expect(identical(container.read(syncEngineProvider), engine), isTrue);
+        expect(
+          identical(container.read(initialImportServiceProvider), importer),
+          isTrue,
+        );
+        expect(
+          identical(container.read(syncWorkspaceIdentityProvider), identity),
+          isTrue,
+        );
+        expect(container.read(syncWorkspaceAccessProvider).isLoading, isFalse);
+        expect(account.apiCreations, 1);
+        expect(account.refreshCalls, 1);
+        expect(account.conflictCalls, 2);
+      },
+    );
+  }
 
   test('同家庭换账号也阻断API/引擎；旧客户端不能继续，原身份返回后恢复', () async {
     await bind();
@@ -180,6 +292,43 @@ void main() {
         await tester.binding.setSurfaceSize(null);
       }
     }
+  }
+
+  for (final reject in [false, true]) {
+    testWidgets('同步设置在401刷新后保持稳定，不重建冲突请求：持续拒绝=$reject', (tester) async {
+      widgetOwnsCleanup = true;
+      try {
+        await tester.runAsync(bind);
+        account.rejectConflicts = reject;
+        final api = container.read(nasSyncApiProvider);
+        await tester.binding.setSurfaceSize(const Size(600, 1200));
+        await tester.pumpWidget(UncontrolledProviderScope(container: container,
+          child: const MaterialApp(home: SyncSettingsScreen())));
+        await settle(tester, reject
+            ? find.textContaining('读取远端冲突失败：')
+            : find.text('当前没有开放的远端冲突或待恢复回执。'));
+        expect(account.refreshCalls, 1);
+        expect(account.conflictCalls, 2);
+        expect(account.apiCreations, 1);
+        expect(identical(container.read(nasSyncApiProvider), api), isTrue);
+        // Further account notifications/page frames must not restart an
+        // already completed (including failed) conflict request.
+        account.rotateToken();
+        for (var i = 0; i < 20; i++) {
+          await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 1)));
+          await tester.pump(const Duration(milliseconds: 50));
+        }
+        expect(account.refreshCalls, 1);
+        expect(account.conflictCalls, 2);
+        expect(account.apiCreations, 1);
+        if (reject) {
+          expect(find.textContaining('当前登录尚未绑定同步设备'), findsOneWidget);
+        }
+        expect(tester.takeException(), isNull);
+      } finally {
+        await closeWidgetFixture(tester);
+      }
+    });
   }
 
   testWidgets('数据归属确认显示完整身份，取消不写绑定、不启用同步', (tester) async {

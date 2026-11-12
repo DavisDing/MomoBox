@@ -27,6 +27,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
 
   String? _hydratedIntegrationId;
   bool _formDirty = false;
+  String? _permissionRole;
 
   @override
   void initState() {
@@ -132,10 +133,26 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
     await ref.read(smartHomeControllerProvider.notifier).refresh();
   }
 
+  Future<void> _discoverEntities() async {
+    await ref.read(smartHomeControllerProvider.notifier).discoverEntities();
+  }
+
   NasHaEntityPermission? _permissionFor(SmartHomeState state, NasHaEntity entity) {
-    return state.permissions.where((permission) {
-      return permission.integrationId == entity.integrationId && permission.entityId == entity.entityId;
+    final role = _permissionRole ?? ref.read(nasAccountProvider).family.current?.membership.role;
+    final permission = state.permissions.where((permission) {
+      return permission.integrationId == entity.integrationId && permission.entityId == entity.entityId && permission.role == role;
     }).firstOrNull;
+    if (permission != null) return permission;
+    if (!_canManageIntegration) return null;
+    if (role == null) return null;
+    return NasHaEntityPermission(
+      integrationId: entity.integrationId,
+      entityId: entity.entityId,
+      role: role,
+      canView: false,
+      canControl: false,
+      allowedCommands: const [],
+    );
   }
 
   NasHaEntityState? _stateFor(SmartHomeState state, NasHaEntity entity) {
@@ -146,6 +163,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
     NasHaEntityPermission permission, {
     bool? canView,
     bool? canControl,
+    List<String>? allowedCommands,
   }) async {
     final nextCanView = canView ?? permission.canView;
     final nextCanControl = nextCanView ? (canControl ?? permission.canControl) : false;
@@ -156,7 +174,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
             role: permission.role,
             canView: nextCanView,
             canControl: nextCanControl,
-            allowedCommands: permission.allowedCommands,
+            allowedCommands: nextCanControl ? (allowedCommands ?? permission.allowedCommands) : const [],
           ),
         );
   }
@@ -429,7 +447,8 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
   }
 
   Widget _buildEntitiesCard(SmartHomeState state) {
-    final entities = state.entities;
+    final entities = _canManageIntegration && state.entityCatalog.isNotEmpty
+        ? state.entityCatalog : state.entities;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -452,12 +471,35 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
               style: TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey, height: 1.4),
             ),
             const Divider(height: 20),
+            if (_canManageIntegration && state.integrations.isNotEmpty) ...[
+              OutlinedButton.icon(
+                onPressed: state.isLoading || state.isCommandLoading ? null : _discoverEntities,
+                icon: const Icon(Icons.search_rounded),
+                label: const Text('发现实体'),
+              ),
+              DropdownButtonFormField<String>(
+                initialValue: _permissionRole ?? ref.read(nasAccountProvider).family.current?.membership.role,
+                decoration: const InputDecoration(labelText: '授权角色'),
+                items: const [
+                  DropdownMenuItem(value: 'owner', child: Text('家庭创建者')),
+                  DropdownMenuItem(value: 'admin', child: Text('管理员')),
+                  DropdownMenuItem(value: 'member', child: Text('普通成员')),
+                ],
+                onChanged: state.isLoading ? null : (value) => setState(() => _permissionRole = value),
+              ),
+              const SizedBox(height: 8),
+              if (state.catalogError != null) Text(state.catalogError!),
+            ],
             if (state.isLoading && entities.isEmpty)
               const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()))
             else if (state.integrations.isEmpty)
               const _EmptyHint(icon: Icons.settings_input_component_outlined, text: '保存 Home Assistant 配置后，这里会显示已发现的实体。')
+            else if (state.catalogError != null && state.entityCatalog.isEmpty && entities.isEmpty)
+              _EmptyHint(icon: Icons.sync_problem_outlined, text: state.catalogError!)
             else if (state.haStatus == HaConnectionStatus.offline && entities.isEmpty)
               const _EmptyHint(icon: Icons.cloud_off_outlined, text: 'Home Assistant 当前离线，暂时无法读取实体。')
+            else if (entities.isEmpty && _canManageIntegration)
+              const _EmptyHint(icon: Icons.devices_other_outlined, text: '尚未发现实体。请点击“发现实体”重试，并检查 HA 地址和令牌。')
             else if (entities.isEmpty)
               const _EmptyHint(icon: Icons.devices_other_outlined, text: '当前没有可显示的实体，或账号没有查看权限。')
             else
@@ -470,6 +512,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
 
   Widget _buildEntityTile(SmartHomeState state, NasHaEntity entity) {
     final permission = _permissionFor(state, entity);
+    final commands = ref.read(smartHomeControllerProvider.notifier).grantableCommands(entity);
     final remoteState = _stateFor(state, entity);
     final key = '${entity.integrationId}::${entity.entityId}';
     final stale = state.staleEntityIds.contains(key);
@@ -522,23 +565,26 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
               subtitle: Text('角色：${permission.role}', style: const TextStyle(fontSize: MomoTextSize.caption)),
               value: permission.canView,
               activeThumbColor: Theme.of(context).colorScheme.primary,
-              onChanged: state.isLoading ? null : (value) => _updatePermission(permission, canView: value),
+              onChanged: state.isLoading || !_canManageIntegration ? null : (value) => _updatePermission(permission, canView: value),
             ),
             SwitchListTile.adaptive(
               dense: true,
               contentPadding: EdgeInsets.zero,
               title: const Text('允许控制实体', style: TextStyle(fontSize: MomoTextSize.caption)),
               subtitle: Text(
-                permission.allowedCommands.isEmpty
-                    ? '服务端未开放具体 typed command'
-                    : '允许命令：${permission.allowedCommands.join('、')}',
+                permission.allowedCommands.isNotEmpty
+                    ? '允许命令：${permission.allowedCommands.join('、')}'
+                    : commands.isEmpty ? '当前设备没有已支持的控制命令'
+                    : '开启后允许：${commands.join('、')}',
                 style: const TextStyle(fontSize: MomoTextSize.caption),
               ),
               value: permission.canControl,
               activeThumbColor: Theme.of(context).colorScheme.primary,
-              onChanged: state.isLoading || !permission.canView
+              onChanged: state.isLoading || !_canManageIntegration || !permission.canView ||
+                      (!permission.canControl && commands.isEmpty)
                   ? null
-                  : (value) => _updatePermission(permission, canControl: value),
+                  : (value) => _updatePermission(permission, canControl: value,
+                      allowedCommands: permission.allowedCommands.isNotEmpty ? permission.allowedCommands : commands),
             ),
           ],
         ],

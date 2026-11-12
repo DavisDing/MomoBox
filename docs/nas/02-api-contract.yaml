@@ -516,6 +516,35 @@ paths:
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
 
+  /home-assistant/integrations/{integration_id}/catalog:
+    get:
+      tags: [home-assistant]
+      description: 仅 owner/admin 可读取当前家庭的实体发现目录，用于首次白名单配置；不返回 current_state/last_state_at，不授予查看或控制权限。
+      parameters:
+        - name: integration_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 已发现的实体元数据，包括尚未授权的实体
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entities]
+                properties:
+                  entities:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/HAEntity'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 当前账号没有管理权限
+
   /home-assistant/entities:
     get:
       tags: [home-assistant]
@@ -789,6 +818,9 @@ components:
       type: object
       required: [refresh_token]
       properties:
+        device_id:
+          type: string
+          description: 可选；将会话绑定至当前用户在当前家庭已注册且未撤销的设备。不会创建或认领其他用户的设备；后续普通刷新保留绑定。
         refresh_token:
           type: string
           minLength: 32
