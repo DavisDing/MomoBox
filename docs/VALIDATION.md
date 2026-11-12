@@ -817,3 +817,11 @@ PostgreSQL16.4源码经官方SHA256校验，编译到 `/private/tmp/momobox-pg16
 - PASS：`go test -ldflags=-linkmode=external -count=1 ./...` 全量Go后端测试；新增目录服务、HTTP路由和权限不隐式授予回归。日志 `/private/tmp/momobox-aiha-go.log`。针对HA包、HTTP与入口的再次运行也通过，见 `/private/tmp/momobox-aiha-go2.log`。运行未提供 `MOMO_TEST_DATABASE_URL`，opt-in真实PG用例不代表PG验收。
 - PASS：`go vet ./...`、`git diff --check`、OpenAPI YAML解析。
 - NOT_EXECUTED：Android/iOS构建安装、0.12.94或新包设备验证、真实NAS/HA发现及权限操作、部署新后端镜像、NAS环境AI提供商测试、远端CI/发布。新HA目录端点需要更新NAS后端；本地Mock和编译测试不证明现场设备/模型连通。
+
+## 2026-11-12：修复 GitHub run 95 的 Flutter 打包门禁
+
+通过 GitHub 插件读取 run `43171543730`（run #95，提交 `60b0ddd3d0d8d12476436ed8b084a645cb418670`）的 Flutter job `131025957971`。GitHub Actions 的 `stable` 已自动解析到 Flutter 3.50.0；`flutter analyze` 把全项目 67 处旧 `package:flutter/material.dart` 等迁移提示列为 `info`，严格 lint 失败。测试、UI截图和 Android debug / release APK/AAB 构建因此没有执行；截图上传又因前置渲染被跳过、文件不存在而产生次生失败。run #94（提交 `780fa12`）同一 workflow 成功，当时使用 Flutter stable 3.47.9。
+
+- 修复：分析、iOS及release构建三个Flutter job均固定Flutter 3.47.9，匹配最近完整成功的Actions基线及本机工具链。截图上传仅在截图生成成功后执行，避免未生成文件的次生失败。没有屏蔽 analyzer 诊断、改 lint 级别或尝试迁移67处全局Material API。
+- PASS：Flutter 3.47.9 `flutter analyze --no-pub` 全项目无问题；`scripts/ci/test-prepare-flutter-platforms.sh`；workflow YAML解析；`git diff --check`。
+- NOT_EXECUTED：本次修改后的 GitHub Actions、Android debug/release APK/AAB和 iOS build 均未运行。需要新 commit 触发 CI 后确认正式构建；上一次失败 run 内 APK构建步骤是 skipped，不是原生打包器报错。

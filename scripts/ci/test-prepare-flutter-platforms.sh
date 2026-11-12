@@ -21,6 +21,17 @@ if grep -q '^    runs-on: macos-latest$' "$workflow"; then
   exit 1
 fi
 
+flutter_pin_count="$(grep -c 'flutter-version: 3\.47\.9' "$workflow")"
+if [[ "$flutter_pin_count" -ne 3 ]]; then
+  printf 'FAIL: all three Flutter jobs must use the tested 3.47.9 SDK pin (found %s)\n' "$flutter_pin_count" >&2
+  exit 1
+fi
+if grep -q 'channel: stable' "$workflow"; then
+  printf 'FAIL: floating Flutter stable channel makes analyzer/release behavior nondeterministic\n' >&2
+  exit 1
+fi
+grep -Fq "if: always() && steps.ui_capture.outcome == 'success'" "$workflow"
+
 grep -q '^    needs: \[prepare, flutter-verify, ios-verify, backend-verify\]$' "$workflow"
 grep -q '^    needs: \[prepare, build-release-packages\]$' "$workflow"
 

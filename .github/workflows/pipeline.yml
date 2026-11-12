@@ -134,7 +134,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: 3.47.9
           cache: true
 
       - name: Install Android 17 SDK platform
@@ -157,6 +157,7 @@ jobs:
         run: flutter test --coverage --reporter expanded
 
       - name: Render mobile UI evidence
+        id: ui_capture
         timeout-minutes: 3
         env:
           MOMO_UI_CAPTURE_DIR: build/ui-v2
@@ -168,7 +169,7 @@ jobs:
             flutter test --no-pub --reporter expanded test/presentation/v2_visual_capture_test.dart
 
       - name: Upload Flutter UI screenshots
-        if: always()
+        if: always() && steps.ui_capture.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: momobox-ui-${{ github.sha }}
@@ -212,7 +213,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: 3.47.9
           cache: true
 
       - name: Select Xcode 27
@@ -316,7 +317,7 @@ jobs:
         if: needs.prepare.outputs.release_required == 'true'
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: 3.47.9
           cache: true
 
       - name: Install Android 17 SDK platform
