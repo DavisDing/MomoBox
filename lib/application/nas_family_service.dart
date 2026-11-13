@@ -10,6 +10,8 @@ class NasFamilyService {
 
   final NasFamilyDeviceApi _api;
 
+  Future<NasFamilyResponseDto> initializeFamily() => _api.initializeFamily();
+
   Future<NasFamilyResponseDto> createFamily(String name) {
     return _api.createFamily(NasCreateFamilyRequest(name: name));
   }

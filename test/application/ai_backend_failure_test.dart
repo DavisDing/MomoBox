@@ -10,7 +10,6 @@ import 'package:momo_box/data/nas/nas_sync_api.dart';
 
 void main() {
   test('NAS missing model configuration explains setup without sending phone credentials', () async {
-    var phoneCalls = 0;
     final nasCalls = <http.Request>[];
     final api = NasSyncApi('https://nas.example', accessToken: 'nas-session',
       client: MockClient((request) async {
@@ -18,20 +17,15 @@ void main() {
         return http.Response('{"backend_ai":false}', 200);
       }));
     addTearDown(api.close);
-    final executor = AiFallbackExecutor(backendResolver: () async => api,
-      client: MockClient((_) async { phoneCalls++; return http.Response('{}', 200); }));
+    final executor = AiFallbackExecutor(backendResolver: () async => api);
     addTearDown(executor.close);
     try {
-      await executor.execute(configs: const [AiEndpointConfig(
-        level: AiApiLevel.primary, endpoint: 'https://phone.example/v1',
-        apiKey: 'private-phone-key', model: 'phone-model')],
-        systemPrompt: 'connection test', userPrompt: 'OK');
+      await executor.execute(        systemPrompt: 'connection test', userPrompt: 'OK');
       fail('missing NAS configuration was accepted');
     } on BackendProcessingSetupException catch (error) {
       expect(aiFailureMessage(error), contains('AI_ENDPOINT'));
-      expect(aiFailureMessage(error), contains('手机上的模型配置仅用于单机模式'));
+      expect(aiFailureMessage(error), contains('NAS'));
     }
-    expect(phoneCalls, 0);
     expect(nasCalls.single.url.path, '/api/v1/capabilities');
     expect(nasCalls.single.body, isEmpty);
   });
@@ -53,7 +47,7 @@ void main() {
       final executor = AiFallbackExecutor(backendResolver: () async => api);
       addTearDown(executor.close);
       try {
-        await executor.execute(configs: [], systemPrompt: 'test', userPrompt: 'OK');
+        await executor.execute( systemPrompt: 'test', userPrompt: 'OK');
         fail('NAS error was accepted');
       } on NasApiError catch (error) {
         final message = aiFailureMessage(error);
@@ -68,7 +62,7 @@ void main() {
 
   for (final entry in {
     NasApiErrorKind.unauthorized: '重新登录',
-    NasApiErrorKind.forbidden: '注册当前设备',
+    NasApiErrorKind.forbidden: '重试连接',
     NasApiErrorKind.notFound: '更新 NAS 后端',
     NasApiErrorKind.network: '网络',
     NasApiErrorKind.timeout: '核实处理结果',

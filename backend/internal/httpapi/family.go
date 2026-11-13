@@ -1,10 +1,34 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/momobox/backend/internal/family"
 )
+
+func (h *Handler) initializeFamily(w http.ResponseWriter, r *http.Request) {
+	if !h.method(w, r, http.MethodPost) || !h.requireService(w, r, "family", h.deps.Family) {
+		return
+	}
+	claims, _, ok := h.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	service, ok := h.deps.Family.(interface {
+		Initialize(context.Context, string) (family.FamilyResponse, error)
+	})
+	if !ok {
+		writeError(w, r, 503, "SERVICE_UNAVAILABLE", "family initialization unavailable", nil)
+		return
+	}
+	result, err := service.Initialize(r.Context(), claims.UserID)
+	if err != nil {
+		h.serviceError(w, r, err)
+		return
+	}
+	writeJSON(w, 200, result)
+}
 
 func (h *Handler) createFamily(w http.ResponseWriter, r *http.Request) {
 	if !h.method(w, r, http.MethodPost) || !h.requireService(w, r, "family", h.deps.Family) {

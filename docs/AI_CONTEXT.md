@@ -1,10 +1,12 @@
 # AI CONTEXT
 
+> 2026-11-13源码现状：NAS必选、自动接入、离线只读缓存、AI/OCR由NAS执行；具体需求见REQUIREMENT第29节，设计见DESIGN第47节。历史日期记录中相冲突的单机/手机AI/手动初始化说明已被替代。实现不等于镜像、设备或NAS验收。
+
 ## 1. 项目概览
 
 - **名称**：MomoBox / 嬷嬷的小箱子
 - **类型**：Flutter 手机应用
-- **目的**：本地优先管理家庭物品库存、批次效期、消耗和采购。
+- **目的**：通过自部署NAS后端管理家庭库存、效期、消耗和采购；Drift保留离线只读缓存。
 
 ## 2. 技术栈
 
@@ -17,8 +19,8 @@
 - Routing：go_router
 - Local database：Drift + SQLite
 - Local notifications：flutter_local_notifications + timezone
-- Barcode / OCR：mobile_scanner + Google ML Kit（本地 OCR）
-- Optional AI：用户自配兼容 OpenAI 的 Chat Completions / Responses 服务；API Key 使用系统安全存储
+- Barcode / OCR：mobile_scanner；OCR由NAS Tesseract执行，手机仅暂存/上传/缓存结果（无MLKit依赖）
+- AI：NAS Compose配置兼容网关（含LiteLLM）、密钥和允许模型；手机仅选择模型别名，通过认证NAS接口调用
 - Platform validation：GitHub Actions；仓库不提交 Flutter 自动生成的 Android/iOS 壳
 - Compatibility baseline：最低 Android 16.0（API 36）和 iOS 27.0；平台壳由 CI 脚本生成后注入 Android API 36 minSdk、Android API 37 compile/target SDK 与 iOS 27.0 deployment target。
 
@@ -51,12 +53,12 @@ Application / Use Cases (库存管理 / 采买流 / HA设备适配 / 联动规�
 Domain rules (FEFO / 效期计算 / 耗材配方 / 幂等去重 / 状态指纹)
   ↓
 Repositories & External Connectors
-  ├─ Drift / SQLite (本地数据源，离线优先)
-  ├─ NAS Sync Client (PostgreSQL 增量同步，可选增强)
+  ├─ Drift / SQLite (家庭缓存，断网只读)
+  ├─ NAS Sync Client (必选后端、自动初始化与增量同步)
   └─ Home Assistant Connector (NAS 侧托管令牌，局域网控制，可选增强)
 ```
 
-单机模式不依赖 NAS、账号、网络或 HA。NAS 同步与 Home Assistant 控制作为独立可选模块实现，不能破坏本地数据源和离线基础操作。Home Assistant 管理 Token 只在 NAS 后端加密保存；家庭成员控制必须经过实体权限与 typed command 白名单。AI/Ollama 仍由 Flutter 直连用户配置的服务，NAS 不内置 Ollama，也不提供 AI Proxy。
+App必须搭配NAS Docker后端，地址和账号接入后自动配置设备及同步；首位使用者创建家庭，后续通过邀请码加入。断网允许原归属已初始化的缓存查看，恢复连接自动同步，离线业务写入受阻。HA按需配置，管理Token只在NAS加密保存，控制遵守实体权限与typed command白名单。AI网关和密钥只在NAS Compose配置，App通过模型目录选择别名；NAS不内置模型运行器。
 
 ## 5. 已确认业务规则
 
@@ -68,19 +70,19 @@ Repositories & External Connectors
 - FEFO 只消耗未过期可用批次，无足够库存时拒绝操作；用户也可输入正整数并指定一个未过期、未报废且库存充足的批次消耗；批次补充也支持正整数输入，报废须在界面二次确认；
 - 入库时同条码或无条码精确特征只生成相似商品候选；必须由用户确认合并，或选择新建独立商品，不能静默归并；
 - 临期提醒默认窗口为 30 天；NAS 策略按商品 → 家庭 → 默认解析，显式 7 天等合法值保留，不能被新默认覆盖。`enabled=false` 只关闭该策略下的提醒候选、摘要和通知，不改变库存数量、到期事实、FEFO 可用性或低库存事实；开封后临期提醒暂不支持，非空 `opened_warning_days` 显式拒绝。
-- NAS 同步模式下，已确认服务端库存为权威；只有整个 scope 无 pending/in-flight/blocked/rejected、outbox conflict 及 open/deferred 冲突时，才应用权威快照数量与 serverVersion。单机/离线操作仍以本地数据库记录并入 outbox，不能由远端快照静默覆盖未解决的本地操作。
+- NAS 同步模式下，已确认服务端库存为权威；只有整个 scope 无 pending/in-flight/blocked/rejected、outbox conflict 及 open/deferred 冲突时，才应用权威快照数量与 serverVersion。在线操作以本地数据库和outbox同事务持久化，离线不接受新的业务写入；旧待办不能由远端快照静默覆盖。
 - 本地提醒在 App 启动和库存变化后重算，使用稳定 ID 去重；提醒页支持单条/批量标记已处理，确认记录独立持久化在 `reminder_acknowledgments` 表，并通过 `reminder_key + fingerprint` 过滤，不能把库存或采购动作自动当作已处理；低库存恢复到阈值以上时清除旧确认，再次跌破阈值生成新的提醒周期；
 - JSON 导入默认不覆盖已有主键记录；导入前验证备份头、版本、必需数据段、必填字段、字段类型和数量约束，格式错误不应写入部分数据；
-- 扫码、OCR 和 AI 已纳入当前单机版本的辅助能力，但均不得成为库存核心流程的硬依赖；相机、图片、网络、外部条码 API 或 AI 不可用时，用户仍可手动完成操作。
-- 条码查询结果只可经用户确认填入入库草稿；本地 OCR 图片和文本默认留在本机。发送 AI 前必须显示确认说明，只发送 OCR 文本而不发送原图；AI 草稿不可自动入库。
-- AI 助手仅在用户自行配置服务后可用；首次发送扩展上下文前说明并确认：问题、近期对话、库存/批次、采购、待处理提醒、已保存家务和已授权设备状态可能发送至主服务及失败回退服务，不含原图、密钥或账号凭据。发送授权仅留本机、不进入核心备份；不得用于医疗诊断、用法或剂量建议。
+- 扫码、NAS OCR 和 AI 是家庭库存的辅助能力，但均不得成为库存核心流程的硬依赖；相机、图片、网络、外部条码 API 或 AI 不可用时，用户仍可手动完成操作。
+- 条码查询结果只可经用户确认填入入库草稿；图片和OCR保存于NAS，手机保留暂存及缓存。发送 AI 前必须显示确认说明，只发送 OCR 文本而不发送原图；AI 草稿不可自动入库。
+- AI 助手仅在NAS部署者配置模型服务后可用；首次发送扩展上下文前说明并确认：问题、近期对话、库存/批次、采购、待处理提醒、已保存家务和已授权设备状态可能发送至主服务及失败回退服务，不含原图、密钥或账号凭据。发送授权仅留本机、不进入核心备份；不得用于医疗诊断、用法或剂量建议。
 - AI 可提议入库、消耗、补充、报废、采购、提醒确认、家务、已授权设备控制、主题及字号调整；所有写操作逐次确认，执行前重新检查权限、真实对象与确认快照。入库打开可编辑草稿并确认相似商品合并；文件、恢复、清理及凭据操作引导至现有页面完成。保留已有明确关闭偏好，不提供删库、任意 SQL、系统命令或未知工具；scene/script 与混合自动执行仍未接入。
 - 字号按辅助说明/正文/条目标题/分区标题/页标题/关键数值/展示文字统一为 12/14/16/18/22/28/36，主题集中设置字重和行高；应用字号比例叠加系统文字缩放。emoji/吉祥物图形不纳入正文层级，页面布局需随文字增长适配。
 - 嬷嬷/哆啦A梦主题当前仅用于本人本地使用和私有设备安装验证；未来公开发布、上架、商用或第三方分发前，必须重新完成资源授权/合规审查。
 
 ## 6. 当前实现状态
 
-已实现、验证待执行：商品/批次、库存列表和筛选、默认 FEFO 与指定批次消耗、自定义数量补充、报废二次确认、采购清单、历史、日期计算、主题、JSON 备份、本地提醒调度计划、提醒单条/批量确认及其备份恢复；实时相机/拍照/相册条码识别、可选外部条码查询与缓存、商品和说明书图片、本地 OCR、用户自配 AI 的 OCR 草稿解析、库存问答和本地用量记录。
+已实现、验证待执行：商品/批次、库存列表和筛选、默认 FEFO 与指定批次消耗、自定义数量补充、报废二次确认、采购清单、历史、日期计算、主题、JSON 备份、本地提醒调度计划、提醒单条/批量确认及其备份恢复；实时相机/拍照/相册条码识别、可选外部条码查询与缓存、NAS商品和说明书图片、后端 OCR、NAS AI 的 OCR 草稿解析、库存问答和本地用量记录。
 
 交互与维护规则：Android 系统返回优先关闭弹窗/返回子页，其他一级页回首页；首页首次返回提示“再按一次退出软件”，2 秒内再次返回才退出。一键清理须确认，仅清理条码缓存、AI 用量日志和无用图片；保留业务数据、服务配置、备份、在用图片及 1 天内的临时入库图片。统一工作流的发布包节点将相同的版本/构建号同时注入原生包和“关于”页；默认分支每次推送递增 patch 版本，并发推送使用运行序号避免标签冲突，重跑同一提交复用已有标签；本地自定义版本的编译参数见 README。
 
@@ -111,9 +113,13 @@ GitHub Actions 使用单一 `.github/workflows/pipeline.yml` 链路，并执行�
 7. Android debug build；
 8. Flutter/iOS/后端验证全部通过后，发布包 job 才构建 APK/AAB 和 SHA256；最终 publish job 再推送 GHCR 镜像并创建或更新 GitHub Release。
 
-本地安装验证以 GitHub Release 的 Android APK 为准，重点检查首次启动、入库、条码识别与失败回退、图片/本地 OCR、AI 发送确认与草稿确认、日期计算、消耗、提醒权限、采购勾选入库和备份恢复。
+本地安装验证以 GitHub Release 的 Android APK 为准，重点检查首次启动、入库、条码识别与失败回退、图片/NAS OCR、AI 发送确认与草稿确认、日期计算、消耗、提醒权限、采购勾选入库和备份恢复。
 
-## 9. AI_CONTEXT Update Proposal
+## 9. 长期事实更新与历史记录
+
+2026-11-13：用户确认取消单机模式，账号/邀请码保留，设备与同步初始化自动化；NAS暂不可达时原归属缓存可读，写操作暂停。NAS新增首家庭幂等初始化、邀请码原子注册及模型目录/别名选择；手机AI凭据和本地OCR路径及依赖已移除。数据schema不变、业务资料保留，旧工作区不自动改绑。后续长期事实建议以本节及当前第1～6节为准，历史相反说明均视为已替代；本地验证与现场验收见VALIDATION分别记录。
+
+以下为历史更新记录：
 
 2026-09-20：NAS 后端已进入实现状态；确认 Go/PostgreSQL、`backend/` 独立 Docker 构建上下文、双服务 Compose、外部 Home Assistant typed control，以及“不内置 Ollama、不提供 AI Proxy”的长期边界。Docker/数据库/HA 实机验证尚未执行。后续只有技术栈、长期架构、核心业务决策或验证基线发生变化时才更新本文件。
 

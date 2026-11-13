@@ -16,11 +16,63 @@ type Repository struct{ db *sql.DB }
 
 func NewRepository(db *sql.DB) *Repository { return &Repository{db: db} }
 
+func (r *Repository) InitializeFirst(ctx context.Context, value family.Family, owner family.Membership) (family.FamilyResponse, error) {
+	var result family.FamilyResponse
+	err := common.WithTx(ctx, r.db, nil, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(18473,1)`); err != nil {
+			return err
+		}
+		var current family.Family
+		var membership family.Membership
+		err := tx.QueryRowContext(ctx, findCurrentForUserSQL, owner.UserID).Scan(&current.ID, &current.Name, &current.CreatedAt,
+			&membership.UserID, &membership.Role, &membership.JoinedAt, &current.TimeZone)
+		if err == nil {
+			membership.FamilyID = current.ID
+			result = family.FamilyResponse{Family: current, Membership: membership}
+			return nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		var exists bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM families WHERE deleted_at IS NULL)`).Scan(&exists); err != nil {
+			return err
+		}
+		if exists {
+			return &family.ServiceError{Code: family.CodeForbidden, Message: "family already initialized; invite required"}
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO families(id,name,created_by_user_id,created_at,time_zone) VALUES($1::uuid,$2,$3::uuid,$4,$5)`,
+			value.ID, value.Name, owner.UserID, value.CreatedAt, value.TimeZone); err != nil {
+			return mapFamilyWriteError(err)
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO family_members(family_id,user_id,role,joined_at) VALUES($1::uuid,$2::uuid,$3,$4)`,
+			value.ID, owner.UserID, owner.Role, owner.JoinedAt); err != nil {
+			return mapFamilyWriteError(err)
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE users SET current_family_id=$2::uuid,updated_at=CURRENT_TIMESTAMP WHERE id=$1::uuid AND deleted_at IS NULL`, owner.UserID, value.ID); err != nil {
+			return err
+		}
+		result = family.FamilyResponse{Family: value, Membership: owner}
+		return nil
+	})
+	return result, err
+}
+
 func (r *Repository) CreateWithOwner(ctx context.Context, value family.Family, owner family.Membership) error {
 	if value.ID != owner.FamilyID || owner.Role != family.RoleOwner {
 		return &family.ServiceError{Code: family.CodeValidation, Message: "owner membership does not match family"}
 	}
 	return common.WithTx(ctx, r.db, nil, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(18473,1)`); err != nil {
+			return err
+		}
+		var exists bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM families WHERE deleted_at IS NULL)`).Scan(&exists); err != nil {
+			return err
+		}
+		if exists {
+			return &family.ServiceError{Code: family.CodeForbidden, Message: "family already initialized; invite required"}
+		}
 		_, err := tx.ExecContext(ctx, `
 			INSERT INTO families (id, name, created_by_user_id, created_at, time_zone)
 			VALUES ($1::uuid, $2, $3::uuid, $4, COALESCE(NULLIF($5,''),'Asia/Shanghai'))`, value.ID, value.Name, owner.UserID, value.CreatedAt, value.TimeZone)

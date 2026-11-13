@@ -23,8 +23,6 @@ class NasSettingsScreen extends ConsumerStatefulWidget {
 class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
   final _serverUrlController = TextEditingController();
   final _familyCodeController = TextEditingController();
-  bool _autoSync = true;
-  bool _syncImages = true;
   bool _controllersInitialized = false;
 
   @override
@@ -86,6 +84,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
           if (register) {
             await controller.register(NasRegisterRequest(
               email: email, password: password, nickname: nickname,
+              inviteCode:_familyCodeController.text.trim(),
             ));
           } else {
             await controller.login(NasLoginRequest(email: email, password: password));
@@ -100,51 +99,8 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
     if (success != true || !mounted) return;
     final account = ref.read(nasAccountProvider);
     showAppSnackBar(context, SnackBar(content: Text(
-      account.family.hasFamily ? 'NAS 账号已登录。' : 'NAS 账号已登录，请创建或加入家庭后配置 HA。',
+      account.family.hasFamily ? 'NAS 账号已登录，正在自动准备同步。' : 'NAS 账号已登录，正在连接家庭。',
     )));
-  }
-
-  Future<void> _createFamily() async {
-    final controller = TextEditingController();
-    final formKey = GlobalKey<FormState>();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('创建家庭'),
-        content: Form(
-          key: formKey,
-          child: TextFormField(
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: '家庭名称',
-              prefixIcon: Icon(Icons.home_work_outlined),
-            ),
-            validator: (value) => value == null || value.trim().isEmpty
-                ? '请输入家庭名称'
-                : null,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (formKey.currentState?.validate() ?? false) {
-                Navigator.of(dialogContext).pop(controller.text.trim());
-              }
-            },
-            child: const Text('创建'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (name == null || !mounted) return;
-    await ref.read(nasAccountProvider.notifier).createFamily(name);
-    if (mounted) _showFamilyResult();
   }
 
   Future<void> _joinFamily() async {
@@ -192,51 +148,6 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
         ],
       ),
     );
-  }
-
-  Future<void> _registerDevice() async {
-    final controller = TextEditingController(text: '我的手机');
-    final formKey = GlobalKey<FormState>();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('注册当前设备'),
-        content: Form(
-          key: formKey,
-          child: TextFormField(
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: '设备名称',
-              prefixIcon: Icon(Icons.phone_android_outlined),
-            ),
-            validator: (value) => value == null || value.trim().isEmpty
-                ? '请输入设备名称'
-                : null,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (formKey.currentState?.validate() ?? false) {
-                Navigator.of(dialogContext).pop(controller.text.trim());
-              }
-            },
-            child: const Text('注册'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (name == null || !mounted) return;
-    await ref.read(nasAccountProvider.notifier).registerCurrentDevice(
-          deviceName: name,
-        );
-    if (mounted) _showDeviceResult();
   }
 
   Future<void> _revokeDevice(NasDeviceDto device) async {
@@ -397,26 +308,10 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
             ),
             const SizedBox(height: 6),
             Text(
-              '地址会保存在本地设置；账号凭据由安全存储管理。没有连接 NAS 时仍可继续使用本地模式。',
+              '连接 NAS 并登录后自动接入家庭和同步。首次使用者创建家庭，后续成员须填写邀请码。账号凭据由安全存储管理。',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('局域网自动双向同步', style: TextStyle(fontSize: MomoTextSize.body)),
-              subtitle: const Text('保存偏好；具体同步由 NAS 账户与同步协议状态决定', style: TextStyle(fontSize: MomoTextSize.caption)),
-              value: _autoSync,
-              activeTrackColor: Theme.of(context).colorScheme.primary,
-              onChanged: (v) => setState(() => _autoSync = v),
-            ),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('同步物资照片与包装原图', style: TextStyle(fontSize: MomoTextSize.body)),
-              subtitle: const Text('保存偏好；服务端未开放媒体同步时不会上传', style: TextStyle(fontSize: MomoTextSize.caption)),
-              value: _syncImages,
-              activeTrackColor: Theme.of(context).colorScheme.primary,
-              onChanged: (v) => setState(() => _syncImages = v),
-            ),
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
@@ -470,14 +365,15 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
               Text(auth.user?.nickname ?? '已登录', style: const TextStyle(fontWeight: FontWeight.bold)),
               if (auth.user?.email != null) Text(auth.user!.email, style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey)),
               const SizedBox(height: 10),
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
                 children: [
                   OutlinedButton.icon(
                     onPressed: isBusy ? null : () => ref.read(nasAccountProvider.notifier).refreshFamilyAndDevices(),
                     icon: const Icon(Icons.refresh, size: 18),
                     label: const Text('刷新家庭与设备'),
                   ),
-                  const SizedBox(width: 8),
                   TextButton.icon(
                     onPressed: isBusy ? null : () => ref.read(nasAccountProvider.notifier).logout(),
                     icon: const Icon(Icons.logout, size: 18),
@@ -570,17 +466,12 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
                 ],
               ),
             ] else ...[
-              const Text('当前账号还没有家庭。你可以创建新家庭，或使用上方邀请码加入已有家庭。', style: TextStyle(fontSize: MomoTextSize.caption)),
+              const Text('首次使用者将自动创建家庭；此 NAS 已有家庭时，请填写创建者提供的邀请码加入。', style: TextStyle(fontSize: MomoTextSize.caption)),
               const SizedBox(height: 10),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  FilledButton.icon(
-                    onPressed: isLoading ? null : _createFamily,
-                    icon: const Icon(Icons.add_home_work_outlined, size: 18),
-                    label: const Text('创建家庭'),
-                  ),
                   OutlinedButton.icon(
                     onPressed: isLoading ? null : _joinFamily,
                     icon: const Icon(Icons.group_add_outlined, size: 18),
@@ -644,9 +535,9 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
               ),
             const SizedBox(height: 4),
             OutlinedButton.icon(
-              onPressed: isLoading ? null : _registerDevice,
+              onPressed: isLoading ? null : () => ref.read(nasSetupProvider.notifier).prepare(),
               icon: const Icon(Icons.app_registration, size: 18),
-              label: Text(devices.status == NasDeviceStatus.needsRegistration ? '注册当前设备' : '重新注册当前设备'),
+              label: const Text('重试设备连接'),
             ),
             if (devices.errorMessage != null) ...[
               const SizedBox(height: 8),
@@ -672,7 +563,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
             const Text('当前接入范围', style: TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.body)),
             const SizedBox(height: 6),
             Text(
-              '客户端会调用 NAS 的 /api/v1/health 进行真实可用性检测，并可在此管理账号、家庭成员邀请码和设备注册。库存同步仍由独立同步流程负责；没有登录 NAS 时，本地库存和采购功能不受影响。',
+              '登录后自动准备设备和家庭数据。日常同步无需配置；断网时可以查看已缓存资料，恢复连接后自动同步。HA 可选，AI 服务由 NAS 部署者配置。',
               style: TextStyle(fontSize: MomoTextSize.caption, height: 1.5, color: Theme.of(context).textTheme.bodySmall?.color),
             ),
             if (state.message != null) ...[

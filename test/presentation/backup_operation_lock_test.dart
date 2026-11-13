@@ -74,7 +74,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(400, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(ProviderScope(
-      overrides: [backupServiceProvider.overrideWithValue(service)],
+      overrides: [nasAppAccessProvider.overrideWithValue(NasAppAccess.connected),backupServiceProvider.overrideWithValue(service)],
       child: const MaterialApp(home: BackupSettingsScreen()),
     ));
     await tester.pump();

@@ -204,19 +204,15 @@ PY
   grep -q 'kotlin.jvm.target.validation.mode=warning' android/gradle.properties
   grep -q 'jvmTarget' android/build.gradle
   grep -q 'jvmTarget' android/build.gradle.kts
-  grep -q 'implementation("com.google.mlkit:text-recognition-chinese:16.0.1")' android/app/build.gradle.kts
-  grep -q 'implementation "com.google.mlkit:text-recognition-chinese:16.0.1"' android/app/build.gradle
   grep -q 'coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")' android/app/build.gradle.kts
   grep -q 'coreLibraryDesugaringEnabled true' android/app/build.gradle
   test "$(grep -c 'desugar_jdk_libs' android/app/build.gradle)" -eq 1
   test "$(grep -c 'desugar_jdk_libs' android/app/build.gradle.kts)" -eq 1
   grep -q 'tools:keep="@mipmap/ic_launcher"' android/app/src/main/res/values/keep.xml
-  grep -Fq -- '-dontwarn com.google.mlkit.vision.text.**' android/app/proguard-rules.pro
   grep -q 'proguardFiles' android/app/build.gradle
   grep -q 'proguardFiles' android/app/build.gradle.kts
   grep -q 'compileSdk' android/build.gradle
   grep -q 'compileSdk' android/build.gradle.kts
-  grep -q "pod 'GoogleMLKit/TextRecognitionChinese'" ios/Podfile
   grep -q 'import UserNotifications' ios/Runner/AppDelegate.swift
   grep -q 'UNUserNotificationCenter.current().delegate = self' ios/Runner/AppDelegate.swift
   grep -q "platform :ios, '27.0'" ios/Podfile

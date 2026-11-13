@@ -24,6 +24,108 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => FlutterSecureStorage.setMockInitialValues({}));
 
+  for (final revoked in [false, true]) {
+    test(
+      'automatic device preparation retries a transient discovery failure; revoked=$revoked',
+      () async {
+        final repository = MemorySettingsRepository();
+        repository.values[nasServerUrlKey] = 'https://nas.example';
+        const device = '11111111-1111-4111-8111-111111111111';
+        repository.values[nasDeviceIdKey] = device;
+        final settings = SettingsService(repository);
+        final connection = NasConnectionService(settings);
+        var reads = 0, registrations = 0, refreshes = 0;
+        Map<String, dynamic> registered() => {
+          'id': device,
+          'device_name': 'phone',
+          'platform': 'android',
+          'created_at': '2026-11-13T00:00:00Z',
+          if (revoked) 'revoked_at': '2026-11-13T01:00:00Z',
+        };
+        http.Response json(Object value, [int status = 200]) => http.Response(
+          jsonEncode(value),
+          status,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+        final controller = NasAccountController(
+          settings: settings,
+          connection: connection,
+          credentials: NasCredentialsService(),
+          apiClientFactory:
+              (url) => NasApiClient(
+                url,
+                client: MockClient((request) async {
+                  if (request.url.path.endsWith('/login')) return _auth();
+                  if (request.url.path.endsWith('/refresh')) {
+                    refreshes++;
+                    return _auth();
+                  }
+                  if (request.url.path.endsWith('/families/current')) {
+                    return json({
+                      'family': {
+                        'id': 'family',
+                        'name': 'Home',
+                        'created_at': '2026-11-13T00:00:00Z',
+                      },
+                      'membership': {'family_id': 'family', 'role': 'owner'},
+                    });
+                  }
+                  if (request.url.path.endsWith('/families/members')) {
+                    return json({'members': []});
+                  }
+                  if (request.url.path.endsWith('/devices') &&
+                      request.method == 'GET') {
+                    reads++;
+                    if (reads == 1) {
+                      return json({
+                        'error': {
+                          'code': 'UNAVAILABLE',
+                          'message': 'transient',
+                        },
+                      }, 503);
+                    }
+                    return json({
+                      'devices': revoked ? [registered()] : [],
+                    });
+                  }
+                  if (request.url.path.endsWith('/devices') &&
+                      request.method == 'POST') {
+                    registrations++;
+                    return json(registered(), 201);
+                  }
+                  return json({}, 404);
+                }),
+              ),
+        );
+        addTearDown(controller.dispose);
+        addTearDown(connection.close);
+        addTearDown(repository.close);
+        await controller.login(
+          const NasLoginRequest(
+            email: 'user@example.com',
+            password: 'valid-password',
+          ),
+        );
+        expect(controller.state.devices.status, NasDeviceStatus.error);
+        await controller.prepareCurrentDevice();
+        expect(reads, 2);
+        expect(registrations, revoked ? 0 : 1);
+        expect(refreshes, revoked ? 0 : 1);
+        expect(
+          controller.state.devices.status,
+          revoked ? NasDeviceStatus.error : NasDeviceStatus.ready,
+        );
+        if (revoked) {
+          expect(controller.state.devices.errorMessage, contains('已被撤销'));
+        } else {
+          await controller.prepareCurrentDevice();
+          expect(reads, 2);
+          expect(registrations, 1);
+        }
+      },
+    );
+  }
+
   test('same-endpoint re-login hides old account before reading configuration', () async {
     final repository = _GatedSettingsRepository();
     repository.values[nasServerUrlKey] = 'https://a.example';

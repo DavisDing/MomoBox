@@ -4,13 +4,13 @@ import '../widgets/momo_components.dart';
 import '../../app/momo_typography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../widgets/app_feedback.dart';
 
 import '../../domain/models/smart_home_models.dart';
 import '../controllers/providers.dart';
 import '../controllers/smart_home_controller.dart';
 import '../widgets/home_environment_card.dart';
-import 'home_assistant_settings_screen.dart';
 
 class SmartHomeScreen extends ConsumerStatefulWidget {
   const SmartHomeScreen({super.key});
@@ -44,8 +44,7 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
               EdgeInsets.only(bottom: 20 + MomoDockInsets.bottomOf(context))),
             children: [
               MomoHouseholdBar(
-                onPressed: () => Navigator.of(context, rootNavigator: true).push(
-                  MaterialPageRoute<void>(builder: (_) => const HomeAssistantSettingsScreen())),
+                onPressed: () => context.go('/settings'),
                 actions: [IconButton(
                   tooltip: '刷新设备状态',
                   icon: homeState.isLoading
@@ -93,12 +92,6 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
     Wrap(alignment: WrapAlignment.spaceBetween, crossAxisAlignment: WrapCrossAlignment.center,
       spacing: 8, runSpacing: 4, children: [
         Text('家里的设备', style: Theme.of(context).textTheme.titleLarge),
-        TextButton.icon(
-          onPressed: () => Navigator.of(context, rootNavigator: true).push(
-            MaterialPageRoute<void>(builder: (_) => const HomeAssistantSettingsScreen())),
-          icon: const Icon(Icons.chevron_right_rounded, size: 16),
-          label: const Text('连接设置'),
-        ),
         _buildHaBadge(context, state.haStatus),
       ]);
 
@@ -127,7 +120,7 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
       HaConnectionStatus.syncing => ('同步中', Colors.blue),
       HaConnectionStatus.offline => ('HA 离线', Colors.orange),
       HaConnectionStatus.stale => ('HA 状态过期', Colors.amber.shade800),
-      HaConnectionStatus.unconfigured => ('未配置', Colors.grey),
+      HaConnectionStatus.unconfigured => ('HA 未配置', Colors.grey),
     };
 
     return Container(
@@ -164,16 +157,9 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
             const Text('Home Assistant 尚未配置', style: TextStyle(fontSize: MomoTextSize.section, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             const Text(
-              '连接 Home Assistant，查看和照顾家里的设备。',
+              '可在“我的 → 家庭与连接”中配置 Home Assistant。',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: MomoTextSize.body, color: Colors.grey),
-            ),
-            const SizedBox(height: 20),
-            MomoCapsuleButton(
-              onPressed: () => Navigator.of(context, rootNavigator: true).push(
-                MaterialPageRoute<void>(builder: (_) => const HomeAssistantSettingsScreen())),
-              label: '打开连接配置',
-              icon: const Icon(Icons.settings),
             ),
           ],
         ),

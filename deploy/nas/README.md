@@ -147,7 +147,7 @@ docker compose \
 ## 明确不包含的服务
 
 - Ollama
-- AI proxy
+- 独立AI网关/模型运行器（如LiteLLM、Ollama）
 - barcode proxy
 - Home Assistant
 
@@ -158,4 +158,13 @@ docker compose \
 
 ### 图片/OCR与AI后端处理（2026-11-02）
 
-新后端提供普通操作历史分页、图片上传/存储、Tesseract中英文OCR和受控AI模型调用；App须登录并确认相同NAS/账号/家庭。通过本目录`.env.example`的`AI_ENDPOINT`、`AI_MODEL`、`AI_API_KEY`、`AI_PROTOCOL`及可选副/兜底配置启用后端AI，更改后重建容器。手机AI密钥不会自动迁入NAS。默认请求上限12MiB，单图JPEG/PNG上限8MiB；代理需相应放行体积和处理超时。图片/OCR及AI回执存PG，随现有数据库备份，不需新增媒体卷。完整契约、故障恢复及未验收边界见[后端处理说明](../../docs/nas/06-backend-processing.md)。
+新后端提供普通操作历史分页、图片上传/存储、Tesseract中英文OCR和受控AI模型调用；App须登录并确认相同NAS/账号/家庭。通过本目录`.env.example`的`AI_ENDPOINT`、`AI_MODEL`、`AI_MODELS`、`AI_API_KEY`、`AI_PROTOCOL`及可选副/兜底配置启用后端AI，更改后重建容器。手机AI密钥不会自动迁入NAS。默认请求上限12MiB，单图JPEG/PNG上限8MiB；代理需相应放行体积和处理超时。图片/OCR及AI回执存PG，随现有数据库备份，不需新增媒体卷。完整契约、故障恢复及未验收边界见[后端处理说明](../../docs/nas/06-backend-processing.md)。
+
+
+### NAS必选与LiteLLM模型（2026-11-13）
+
+App先填写NAS地址并登录/注册，首位使用者自动创建家庭，后续成员使用邀请码；无需手动注册设备、选择bootstrap模式或配置同步队列。HA只在需要家居控制时配置。NAS断网时已初始化的原归属缓存只读，前台恢复连接后自动同步。
+
+AI在Compose设置AI_ENDPOINT（如 http://litellm:4000/v1）、AI_API_KEY（可用该网关虚拟Key）、AI_MODEL（网关配置的模型别名），可选AI_MODELS逗号分隔允许列表。留空列表时NAS尝试读取网关/models，配置固定模型可兼容无目录接口的服务；目录内容仅以别名返回手机。App助手只选择模型，不填写上游地址/密钥。网关地址必须从MomoBox容器可达，localhost表示容器本身。参考：[LiteLLM客户端配置](https://docs.litellm.ai/docs/proxy/client_setup/overview)、[虚拟Key](https://docs.litellm.ai/docs/proxy/virtual_keys)。
+
+以上新增家庭初始化和模型目录API需配套更新App/后端镜像；本轮仅源码与本地验证，未发布，旧固定镜像不会自动获得新行为。

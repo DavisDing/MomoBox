@@ -142,6 +142,7 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
     this._repository, {
     required String nasAddress,
     String? role,
+    this.assertWritable,
   })  : _nasAddress = nasAddress,
         _role = role,
         super(
@@ -162,6 +163,7 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
   final NasSmartHomeRepository _repository;
   final String _nasAddress;
   final String? _role;
+  final void Function()? assertWritable;
   bool get _canManageIntegration => _role == 'owner' || _role == 'admin';
   Future<void>? _refreshInFlight;
   final Map<String, NasHaEntity> _entitiesByKey = <String, NasHaEntity>{};
@@ -647,6 +649,11 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
     String id, {
     NasHaCommand command = NasHaCommand.toggle,
   }) {
+    try {
+      assertWritable?.call();
+    } on StateError catch (error) {
+      return error.message.toString();
+    }
     if (state.isCommandLoading) return '控制请求进行中，请勿重复提交。';
     if (state.isLoading) return '正在读取 Home Assistant 状态，请稍后再试。';
     if (!state.nasOnline || state.haStatus == HaConnectionStatus.unconfigured) {

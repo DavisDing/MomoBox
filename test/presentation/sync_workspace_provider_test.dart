@@ -171,6 +171,7 @@ void main() {
   late ProviderContainer container;
   late ProviderSubscription<AsyncValue<SyncWorkspaceAccess>> subscription;
   late bool widgetOwnsCleanup;
+  final writeAccess=StateProvider<NasAppAccess>((ref)=>NasAppAccess.connected);
 
   setUp(() async {
     widgetOwnsCleanup = false;
@@ -182,6 +183,7 @@ void main() {
       nasAccountProvider.overrideWith((ref) => account),
       localWorkspaceIdProvider.overrideWith((ref) async => 'local-device'),
       nasConnectionServiceProvider.overrideWith((ref)=>_LocalConnection(settings)),
+      nasAppAccessProvider.overrideWith((ref)=>ref.watch(writeAccess)),
     ]);
     subscription = container.listen(syncWorkspaceAccessProvider, (_, __) {});
     await container.read(localWorkspaceIdProvider.future);
@@ -305,20 +307,19 @@ void main() {
     expect(container.read(syncEngineProvider), isNotNull);
   });
 
-  test('切NAS和家庭阻断，离线及错身份采购仍入原家庭队列', () async {
+  test('切NAS、家庭或登出后旧Repository也不能在只读缓存中写入', () async {
     await bind();
-    final held = container.read(shoppingRepositoryProvider);
-    account.select(server: 'https://other.example/api/v1', family: 'family-b');
+    final held=container.read(shoppingRepositoryProvider);
+    container.read(writeAccess.notifier).state=NasAppAccess.cached;
+    account.select(server:'https://other.example/api/v1',family:'family-b');
     await container.read(syncWorkspaceAccessProvider.future);
-    expect(container.read(syncEngineProvider), isNull);
-    await held.addOrMerge(itemName: '保留原归属', targetQuantity: 2, reason: '离线');
-    await container.read(shoppingRepositoryProvider).addOrMerge(itemName: '新身份下本机编辑', targetQuantity: 1, reason: '本机');
-    account.signOut();
-    await container.read(syncWorkspaceAccessProvider.future);
-    await container.read(shoppingRepositoryProvider).addOrMerge(itemName: '登出后编辑', targetQuantity: 1, reason: '本机');
-    expect((await db.select(db.syncOutbox).get()).map((row) => row.scopeId).toSet(), {'family-a'});
-    expect((await db.select(db.shoppingEntries).get()).length, 3);
-    expect((await SyncWorkspaceRepository(db).readOwner())!.familyId, 'family-a');
+    expect(container.read(syncEngineProvider),isNull);
+    await expectLater(held.addOrMerge(itemName:'不可写',targetQuantity:1,reason:'离线'),throwsStateError);
+    account.signOut();await container.read(syncWorkspaceAccessProvider.future);
+    await expectLater(container.read(shoppingRepositoryProvider).addOrMerge(itemName:'不可写',targetQuantity:1,reason:'登出'),throwsStateError);
+    expect(await db.select(db.shoppingEntries).get(),isEmpty);
+    expect(await db.select(db.syncOutbox).get(),isEmpty);
+    expect((await SyncWorkspaceRepository(db).readOwner())!.familyId,'family-a');
   });
 
   Future<void> settle(WidgetTester tester, Finder ready, {bool Function()? readyWhen}) async {
@@ -332,18 +333,6 @@ void main() {
     }
     expect(ready, findsOneWidget, reason: '工作区操作未在有界等待内完成');
     expect(readyWhen?.call() ?? true, isTrue, reason: '工作区控件尚未就绪');
-  }
-
-  Future<void> tapButton(WidgetTester tester, Finder button, {bool bindingEntry = false}) async {
-    final hittable = button.hitTestable();
-    await settle(tester, hittable, readyWhen: () {
-      if (tester.widget<ButtonStyleButton>(button).onPressed == null) return false;
-      if (!bindingEntry) return true;
-      final access = container.read(syncWorkspaceAccessProvider);
-      return !access.isLoading && access.asData?.value.canBind == true &&
-          find.byType(AlertDialog).evaluate().isEmpty;
-    });
-    await tester.tap(hittable);
   }
 
   Future<void> finishWidgetWork(WidgetTester tester, Future<void> work) async {
@@ -393,26 +382,6 @@ void main() {
       }
     }
   }
-
-  testWidgets('one setup action prepares device and opens explicit first-sync choices even for an empty family', (tester) async {
-    widgetOwnsCleanup = true;
-    try {
-      account.allowSync = true;
-      account.requireDevice();
-      await tester.binding.setSurfaceSize(const Size(600,1200));
-      await tester.pumpWidget(UncontrolledProviderScope(container:container,
-        child:const MaterialApp(home:SyncSettingsScreen())));
-      await tapButton(tester,find.widgetWithText(FilledButton,'开始使用 NAS 同步'));
-      await settle(tester,find.byType(AlertDialog));
-      expect(account.preparations,1);
-      await tapButton(tester,find.widgetWithText(FilledButton,'确认属于此身份'));
-      await settle(tester,find.textContaining('请选择首次同步方式并确认'));
-      expect(find.byType(RadioListTile<String>),findsNWidgets(3));
-      expect(await tester.runAsync(()=>SyncOutboxRepository(db).getConfirmedBootstrapMode('family-a')),isNull);
-      expect(find.textContaining('请选择首次同步方式并确认'),findsOneWidget);
-      expect(tester.takeException(),isNull);
-    } finally { await closeWidgetFixture(tester); }
-  });
 
   testWidgets('today page keeps its scroll position while successful NAS sync writes internal settings', (tester) async {
     widgetOwnsCleanup = true;
@@ -492,7 +461,7 @@ void main() {
         expect(account.conflictCalls, 2);
         expect(account.apiCreations, 1);
         if (reject) {
-          expect(find.textContaining('当前登录尚未绑定同步设备'), findsOneWidget);
+          expect(find.textContaining('设备连接尚未自动完成'), findsOneWidget);
         }
         expect(tester.takeException(), isNull);
       } finally {
@@ -501,59 +470,4 @@ void main() {
     });
   }
 
-  testWidgets('数据归属确认显示完整身份，取消不写绑定、不启用同步', (tester) async {
-    widgetOwnsCleanup = true;
-    try {
-      await tester.binding.setSurfaceSize(const Size(600, 1200));
-      await tester.pumpWidget(UncontrolledProviderScope(container: container,
-          child: const MaterialApp(home: SyncSettingsScreen())));
-      await settle(tester, find.text('确认本机数据归属'));
-      expect(find.text('确认本机数据归属'), findsOneWidget);
-      await tapButton(tester, find.widgetWithText(OutlinedButton, '确认本机数据归属'), bindingEntry: true);
-      await settle(tester, find.byType(AlertDialog));
-      expect(find.textContaining('https://nas.example/api/v1'), findsOneWidget);
-      expect(find.textContaining('账号：user-a'), findsOneWidget);
-      await tapButton(tester, find.widgetWithText(TextButton, '取消'));
-      await settle(tester, find.text('确认本机数据归属'));
-      expect(await tester.runAsync(() => SyncWorkspaceRepository(db).readOwner()), isNull);
-      expect(container.read(syncEngineProvider), isNull);
-    } finally {
-      await closeWidgetFixture(tester);
-    }
-  });
-
-  testWidgets('确认弹窗期间身份变化拒绝旧确认，原身份重新确认后绑定', (tester) async {
-    widgetOwnsCleanup = true;
-    try {
-      await tester.binding.setSurfaceSize(const Size(600, 1200));
-      await tester.pumpWidget(UncontrolledProviderScope(container: container,
-          child: const MaterialApp(home: SyncSettingsScreen())));
-      await settle(tester, find.text('确认本机数据归属'));
-      await tapButton(tester, find.widgetWithText(OutlinedButton, '确认本机数据归属'), bindingEntry: true);
-      await settle(tester, find.byType(AlertDialog));
-      account.select(user: 'user-b');
-      await tapButton(tester, find.widgetWithText(FilledButton, '确认属于此身份'));
-      await settle(tester, find.textContaining('数据归属确认失败'));
-      expect(await tester.runAsync(() => SyncWorkspaceRepository(db).readOwner()), isNull);
-      expect(find.textContaining('数据归属确认失败'), findsOneWidget);
-      account.select();
-      await settle(tester, find.text('确认本机数据归属'));
-      await tapButton(tester, find.widgetWithText(OutlinedButton, '确认本机数据归属'), bindingEntry: true);
-      await settle(tester, find.byType(AlertDialog));
-      await tapButton(tester, find.widgetWithText(FilledButton, '确认属于此身份'));
-      await settle(tester, find.textContaining('本机数据归属已确认；'), readyWhen: () {
-        final access = container.read(syncWorkspaceAccessProvider);
-        final identity = container.read(syncWorkspaceIdentityProvider);
-        return !access.isLoading && access.asData?.value.canSync == true &&
-            identity != null && access.asData?.value.owner?.matches(identity) == true &&
-            find.text('确认本机数据归属').evaluate().isEmpty;
-      });
-      final owner = await tester.runAsync(() => SyncWorkspaceRepository(db).readOwner());
-      expect(owner!.userId, 'user-a');
-      expect(find.text('确认本机数据归属'), findsNothing);
-      expect(find.textContaining('首次同步模式仍需单独确认'), findsOneWidget);
-    } finally {
-      await closeWidgetFixture(tester);
-    }
-  });
 }

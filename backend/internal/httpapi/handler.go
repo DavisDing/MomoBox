@@ -43,6 +43,8 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/media/{media_id}/reassign", h.reassignMedia)
 	mux.HandleFunc("/api/v1/media/{media_id}/ocr", h.ocrMedia)
 	mux.HandleFunc("/api/v1/ai/analyze", h.analyze)
+	mux.HandleFunc("/api/v1/ai/models", h.aiModels)
+	mux.HandleFunc("/api/v1/families/initialize", h.initializeFamily)
 	mux.HandleFunc("/api/v1/media/manual/search", h.searchManual)
 	mux.HandleFunc("/api/v1/inventory/history", h.operationHistory)
 	mux.HandleFunc("/api/v1/auth/register", h.register)

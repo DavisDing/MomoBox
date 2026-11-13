@@ -239,7 +239,7 @@ class HomeScreen extends ConsumerWidget {
     final homeState = ref.watch(smartHomeControllerProvider);
     return ExpansionTile(tilePadding:EdgeInsets.zero,childrenPadding:const EdgeInsets.only(bottom:4),
         shape:const Border(),collapsedShape:const Border(),title:const Text('服务状态'),
-        subtitle:Text(nasState.isConnected?'NAS 协同模式':'单机模式 · 本地可用'),
+        subtitle:Text(nasState.isConnected?'NAS 协同模式':'NAS 暂不可达 · 缓存查看'),
         children:[
           _buildStatusDot(context,label:'NAS服务',isConnected:nasState.isConnected,detail:_nasStatusLabel(nasState.status)),
           _buildStatusDot(context,label:'HA服务',isConnected:homeState.nasOnline && homeState.haStatus==HaConnectionStatus.online && !homeState.isLoading,detail:_haStatusLabel(homeState)),

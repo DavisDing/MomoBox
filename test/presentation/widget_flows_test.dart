@@ -55,7 +55,7 @@ void main() {
       await _pumpForUi(tester);
     }
     expect(find.text('服务状态').hitTestable(), findsOneWidget);
-    expect(find.text('单机模式 · 本地可用'), findsOneWidget);
+    expect(find.text('NAS 暂不可达 · 缓存查看'), findsOneWidget);
     await tester.tap(find.text('服务状态'));
     await _pumpForUi(tester);
     await tester.scrollUntilVisible(find.text('AI服务'), 160, scrollable: homeScroll);
@@ -667,7 +667,9 @@ Future<void> _pumpUntilAbsent(
 Future<void> _pumpSheet(WidgetTester tester, AppDatabase database) async {
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [databaseProvider.overrideWithValue(database)],
+      overrides: [
+          nasAppAccessProvider.overrideWithValue(NasAppAccess.connected),
+          legacyClientCleanupProvider.overrideWith((ref) async {}),databaseProvider.overrideWithValue(database)],
       child: MaterialApp(
         home: Builder(
           builder: (context) => Scaffold(
@@ -731,7 +733,9 @@ Future<void> _disposeWidgetTree(WidgetTester tester) async {
 Future<void> _pumpScreen(WidgetTester tester, AppDatabase database, Widget child) async {
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [databaseProvider.overrideWithValue(database)],
+      overrides: [
+          nasAppAccessProvider.overrideWithValue(NasAppAccess.connected),
+          legacyClientCleanupProvider.overrideWith((ref) async {}),databaseProvider.overrideWithValue(database)],
       child: MaterialApp(home: Scaffold(body: child)),
     ),
   );
@@ -741,7 +745,9 @@ Future<void> _pumpScreen(WidgetTester tester, AppDatabase database, Widget child
 Future<void> _pumpApp(WidgetTester tester, AppDatabase database) async {
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [databaseProvider.overrideWithValue(database)],
+      overrides: [
+          nasAppAccessProvider.overrideWithValue(NasAppAccess.connected),
+          legacyClientCleanupProvider.overrideWith((ref) async {}),databaseProvider.overrideWithValue(database)],
       child: const MomoBoxApp(enableMediaReconciliation: false),
     ),
   );

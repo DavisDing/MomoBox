@@ -122,13 +122,19 @@ String? _knownMessage(String? code, String? message) {
     case 'AUTH_INVALID_CREDENTIALS':
       return '邮箱或密码不正确，请检查后重试。';
     case 'AUTH_REGISTRATION_CLOSED':
-      return 'NAS 当前未开放账号注册，请联系 NAS 管理员。';
+      return '此 NAS 已有账号，请填写家庭创建者提供的邀请码注册加入；已有账号可直接登录。';
   }
   return switch (message) {
     'access token does not identify a device' =>
-      '当前登录尚未绑定同步设备，请更新 NAS 后端并在 NAS 设置中重新登录、注册当前设备。',
+      '设备连接尚未自动完成，请在 NAS 设置中重试连接；持续失败时请更新 NAS 后端。',
     'registered device is unavailable' =>
-      '当前同步设备不存在、已撤销或不属于此账号和家庭，请重新登录并注册当前设备。',
+      '当前设备已撤销或不属于此账号和家庭，请重新登录并重试连接。',
+    'family already initialized; invite required' =>
+      '此 NAS 已有家庭，请填写创建者提供的邀请码加入。',
+    'invite required' => '请填写家庭创建者提供的邀请码。',
+    'invite is invalid' => '邀请码无效，请检查后重试。',
+    'invite has expired' => '邀请码已过期，请向家庭创建者索取新的邀请码。',
+    'invite has no remaining uses' => '邀请码已用完，请向家庭创建者索取新的邀请码。',
     'password must be at least 12 characters and at most 72 UTF-8 bytes' =>
       '密码至少 12 个字符，且不能超过 72 个 UTF-8 字节。',
     'email is invalid' => '请输入有效邮箱。',

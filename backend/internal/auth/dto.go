@@ -10,10 +10,11 @@ type RegisterDeviceRequest struct {
 }
 
 type RegisterRequest struct {
-	Email    string                 `json:"email"`
-	Password string                 `json:"password"`
-	Nickname string                 `json:"nickname"`
-	Device   *RegisterDeviceRequest `json:"device,omitempty"`
+	InviteCode string                 `json:"invite_code,omitempty"`
+	Email      string                 `json:"email"`
+	Password   string                 `json:"password"`
+	Nickname   string                 `json:"nickname"`
+	Device     *RegisterDeviceRequest `json:"device,omitempty"`
 }
 
 type LoginRequest struct {

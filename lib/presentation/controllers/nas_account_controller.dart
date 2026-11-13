@@ -204,6 +204,7 @@ class NasAccountController extends StateNotifier<NasAccountState> {
   int _sessionRevision = 0;
 
   String? get serverIdentity => state.isAuthenticated ? _apiClient?.serverIdentity : null;
+  NasAccountState get snapshot => state;
 
   bool _isCurrentSession(int revision) => mounted && revision == _sessionRevision;
 
@@ -510,6 +511,12 @@ class NasAccountController extends StateNotifier<NasAccountState> {
     await _changeFamily(() => familyService.createFamily(normalized));
   }
 
+  Future<void> initializeFamily() async {
+    final service = _familyService;
+    if (service == null || !state.isAuthenticated || state.family.hasFamily) return;
+    await _changeFamily(service.initializeFamily);
+  }
+
   Future<void> joinFamily(String code) async {
     final familyService = _familyService;
     if (familyService == null) {
@@ -550,12 +557,18 @@ class NasAccountController extends StateNotifier<NasAccountState> {
     }
   }
 
-  /// An explicit sync action registers this installation without an extra
-  /// device-name dialog. Existing revoked records still require manual review.
+  /// Connection setup prepares this installation without a device-name dialog.
+  /// Retry transient discovery failures; never reactivate a revoked device.
   Future<void> prepareCurrentDevice() async {
     if (!state.isAuthenticated || !state.family.hasFamily) return;
     final revision = _sessionRevision;
     final familyId = state.family.familyId;
+    final service = _familyService;
+    if (service != null &&
+        (state.devices.status == NasDeviceStatus.error || state.devices.status == NasDeviceStatus.idle)) {
+      await _loadDevices(service);
+      if (!_isCurrentSession(revision) || state.family.familyId != familyId) return;
+    }
     if (state.devices.status == NasDeviceStatus.needsRegistration) {
       final stored = await _readDeviceId();
       if (!_isCurrentSession(revision) || state.family.familyId != familyId ||
@@ -563,7 +576,7 @@ class NasAccountController extends StateNotifier<NasAccountState> {
         return;
       }
       if (state.devices.devices.any((device) => device.id == stored && device.revokedAt != null)) {
-        _setDeviceError('此设备已被撤销，请在 NAS 设置中核实后重新注册。');
+        _setDeviceError('此设备已被撤销，自动连接已暂停；请联系家庭创建者核实。');
         return;
       }
       await registerCurrentDevice(deviceName: 'MomoBox ${_platformName()}');
@@ -634,13 +647,13 @@ class NasAccountController extends StateNotifier<NasAccountState> {
     } on NasApiError catch (error) {
       if (error.kind == NasApiErrorKind.validation) {
         throw NasApiError(kind: error.kind, code: error.code, statusCode: error.statusCode,
-          message: 'NAS 未接受同步设备身份绑定，请先更新 NAS 后端，再重新登录并注册当前设备。');
+          message: 'NAS 未接受设备身份绑定，请更新 NAS 后端，再重新登录并重试连接。');
       }
       rethrow;
     }
     if (!_isCurrentSession(revision)) return false;
     if (!auth.isAuthenticated) {
-      _setSignedOut('设备身份核验失败，请重新登录 NAS 后注册当前设备。');
+      _setSignedOut('设备身份核验失败，请重新登录 NAS 并重试连接。');
       return false;
     }
     state = state.copyWith(auth: auth);

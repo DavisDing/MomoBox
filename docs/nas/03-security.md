@@ -233,12 +233,11 @@ HA 运行事件必须来自后端已认证并绑定家庭/集成的可信适配�
 
 生产响应不得返回 Go 堆栈、SQL、连接串或 Secret。
 
-## 11. AI/Ollama 边界
+## 11. NAS AI 与客户端边界（2026-11-13）
 
-- Flutter 直连用户配置的 LLM 或外部 Ollama；
-- API Key 使用 Android Keystore/iOS Keychain；
-- NAS 不提供 AI proxy；
-- NAS 不保存 AI API Key；
-- NAS Compose 不启动 Ollama；
-- 如果手机无法访问 Ollama 地址，用户自行通过 VPN、Tailscale 或反向代理解决网络可达性；
-- MomoBox 不负责为 Ollama 打通网络。
+- App必须连接NAS并完成账号/家庭/设备接入；首次账号创建家庭，后续成员用邀请码注册加入。仅有URL不能获得家庭权限。
+- AI地址、密钥、默认模型及允许列表仅由NAS部署者在Compose配置；不得下发手机或写入账号/同步响应、日志及核心JSON备份。
+- `GET /ai/models`要求当前家庭/设备身份，仅返回去重模型别名和默认标记，不返回完整网关元信息。`POST /ai/analyze`可提交model别名，服务端验证允许目录。
+- 不接受客户端指定URL、Key、工具、SQL或任意转发目标；保持未知AI结果不自动再推理、付费请求回执及逐次写入确认。
+- 手机旧AI配置和Key一次性清理，历史备份过滤；NAS账号凭据继续使用系统安全存储。离线缓存需与安全存储用户、endpoint和原工作区匹配，离线只读。
+- NAS Compose不启动Ollama、LiteLLM或HA；外部网关可达性由NAS部署者管理。NAS收到模型请求后才调用上游，不内置推理运行器。

@@ -43,6 +43,13 @@ void main() {
     }
   });
 
+  test('已停用的手机 AI 配置在导出及旧备份导入均排除', () {
+    for (final key in BackupFormat.retiredAiSettingKeys) {
+      expect(BackupFormat.isPortableSetting(key), isFalse, reason:key);
+      expect(BackupFormat.portableSettingValue(key, 'legacy secret'), isNull);
+    }
+  });
+
   test('正常业务配置、家务及聊天保持原文，不按业务文本关键字删数据', () {
     for (final key in [
       'theme',
@@ -50,7 +57,6 @@ void main() {
       'recurring_chores_list',
       'ai_conversations_v1',
       'ai_usage_logs',
-      'ai_model',
       'ai_allow_inventory_writes',
       'reminder_lead_days',
       'reminder_enabled',
@@ -62,11 +68,11 @@ void main() {
       expect(BackupFormat.portableSettingValue(key, content), content,
           reason: key);
     }
-    expect(BackupFormat.portableSettingValue('ai_secondary_endpoint', ''), '');
-    expect(BackupFormat.portableSettingValue('ai_api_profiles', ''), '');
+    expect(BackupFormat.portableSettingValue('ai_secondary_endpoint', ''), isNull);
+    expect(BackupFormat.portableSettingValue('ai_api_profiles', ''), isNull);
   });
 
-  for (final key in ['ai_api_profiles', 'barcode_api_profiles']) {
+  for (final key in ['barcode_api_profiles']) {
     test('$key 仅保留非敏感字段，包含未知嵌套凭据的历史配置不会泄露', () {
       final original = [
         {
@@ -118,11 +124,7 @@ void main() {
     for (final key in [
       'ai_api_endpoint', 'ai_secondary_endpoint', 'ai_fallback_endpoint',
     ]) {
-      final result = BackupFormat.portableSettingValue(key, endpoint)!;
-      final uri = Uri.parse(result);
-      expect(uri.userInfo, isEmpty);
-      expect(uri.queryParameters, {'region': 'local'});
-      expect(result, isNot(contains('secret')));
+      expect(BackupFormat.portableSettingValue(key, endpoint), isNull);
     }
     final profiles = BackupFormat.portableSettingValue('barcode_api_profiles',
         jsonEncode([{'id': '1', 'endpoint': endpoint}]))!;
@@ -158,7 +160,7 @@ void main() {
     });
     expect(BackupFormat.portableSettingValue('ai_api_endpoint',
         'https://service.invalid/v1?auth=secret&signature=secret'),
-        'https://service.invalid/v1');
+        isNull);
   });
 
   test('设备身份前缀规范化涵盖历史 camelCase 与不同分隔符', () {
@@ -176,7 +178,7 @@ void main() {
         jsonEncode([{'id': '1', 'endpoint': endpoint}]))!;
     expect((jsonDecode(profiles) as List).single['endpoint'], endpoint);
     expect(BackupFormat.portableSettingValue('ai_api_endpoint',
-        'https://ai.invalid/v1?region=local'), 'https://ai.invalid/v1?region=local');
+        'https://ai.invalid/v1?region=local'), isNull);
   });
 
   test('覆盖元数据可选且不改变 v1-v3 所需段或原解析兼容性', () {

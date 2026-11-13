@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,49 @@ import (
 	"github.com/momobox/backend/internal/auth"
 	"github.com/momobox/backend/internal/processing"
 )
+
+func TestAIModelCatalogRequiresFamilyDeviceAndReturnsAliases(t *testing.T) {
+	for _, scenario := range []struct {
+		name, family, device string
+		authenticated        bool
+		status               int
+	}{
+		{name: "anonymous", status: 401},
+		{name: "no household", authenticated: true, status: 403},
+		{name: "no device", family: "family", authenticated: true, status: 403},
+		{name: "family device", family: "family", device: "phone", authenticated: true, status: 200},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			service := processing.New(nil, processing.AIConfig{
+				Endpoints:     []processing.AIEndpoint{{Endpoint: "http://private-gateway/v1", Key: "server-secret", Model: "family-fast"}},
+				AllowedModels: []string{"family-fast", "family-smart"},
+			})
+			handler := NewRouter(Dependencies{Processing: service, Verifier: testVerifier{claims: auth.AccessTokenClaims{
+				UserID: "user", FamilyID: scenario.family, DeviceID: scenario.device, ExpiresAt: time.Now().Add(time.Hour),
+			}}})
+			request := httptest.NewRequest(http.MethodGet, "/api/v1/ai/models", nil)
+			if scenario.authenticated {
+				request.Header.Set("Authorization", "Bearer token")
+			}
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != scenario.status {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+			if strings.Contains(response.Body.String(), "server-secret") || strings.Contains(response.Body.String(), "private-gateway") {
+				t.Fatal("catalog leaked NAS configuration")
+			}
+			if response.Code == 200 {
+				var catalog struct {
+					Models []processing.AIModel `json:"models"`
+				}
+				if err := json.Unmarshal(response.Body.Bytes(), &catalog); err != nil || len(catalog.Models) != 2 || !catalog.Models[0].Default || catalog.Models[1].ID != "family-smart" {
+					t.Fatalf("unexpected catalog: %s", response.Body.String())
+				}
+			}
+		})
+	}
+}
 
 func TestProcessingRoutesRequireFamilySession(t *testing.T) {
 	for _, path := range []string{"/api/v1/media/upload", "/api/v1/media/manual/search", "/api/v1/ai/analyze", "/api/v1/media/a/ocr", "/api/v1/media/a/delete", "/api/v1/media/a/reassign"} {

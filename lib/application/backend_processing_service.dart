@@ -11,8 +11,7 @@ import '../data/repositories/sync_workspace_repository.dart';
 import '../domain/models/recognition_models.dart';
 import '../services/media_storage_service.dart';
 
-/// Null means explicitly configured single-device mode. A selected but
-/// unavailable NAS must throw, so OCR/AI never silently run on the phone.
+/// NAS processing is required. An unavailable session must throw.
 typedef BackendResolver = Future<NasSyncApi?> Function();
 
 class BackendProcessingService {
@@ -162,13 +161,7 @@ class BackendProcessingService {
   Future<void> reassignIntake(List<MediaAsset> assets, String productId) async {
     if (assets.isEmpty) return;
     NasSyncApi? selectedApi;
-    Object? sessionError;
-    try { selectedApi = await resolveApi(); } catch (error) { sessionError = error; }
-    if (selectedApi == null && sessionError == null) {
-      await repository.reassignEntity(fromEntityType: 'intake_draft', fromEntityId: assets.first.entityId,
-        toEntityType: 'product', toEntityId: productId);
-      return;
-    }
+    try { selectedApi = await resolveApi(); } catch (_) { /* retain durable work for reconnect */ }
     final api = selectedApi;
     final owner = await SyncWorkspaceRepository(database).readOwner();
     final scope = api == null ? owner?.familyId : await _scope(api);
@@ -183,9 +176,9 @@ class BackendProcessingService {
       await repository.reassignEntity(fromEntityType: 'intake_draft', fromEntityId: assets.first.entityId,
         toEntityType: 'product', toEntityId: productId);
     });
-    if (sessionError != null) throw StateError('图片已关联当前商品，后端待恢复登录后同步。');
+    if (api == null) throw StateError('图片已关联当前商品，后端待恢复登录后同步。');
     for (final asset in await repository.loadForEntity(entityType: 'product', entityId: productId)) {
-      await upload(api!, asset);
+      await upload(api, asset);
     }
   }
 

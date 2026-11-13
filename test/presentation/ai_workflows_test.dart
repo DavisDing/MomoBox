@@ -11,18 +11,12 @@ import 'package:momo_box/data/repositories/inventory_repository.dart';
 import 'package:momo_box/domain/inventory/calendar_date.dart';
 import 'package:momo_box/domain/models/inventory_models.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
 import 'package:momo_box/application/ai_assistant_service.dart';
 import 'package:momo_box/application/ai_conversation_store.dart';
-import 'package:momo_box/application/ai_draft_service.dart';
-import 'package:momo_box/application/ai_fallback_executor.dart';
 import 'package:momo_box/domain/models/ai_usage_models.dart';
 import 'package:momo_box/presentation/controllers/providers.dart';
 import 'package:momo_box/presentation/screens/ai_usage_screen.dart';
-import 'package:momo_box/presentation/screens/settings_screen.dart';
 import 'package:momo_box/presentation/screens/assistant_screen.dart';
 import 'package:momo_box/presentation/widgets/intake_sheet.dart';
 
@@ -58,6 +52,10 @@ void main() {
       }}),
     ));
     await tester.pumpWidget(ProviderScope(overrides: [
+          nasAppAccessProvider.overrideWithValue(NasAppAccess.connected),
+          legacyClientCleanupProvider.overrideWith((ref) async {}),
+          selectedAiModelProvider.overrideWith((ref)=>Stream.value(null)),
+          aiConfigurationStatusProvider.overrideWith((ref)=>Stream.value(false)),
       databaseProvider.overrideWithValue(db),
       settingsRepositoryProvider.overrideWithValue(settings),
       inventoryServiceProvider.overrideWithValue(inventory),
@@ -119,6 +117,10 @@ void main() {
         'quantity': 2, 'expiryDate': '2027-01-01', 'location': '冰箱',
       }})));
     await tester.pumpWidget(ProviderScope(overrides: [
+          nasAppAccessProvider.overrideWithValue(NasAppAccess.connected),
+          legacyClientCleanupProvider.overrideWith((ref) async {}),
+          selectedAiModelProvider.overrideWith((ref)=>Stream.value(null)),
+          aiConfigurationStatusProvider.overrideWith((ref)=>Stream.value(false)),
       databaseProvider.overrideWithValue(db),
       settingsRepositoryProvider.overrideWithValue(settings),
       inventoryServiceProvider.overrideWithValue(inventory),
@@ -174,6 +176,10 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          nasAppAccessProvider.overrideWithValue(NasAppAccess.connected),
+          legacyClientCleanupProvider.overrideWith((ref) async {}),
+          selectedAiModelProvider.overrideWith((ref)=>Stream.value(null)),
+          aiConfigurationStatusProvider.overrideWith((ref)=>Stream.value(false)),
           settingsRepositoryProvider.overrideWithValue(settings),
           aiAssistantServiceProvider.overrideWithValue(assistant),
         ],
@@ -241,6 +247,10 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          nasAppAccessProvider.overrideWithValue(NasAppAccess.connected),
+          legacyClientCleanupProvider.overrideWith((ref) async {}),
+          selectedAiModelProvider.overrideWith((ref)=>Stream.value(null)),
+          aiConfigurationStatusProvider.overrideWith((ref)=>Stream.value(false)),
           themeNameProvider.overrideWith((ref) => Stream.value('default')),
           aiUsageLogsProvider.overrideWith((ref) => Stream.value(logs)),
         ],
@@ -300,6 +310,11 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          nasAppAccessProvider.overrideWithValue(NasAppAccess.connected),
+          legacyClientCleanupProvider.overrideWith((ref) async {}),
+          selectedAiModelProvider.overrideWith((ref)=>Stream.value(null)),
+          aiConfigurationStatusProvider.overrideWith((ref)=>Stream.value(false)),
+          databaseProvider.overrideWithValue(db),
           settingsRepositoryProvider.overrideWithValue(settings),
           aiConversationStoreProvider.overrideWith((ref) => store),
           aiInventoryActionServiceProvider.overrideWithValue(
@@ -346,158 +361,6 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  for (final overrideKey in [false, true]) {
-    testWidgets('配置列表复制模型可取消，${overrideKey ? '替换' : '继承'}独立密钥并显式调整角色', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(390, 1000));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      FlutterSecureStorage.setMockInitialValues({
-        'ai_api_key_profile_source': 'source-test-secret',
-      });
-      final settings = MemorySettingsRepository();
-      addTearDown(settings.close);
-      final source = <String, dynamic>{
-        'id': 'source', 'name': '已配置服务', 'endpoint': 'https://configured.example/v1',
-        'model': 'configured-model', 'endpointType': 'responses',
-        AiDraftService.profileRoleKey: AiDraftService.primaryRole,
-      };
-      settings.values.addAll({
-        AiDraftService.profilesKey: jsonEncode([source]),
-        AiDraftService.activeProfileKey: 'source',
-        AiDraftService.endpointKey: source['endpoint'] as String,
-        AiDraftService.modelKey: source['model'] as String,
-        AiDraftService.endpointTypeKey: 'responses',
-      });
-      await tester.pumpWidget(ProviderScope(overrides: [
-        settingsRepositoryProvider.overrideWithValue(settings),
-      ], child: const MaterialApp(home: AiSettingsScreen())));
-      await tester.pumpAndSettle();
-      final before = Map<String, String>.of(settings.values);
-      final keysBefore = await const FlutterSecureStorage().readAll();
-
-      await tester.tap(find.byTooltip('编辑配置'));
-      await tester.pumpAndSettle();
-      expect(find.text('复制为新配置'), findsNothing);
-      expect(find.text('测试'), findsOneWidget);
-      expect(find.text('取消'), findsOneWidget);
-      expect(find.text('确定'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-      await tester.enterText(find.byType(TextField).at(0), '未保存的修改');
-      await tester.tap(find.text('取消'));
-      await tester.pumpAndSettle();
-      expect(settings.values, before);
-      expect(await const FlutterSecureStorage().readAll(), keysBefore);
-
-      Future<void> openCopy() async {
-        await tester.tap(find.byTooltip('配置操作'));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('复制配置'));
-        await tester.pumpAndSettle();
-        expect(find.text('复制 AI 模型服务'), findsOneWidget);
-      }
-
-      await openCopy();
-      final fields = find.byType(TextField);
-      expect(tester.widget<TextField>(fields.at(0)).controller!.text,
-          '已配置服务 副本');
-      expect(tester.widget<TextField>(fields.at(1)).controller!.text, source['endpoint']);
-      expect(tester.widget<TextField>(fields.at(2)).controller!.text, source['model']);
-      expect(tester.widget<TextField>(fields.at(3)).controller!.text, isEmpty);
-      final selectors = find.byType(DropdownButtonFormField<String>);
-      expect(tester.widget<DropdownButtonFormField<String>>(selectors.first).initialValue,
-          AiDraftService.standbyRole);
-      expect(tester.widget<DropdownButtonFormField<String>>(selectors.last).initialValue, 'responses');
-      expect(settings.values, before);
-      expect(await const FlutterSecureStorage().readAll(), keysBefore);
-      await tester.tap(find.text('取消'));
-      await tester.pumpAndSettle();
-      expect(settings.values, before);
-      expect(await const FlutterSecureStorage().readAll(), keysBefore);
-
-      await openCopy();
-      await tester.enterText(find.byType(TextField).at(0), '复制的副服务');
-      if (overrideKey) {
-        await tester.enterText(find.byType(TextField).at(3), 'copy-test-secret');
-      }
-      await tester.tap(find.byType(DropdownButtonFormField<String>).first);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('副服务（主服务失败时调用）').last);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('确定'));
-      await tester.pumpAndSettle();
-
-      final profiles = (jsonDecode(settings.values[AiDraftService.profilesKey]!) as List)
-          .cast<Map<String, dynamic>>();
-      expect(profiles, hasLength(2));
-      expect(profiles.singleWhere((profile) => profile['id'] == 'source'), source);
-      final copy = profiles.singleWhere((profile) => profile['id'] != 'source');
-      expect(copy['name'], '复制的副服务');
-      expect(copy['endpoint'], source['endpoint']);
-      expect(copy['model'], source['model']);
-      expect(copy['endpointType'], 'responses');
-      expect(copy[AiDraftService.profileRoleKey], AiDraftService.secondaryRole);
-      expect(settings.values[AiDraftService.activeProfileKey], 'source');
-      expect(settings.values[AiDraftService.secondaryProfileIdKey], copy['id']);
-      final keys = await const FlutterSecureStorage().readAll();
-      expect(keys['ai_api_key_profile_source'], 'source-test-secret');
-      expect(keys['ai_api_key_profile_${copy['id']}'],
-          overrideKey ? 'copy-test-secret' : 'source-test-secret');
-      expect(settings.values.values.any((value) => value.contains('test-secret')), isFalse);
-      expect(copy.containsKey('_apiKeyDraft'), isFalse);
-      expect(copy.containsKey('apiKey'), isFalse);
-      expect(tester.takeException(), isNull);
-    });
-  }
-
-  testWidgets('新增配置测试仅请求草稿服务，不保存配置或密钥', (tester) async {
-    FlutterSecureStorage.setMockInitialValues({});
-    final settings = MemorySettingsRepository();
-    settings.values['ai_assistant_context_consent_v2'] = 'true';
-    addTearDown(settings.close);
-    final requests = <http.Request>[];
-    final executor = AiFallbackExecutor(
-      client: MockClient((request) async {
-        requests.add(request);
-        return http.Response(
-          jsonEncode({
-            'choices': [
-              {
-                'message': {'content': 'OK'},
-              },
-            ],
-          }),
-          200,
-        );
-      }),
-    );
-    addTearDown(executor.close);
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          settingsRepositoryProvider.overrideWithValue(settings),
-          aiConnectionTestExecutorProvider.overrideWithValue(executor),
-        ],
-        child: const MaterialApp(home: AiSettingsScreen()),
-      ),
-    );
-    await tester.pumpAndSettle();
-    final before = Map<String, String>.of(settings.values);
-    await tester.tap(find.text('添加配置'));
-    await tester.pumpAndSettle();
-    final fields = find.byType(TextField);
-    await tester.enterText(fields.at(1), 'https://draft.example/v1');
-    await tester.enterText(fields.at(2), 'draft-model');
-    await tester.enterText(fields.at(3), 'secret-test-key');
-    await tester.tap(find.text('测试'));
-    await tester.pumpAndSettle();
-    expect(requests, hasLength(1));
-    expect(requests.single.url.host, 'draft.example');
-    expect(jsonDecode(requests.single.body)['model'], 'draft-model');
-    expect(requests.single.headers['Authorization'], 'Bearer secret-test-key');
-    expect(find.textContaining('测试通过'), findsOneWidget);
-    expect(settings.values, before);
-    expect(await const FlutterSecureStorage().readAll(), isEmpty);
-    expect(tester.takeException(), isNull);
-  });
 }
 
 Future<void> _waitForCommittedIntake(

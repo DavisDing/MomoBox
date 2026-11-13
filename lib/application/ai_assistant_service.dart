@@ -1,15 +1,11 @@
 import 'ai_inventory_action_service.dart';
 import 'dart:async';
 
-import 'package:http/http.dart' as http;
-
 import '../data/repositories/inventory_repository.dart';
 import '../data/repositories/settings_repository.dart';
 import '../domain/models/ai_usage_models.dart';
 import '../domain/recognition/ai_intake_contract.dart';
-import '../services/secure_settings_service.dart';
-import 'ai_client_helper.dart';
-import 'ai_draft_service.dart';
+import 'ai_request_superseded.dart';
 import 'ai_fallback_executor.dart';
 import 'ai_usage_service.dart';
 
@@ -30,19 +26,16 @@ class ChatMessage {
 class AiAssistantService {
   AiAssistantService(
     this._settings,
-    this._secureSettings,
     this._inventoryRepository, {
-    http.Client? client,
     AiUsageService? usageService,
-    AiFallbackExecutor? fallbackExecutor,
+    required AiFallbackExecutor fallbackExecutor,
     AiInventoryActionService? actionService,
   })  : _actionService = actionService,
         _usageService = usageService ?? AiUsageService(_settings),
-        _fallbackExecutor = fallbackExecutor ?? AiFallbackExecutor(client: client);
+        _fallbackExecutor = fallbackExecutor;
 
   final SettingsRepository _settings;
   final AiInventoryActionService? _actionService;
-  final SecureSettingsService _secureSettings;
   final InventoryRepository _inventoryRepository;
   final AiUsageService _usageService;
   final AiFallbackExecutor _fallbackExecutor;
@@ -70,12 +63,6 @@ class AiAssistantService {
       }
     }
     ensureCurrent();
-    final configs = await _resolveFallbackConfigs();
-    ensureCurrent();
-    if (configs.isEmpty) {
-      throw StateError('请先在「设置 -> AI 解析配置」中填写兼容 OpenAI 的 AI 地址、模型和 API Key。');
-    }
-
     // 获取当前完整库存和批次快照作为上下文
     final inventory = await _inventoryRepository
         .watchInventory()
@@ -159,7 +146,6 @@ ${buffer.toString()}
 
     try {
       final response = await _fallbackExecutor.execute(
-        configs: configs,
         systemPrompt: systemPrompt,
         userPrompt: question,
         chatHistory: recentHistory,
@@ -169,7 +155,7 @@ ${buffer.toString()}
       ensureCurrent();
       _recordUsage(
         response.rawDecoded,
-        response.usedConfig.model,
+        response.model,
         response.actualProtocol,
         providerLevel: response.usedLevel.name,
         elapsedMs: response.traceLogs.fold<int>(0, (sum, log) => sum + log.durationMs),
@@ -179,17 +165,8 @@ ${buffer.toString()}
       return response.content.trim();
     } on AiRequestSupersededException {
       rethrow;
-    } on AiFallbackException catch (error) {
-      if (_latestRequestToken == token) {
-        _recordFailureAttempts(error.traceLogs, 'qa');
-      }
-      rethrow;
     }
   }
-
-  Future<List<AiEndpointConfig>> _resolveFallbackConfigs() async =>
-      await _fallbackExecutor.usesBackend() ? [AiFallbackExecutor.backendConfig]
-          : await AiDraftService.resolveFallbackConfigs(_settings, _secureSettings);
 
   void _recordUsage(
     Map<String, dynamic> decoded,
@@ -237,29 +214,7 @@ ${buffer.toString()}
     } catch (_) {}
   }
 
-  void _recordFailureAttempts(
-    List<AiExecutionAttemptLog> attempts,
-    String purpose,
-  ) {
-    for (final attempt in attempts) {
-      _usageService.recordUsage(
-        AiUsageRecord(
-          id: '${DateTime.now().microsecondsSinceEpoch}-${attempt.level.name}',
-          timestamp: DateTime.now(),
-          model: attempt.model,
-          endpointType: 'unknown',
-          promptTokens: 0,
-          completionTokens: 0,
-          totalTokens: 0,
-          purpose: purpose,
-          status: 'failure',
-          providerLevel: attempt.level.name,
-          failureReason: attempt.failureReason,
-          elapsedMs: attempt.durationMs,
-        ),
-      );
-    }
-  }
+
 }
 
 num _asNum(Object? value, {num fallback = 0}) => value is num && value.isFinite ? value : fallback;

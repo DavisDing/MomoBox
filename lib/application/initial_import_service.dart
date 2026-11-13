@@ -101,7 +101,7 @@ class InitialImportService {
     }
     final mode = await _outbox.getConfirmedBootstrapMode(_identity.familyId);
     if (mode != 'join_and_merge' && mode != 'create_new_family') {
-      blockers.add('请先明确确认首次连接的远端同步模式。');
+      blockers.add('NAS 自动初始化尚未完成，请重试连接。');
     }
     final categoryRepository = SyncCategoryRepository(_database);
     final remoteCategories = await categoryRepository.remoteCategories(_identity.familyId);

@@ -61,6 +61,27 @@ func (s *Service) CreateFamily(ctx context.Context, userID string, request Creat
 	return FamilyResponse{Family: family, Membership: membership}, nil
 }
 
+// The first household is initialized atomically. Later accounts must redeem
+// an invite; they cannot join the existing household just by knowing its URL.
+func (s *Service) Initialize(ctx context.Context, userID string) (FamilyResponse, error) {
+	if strings.TrimSpace(userID) == "" {
+		return FamilyResponse{}, newError(CodeUnauthorized, "user is required")
+	}
+	repository, ok := s.families.(interface {
+		InitializeFirst(context.Context, Family, Membership) (FamilyResponse, error)
+	})
+	if !ok {
+		return FamilyResponse{}, newError(CodeForbidden, "family initialization unavailable")
+	}
+	id, err := s.ids.NewID()
+	if err != nil {
+		return FamilyResponse{}, err
+	}
+	now := s.clock.Now()
+	return repository.InitializeFirst(ctx, Family{ID: id, Name: "我的家庭", TimeZone: DefaultTimeZone, CreatedAt: now},
+		Membership{FamilyID: id, UserID: userID, Role: RoleOwner, JoinedAt: now})
+}
+
 func (s *Service) CurrentFamily(ctx context.Context, userID string) (FamilyResponse, error) {
 	var empty FamilyResponse
 	if strings.TrimSpace(userID) == "" {

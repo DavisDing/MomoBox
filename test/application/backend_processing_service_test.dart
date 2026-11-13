@@ -8,7 +8,6 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:momo_box/application/ai_fallback_executor.dart';
 import 'package:momo_box/application/media_service.dart';
-import 'package:momo_box/services/local_ocr_service.dart';
 import 'package:momo_box/domain/models/recognition_models.dart';
 import 'package:momo_box/application/backend_processing_service.dart';
 import 'package:momo_box/core/database/app_database.dart';
@@ -111,14 +110,13 @@ void main() {
       return http.Response('{"assets":[]}',200);
     }));addTearDown(api.close);
     final backend=BackendProcessingService(db,repository,MediaStorageService(),resolveApi:() async=>api,scopeId:()=> 'family');
-    final media=MediaService(repository,MediaStorageService(),_NeverLocalOcr(),backend:backend);
+    final media=MediaService(repository,MediaStorageService(),backend:backend);
     await expectLater(media.syncBackend(api),throwsStateError);
     expect(uploaded,[valid.id]);
     expect((await repository.loadAllActive()).firstWhere((a)=>a.id==missing.id).backendState,'failed');
   });
 
   test('backend AI uses NAS without any phone provider configuration or key', () async {
-    var directCalls = 0;
     final api = NasSyncApi('https://nas.example', accessToken: 'nas-token',
       client: MockClient((request) async {
         expect(request.url.host, 'nas.example');
@@ -134,13 +132,11 @@ void main() {
           'model': 'nas-model', 'protocol': 'chat', 'level': 'secondary', 'elapsed_ms': 5}), 200);
       }));
     addTearDown(api.close);
-    final executor = AiFallbackExecutor(backendResolver: () async => api,
-      client: MockClient((_) async { directCalls++; throw StateError('phone AI must not run'); }));
+    final executor = AiFallbackExecutor(backendResolver: () async => api);
     addTearDown(executor.close);
-    final result = await executor.execute(configs: [], systemPrompt: 'contract', userPrompt: 'OCR text');
+    final result = await executor.execute( systemPrompt: 'contract', userPrompt: 'OCR text');
     expect(result.content, 'draft');
     expect(result.usedLevel, AiApiLevel.secondary);
-    expect(directCalls, 0);
   });
 
   test('lost upload receipt reuses original ID and OCR stays on backend', () async {
@@ -172,13 +168,11 @@ void main() {
     expect(await file.exists(), isTrue);
     final state = await db.customSelect('SELECT state FROM backend_media_state').getSingle();
     expect(state.read<String>('state'), 'failed');
-    final localOcr = _NeverLocalOcr();
-    final service = MediaService(repository, MediaStorageService(), localOcr, backend: backend);
+    final service = MediaService(repository, MediaStorageService(), backend: backend);
     expect(await service.runOcr(asset), '后端文字');
     expect(uploadBodies, hasLength(2));
     expect(uploadBodies[0], uploadBodies[1]);
     expect(ocrCalls, 1);
-    expect(localOcr.calls, 0);
     expect((await repository.loadAllActive()).single.ocrText, '后端文字');
   });
 
@@ -211,24 +205,8 @@ void main() {
     expect(requests, 1);
   });
 
-  test('selected unavailable backend never falls back to phone AI', () async {
-    var calls = 0;
-    final executor = AiFallbackExecutor(backendResolver: () async => throw StateError('NAS offline'),
-      client: MockClient((_) async { calls++; return http.Response('{}', 200); }));
-    addTearDown(executor.close);
-    await expectLater(executor.execute(configs: const [AiEndpointConfig(
-      level: AiApiLevel.primary, endpoint: 'https://phone.example/v1',
-      apiKey: 'phone-key', model: 'phone-model')], systemPrompt: 'contract', userPrompt: 'text'),
-      throwsStateError);
-    expect(calls, 0);
+  test('unavailable NAS never invokes any model endpoint', () async {
+    final executor=AiFallbackExecutor(backendResolver:() async=>throw StateError('NAS offline'));
+    await expectLater(executor.execute(systemPrompt:'contract',userPrompt:'text'),throwsStateError);
   });
-}
-
-class _NeverLocalOcr extends LocalOcrService {
-  int calls = 0;
-  @override
-  Future<String> extractText(String path) async {
-    calls++;
-    throw StateError('backend mode must not invoke phone OCR');
-  }
 }

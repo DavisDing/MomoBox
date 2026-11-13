@@ -91,13 +91,8 @@ keep.write_text('''<?xml version="1.0" encoding="utf-8"?>
 ''')
 
 proguard = Path('android/app/proguard-rules.pro')
-mlkit_rules = '''# ProGuard / R8 rules for optional ML Kit text recognition language models
--dontwarn com.google.mlkit.vision.text.**
-'''
 if not proguard.exists():
-    proguard.write_text(mlkit_rules)
-elif '-dontwarn com.google.mlkit.vision.text.**' not in proguard.read_text():
-    proguard.write_text(proguard.read_text().rstrip() + '\n\n' + mlkit_rules)
+    proguard.write_text('# App release rules\n')
 
 for gradle in (Path('android/app/build.gradle'), Path('android/app/build.gradle.kts')):
     if not gradle.exists():
@@ -127,18 +122,6 @@ for gradle in (Path('android/app/build.gradle'), Path('android/app/build.gradle.
             dependency = '    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")\n'
         else:
             dependency = '    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.0.3"\n'
-        if 'dependencies {' in text:
-            text = text.replace('dependencies {', 'dependencies {\n' + dependency, 1)
-        else:
-            text += '\n\ndependencies {\n' + dependency + '}\n'
-
-    # The Flutter ML Kit plugin declares non-Latin language models as
-    # compileOnly. Bundle Chinese recognition so OCR works offline on first use.
-    if 'com.google.mlkit:text-recognition-chinese:16.0.1' not in text:
-        if gradle.suffix == '.kts':
-            dependency = '    implementation("com.google.mlkit:text-recognition-chinese:16.0.1")\n'
-        else:
-            dependency = '    implementation "com.google.mlkit:text-recognition-chinese:16.0.1"\n'
         if 'dependencies {' in text:
             text = text.replace('dependencies {', 'dependencies {\n' + dependency, 1)
         else:
@@ -277,24 +260,6 @@ if podfile.exists():
     else:
         text = "platform :ios, '" + IOS_DEPLOYMENT_TARGET + "'\n" + text
 
-    chinese_pod = "  pod 'GoogleMLKit/TextRecognitionChinese', '~> 6.0.0'\n"
-    if 'GoogleMLKit/TextRecognitionChinese' not in text:
-        if 'flutter_install_all_ios_pods' in text:
-            text = re.sub(
-                r'(?m)^(\s*flutter_install_all_ios_pods.*$)',
-                r'\1\n' + chinese_pod,
-                text,
-                count=1,
-            )
-        elif "target 'Runner' do" in text or 'target "Runner" do' in text:
-            text = re.sub(
-                r'''(?m)^(target ['"]Runner['"] do)''',
-                r'\1\n' + chinese_pod,
-                text,
-                count=1,
-            )
-        else:
-            text += "\ntarget 'Runner' do\n" + chinese_pod + "end\n"
     podfile.write_text(text)
 
 for pbxproj in Path('ios').glob('**/*.pbxproj'):

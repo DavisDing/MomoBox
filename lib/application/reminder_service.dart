@@ -2,21 +2,26 @@ import '../data/repositories/reminder_repository.dart';
 import '../domain/models/inventory_models.dart';
 
 class ReminderService {
-  ReminderService(this._repository);
+  ReminderService(this._repository,{this.assertWritable});
+  final void Function()? assertWritable;
 
   final ReminderRepository _repository;
 
   Stream<List<ReminderAcknowledgement>> watchAcknowledgements() =>
       _repository.watchAcknowledgements();
 
-  Future<void> acknowledge({required String reminderKey, required String fingerprint}) =>
-      _repository.acknowledge(reminderKey: reminderKey, fingerprint: fingerprint);
+  Future<void> acknowledge({required String reminderKey, required String fingerprint}) {
+    assertWritable?.call();
+    return _repository.acknowledge(reminderKey: reminderKey, fingerprint: fingerprint);
+  }
 
   Future<void> reconcile(List<InventoryItem> items) =>
       _repository.clearRecoveredLowStockAcknowledgements(items);
 
   Future<void> acknowledgeAll(
     Iterable<({String reminderKey, String fingerprint})> reminders,
-  ) =>
-      _repository.acknowledgeAll(reminders);
+  ) {
+    assertWritable?.call();
+    return _repository.acknowledgeAll(reminders);
+  }
 }

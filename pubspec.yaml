@@ -1,5 +1,5 @@
 name: momo_box
-description: 本地优先的家庭物品效期与库存管理工具。
+description: 基于 NAS 后端的家庭物品效期与库存管理工具。
 publish_to: 'none'
 version: 0.1.0+1
 
@@ -27,8 +27,6 @@ dependencies:
   timezone: 0.9.4
   mobile_scanner: ^7.4.1
   image_picker: ^1.1.2
-  flutter_image_compress: ^2.3.0
-  google_mlkit_text_recognition: ^0.13.0
   crypto: ^3.0.3
   http: ^1.2.2
   connectivity_plus: ^6.1.4

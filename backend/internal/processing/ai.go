@@ -17,12 +17,18 @@ import (
 
 type AIEndpoint struct{ Endpoint, Key, Model, Protocol, Level string }
 type AIConfig struct {
-	Endpoints []AIEndpoint
-	Client    *http.Client
+	Endpoints     []AIEndpoint
+	Client        *http.Client
+	AllowedModels []string
 }
 
 func AIFromEnv() AIConfig {
 	c := AIConfig{}
+	for _, model := range strings.Split(os.Getenv("AI_MODELS"), ",") {
+		if model = strings.TrimSpace(model); model != "" {
+			c.AllowedModels = append(c.AllowedModels, model)
+		}
+	}
 	for _, level := range []string{"primary", "secondary", "fallback"} {
 		prefix := "AI_"
 		if level != "primary" {
@@ -38,7 +44,10 @@ func AIFromEnv() AIConfig {
 		u, err := url.Parse(endpoint)
 		// Destinations can only come from the NAS operator's environment. Never
 		// accept endpoints, keys, headers or provider tools in a client payload.
-		if err == nil && u.Host != "" && u.User == nil && u.RawQuery == "" && u.Fragment == "" && (u.Scheme == "http" || u.Scheme == "https") && model != "" && (protocol == "auto" || protocol == "chat" || protocol == "responses") {
+		if err == nil && u.Host != "" && u.User == nil && u.RawQuery == "" && u.Fragment == "" && (u.Scheme == "http" || u.Scheme == "https") && (level == "primary" || model != "") && (protocol == "auto" || protocol == "chat" || protocol == "responses") {
+			if u.Path == "" || u.Path == "/" {
+				endpoint += "/v1"
+			}
 			c.Endpoints = append(c.Endpoints, AIEndpoint{endpoint, key, model, protocol, level})
 		}
 	}
@@ -51,6 +60,7 @@ type Message struct {
 }
 type AIRequest struct {
 	ID          string    `json:"request_id"`
+	Model       string    `json:"model,omitempty"`
 	System      string    `json:"system_prompt"`
 	User        string    `json:"user_prompt"`
 	History     []Message `json:"history"`
@@ -76,6 +86,10 @@ func (s *Service) Analyze(ctx context.Context, family, user string, r AIRequest)
 	}
 	if len(s.AI.Endpoints) == 0 {
 		return AIResult{}, ErrUnavailable
+	}
+	selectedConfig, err := s.AI.selectModel(ctx, r.Model)
+	if err != nil {
+		return AIResult{}, err
 	}
 	raw, _ := json.Marshal(r)
 	sum := sha256.Sum256(raw)
@@ -161,7 +175,7 @@ func (s *Service) Analyze(ctx context.Context, family, user string, r AIRequest)
 	}
 	work, cancel := context.WithTimeout(ctx, 65*time.Second)
 	defer cancel()
-	out, callErr := s.AI.call(work, r)
+	out, callErr := selectedConfig.call(work, r)
 	status = "complete"
 	if callErr != nil {
 		status = "failed"

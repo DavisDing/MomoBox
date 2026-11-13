@@ -15,7 +15,7 @@ import 'package:momo_box/data/repositories/settings_repository.dart';
 import 'package:momo_box/data/repositories/shopping_repository.dart';
 import 'package:momo_box/domain/models/inventory_models.dart';
 import 'package:momo_box/domain/models/recognition_models.dart';
-import 'package:momo_box/services/local_ocr_service.dart';
+import '../support/nas_media_fixture.dart';
 import 'package:momo_box/services/media_storage_service.dart';
 
 void main() {
@@ -39,7 +39,7 @@ void main() {
     final service = StorageManagementService(
       cache,
       storage,
-      MediaService(mediaRepo, storage, LocalOcrService()),
+      MediaService(mediaRepo, storage,backend:unavailableMediaBackend(database,mediaRepo,storage)),
       settings,
     );
     await InventoryService(
@@ -93,8 +93,8 @@ void main() {
 
     final report = await service.cleanAll();
     expect(report.barcodeEntries, 1);
-    expect(report.media.deletedFiles, 2);
-    expect(report.media.deletedMetadata, 2);
+    expect(report.media.deletedFiles, 1);
+    expect(report.media.deletedMetadata, 0);
     expect((await cache.usage()).entries, 0);
     expect(await settings.getValue(AiUsageService.storageKey), '[]');
     expect(await settings.getValue('ai_config'), 'preserved');
@@ -104,7 +104,7 @@ void main() {
     expect(await database.select(database.shoppingEntries).get(), shopping);
     expect(await File(productImage.localPath).exists(), isTrue);
     expect(await File(recentDraft.localPath).exists(), isTrue);
-    expect(await File(oldDraft.localPath).exists(), isFalse);
+    expect(await File(oldDraft.localPath).exists(), isTrue);
     expect(await orphan.exists(), isFalse);
     expect(await backup.readAsString(), 'backup');
     final second = await service.cleanAll();

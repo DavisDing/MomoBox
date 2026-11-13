@@ -1,4 +1,8 @@
+import '../../domain/models/nas_ai_model.dart';
 import 'dart:async';
+import '../../application/legacy_client_settings_cleanup.dart';
+import '../../data/nas/nas_api_client.dart';
+import 'nas_setup_controller.dart';
 import '../../application/ai_inventory_action_service.dart';
 import '../../application/ai_fallback_executor.dart';
 import '../../application/ai_conversation_store.dart';
@@ -56,9 +60,7 @@ import '../../domain/models/initial_import_models.dart';
 import '../../domain/models/recognition_models.dart';
 import '../../domain/models/sync_models.dart';
 import '../../services/local_notification_service.dart';
-import '../../services/local_ocr_service.dart';
 import '../../services/media_storage_service.dart';
-import '../../services/secure_settings_service.dart';
 import '../../application/chore_service.dart';
 import '../../domain/models/chore_models.dart';
 
@@ -68,6 +70,18 @@ final databaseProvider = Provider<AppDatabase>((ref) {
   return database;
 });
 
+final Provider<void Function()> nasWriteAccessGuardProvider =
+    Provider<void Function()>((ref) {
+      var active = true;
+      ref.onDispose(() => active = false);
+      return () {
+        if (!active ||
+            ref.read(nasAppAccessProvider) != NasAppAccess.connected) {
+          throw StateError('NAS 暂不可达，当前只能查看缓存；恢复连接后可继续修改。');
+        }
+      };
+    });
+
 final inventoryRepositoryProvider = Provider<InventoryRepository>((ref) {
   final database = ref.watch(databaseProvider);
   final familyId = ref.watch(syncWorkspaceAccessProvider).asData?.value.owner?.familyId;
@@ -76,6 +90,7 @@ final inventoryRepositoryProvider = Provider<InventoryRepository>((ref) {
     outbox: SyncOutboxRepository(database),
     syncScopeId: familyId,
     syncScopeResolver: SyncWorkspaceRepository(database).localMutationScope,
+    assertWritable:ref.watch(nasWriteAccessGuardProvider),
   );
 });
 
@@ -109,6 +124,7 @@ final shoppingRepositoryProvider = Provider<ShoppingRepository>((ref) {
     outbox: SyncOutboxRepository(database),
     syncScopeId: familyId,
     syncScopeResolver: SyncWorkspaceRepository(database).localMutationScope,
+    assertWritable:ref.watch(nasWriteAccessGuardProvider),
   );
 });
 
@@ -207,11 +223,18 @@ final fontScaleProvider = StreamProvider<double>(
 );
 
 final backupRepositoryProvider = Provider<BackupRepository>(
-  (ref) => BackupRepository(ref.watch(databaseProvider)),
+  (ref) => BackupRepository(
+    ref.watch(databaseProvider),
+    assertWritable: ref.watch(nasWriteAccessGuardProvider),
+  ),
 );
 
 final backupServiceProvider = Provider<BackupService>(
-  (ref) => BackupService(ref.watch(backupRepositoryProvider)),
+  (ref) => BackupService(
+    ref.watch(backupRepositoryProvider),
+    synchronizeAfterRestore: () =>
+        ref.read(nasSetupProvider.notifier).prepare(),
+  ),
 );
 
 final reminderRepositoryProvider = Provider<ReminderRepository>(
@@ -219,7 +242,7 @@ final reminderRepositoryProvider = Provider<ReminderRepository>(
 );
 
 final reminderServiceProvider = Provider<ReminderService>(
-  (ref) => ReminderService(ref.watch(reminderRepositoryProvider)),
+  (ref) => ReminderService(ref.watch(reminderRepositoryProvider),assertWritable:ref.watch(nasWriteAccessGuardProvider)),
 );
 
 final reminderAcknowledgementsProvider = StreamProvider<List<ReminderAcknowledgement>>(
@@ -266,11 +289,17 @@ final mediaRepositoryProvider = Provider<MediaRepository>(
 
 final manualQaServiceProvider = Provider<ManualQaService>((ref) {
   final service = ManualQaService(
-    ref.watch(mediaRepositoryProvider),
-    ref.watch(settingsRepositoryProvider),
-    ref.watch(secureSettingsServiceProvider),
     backendResolver: ref.watch(backendResolverProvider),
-    fallbackExecutor: AiFallbackExecutor(backendResolver: ref.watch(backendResolverProvider)),
+    fallbackExecutor: AiFallbackExecutor(
+      backendResolver: ref.watch(backendResolverProvider),
+      modelReader: () async {
+        final identity = ref.read(syncWorkspaceIdentityProvider);
+        if (identity == null) return null;
+        return ref
+            .read(settingsRepositoryProvider)
+            .getValue(nasAiSelectionKey(identity));
+      },
+    ),
   );
   ref.onDispose(service.close);
   return service;
@@ -295,40 +324,68 @@ final mediaStorageServiceProvider = Provider<MediaStorageService>(
   (ref) => MediaStorageService(),
 );
 
-final localOcrServiceProvider = Provider<LocalOcrService>(
-  (ref) => LocalOcrService(),
+final backendResolverProvider = Provider<BackendResolver>(
+  (ref) => () async {
+    final selected =
+        (await ref.read(settingsRepositoryProvider).getValue(nasServerUrlKey))
+            ?.trim()
+            .isNotEmpty ==
+        true;
+    if (!selected) {
+      throw const BackendProcessingSetupException('请先填写 NAS 服务地址并登录。');
+    }
+    final account = ref.read(nasAccountProvider);
+    if (!account.isAuthenticated || !account.family.hasFamily) {
+      throw const BackendProcessingSetupException(
+        '已选择 NAS 处理，请先在 NAS 设置中登录并创建或加入家庭。',
+      );
+    }
+    final access = await ref.read(syncWorkspaceAccessProvider.future);
+    if (!access.canSync) {
+      throw const BackendProcessingSetupException(
+        '家庭连接尚未自动完成，请在 NAS 设置中重试连接。已有数据归属不一致时需先核对原账号。',
+      );
+    }
+    final api = ref.read(nasSyncApiProvider);
+    if (api == null) {
+      throw const BackendProcessingSetupException(
+        'NAS 设备连接尚未就绪，请在 NAS 设置中重试连接。',
+      );
+    }
+    final family = ref.read(nasAccountProvider).family.familyId!;
+    final mode = await SyncOutboxRepository(ref.read(databaseProvider))
+        .getConfirmedBootstrapMode(family);
+    if (mode != 'join_and_merge' && mode != 'create_new_family') {
+      throw const BackendProcessingSetupException(
+        'NAS 正在自动初始化，请稍候；若持续失败请重试连接。',
+      );
+    }
+    api.assertCurrentSession();
+    return api;
+  },
 );
 
-final backendResolverProvider = Provider<BackendResolver>((ref) => () async {
-  final selected = (await ref.read(settingsRepositoryProvider).getValue(nasServerUrlKey))
-      ?.trim().isNotEmpty == true;
-  if (!selected) return null;
-  final account = ref.read(nasAccountProvider);
-  if (!account.isAuthenticated || !account.family.hasFamily) {
-    throw const BackendProcessingSetupException('已选择 NAS 处理，请先在 NAS 设置中登录并创建或加入家庭。');
-  }
-  final access = await ref.read(syncWorkspaceAccessProvider.future);
-  if (!access.canSync) {
-    throw const BackendProcessingSetupException('本机数据尚未与当前 NAS 家庭确认绑定，请前往家庭与同步完成归属确认。');
-  }
-  final api = ref.read(nasSyncApiProvider);
-  if (api == null) throw const BackendProcessingSetupException('NAS 同步设备尚未就绪，请在 NAS 设置中刷新家庭并注册当前设备。');
-  final family = ref.read(nasAccountProvider).family.familyId!;
-  final mode = await SyncOutboxRepository(ref.read(databaseProvider)).getConfirmedBootstrapMode(family);
-  if (mode != 'join_and_merge' && mode != 'create_new_family') {
-    throw const BackendProcessingSetupException('请前往家庭与同步，在同步初始化中确认当前家庭的同步模式；仅保留本地时不发送 NAS AI 请求。');
-  }
-  api.assertCurrentSession();
-  return api;
-});
-
-final backendProcessingServiceProvider = Provider<BackendProcessingService>((ref) =>
-  BackendProcessingService(ref.watch(databaseProvider), ref.watch(mediaRepositoryProvider),
-    ref.watch(mediaStorageServiceProvider), resolveApi: ref.watch(backendResolverProvider),
-    scopeId: () => ref.read(nasAccountProvider).family.familyId));
+final backendProcessingServiceProvider = Provider<BackendProcessingService>(
+  (ref) => BackendProcessingService(
+    ref.watch(databaseProvider),
+    ref.watch(mediaRepositoryProvider),
+    ref.watch(mediaStorageServiceProvider),
+    resolveApi: ref.watch(backendResolverProvider),
+    scopeId: () => ref.read(nasAccountProvider).family.familyId,
+  ),
+);
 
 final backendAiExecutorProvider = Provider<AiFallbackExecutor>((ref) {
-  final executor = AiFallbackExecutor(backendResolver: ref.watch(backendResolverProvider));
+  final executor = AiFallbackExecutor(
+    backendResolver: ref.watch(backendResolverProvider),
+    modelReader: () async {
+      final identity = ref.read(syncWorkspaceIdentityProvider);
+      if (identity == null) return null;
+      return ref
+          .read(settingsRepositoryProvider)
+          .getValue(nasAiSelectionKey(identity));
+    },
+  );
   ref.onDispose(executor.close);
   return executor;
 });
@@ -337,8 +394,8 @@ final mediaServiceProvider = Provider<MediaService>(
   (ref) => MediaService(
     ref.watch(mediaRepositoryProvider),
     ref.watch(mediaStorageServiceProvider),
-    ref.watch(localOcrServiceProvider),
     backend: ref.watch(backendProcessingServiceProvider),
+    assertWritable: ref.watch(nasWriteAccessGuardProvider),
   ),
 );
 
@@ -347,10 +404,6 @@ final mediaAssetsProvider = StreamProvider.family<List<MediaAsset>, ({String ent
         entityType: target.entityType,
         entityId: target.entityId,
       ),
-);
-
-final secureSettingsServiceProvider = Provider<SecureSettingsService>(
-  (ref) => SecureSettingsService(),
 );
 
 final aiUsageServiceProvider = Provider<AiUsageService>(
@@ -364,7 +417,6 @@ final aiUsageLogsProvider = StreamProvider<List<AiUsageRecord>>(
 final aiDraftServiceProvider = Provider<AiDraftService>(
   (ref) => AiDraftService(
     ref.watch(settingsRepositoryProvider),
-    ref.watch(secureSettingsServiceProvider),
     usageService: ref.watch(aiUsageServiceProvider),
     fallbackExecutor: ref.watch(backendAiExecutorProvider),
   ),
@@ -373,7 +425,6 @@ final aiDraftServiceProvider = Provider<AiDraftService>(
 final aiAssistantServiceProvider = Provider<AiAssistantService>(
   (ref) => AiAssistantService(
     ref.watch(settingsRepositoryProvider),
-    ref.watch(secureSettingsServiceProvider),
     ref.watch(inventoryRepositoryProvider),
     usageService: ref.watch(aiUsageServiceProvider),
     actionService: ref.watch(aiInventoryActionServiceProvider),
@@ -396,7 +447,7 @@ final localNotificationServiceProvider = Provider<LocalNotificationService>((ref
 
 
 final choreServiceProvider = Provider<ChoreService>((ref) {
-  return ChoreService(ref.watch(settingsRepositoryProvider));
+  return ChoreService(ref.watch(settingsRepositoryProvider),assertWritable:ref.watch(nasWriteAccessGuardProvider));
 });
 
 final choresProvider = StreamProvider<List<ChoreItem>>((ref) {
@@ -409,32 +460,41 @@ final aiConversationStoreProvider = ChangeNotifierProvider<AiConversationStore>(
   return store;
 });
 
-final aiConnectionTestExecutorProvider = Provider<AiFallbackExecutor>((ref) {
-  final executor = AiFallbackExecutor(backendResolver: ref.watch(backendResolverProvider));
-  ref.onDispose(executor.close);
-  return executor;
-});
-
 final aiInventoryPermissionProvider = StreamProvider<bool>((ref) => ref
     .watch(settingsServiceProvider).watchValue('ai_allow_inventory_writes')
     .map((value) => value != 'false'));
 
 // Configured does not imply reachable: the home page must never claim online
 // based on a URL alone, nor reuse the mock smart-home status.
+String nasAiSelectionKey(SyncWorkspaceIdentity identity) =>
+    'nas_ai_model:${identity.encode()}';
+final selectedAiModelProvider = StreamProvider<String?>((ref) {
+  final identity = ref.watch(syncWorkspaceIdentityProvider);
+  if (identity == null) return Stream.value(null);
+  return ref
+      .watch(settingsRepositoryProvider)
+      .watchValue(nasAiSelectionKey(identity));
+});
+final nasAiModelsProvider = FutureProvider<List<NasAiModel>>((ref) async {
+  ref.watch(nasSyncApiProvider);
+  final api = await ref.watch(backendResolverProvider)();
+  if (api == null) throw const BackendProcessingSetupException('请先连接 NAS。');
+  final result = await api.processingRequest('/ai/models', method: 'GET');
+  api.assertCurrentSession();
+  return NasAiModel.parse(result['models']);
+});
 final aiConfigurationStatusProvider = StreamProvider<bool>((ref) async* {
-  ref.watch(nasAccountProvider);
-  ref.watch(nasConnectionProvider);
-  final resolver = ref.watch(backendResolverProvider);
-  final settings = ref.watch(settingsServiceProvider);
+  final api = ref.watch(nasSyncApiProvider);
+  if (api == null) {
+    yield false;
+    return;
+  }
   try {
-    final api = await resolver();
-    if (api != null) {
-      final capability = await api.processingRequest('/capabilities', method: 'GET');
-      yield capability['backend_ai'] == true;
-      return;
-    }
-    yield* settings.watchValue(AiDraftService.modelKey)
-      .map((value) => value?.trim().isNotEmpty == true);
+    final capability = await api.processingRequest(
+      '/capabilities',
+      method: 'GET',
+    );
+    yield capability['backend_ai'] == true;
   } catch (_) {
     yield false;
   }
@@ -455,15 +515,20 @@ final nasSmartHomeRepositoryProvider = Provider<NasSmartHomeRepository>((ref) {
 
 final smartHomeControllerProvider =
     StateNotifierProvider<SmartHomeController, SmartHomeState>((ref) {
-  final connection = ref.watch(nasConnectionProvider);
-  return SmartHomeController(
-    ref.watch(nasSmartHomeRepositoryProvider),
-    nasAddress: connection.serverUrl,
-    role: ref.watch(nasAccountProvider.select(
-      (account) => account.family.current?.membership.role,
-    )),
-  );
-});
+      final serverUrl = ref.watch(
+        nasConnectionProvider.select((connection) => connection.serverUrl),
+      );
+      return SmartHomeController(
+        ref.watch(nasSmartHomeRepositoryProvider),
+        nasAddress: serverUrl,
+        assertWritable: ref.watch(nasWriteAccessGuardProvider),
+        role: ref.watch(
+          nasAccountProvider.select(
+            (account) => account.family.current?.membership.role,
+          ),
+        ),
+      );
+    });
 
 final aiInventoryActionServiceProvider = Provider<AiInventoryActionService>((ref) =>
     AiInventoryActionService(ref.watch(settingsRepositoryProvider), ref.watch(inventoryServiceProvider),
@@ -507,12 +572,9 @@ class NasConnectionController extends StateNotifier<NasConnectionState> {
       );
       return;
     }
-    state = state.copyWith(
-      status: NasConnectionStatus.checking,
-      serverUrl: url,
-      familyCode: code,
-      clearMessage: true,
-    );
+    if (hasExplicitServerUrl || !state.isConnected) {
+      state = state.copyWith(status:NasConnectionStatus.checking,serverUrl:url,familyCode:code,clearMessage:true);
+    }
     final next = await _service.saveAndCheck(serverUrl: url, familyCode: code);
     if (mounted) state = next;
   }
@@ -542,6 +604,115 @@ final nasAccountProvider = StateNotifierProvider<NasAccountController, NasAccoun
   controller.restore();
   return controller;
 });
+
+final legacyClientCleanupProvider = FutureProvider<void>(
+  (ref) => LegacyClientSettingsCleanup(ref.watch(databaseProvider)).run(),
+);
+
+final nasSetupProvider =
+    StateNotifierProvider<NasSetupController, NasSetupState>((ref) {
+      final controller = NasSetupController(
+        database: ref.read(databaseProvider),
+        accountReader: () => ref.read(nasAccountProvider.notifier),
+        refreshAccess: () async {
+          ref.invalidate(syncWorkspaceBindingProvider);
+          await ref.read(syncWorkspaceBindingProvider.future);
+          ref.invalidate(syncWorkspaceAccessProvider);
+          await ref.read(syncWorkspaceAccessProvider.future);
+        },
+        workspaceReady: () async {
+          await ref.read(localWorkspaceIdProvider.future);
+        },
+        engineReader: () => ref.read(syncEngineProvider),
+        importReader: () => ref.read(initialImportServiceProvider),
+        onReady: () => ref.invalidate(nasCachedAccessProvider),
+      );
+      ref.listen(
+        nasAccountProvider.select(
+          (account) => (
+            account.status,
+            account.auth.user?.id,
+            account.family.status,
+            account.family.familyId,
+            account.devices.status,
+          ),
+        ),
+        (_, __) {
+          Future.microtask(() {
+            if (controller.mounted) controller.changed();
+          });
+        },
+      );
+      Future.microtask(() {
+        if (controller.mounted) controller.changed();
+      });
+      return controller;
+    });
+
+enum NasAppAccess { setup, connected, cached }
+
+final nasCachedAccessProvider = FutureProvider<bool>((ref) async {
+  ref.watch(
+    nasAccountProvider.select(
+      (account) => (account.status, account.auth.user?.id),
+    ),
+  );
+  final url = ref.watch(
+    nasConnectionProvider.select((connection) => connection.serverUrl),
+  );
+  if (url.isEmpty) return false;
+  final client = NasApiClient(url);
+  final endpoint = client.serverIdentity;
+  client.close();
+  final credentials = await ref
+      .read(nasCredentialsServiceProvider)
+      .readForServer(endpoint);
+  if (credentials?.userId == null) return false;
+  final owner = await SyncWorkspaceRepository(ref.read(databaseProvider))
+      .readOwner();
+  final complete = await ref
+      .read(settingsRepositoryProvider)
+      .getValue('nas_setup_complete');
+  return owner != null &&
+      owner.userId == credentials!.userId &&
+      owner.endpoint == endpoint &&
+      complete == owner.encode();
+});
+final nasAppAccessProvider = Provider<NasAppAccess>((ref) {
+  final setup = ref.watch(nasSetupProvider);
+  final account = ref.watch(nasAccountProvider);
+  final connected = ref.watch(nasConnectionProvider).isConnected;
+  final cached = ref.watch(nasCachedAccessProvider).valueOrNull == true;
+  final access = ref.watch(syncWorkspaceAccessProvider).asData?.value;
+  final identity = ref.watch(syncWorkspaceIdentityProvider);
+  if (account.isAuthenticated &&
+      setup.status == NasSetupStatus.ready &&
+      connected &&
+      account.devices.status == NasDeviceStatus.ready &&
+      account.devices.currentDeviceId != null &&
+      access?.canSync == true &&
+      identity != null &&
+      access?.owner?.matches(identity) == true) {
+    return NasAppAccess.connected;
+  }
+  if (cached) return NasAppAccess.cached;
+  return NasAppAccess.setup;
+});
+
+Future<void> reconnectNas(WidgetRef ref) async {
+  await ref.read(nasConnectionProvider.notifier).refresh();
+  if (!ref.context.mounted || !ref.read(nasConnectionProvider).isConnected) {
+    return;
+  }
+  final account = ref.read(nasAccountProvider);
+  if (!account.isAuthenticated || !account.family.hasFamily) {
+    await ref.read(nasAccountProvider.notifier).restore();
+  }
+  if (!ref.context.mounted) return;
+  if (ref.read(nasSetupProvider).status != NasSetupStatus.ready) {
+    await ref.read(nasSetupProvider.notifier).prepare();
+  }
+}
 
 final syncWorkspaceIdentityProvider = Provider<SyncWorkspaceIdentity?>((ref) {
   final account = ref.watch(nasAccountProvider.select((account) => (

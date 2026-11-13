@@ -4,10 +4,11 @@ import '../data/repositories/settings_repository.dart';
 import '../domain/models/chore_models.dart';
 
 class ChoreService {
-  ChoreService(this._settingsRepository, {DateTime Function()? clock})
+  ChoreService(this._settingsRepository, {DateTime Function()? clock,this.assertWritable})
       : _clock = clock ?? DateTime.now;
 
   final DateTime Function() _clock;
+  final void Function()? assertWritable;
   Future<List<ChoreItem>>? _loading;
 
   final SettingsRepository _settingsRepository;
@@ -29,6 +30,12 @@ class ChoreService {
   Future<List<ChoreItem>> _loadChores() async {
     final raw = await _settingsRepository.getValue(_storageKey);
     if (raw == null || raw.trim().isEmpty) {
+      // Viewing an older cache must not create new business data offline.
+      try {
+        assertWritable?.call();
+      } on StateError {
+        return const [];
+      }
       // 首次初始化默认预设
       final defaults = ChoreItem.defaultPresets(_clock());
       await _saveChores(defaults);
@@ -49,6 +56,7 @@ class ChoreService {
 
   /// 保存列表
   Future<void> _saveChores(List<ChoreItem> chores) async {
+    assertWritable?.call();
     await _settingsRepository.setValue(_storageKey, ChoreItem.encodeList(chores));
   }
 

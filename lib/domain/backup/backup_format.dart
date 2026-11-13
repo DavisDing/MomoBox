@@ -25,7 +25,14 @@ class BackupFormat {
       '备份与恢复均在本地进行，无需上传文件。';
   static const restoreDescription =
       '导入只补充缺失的核心记录，不覆盖已有数据，也不删除或替换当前设备身份与同步状态。'
-      '新设备需重新配置 NAS 和服务密钥；媒体文件需另行迁移。';
+      '新设备需连接 NAS 并登录或凭邀请码加入家庭；AI 服务密钥由 NAS 管理，媒体文件需另行迁移。';
+
+  static const retiredAiSettingKeys = {
+    'ai_api_endpoint', 'ai_model', 'ai_api_profiles', 'ai_endpoint_type',
+    'ai_active_profile_id', 'ai_secondary_endpoint', 'ai_secondary_model',
+    'ai_secondary_type', 'ai_secondary_profile_id', 'ai_fallback_endpoint',
+    'ai_fallback_model', 'ai_fallback_type', 'ai_fallback_profile_id',
+  };
 
   static const excludedSettingPrefixes = [
     'nas_',
@@ -161,6 +168,7 @@ class BackupFormat {
   static bool isPortableSetting(String key) {
     final normalized = _normalizedKey(key.trim());
     return !_normalizedExcludedSettingPrefixes.any(normalized.startsWith) &&
+        !retiredAiSettingKeys.contains(normalized) &&
         !_deviceSettingKeys.contains(normalized) &&
         !_credentialField.hasMatch(normalized);
   }
@@ -171,8 +179,7 @@ class BackupFormat {
   static String? portableSettingValue(String key, String value) {
     if (!isPortableSetting(key)) return null;
     final normalizedKey = _normalizedKey(key.trim());
-    if (normalizedKey == 'ai_api_profiles' ||
-        normalizedKey == 'barcode_api_profiles') {
+    if (normalizedKey == 'barcode_api_profiles') {
       // Existing installs use empty text for an unconfigured profile list.
       if (value.trim().isEmpty) return value;
       Object? decoded;
@@ -205,11 +212,6 @@ class BackupFormat {
         profiles.add(profile);
       }
       return jsonEncode(profiles);
-    }
-    if (normalizedKey == 'ai_api_endpoint' ||
-        normalizedKey == 'ai_secondary_endpoint' ||
-        normalizedKey == 'ai_fallback_endpoint') {
-      return _sanitizeEndpoint(value);
     }
     // Preserve user-authored business data (including chores and chat) verbatim.
     return value;

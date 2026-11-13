@@ -20,6 +20,7 @@ import '../presentation/widgets/app_scaffold.dart';
 import '../presentation/widgets/app_back_guard.dart';
 import 'momo_theme.dart';
 import 'momo_typography.dart';
+import '../presentation/widgets/nas_required_gate.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
@@ -76,6 +77,7 @@ class _MomoBoxAppState extends ConsumerState<MomoBoxApp> {
   @override
   void initState() {
     super.initState();
+    ref.read(legacyClientCleanupProvider.future).catchError((_) {});
     ref.listenManual<CalendarRefreshScheduler>(
       calendarRefreshSchedulerProvider,
       (previous, next) {
@@ -194,7 +196,7 @@ class _MomoBoxAppState extends ConsumerState<MomoBoxApp> {
           data: media.copyWith(
             textScaler: MomoTextScaler(media.textScaler, fontScale),
           ),
-          child: child ?? const SizedBox.shrink(),
+          child: NasRequiredGate(child:child ?? const SizedBox.shrink()),
         );
       },
     );

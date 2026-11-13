@@ -168,7 +168,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                           for(var column=0;column<columns;column++) ...[
                             if(column>0) const SizedBox(width:12),
                             Expanded(child:index*columns+column<sorted.length ?
-                              _InventoryCard(key:ValueKey(sorted[index*columns+column].id),item:sorted[index*columns+column]) : const SizedBox.shrink()),
+                              _InventoryCard(key:ValueKey(sorted[index*columns+column].id),item:sorted[index*columns+column],compact:columns==1) : const SizedBox.shrink()),
                           ],
                         ]),
                       ),childCount:(sorted.length/columns).ceil()));
@@ -257,8 +257,9 @@ class _SortSelector extends StatelessWidget {
 }
 
 class _InventoryCard extends ConsumerStatefulWidget {
-  const _InventoryCard({required this.item,super.key});
+  const _InventoryCard({required this.item, required this.compact, super.key});
   final InventoryItem item;
+  final bool compact;
 
   @override
   ConsumerState<_InventoryCard> createState() => _InventoryCardState();
@@ -278,37 +279,155 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
     );
     final canReplenish = item.batches.any((candidate) => !candidate.isDiscarded);
     final theme = Theme.of(context);
+    final showExpiry =
+        item.overallExpiryStatus == ExpiryStatus.expiring ||
+        item.overallExpiryStatus == ExpiryStatus.expired;
+    Widget details() => Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(item.name, style: theme.textTheme.titleMedium),
+        const SizedBox(height: 4),
+        Text(
+          '${item.totalStock} ${item.unit} · ${item.category}',
+          style: theme.textTheme.bodyMedium,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          item.location ?? '未设置位置',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        if (item.isLowStock)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              '库存偏低',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ),
+        if (widget.compact && showExpiry)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: StatusBadge(
+              status: item.overallExpiryStatus,
+              days: batch?.daysUntilExpiry,
+            ),
+          ),
+      ],
+    );
     return MomoCard(
-      onTap:()=>context.push('/inventory/${item.id}'),padding:EdgeInsets.zero,margin:EdgeInsets.zero,
-      child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
-        Container(height:128,clipBehavior:Clip.antiAlias,
-          decoration:BoxDecoration(color:theme.colorScheme.primaryContainer,
-            borderRadius:const BorderRadius.vertical(top:Radius.circular(18))),
-          child:Stack(fit:StackFit.expand,children:[
-            MomoProductImage(productId:item.id),
-            if(item.overallExpiryStatus == ExpiryStatus.expiring || item.overallExpiryStatus == ExpiryStatus.expired)
-              Positioned(top:8,left:8,right:8,child:Align(alignment:Alignment.topLeft,
-                child:StatusBadge(status:item.overallExpiryStatus,days:batch?.daysUntilExpiry))),
-          ])),
-        Padding(padding:const EdgeInsets.all(12),child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
-          Text(item.name,style:theme.textTheme.titleMedium),
-          const SizedBox(height:5),
-          Text('${item.totalStock} ${item.unit} · ${item.category}',style:theme.textTheme.bodyMedium),
-          const SizedBox(height:5),
-          Text(item.location??'未设置位置',style:theme.textTheme.bodySmall?.copyWith(color:theme.colorScheme.onSurfaceVariant)),
-          if(item.isLowStock) Padding(padding:const EdgeInsets.only(top:6),
-            child:Text('库存偏低',style:theme.textTheme.bodySmall?.copyWith(color:theme.colorScheme.error))),
-          Wrap(alignment:WrapAlignment.spaceBetween,crossAxisAlignment:WrapCrossAlignment.center,children:[
-            TextButton(onPressed:canConsume&&!_busy?()=>_showConsumeDialog(context):null,child:const Text('消耗')),
-            IconButton(tooltip:_actionsVisible?'收起快捷操作':'物品快捷操作',
-              onPressed:_busy?null:()=>setState(()=>_actionsVisible=!_actionsVisible),
-              icon:Icon(_actionsVisible?Icons.expand_less_rounded:Icons.more_horiz_rounded)),
-          ]),
-          if(_actionsVisible) ...[const Divider(),_QuickActions(busy:_busy,canConsume:canConsume,
-            canReplenish:canReplenish,onConsume:()=>_consumeOne(context),onReplenish:()=>_replenishOne(context),
-            onShopping:()=>_addToShopping(context),onClose:()=>setState(()=>_actionsVisible=false))],
-        ])),
-      ]),
+      key: ValueKey('inventory-card-${item.id}'),
+      onTap: () => context.push('/inventory/${item.id}'),
+      padding: EdgeInsets.zero,
+      margin: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (widget.compact)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox.square(
+                    key: ValueKey('inventory-photo-${item.id}'),
+                    dimension: 72,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: MomoProductImage(productId: item.id),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: details()),
+                ],
+              ),
+            )
+          else ...[
+            Container(
+              key: ValueKey('inventory-photo-${item.id}'),
+              height: 96,
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(18),
+                ),
+              ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  MomoProductImage(productId: item.id),
+                  if (showExpiry)
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      right: 8,
+                      child: Align(
+                        alignment: Alignment.topLeft,
+                        child: StatusBadge(
+                          status: item.overallExpiryStatus,
+                          days: batch?.daysUntilExpiry,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              child: details(),
+            ),
+          ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    TextButton(
+                      onPressed: canConsume && !_busy
+                          ? () => _showConsumeDialog(context)
+                          : null,
+                      child: const Text('消耗'),
+                    ),
+                    IconButton(
+                      tooltip: _actionsVisible ? '收起快捷操作' : '物品快捷操作',
+                      onPressed: _busy
+                          ? null
+                          : () => setState(
+                              () => _actionsVisible = !_actionsVisible,
+                            ),
+                      icon: Icon(
+                        _actionsVisible
+                            ? Icons.expand_less_rounded
+                            : Icons.more_horiz_rounded,
+                      ),
+                    ),
+                  ],
+                ),
+                if (_actionsVisible) ...[
+                  const Divider(),
+                  _QuickActions(
+                    busy: _busy,
+                    canConsume: canConsume,
+                    canReplenish: canReplenish,
+                    onConsume: () => _consumeOne(context),
+                    onReplenish: () => _replenishOne(context),
+                    onShopping: () => _addToShopping(context),
+                    onClose: () => setState(() => _actionsVisible = false),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

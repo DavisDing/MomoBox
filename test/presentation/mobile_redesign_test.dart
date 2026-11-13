@@ -39,7 +39,9 @@ void main() {
               name: '厨房储物柜里的长名称测试物品', category: '家居清洁', quantity: 3,
             ));
             await tester.pumpWidget(ProviderScope(
-              overrides: [databaseProvider.overrideWithValue(database)],
+              overrides: [
+          nasAppAccessProvider.overrideWithValue(NasAppAccess.connected),
+          legacyClientCleanupProvider.overrideWith((ref) async {}),databaseProvider.overrideWithValue(database)],
               child: const MomoBoxApp(enableMediaReconciliation: false),
             ));
             await _frames(tester);

@@ -8,20 +8,15 @@ import '../../application/sync_engine.dart';
 import '../../data/nas/nas_sync_api.dart';
 import '../../data/nas/nas_api_error.dart';
 import '../../data/repositories/sync_outbox_repository.dart';
-import '../../data/repositories/sync_workspace_repository.dart';
 import '../../domain/models/nas_sync_models.dart';
 import '../../domain/models/sync_models.dart';
-import '../controllers/nas_account_controller.dart';
 import '../controllers/providers.dart';
 import '../widgets/momo_components.dart';
 import '../widgets/momo_floating_dock.dart';
-import '../widgets/initial_import_card.dart';
-import 'nas_settings_screen.dart';
+import '../widgets/initial_import_history_dialog.dart';
 
-/// Sync controls intentionally remain explicit: the user must choose a
-/// bootstrap mode when the NAS reports that local and remote data need a
-/// decision. Remote conflict resolution is acknowledged by the NAS before the
-/// matching local review record is updated.
+/// Setup is automatic. Actual conflicts still require a user decision and a
+/// matching NAS receipt before changing the local review record.
 class SyncSettingsScreen extends ConsumerStatefulWidget {
   const SyncSettingsScreen({super.key});
 
@@ -31,10 +26,7 @@ class SyncSettingsScreen extends ConsumerStatefulWidget {
 
 class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
   bool _working = false;
-  bool _importWorking = false;
   String? _message;
-  List<String> _availableModes = const <String>[];
-  String? _selectedMode;
   String? _resolvingRemoteConflictId;
   Future<NasSyncConflictListResponse>? _remoteConflictsFuture;
   NasSyncApi? _remoteConflictsApi;
@@ -42,20 +34,16 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
   List<NasSyncConflictDetail> _remoteConflicts = const <NasSyncConflictDetail>[];
   List<SyncConflictEntry> _recoveryLocals = const <SyncConflictEntry>[];
   String? _recoveryScopeId;
-  SyncEngine? _bootstrapEngine;
 
   @override
   Widget build(BuildContext context) {
     final account = ref.watch(nasAccountProvider);
     final engine = ref.watch(syncEngineProvider);
-    if (!identical(_bootstrapEngine, engine)) {
-      _bootstrapEngine = engine;
-      _availableModes = const [];
-      _selectedMode = null;
-    }
     final syncApi = ref.watch(nasSyncApiProvider);
     final deviceId = account.devices.currentDeviceId;
     final scopeId = account.family.familyId;
+    final importProgress = scopeId == null ? null : ref.watch(initialImportProgressProvider).valueOrNull;
+    final importer = ref.watch(initialImportServiceProvider);
     final state = scopeId == null ? null : ref.watch(syncStateProvider(scopeId)).valueOrNull;
     final conflicts = scopeId == null
         ? const AsyncValue<List<SyncConflictEntry>>.data(<SyncConflictEntry>[])
@@ -66,257 +54,30 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           ]);
 
     return Scaffold(
-      appBar: MomoAppBar.adaptive(context, title: const Text('同步设置')),
+      appBar: MomoAppBar.adaptive(context, title: const Text('连接与同步状态')),
       body: ListView(
         padding: EdgeInsets.fromLTRB(16, 12, 16, 32 + MomoDockInsets.bottomOf(context)),
         children: [
-          _buildOverviewCard(context, account, engine, state),
-          if (scopeId != null) StreamBuilder<String?>(
-            stream: SyncOutboxRepository(ref.watch(databaseProvider)).watchProcessingWarning(scopeId),
-            builder: (context, snapshot) => snapshot.data == null
-                ? const SizedBox.shrink() : Padding(padding: const EdgeInsets.all(12), child: Text(snapshot.data!)),
-          ),
-          const SizedBox(height: 12),
-          _buildBootstrapCard(context, engine, state),
-          const SizedBox(height: 12),
+          MomoCard(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+            const Text('NAS 自动同步'),
+            const Text('设备登记、家庭数据接入与同步初始化由 App 自动完成。'),
+            if (state?.lastSuccessAt != null) Text('最近成功：${_formatDate(state!.lastSuccessAt!)}'),
+            if (state?.lastErrorMessage != null) Text(state!.lastErrorMessage!),
+            if (importProgress?.message != null) Text(importProgress!.message!),
+            if (_message != null) Text(_message!),
+            TextButton(onPressed:_working?null:()=>ref.read(nasSetupProvider.notifier).prepare(),child:const Text('重试连接')),
+            if (importer != null && scopeId != null) TextButton(onPressed:()=>showDialog<void>(
+              context:context,builder:(_)=>InitialImportHistoryDialog(familyId:scopeId,
+                isSessionCurrent:()=>mounted && identical(ref.read(initialImportServiceProvider),importer) && importer.isCurrent,
+                loadPage:(after,until)=>importer.history(after:after,until:until))),child:const Text('查看旧记录归档')),
+          ])),
+          const SizedBox(height:12),
           _buildConflictCard(context, scopeId, conflicts, syncApi, deviceId),
           if (scopeId != null) _buildRejectedCard(scopeId, engine, syncApi, deviceId),
           const SizedBox(height: 12),
-          InitialImportCard(
-            disabled: _working || _resolvingRemoteConflictId != null,
-            onBusyChanged: (busy) {
-              if (mounted) setState(() => _importWorking = busy);
-            },
-          ),
+
         ],
       ),
-    );
-  }
-
-  Widget _buildOverviewCard(
-    BuildContext context,
-    NasAccountState account,
-    SyncEngine? engine,
-    SyncStateModel? state,
-  ) {
-    final familyId = account.family.familyId;
-    final family = account.family.current?.family;
-    final workspace = ref.watch(localWorkspaceIdProvider).valueOrNull;
-    final enabled = engine != null;
-    final workspaceAccess = ref.watch(syncWorkspaceAccessProvider);
-    final access = workspaceAccess.asData?.value;
-    final canSetUp = account.isAuthenticated && account.family.hasFamily &&
-        !account.isLoading && !workspaceAccess.isLoading &&
-        (access?.canBind == true || access?.canSync == true);
-    return MomoCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.sync_outlined),
-              const SizedBox(width: 10),
-              Text('NAS 双向同步', style: Theme.of(context).textTheme.titleMedium),
-              const Spacer(),
-              Chip(
-                label: Text(enabled ? _statusLabel(state?.bootstrapStatus) : '未就绪'),
-                avatar: Icon(enabled ? Icons.cloud_done_outlined : Icons.cloud_off_outlined, size: 18),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            enabled
-                ? '已连接当前家庭。完成一次同步确认后，后续自动同步。'
-                : '登录并创建或加入家庭后，点击下方按钮；设备登记和连接检查会自动完成。',
-          ),
-          if (familyId != null) ...[
-            const SizedBox(height: 8),
-            Text('同步范围：$familyId', style: Theme.of(context).textTheme.bodySmall),
-            if (family != null) ...[
-              const SizedBox(height: 4),
-              Text('家庭时区：${family.timeZone} · 到期日当天仍有效',
-                style: Theme.of(context).textTheme.bodySmall),
-            ],
-          ],
-          if (workspace != null) ...[
-            const SizedBox(height: 4),
-            Text('本地工作区：$workspace', style: Theme.of(context).textTheme.bodySmall),
-          ],
-          if (workspaceAccess.hasError || access?.message != null) ...[
-            const SizedBox(height: 8),
-            Text(workspaceAccess.hasError
-                ? '读取本机数据归属失败，同步已暂停；请保留数据后重试。'
-                : access!.message!),
-          ],
-          if (access?.owner != null) ...[
-            const SizedBox(height: 4),
-            Text('本机数据所属家庭：${access!.owner!.familyId}', style: Theme.of(context).textTheme.bodySmall),
-          ],
-          if (access?.canBind == true) ...[
-            const SizedBox(height: 8),
-            OutlinedButton(
-              onPressed: _working || _importWorking ? null : _bindWorkspace,
-              child: const Text('确认本机数据归属'),
-            ),
-          ],
-          if (state?.lastSuccessAt != null) ...[
-            const SizedBox(height: 8),
-            Text('最近成功：${_formatDate(state!.lastSuccessAt!)}'),
-          ],
-          if (state?.lastErrorMessage != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              '最近错误：${state!.lastErrorMessage}',
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-          ],
-          if (_message != null) ...[
-            const SizedBox(height: 8),
-            Text(_message!, style: TextStyle(color: Theme.of(context).colorScheme.primary)),
-          ],
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: _working || _importWorking || workspaceAccess.isLoading ? null
-                : enabled ? () => _runSync(engine)
-                : canSetUp ? _setUpSync
-                : () => Navigator.of(context).push(MaterialPageRoute<void>(
-                    builder: (_) => const NasSettingsScreen())),
-            icon: _working
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.sync),
-            label: Text(enabled ? '立即同步' : canSetUp ? '开始使用 NAS 同步' : '前往 NAS 登录与家庭设置'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _setUpSync() async {
-    if (_working || _importWorking) return;
-    setState(() { _working = true; _message = '正在准备当前设备…'; });
-    try {
-      final identity = ref.read(syncWorkspaceIdentityProvider);
-      if (identity == null) return;
-      await ref.read(nasAccountProvider.notifier).prepareCurrentDevice();
-      if (!mounted) return;
-      final current = ref.read(syncWorkspaceIdentityProvider);
-      if (current == null || !identity.matches(current)) return;
-      if (ref.read(nasAccountProvider).devices.status != NasDeviceStatus.ready) {
-        setState(() => _message = ref.read(nasAccountProvider).devices.errorMessage ??
-            '当前设备尚未准备好，请前往 NAS 设置重试。');
-        return;
-      }
-      final access = await ref.read(syncWorkspaceAccessProvider.future);
-      if (!mounted) return;
-      if (!access.canSync && !await _bindWorkspace()) return;
-      if (!mounted) return;
-      setState(() => _working = true);
-      await ref.read(syncWorkspaceAccessProvider.future);
-      final engine = ref.read(syncEngineProvider);
-      if (engine != null) await _bootstrap(engine);
-    } catch (error) {
-      if (mounted) setState(() => _message = '准备同步失败：$error');
-    } finally {
-      if (mounted) setState(() => _working = false);
-    }
-  }
-
-  Future<bool> _bindWorkspace() async {
-    final identity = ref.read(syncWorkspaceIdentityProvider);
-    if (identity == null) return false;
-    final accepted = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('确认本机数据归属'),
-        content: Text('NAS：${identity.endpoint}\n账号：${identity.userId}\n家庭：${identity.familyId}\n\n'
-            '只在确认本机全部库存和旧同步现场属于上述身份时继续。绑定后切换身份会暂停同步，不能直接改绑。'
-            '这不是既有库存全量上传或数据搬迁，后续仍需明确选择首次同步模式；不会清除本机数据。'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('确认属于此身份')),
-        ],
-      ),
-    );
-    if (!mounted || accepted != true) return false;
-    setState(() => _working = true);
-    try {
-      await SyncWorkspaceRepository(ref.read(databaseProvider)).bind(identity, isCurrent: () {
-        final current = ref.read(syncWorkspaceIdentityProvider);
-        return mounted && current != null && identity.matches(current);
-      });
-      ref.invalidate(syncWorkspaceAccessProvider);
-      if (mounted) setState(() => _message = '本机数据归属已确认；首次同步模式仍需单独确认。');
-      return true;
-    } catch (error) {
-      if (mounted) setState(() => _message = '数据归属确认失败：$error');
-      return false;
-    } finally {
-      if (mounted) setState(() => _working = false);
-    }
-  }
-
-  Widget _buildBootstrapCard(BuildContext context, SyncEngine? engine, SyncStateModel? state) {
-    final awaitingChoice = state?.bootstrapStatus == SyncBootstrapStatus.awaitingConfirmation;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('首次连接与数据归属', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            const Text(
-              '首次连接只读取服务端提供的可选模式；不会自动覆盖本地库存，也不会把“合并”显示为已完成。',
-            ),
-            const SizedBox(height: 12),
-            if (_availableModes.isNotEmpty)
-              RadioGroup<String>(
-                groupValue: _selectedMode,
-                onChanged: (value) => setState(() => _selectedMode = value),
-                child: Column(children: _availableModes.map(_buildModeTile).toList()),
-              ),
-            if (awaitingChoice && _availableModes.isNotEmpty) const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: engine == null || _working || _importWorking ? null : () => _bootstrap(engine),
-              icon: const Icon(Icons.cloud_download_outlined),
-              label: Text(awaitingChoice ? '重新读取可选模式' : '检查首次同步状态'),
-            ),
-            if (_availableModes.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              FilledButton.icon(
-                onPressed: engine == null || _working || _importWorking || _selectedMode == null
-                    ? null
-                    : () => _confirmBootstrap(engine, _selectedMode!),
-                icon: const Icon(Icons.check),
-                label: const Text('确认所选模式'),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildModeTile(String mode) {
-    final title = switch (mode) {
-      'join_and_merge' => '加入并合并',
-      'create_new_family' => '创建新的家庭数据',
-      'keep_local_only' => '仅保留本地数据',
-      _ => mode,
-    };
-    final description = switch (mode) {
-      'join_and_merge' => '接受服务端家庭范围，后续通过同步协议逐项处理变更和冲突。',
-      'create_new_family' => '按服务端提供的创建流程建立新的家庭数据范围。',
-      'keep_local_only' => '不继续远端同步，保留当前设备的离线数据。',
-      _ => '服务端返回的同步模式。',
-    };
-    return RadioListTile<String>(
-      value: mode,
-      enabled: !_working && !_importWorking,
-      title: Text(title),
-      subtitle: Text(description),
-      contentPadding: EdgeInsets.zero,
     );
   }
 
@@ -341,7 +102,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                 if (scopeId != null)
                   IconButton(
                     tooltip: '刷新本地与远端冲突',
-                    onPressed: _working || _importWorking
+                    onPressed: _working
                         ? null
                         : () {
                             ref.invalidate(syncConflictsProvider(scopeId));
@@ -408,7 +169,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                     '${permission.data == false ? '\n缺少明确拒绝回执；请保留记录核对，不能假定未执行。' : ''}'),
                 trailing: TextButton(
                   onPressed: permission.data != true || engine == null || api == null || deviceId == null ||
-                      _working || _importWorking || _resolvingRemoteConflictId != null
+                      _working || _resolvingRemoteConflictId != null
                       ? null : () => _abandonRejected(entry, engine, api, deviceId),
                   child: const Text('放弃此变更'),
                 ),
@@ -587,7 +348,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                 )
               else ...[
               TextButton(
-                onPressed: resolving || _importWorking
+                onPressed: resolving
                     ? null
                     : () => _resolveRemoteConflict(
                           conflict: conflict,
@@ -604,7 +365,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                     : const Text('保留远端'),
               ),
               FilledButton.tonal(
-                onPressed: resolving || unsupportedLocal || _importWorking
+                onPressed: resolving || unsupportedLocal
                     ? null
                     : () => _resolveRemoteConflict(
                           conflict: conflict,
@@ -666,7 +427,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                 _buildSettlementRecoveryAction(remote, deviceId, [conflict])
               else ...[
               TextButton(
-                onPressed: !canResolveRemotely || resolving || _importWorking
+                onPressed: !canResolveRemotely || resolving
                     ? null
                     : () => _resolveRemoteConflict(
                           conflict: remote,
@@ -677,7 +438,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                 child: const Text('保留远端'),
               ),
               FilledButton.tonal(
-                onPressed: !canResolveRemotely || resolving || unsupportedLocal || _importWorking
+                onPressed: !canResolveRemotely || resolving || unsupportedLocal
                     ? null
                     : () => _resolveRemoteConflict(
                           conflict: remote,
@@ -716,7 +477,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
             ? 'NAS 已按“${action == 'keep_local' ? '保留本地' : '保留远端'}”解决；仅恢复本地结算，不再执行远端变更。'
             : 'NAS 已解决，但原动作不支持恢复；本地冲突继续保留。'),
         FilledButton.tonal(
-          onPressed: !supported || working || _importWorking ? null : () => _resolveRemoteConflict(
+          onPressed: !supported || working ? null : () => _resolveRemoteConflict(
             conflict: remote, deviceId: deviceId, localConflicts: locals,
             action: action as String,
           ),
@@ -756,97 +517,6 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
 
   bool _isCurrentEngine(SyncEngine engine) =>
       mounted && identical(ref.read(syncEngineProvider), engine);
-
-  Future<void> _bootstrap(SyncEngine engine) async {
-    setState(() {
-      _working = true;
-      _message = null;
-      _selectedMode = null;
-    });
-    try {
-      final response = await engine.bootstrap();
-      if (!_isCurrentEngine(engine)) return;
-      setState(() {
-        _availableModes = response.availableModes;
-        // Do not silently choose a destructive or data-merging bootstrap mode.
-        // The user must explicitly select one before confirmation is enabled.
-        _selectedMode = null;
-        _message = response.availableModes.isNotEmpty
-            ? '请选择首次同步方式并确认；确认后自动开始同步。'
-            : '当前没有可用的首次同步方式，请检查 NAS 状态。';
-      });
-    } catch (error) {
-      if (_isCurrentEngine(engine)) setState(() => _message = '检查首次同步状态失败：$error');
-    } finally {
-      if (mounted) setState(() => _working = false);
-    }
-  }
-
-  Future<void> _confirmBootstrap(SyncEngine engine, String mode) async {
-    setState(() {
-      _working = true;
-      _message = null;
-    });
-    try {
-      final result = await engine.confirmBootstrap(mode: mode);
-      if (!_isCurrentEngine(engine)) return;
-      setState(() {
-        _message = result.accepted
-            ? '已接受模式“${_modeLabel(mode)}”。远端数据仍会通过后续同步逐步处理。'
-            : '服务端拒绝了该同步模式。';
-      });
-      if (result.accepted && result.nextAction != 'keep_local_only') {
-        await ref.read(syncSchedulerProvider).runNow();
-      }
-    } catch (error) {
-      if (_isCurrentEngine(engine)) setState(() => _message = '确认同步模式失败：$error');
-    } finally {
-      if (mounted) setState(() => _working = false);
-    }
-  }
-
-  Future<void> _runSync(SyncEngine engine) async {
-    if (_working || _importWorking) return;
-    setState(() {
-      _working = true;
-      _message = null;
-    });
-    try {
-      final scopeId = ref.read(nasAccountProvider).family.familyId;
-      if (scopeId == null) return;
-      final repository = SyncOutboxRepository(ref.read(databaseProvider));
-      final saved = await repository.getState(scopeId);
-      final mode = await repository.getConfirmedBootstrapMode(scopeId);
-      if (!_isCurrentEngine(engine)) return;
-      if (mode == null || saved == null ||
-          saved.bootstrapStatus == SyncBootstrapStatus.unconfigured ||
-          saved.bootstrapStatus == SyncBootstrapStatus.keepLocalOnly) {
-        await _bootstrap(engine);
-        return;
-      }
-      final report = await ref.read(syncSchedulerProvider).runNow();
-      if (!_isCurrentEngine(engine)) return;
-      if (report == null) {
-        if (mounted) setState(() => _message = '本次未同步：当前没有可用的 NAS 同步会话。');
-        return;
-      }
-      if (mounted) {
-        setState(() => _message = report.skipped
-            ? '本次未同步：${report.reason ?? '当前状态不允许同步'}'
-            : report.hasMorePending
-                ? '本轮推送 ${report.pushed} 条；队列仍有操作，前台时将分批继续，尚未完成同步。'
-                : report.deferred > 0
-                    ? '同步暂停：推送 ${report.pushed} 条，拉取 ${report.pulled} 条，待处理 ${report.deferred} 条。'
-                    : report.hasMoreRemote
-                        ? '本轮拉取 ${report.pulled} 条；远端仍有数据，前台时将分批继续，尚未完成同步。'
-                        : '库存同步完成：推送 ${report.pushed} 条，拉取 ${report.pulled} 条。${report.postProcessingError ?? ''}');
-      }
-    } catch (error) {
-      if (_isCurrentEngine(engine)) setState(() => _message = '同步失败：$error');
-    } finally {
-      if (mounted) setState(() => _working = false);
-    }
-  }
 
   Future<NasSyncConflictListResponse>? _remoteConflictsFutureFor(
     NasSyncApi? api,
@@ -1164,26 +834,6 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     } finally {
       if (mounted) setState(() => _resolvingRemoteConflictId = null);
     }
-  }
-
-  String _statusLabel(SyncBootstrapStatus? status) {
-    return switch (status) {
-      SyncBootstrapStatus.unconfigured => '未初始化',
-      SyncBootstrapStatus.awaitingConfirmation => '等待选择',
-      SyncBootstrapStatus.ready => '可同步',
-      SyncBootstrapStatus.keepLocalOnly => '仅本地',
-      SyncBootstrapStatus.blocked => '已阻塞',
-      null => '未初始化',
-    };
-  }
-
-  String _modeLabel(String mode) {
-    return switch (mode) {
-      'join_and_merge' => '加入并合并',
-      'create_new_family' => '创建新的家庭数据',
-      'keep_local_only' => '仅保留本地数据',
-      _ => mode,
-    };
   }
 
   String _formatDate(DateTime value) {

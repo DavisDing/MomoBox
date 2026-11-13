@@ -1,49 +1,10 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:developer' as developer;
-
-import 'package:http/http.dart' as http;
-
-import 'ai_client_helper.dart';
-import 'failover_executor.dart';
+import 'package:uuid/uuid.dart';
+import '../data/nas/nas_api_error.dart';
 import 'backend_processing_service.dart';
 import 'backend_processing_error.dart';
-import '../data/nas/nas_api_error.dart';
-import 'package:uuid/uuid.dart';
 
 enum AiApiLevel { primary, secondary, fallback }
-
-extension on AiApiLevel {
-  ServiceFallbackLevel get serviceLevel => switch (this) {
-        AiApiLevel.primary => ServiceFallbackLevel.primary,
-        AiApiLevel.secondary => ServiceFallbackLevel.secondary,
-        AiApiLevel.fallback => ServiceFallbackLevel.fallback,
-      };
-}
-
-/// 各级 API 的独立配置
-class AiEndpointConfig {
-  const AiEndpointConfig({
-    required this.level,
-    required this.endpoint,
-    required this.apiKey,
-    required this.model,
-    this.endpointType = 'auto',
-    this.timeout = const Duration(seconds: 60),
-    this.maxRetries = 0,
-  });
-
-  final AiApiLevel level;
-  final String endpoint;
-  final String apiKey;
-  final String model;
-  final String endpointType; // 'auto', 'chat', 'responses'
-  final Duration timeout;
-  final int maxRetries;
-
-  bool get isValid =>
-      endpoint.trim().isNotEmpty && apiKey.trim().isNotEmpty && model.trim().isNotEmpty;
-}
 
 /// 单次调用的耗时与状态审计日志
 class AiExecutionAttemptLog {
@@ -74,7 +35,7 @@ class AiFallbackResponse {
     required this.content,
     required this.rawDecoded,
     required this.usedLevel,
-    required this.usedConfig,
+    required this.model,
     required this.actualProtocol,
     required this.traceLogs,
   });
@@ -82,278 +43,55 @@ class AiFallbackResponse {
   final String content;
   final Map<String, dynamic> rawDecoded;
   final AiApiLevel usedLevel;
-  final AiEndpointConfig usedConfig;
+  final String model;
   final String actualProtocol;
   final List<AiExecutionAttemptLog> traceLogs;
 }
 
-/// 全链路失败的标准错误结构
-class AiFallbackException implements Exception {
-  const AiFallbackException(this.message, this.traceLogs);
-
-  final String message;
-  final List<AiExecutionAttemptLog> traceLogs;
-
-  @override
-  String toString() {
-    final buffer = StringBuffer('AI调用全链路降级失败: $message\n【调用链追踪】:\n');
-    for (final log in traceLogs) {
-      buffer.writeln(' - $log');
-    }
-    return buffer.toString();
-  }
-}
-
-class _AiApiCallResult {
-  const _AiApiCallResult({
-    required this.content,
-    required this.decoded,
-    required this.protocol,
-  });
-
-  final String content;
-  final Map<String, dynamic> decoded;
-  final String protocol;
-}
-
-/// 核心调度引擎：实现「主 API → 副 API → 兜底模型」透明降级
+/// Authenticated NAS-only AI boundary. No model URLs or credentials are
+/// accepted by the mobile client. Provider failover is owned by the NAS.
 class AiFallbackExecutor {
-  AiFallbackExecutor({
-    http.Client? client,
-    this.backendResolver,
-    bool Function(String content)? contentFilter,
-  })  : _client = client ?? http.Client(),
-        _contentFilter = contentFilter;
-
-  void close() => _client.close();
-
-  final BackendResolver? backendResolver;
-  Future<bool> usesBackend() async => await backendResolver?.call() != null;
-  static const backendConfig = AiEndpointConfig(level: AiApiLevel.primary,
-    endpoint: 'backend', apiKey: 'backend-managed', model: 'backend');
-
-  final http.Client _client;
+  AiFallbackExecutor({required this.backendResolver, this.modelReader,
+    bool Function(String content)? contentFilter}) : _contentFilter = contentFilter;
+  final BackendResolver backendResolver;
+  final Future<String?> Function()? modelReader;
   final bool Function(String content)? _contentFilter;
-  static const _executor = FailoverExecutor<AiEndpointConfig, _AiApiCallResult>();
+  void close() {}
 
-  /// 执行三级降级请求
-  Future<AiFallbackResponse> execute({
-    required List<AiEndpointConfig> configs,
-    required String systemPrompt,
-    required String userPrompt,
-    List<Map<String, String>> chatHistory = const [],
-    double temperature = 0.2,
-  }) async {
-    final api = await backendResolver?.call();
-    if (api != null) {
-      final capabilities = await api.processingRequest('/capabilities', method: 'GET');
-      if (capabilities['backend_ai'] != true) {
-        throw const BackendProcessingSetupException('当前使用 NAS AI 服务，但 NAS 尚未配置模型。请在 NAS 设置 AI_ENDPOINT、AI_MODEL、AI_API_KEY 后重建后端容器；手机上的模型配置仅用于单机模式。');
-      }
-      final result = await api.processingRequest('/ai/analyze', body: {
-        'request_id': const Uuid().v4(), 'system_prompt': systemPrompt,
-        'user_prompt': userPrompt, 'history': chatHistory, 'temperature': temperature,
-      });
-      api.assertCurrentSession();
-      final content = result['content'] as String;
-      if (content.trim().isEmpty || (_contentFilter != null && !_contentFilter(content))) {
-        throw const FormatException('后端 AI 返回内容无效。');
-      }
-      final level = switch (result['level']) {
-        'secondary' => AiApiLevel.secondary, 'fallback' => AiApiLevel.fallback,
-        _ => AiApiLevel.primary,
-      };
-      final config = AiEndpointConfig(level: level, endpoint: 'backend',
-        apiKey: 'backend-managed', model: result['model'] as String);
-      return AiFallbackResponse(content: content,
-        rawDecoded: {'usage': result['usage']}, usedLevel: level,
-        usedConfig: config, actualProtocol: result['protocol'] as String,
-        traceLogs: [AiExecutionAttemptLog(level: level,
-          model: config.model, endpoint: 'backend', durationMs: result['elapsed_ms'] as int,
-          isSuccess: true)]);
+  Future<AiFallbackResponse> execute({required String systemPrompt,
+    required String userPrompt, List<Map<String,String>> chatHistory = const [],
+    double temperature = 0.2}) async {
+    final api = await backendResolver();
+    if (api == null) throw const BackendProcessingSetupException('请先连接 NAS 后端并登录家庭账号。');
+    final model = await modelReader?.call();
+    api.assertCurrentSession();
+    final capabilities = await api.processingRequest('/capabilities',method:'GET');
+    if (capabilities['backend_ai'] != true) {
+      throw const BackendProcessingSetupException('NAS 尚未配置 AI 网关。请在 NAS Compose 设置 AI_ENDPOINT、AI_API_KEY 及 AI_MODEL 或 AI_MODELS 后重新部署。');
     }
-    if (configs.any((config) => config.endpoint == 'backend')) {
-      throw const BackendProcessingSetupException('NAS 会话或处理模式已变化，请恢复 NAS 连接后重试。');
+    final result = await api.processingRequest('/ai/analyze', body:{
+      'request_id':const Uuid().v4(), 'system_prompt':systemPrompt,
+      'user_prompt':userPrompt, 'history':chatHistory, 'temperature':temperature,
+      if (model?.isNotEmpty == true) 'model':model,
+    });
+    api.assertCurrentSession();
+    final content = result['content'];
+    if (content is! String || content.trim().isEmpty ||
+        (_contentFilter != null && !_contentFilter(content))) {
+      throw const FormatException('NAS AI 返回内容无效。');
     }
-    try {
-      final response = await _executor.execute(
-        configs: configs,
-        isConfigured: (config) => config.isValid,
-        levelOf: (config) => config.level.serviceLevel,
-        endpointOf: (config) => config.endpoint,
-        noConfigMessage: '没有可用的 AI 配置，请检查主/副/兜底 API 配置。',
-        allFailedMessage: '所有已配置的 AI 服务均不可用。',
-        call: (config) async {
-          final result = await _callSingleApi(
-            config: config,
-            systemPrompt: systemPrompt,
-            userPrompt: userPrompt,
-            chatHistory: chatHistory,
-            temperature: temperature,
-          );
-          return _AiApiCallResult(
-            content: result['content'] as String,
-            decoded: result['decoded'] as Map<String, dynamic>,
-            protocol: result['protocol'] as String,
-          );
-        },
-        isValidResult: (result) {
-          if (result.content.trim().isEmpty) return false;
-          return _contentFilter?.call(result.content) ?? true;
-        },
-      );
-      final result = response.value;
-      final traceLogs = response.traceLogs
-          .map(
-            (log) => AiExecutionAttemptLog(
-              level: log.config.level,
-              model: log.config.model,
-              endpoint: AiClientHelper.sanitizeEndpoint(log.endpoint),
-              durationMs: log.durationMs,
-              isSuccess: log.isSuccess,
-              failureReason: _safeFailure(log.failureReason),
-            ),
-          )
-          .toList(growable: false);
-      developer.log(
-        'AI 在 [${response.usedConfig.level.name}] 服务执行成功，模型: ${response.usedConfig.model}',
-        name: 'AiFallbackExecutor',
-      );
-      return AiFallbackResponse(
-        content: result.content,
-        rawDecoded: result.decoded,
-        usedLevel: response.usedConfig.level,
-        usedConfig: response.usedConfig,
-        actualProtocol: result.protocol,
-        traceLogs: traceLogs,
-      );
-    } on FailoverException<AiEndpointConfig> catch (error) {
-      final traceLogs = error.traceLogs
-          .map(
-            (log) => AiExecutionAttemptLog(
-              level: log.config.level,
-              model: log.config.model,
-              endpoint: AiClientHelper.sanitizeEndpoint(log.endpoint),
-              durationMs: log.durationMs,
-              isSuccess: log.isSuccess,
-              failureReason: _safeFailure(log.failureReason),
-            ),
-          )
-          .toList(growable: false);
-      developer.log(error.message, name: 'AiFallbackExecutor');
-      throw AiFallbackException(error.message, traceLogs);
+    final modelName = result['model'], protocol = result['protocol'], elapsed = result['elapsed_ms'];
+    if (modelName is! String || protocol is! String || elapsed is! int) {
+      throw const FormatException('NAS AI 返回信息不完整。');
     }
-  }
-
-  Future<Map<String, dynamic>> _callSingleApi({
-    required AiEndpointConfig config,
-    required String systemPrompt,
-    required String userPrompt,
-    required List<Map<String, String>> chatHistory,
-    required double temperature,
-  }) async {
-    final protocol = AiClientHelper.resolveProtocol(config.endpoint, config.endpointType);
-    final attempts = (protocol == 'responses')
-        ? ['responses']
-        : (protocol == 'chat')
-            ? ['chat']
-            : ['chat', 'responses'];
-
-    http.Response? response;
-    String actualUsedType = attempts.first;
-
-    for (var i = 0; i < attempts.length; i++) {
-      final currentType = attempts[i];
-      final isResponses = currentType == 'responses';
-      final uri = isResponses
-          ? AiClientHelper.responsesUri(config.endpoint)
-          : AiClientHelper.chatCompletionUri(config.endpoint);
-
-      final Map<String, dynamic> body = isResponses
-          ? {
-              'model': config.model.trim(),
-              'instructions': systemPrompt,
-              // Responses accepts message input items. Keep the same recent
-              // context for every protocol and every fallback endpoint.
-              'input': [
-                ...chatHistory.map(
-                  (message) => {
-                    'role': message['role'] ?? 'user',
-                    'content': message['content'] ?? '',
-                  },
-                ),
-                {'role': 'user', 'content': userPrompt},
-              ],
-            }
-          : {
-              'model': config.model.trim(),
-              'messages': [
-                {'role': 'system', 'content': systemPrompt},
-                ...chatHistory,
-                {'role': 'user', 'content': userPrompt},
-              ],
-            };
-
-      try {
-        final res = await _client
-            .post(
-              uri,
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer ${config.apiKey.trim()}',
-              },
-              body: jsonEncode(body),
-            )
-            .timeout(config.timeout); // 判定 1: 超时
-
-        if ((res.statusCode == 404 || res.statusCode == 405) && i < attempts.length - 1) {
-          continue;
-        }
-        response = res;
-        actualUsedType = currentType;
-        break;
-      } on TimeoutException {
-        throw TimeoutException('接口请求超时 (超时阈值: ${config.timeout.inSeconds}s)');
-      }
-    }
-
-    // 判定 2: HTTP 状态码非 2xx
-    if (response == null || response.statusCode < 200 || response.statusCode >= 300) {
-      throw http.ClientException(
-        'HTTP ${response?.statusCode ?? "无响应"}（上游请求失败）',
-      );
-    }
-
-    // 判定 3: 格式解析失败或缺少必需字段
-    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('响应 Body 不是标准 JSON Map 结构');
-    }
-
-    final content = AiClientHelper.extractResponseText(decoded);
-    if (content == null) {
-      throw const FormatException('未从响应中解析到有效文本字段');
-    }
-    if (content.trim().isEmpty) {
-      throw const FormatException('服务返回内容为空');
-    }
-
-    return {
-      'content': content.trim(),
-      'decoded': decoded,
-      'protocol': actualUsedType,
+    final level = switch(result['level']) {
+      'secondary'=>AiApiLevel.secondary,'fallback'=>AiApiLevel.fallback,_=>AiApiLevel.primary,
     };
+    return AiFallbackResponse(content:content, rawDecoded:{'usage':result['usage']},
+      usedLevel:level, model:modelName, actualProtocol:protocol,
+      traceLogs:[AiExecutionAttemptLog(level:level,model:modelName,endpoint:'NAS',
+        durationMs:elapsed,isSuccess:true)]);
   }
-}
-
-String? _safeFailure(String? reason) {
-  if (reason == null) return null;
-  final status = RegExp(r'HTTP (\d{3})').firstMatch(reason)?.group(1);
-  if (status != null) return 'HTTP $status';
-  if (reason.contains('TimeoutException')) return '请求超时（60 秒默认等待上限）';
-  if (reason.contains('为空')) return '服务返回内容为空';
-  if (reason.contains('FormatException')) return '响应格式不兼容或缺少文本';
-  return '连接失败，请检查网络、证书与服务地址';
 }
 
 /// Only display sanitized classifications, never upstream bodies or URLs.
@@ -367,7 +105,7 @@ String aiFailureMessage(Object error) {
       'PROCESSING_FAILED' => 'NAS AI 处理失败，请检查 NAS 后端日志。',
       _ => switch (error.kind) {
         NasApiErrorKind.unauthorized => 'NAS 登录已失效，请在家庭与同步中重新登录。',
-        NasApiErrorKind.forbidden => 'NAS 家庭或同步设备身份不可用，请在 NAS 设置中刷新家庭并注册当前设备。',
+        NasApiErrorKind.forbidden => 'NAS 家庭或设备身份不可用，请在 NAS 设置中重试连接；尚未加入家庭时需填写邀请码。',
         NasApiErrorKind.notFound => 'NAS 尚不支持此 AI 接口，请更新 NAS 后端。',
         NasApiErrorKind.network => '无法连接 NAS，请检查手机到 NAS 的网络和服务器地址。',
         NasApiErrorKind.timeout => 'NAS AI 请求超时，请核实处理结果后再手动重试。',
@@ -377,19 +115,7 @@ String aiFailureMessage(Object error) {
       },
     };
   }
-  if (error is AiFallbackException) {
-    return error.traceLogs.map((attempt) {
-      final reason = attempt.failureReason ?? '请求失败';
-      final hint = reason.contains('401') || reason.contains('403')
-          ? '，请检查 API Key 与模型访问权限'
-          : reason.contains('429') ? '，额度不足或限流，请稍后重试'
-          : reason.contains('404') || reason.contains('405')
-              ? '，请检查地址路径与接口协议'
-              : '，请检查配置或稍后重试';
-      return '${attempt.level.name}: $reason$hint';
-    }).join('；');
-  }
   if (error is TimeoutException) return '请求超时，请检查网络后重试。';
   if (error is FormatException) return 'AI 返回的数据格式不兼容或缺少有效文本，请检查接口协议和后端版本。';
-  return '请检查「我的」中的 AI 地址、模型、API Key 和网络后重试。';
+  return '请检查 NAS 连接及 NAS 部署中的 AI 配置后重试。';
 }

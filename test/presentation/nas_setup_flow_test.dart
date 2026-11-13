@@ -270,6 +270,180 @@ void main() {
     await tester.pump();
     await fixture.close(disposeAccount: false);
   });
+  for (final (fails, scrollDuringSave) in [
+    (false, false),
+    (true, false),
+    (false, true),
+  ]) {
+    testWidgets(
+      'permission update preserves expanded entities and the current viewport; fails=$fails, scroll=$scrollDuringSave',
+      (tester) async {
+        final grants = <String, Map<String, dynamic>>{};
+        final entities = List.generate(
+          18,
+          (index) => <String, dynamic>{
+            'id': 'row-$index',
+            'integration_id': 'ha',
+            'entity_id': 'light.room_$index',
+            'domain': 'light',
+            'name': '房间灯 $index',
+            'is_visible': true,
+            'is_controllable': true,
+            'capabilities': ['on_off'],
+          },
+        );
+        var writes = 0;
+        final permissionGate = Completer<void>();
+        addTearDown(() {
+          if (!permissionGate.isCompleted) permissionGate.complete();
+        });
+        final fixture = _Fixture((request) async {
+          final path = request.url.path;
+          if (path.endsWith('/auth/login')) return _auth('owner-session');
+          if (path.endsWith('/families/current')) return _family();
+          if (path.endsWith('/families/members')) return _json({'members': []});
+          if (path.endsWith('/devices')) return _json({'devices': []});
+          if (path.endsWith('/integrations')) {
+            return _json({
+              'integrations': [
+                {
+                  'id': 'ha',
+                  'name': 'HA',
+                  'base_url': 'http://ha.local:8123',
+                  'status': 'healthy',
+                  'created_at': '2026-11-12T00:00:00Z',
+                },
+              ],
+            });
+          }
+          if (path.endsWith('/test')) {
+            return _json({
+              'connected': true,
+              'checked_at': DateTime.now().toUtc().toIso8601String(),
+            });
+          }
+          if (path.endsWith('/catalog')) return _json({'entities': entities});
+          if (path.endsWith('/entities')) {
+            return _json({
+              'entities': entities
+                  .where(
+                    (entity) =>
+                        grants[entity['entity_id']]?['can_view'] == true,
+                  )
+                  .map((entity) => {...entity, 'is_controllable': false})
+                  .toList(),
+            });
+          }
+          if (path.endsWith('/permissions')) {
+            if (request.method == 'PUT') {
+              writes++;
+              if (scrollDuringSave) await permissionGate.future;
+              if (fails) {
+                return _json({
+                  'error': {
+                    'code': 'UNAVAILABLE',
+                    'message': 'permission save failed',
+                  },
+                }, 503);
+              }
+              final body = jsonDecode(request.body) as Map<String, dynamic>;
+              grants[body['entity_id'] as String] = body;
+              return _json(body);
+            }
+            return _json({'permissions': grants.values.toList()});
+          }
+          if (path.endsWith('/state')) {
+            return _json({
+              'entity_id':
+                  request.url.pathSegments[request.url.pathSegments.length - 2],
+              'state': 'off',
+              'attributes': {},
+              'fetched_at': DateTime.now().toUtc().toIso8601String(),
+            });
+          }
+          for (final name in ['groups', 'recipes', 'rules', 'suggestions']) {
+            if (path.endsWith('-$name')) return _json({name: []});
+          }
+          return _json({}, 404);
+        });
+        await fixture.login();
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(390, 844);
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              settingsRepositoryProvider.overrideWithValue(
+                fixture.settingsRepository,
+              ),
+              nasConnectionServiceProvider.overrideWithValue(
+                fixture.connection,
+              ),
+              nasAccountProvider.overrideWith((ref) => fixture.account),
+            ],
+            child: const MaterialApp(home: HomeAssistantSettingsScreen()),
+          ),
+        );
+        await tester.pumpAndSettle();
+        for (var index = 0; index < 6; index++) {
+          await tester.ensureVisible(find.text('房间灯 $index'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('房间灯 $index'));
+          await tester.pumpAndSettle();
+        }
+        final entity = find.ancestor(
+          of: find.text('房间灯 4'),
+          matching: find.byType(ExpansionTile),
+        );
+        final view = find.descendant(
+          of: entity,
+          matching: find.widgetWithText(SwitchListTile, '允许查看状态'),
+        );
+        await Scrollable.ensureVisible(tester.element(view), alignment: .3);
+        await tester.pumpAndSettle();
+        final tileState = tester.state(entity);
+        final beforeTop = tester.getTopLeft(view).dy;
+        final beforeExpanded = find
+            .widgetWithText(SwitchListTile, '允许查看状态')
+            .evaluate()
+            .length;
+        await tester.tap(view);
+        if (scrollDuringSave) {
+          await tester.pump(const Duration(milliseconds: 50));
+          final scroll = find
+              .descendant(
+                of: find.byType(HomeAssistantSettingsScreen),
+                matching: find.byType(Scrollable),
+              )
+              .first;
+          await tester.drag(scroll, const Offset(0, -350));
+          await tester.pump(const Duration(milliseconds: 100));
+          permissionGate.complete();
+        }
+        await tester.pumpAndSettle();
+        expect(writes, 1);
+        expect(tester.state(entity), same(tileState));
+        expect(
+          find.widgetWithText(SwitchListTile, '允许查看状态'),
+          findsNWidgets(beforeExpanded),
+        );
+        expect(tester.widget<SwitchListTile>(view).value, !fails);
+        if (scrollDuringSave) {
+          expect(
+            (tester.getTopLeft(view).dy - beforeTop).abs(),
+            greaterThan(50),
+            reason: 'Do not undo scrolling while a request is in flight.',
+          );
+        } else {
+          expect(tester.getTopLeft(view).dy, closeTo(beforeTop, 1));
+        }
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+        await fixture.close(disposeAccount: false);
+      },
+    );
+  }
 }
 
 class _Fixture {

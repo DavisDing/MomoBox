@@ -369,7 +369,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
     }
   }
 
-  Future<void> _runLocalOcr(List<MediaAsset> assets) async {
+  Future<void> _runNasOcr(List<MediaAsset> assets) async {
     final images = assets.where((asset) => asset.type == MediaAssetType.productImage || asset.type == MediaAssetType.instructionImage).toList();
     if (images.isEmpty) {
       _message('请先添加商品、包装或说明书图片。');
@@ -426,7 +426,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
         builder: (context) => AlertDialog(
           title: const Text('确认发送 OCR 文本？'),
           content: Text(
-            '将仅发送OCR 文本（约 $textLength 字），不向模型发送原图。连接后端时由 NAS 使用其配置的 AI 服务；单机模式使用手机配置的主服务及失败回退服务。只生成可编辑草稿，不会自动入库。',
+            '将仅发送 OCR 文本（约 $textLength 字），由 NAS 调用其配置的 AI 服务，不向模型发送原图。只生成可编辑草稿，不会自动入库。',
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
@@ -739,7 +739,7 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
                     parsingAi: _parsingAi,
                     enabled: !_saving && !_intakeCompleted,
                     onAddImage: _attachImage,
-                    onOcr: () => _runLocalOcr(assets),
+                    onOcr: () => _runNasOcr(assets),
                     onAi: () => _parseAiDraft(assets),
                     onDelete: _deleteAsset,
                   ),
@@ -995,7 +995,7 @@ class _MediaDraftSection extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        Text('单机时图片与 OCR 留本机；连接后端后上传图片，由 NAS 执行 OCR/AI；AI 发送前需确认', style: theme.textTheme.bodySmall),
+        Text('图片上传至家庭 NAS，由 NAS 执行 OCR/AI；发送 AI 前需确认', style: theme.textTheme.bodySmall),
         for (final asset in assets.where((a) => a.backendStatusLabel != null))
           Text('${asset.type.label}：${asset.backendStatusLabel}${asset.backendError == null ? '' : '，${asset.backendError}'}',
             style: theme.textTheme.bodySmall),

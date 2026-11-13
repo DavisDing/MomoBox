@@ -47,16 +47,19 @@ class NasRegisterRequest {
     required this.email,
     required this.password,
     required this.nickname,
+    this.inviteCode,
   });
 
   final String email;
   final String password;
   final String nickname;
+  final String? inviteCode;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
         'email': email,
         'password': password,
         'nickname': nickname,
+        if (inviteCode?.trim().isNotEmpty == true) 'invite_code':inviteCode!.trim(),
       };
 }
 

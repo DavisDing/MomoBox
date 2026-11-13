@@ -1,15 +1,15 @@
 # MomoBox NAS 领域与同步模型
 
 - 文档版本：v0.1
-- 更新时间：2026-09-20
+- 更新时间：2026-11-13
 - 适用范围：NAS 后端 MVP 与后续 Flutter NAS 客户端
 - 状态：架构基线，后端实现必须遵守本文件；如需改变同步语义，必须先更新本文件和 API 契约
 
 ## 1. 目标与边界
 
-NAS 模式提供家庭账号、家庭成员、跨设备库存共享和可选的 Home Assistant 控制。单机 Flutter 应用仍然以本地 SQLite 为离线数据源；NAS 不替代本地数据库，也不保存用户的 LLM/Ollama API Key。
+NAS是App必选的家庭后端，提供账号、邀请码成员接入、库存共享和可选HA控制。手机SQLite保留家庭缓存；离线仅查看，恢复后自动同步。设备/工作区/首次同步由App自动准备，旧归属和冲突保护保留。
 
-AI 边界：Flutter 直接连接用户配置的 LLM 兼容服务或用户自行部署的 Ollama。NAS 后端不内置 Ollama、不提供 AI 代理、不保存 AI API Key。
+AI边界：NAS Compose保存AI网关地址、Key、默认/允许模型，支持兼容网关含LiteLLM。App通过认证NAS API获取模型别名并调用；无手机AI地址/密钥及本地OCR路径，不内置模型运行器。见06-backend-processing.md。
 
 Home Assistant 边界：HA 是家庭级外部服务。NAS 后端保存家庭 HA 集成配置、加密 Token、设备/实体元数据和控制权限，并代表已授权家庭成员调用 HA。HA 实时状态不进入普通 MomoBox 同步流。
 

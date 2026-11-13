@@ -16,6 +16,15 @@ void main() {
   });
   tearDown(() => database.close());
 
+  test('离线只读缓存不暗中初始化预设或允许新增家务', () async {
+    final service=ChoreService(settings,assertWritable:()=>throw StateError('NAS 离线'));
+    expect(await service.getChores(),isEmpty);
+    expect(await settings.getValue('recurring_chores_list'),isNull);
+    await expectLater(service.addChore(title:'清洗滤网',category:'设备维护',
+      repeatInterval:ChoreRepeatInterval.weekly),throwsStateError);
+    expect(await settings.getValue('recurring_chores_list'),isNull);
+  });
+
   test('只订阅家务也会保存预设，重启后到期日不后移', () async {
     final service = ChoreService(settings, clock: () => day);
     final first = await service.watchChores().first;

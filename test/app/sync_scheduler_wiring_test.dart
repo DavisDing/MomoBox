@@ -103,6 +103,8 @@ void main() {
       GoRoute(path: '/', builder: (_, __) => const SizedBox.shrink()),
     ]);
     container = ProviderContainer(overrides: [
+          nasAppAccessProvider.overrideWithValue(NasAppAccess.connected),
+          legacyClientCleanupProvider.overrideWith((ref) async {}),
       databaseProvider.overrideWithValue(database),
       nasAccountProvider.overrideWith((ref) => account),
       syncNetworkStatusSourceProvider.overrideWithValue(network),

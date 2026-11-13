@@ -134,6 +134,15 @@ void main() {
       expect(repository.commands, isEmpty);
     });
 
+    test('NAS 缓存只读时不能凭旧 HA 状态发出控制命令', () async {
+      final repository=_FakeHaRepository();
+      final controller=await _controller(repository,assertWritable:()=>throw StateError('NAS 离线，只能查看缓存。'));
+      addTearDown(controller.dispose);
+      await controller.setDevicePower(_deviceId,true);
+      expect(repository.commands,isEmpty);
+      expect(controller.state.commandError,contains('只能查看缓存'));
+    });
+
     for (final role in ['owner', 'admin']) {
       test('$role 使用管理连接测试并仅按自身白名单控制', () async {
         final repository = _FakeHaRepository()
@@ -891,10 +900,10 @@ void main() {
 }
 
 Future<SmartHomeController> _controller(
-  _FakeHaRepository repository, {String? role = 'member'}
+  _FakeHaRepository repository, {String? role = 'member', void Function()? assertWritable}
 ) async {
   repository.actorRole = role ?? 'member';
-  final controller = SmartHomeController(repository, nasAddress: 'http://nas.local', role: role);
+  final controller = SmartHomeController(repository, nasAddress: 'http://nas.local', role: role,assertWritable:assertWritable);
   await controller.refresh();
   return controller;
 }

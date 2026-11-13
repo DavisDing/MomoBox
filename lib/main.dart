@@ -30,7 +30,7 @@ Future<void> main() async {
     await notifications.initialize();
   } catch (error, stack) {
     unawaited(diagnostics.record(DiagnosticEvent.notificationInitializationFailed, error, stackTrace: stack));
-    // 本地通知不可用时仍允许单机库存核心正常启动。
+    // 通知不可用时仍允许连接 NAS 并查看库存。
   }
   runApp(
     ProviderScope(

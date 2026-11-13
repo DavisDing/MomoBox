@@ -32,6 +32,9 @@ class NasFamilyDeviceApi {
 
   final NasFamilyDeviceRequest _request;
 
+  Future<NasFamilyResponseDto> initializeFamily() async => _decode(
+    await _send('POST', '/families/initialize', {}), NasFamilyResponseDto.fromJson);
+
   Future<NasFamilyResponseDto> createFamily(
     NasCreateFamilyRequest request,
   ) async {

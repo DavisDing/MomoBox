@@ -24,6 +24,9 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
   final _haUrlController = TextEditingController();
   final _tokenController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  final _scrollController = ScrollController();
+  final _permissionAnchors = <String, GlobalKey>{};
+  int _userScrollRevision = 0;
 
   String? _hydratedIntegrationId;
   bool _formDirty = false;
@@ -39,6 +42,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _nameController
       ..removeListener(_markFormDirty)
       ..dispose();
@@ -165,19 +169,56 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
     bool? canControl,
     List<String>? allowedCommands,
   }) async {
+    final anchor = _permissionAnchor(permission, control: canControl != null);
+    final before = anchor.currentContext?.findRenderObject();
+    final beforeY = before is RenderBox
+        ? before.localToGlobal(Offset.zero).dy
+        : null;
+    final scrollRevision = _userScrollRevision;
+    final controller = ref.read(smartHomeControllerProvider.notifier);
     final nextCanView = canView ?? permission.canView;
     final nextCanControl = nextCanView ? (canControl ?? permission.canControl) : false;
-    await ref.read(smartHomeControllerProvider.notifier).updatePermission(
-          NasHaEntityPermission(
-            integrationId: permission.integrationId,
-            entityId: permission.entityId,
-            role: permission.role,
-            canView: nextCanView,
-            canControl: nextCanControl,
-            allowedCommands: nextCanControl ? (allowedCommands ?? permission.allowedCommands) : const [],
-          ),
-        );
+    await controller.updatePermission(
+      NasHaEntityPermission(
+        integrationId: permission.integrationId,
+        entityId: permission.entityId,
+        role: permission.role,
+        canView: nextCanView,
+        canControl: nextCanControl,
+        allowedCommands: nextCanControl
+            ? (allowedCommands ?? permission.allowedCommands)
+            : const [],
+      ),
+    );
+    if (!mounted || beforeY == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          scrollRevision != _userScrollRevision ||
+          !identical(controller, ref.read(smartHomeControllerProvider.notifier)) ||
+          !_scrollController.hasClients) {
+        return;
+      }
+      final after = anchor.currentContext?.findRenderObject();
+      if (after is! RenderBox || !after.hasSize) return;
+      final delta = after.localToGlobal(Offset.zero).dy - beforeY;
+      if (delta.abs() < .5) return;
+      final position = _scrollController.position;
+      _scrollController.jumpTo(
+        (position.pixels + delta).clamp(
+          position.minScrollExtent,
+          position.maxScrollExtent,
+        ),
+      );
+    });
   }
+
+  GlobalKey _permissionAnchor(
+    NasHaEntityPermission permission, {
+    required bool control,
+  }) => _permissionAnchors.putIfAbsent(
+    '${permission.integrationId}::${permission.entityId}:${permission.role}:${control ? 'control' : 'view'}',
+    GlobalKey.new,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -199,38 +240,46 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
           ),
         ],
       ),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(
-          16, 16, 16, 16 + MomoDockInsets.bottomOf(context),
-        ),
-        children: [
-          _buildStatusCard(homeState, nasState),
-          const SizedBox(height: 12),
-          if (setupRequirement != null) ...[
-            MomoCard(child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(setupRequirement),
-                TextButton.icon(
-                  onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                    builder: (_) => const NasSettingsScreen(),
-                  )),
-                  icon: const Icon(Icons.family_restroom),
-                  label: const Text('前往 NAS 与家庭设置'),
-                ),
-              ],
-            )),
+      body: NotificationListener<UserScrollNotification>(
+        onNotification: (notification) {
+          if (notification.depth == 0) _userScrollRevision++;
+          return false;
+        },
+        child: ListView(
+          key: const PageStorageKey('ha-settings-page'),
+          controller: _scrollController,
+          padding: EdgeInsets.fromLTRB(
+            16, 16, 16, 16 + MomoDockInsets.bottomOf(context),
+          ),
+          children: [
+            _buildStatusCard(homeState, nasState),
             const SizedBox(height: 12),
+            if (setupRequirement != null) ...[
+              MomoCard(key:const ValueKey('ha-setup-required'),child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(setupRequirement),
+                  TextButton.icon(
+                    onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                      builder: (_) => const NasSettingsScreen(),
+                    )),
+                    icon: const Icon(Icons.family_restroom),
+                    label: const Text('前往 NAS 与家庭设置'),
+                  ),
+                ],
+              )),
+              const SizedBox(height: 12),
+            ],
+            if (homeState.message != null || homeState.commandError != null)
+              _buildFeedbackCard(homeState),
+            if (homeState.message != null || homeState.commandError != null) const SizedBox(height: 12),
+            _buildConnectionForm(homeState),
+            const SizedBox(height: 12),
+            _buildEntitiesCard(homeState),
+            const SizedBox(height: 12),
+            _buildSecurityCard(),
           ],
-          if (homeState.message != null || homeState.commandError != null)
-            _buildFeedbackCard(homeState),
-          if (homeState.message != null || homeState.commandError != null) const SizedBox(height: 12),
-          _buildConnectionForm(homeState),
-          const SizedBox(height: 12),
-          _buildEntitiesCard(homeState),
-          const SizedBox(height: 12),
-          _buildSecurityCard(),
-        ],
+        ),
       ),
     );
   }
@@ -240,6 +289,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
     final integration = state.integrations.firstOrNull;
 
     return MomoCard(
+      key: const ValueKey('ha-status'),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -325,6 +375,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
     final isError = state.commandError != null || state.haStatus == HaConnectionStatus.offline;
     final text = state.commandError ?? state.message!;
     return Card(
+      key: const ValueKey('ha-feedback'),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Row(
@@ -343,6 +394,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
   Widget _buildConnectionForm(SmartHomeState state) {
     final isLoading = state.isLoading;
     return Card(
+      key: const ValueKey('ha-connection-form'),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Form(
@@ -450,6 +502,10 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
     final entities = _canManageIntegration && state.entityCatalog.isNotEmpty
         ? state.entityCatalog : state.entities;
     return Card(
+      // Feedback can appear above this section after a grant or a failure.
+      // Keep the same subtree so expanded rows do not collapse and clamp the
+      // scroll position to the now-shorter list's end.
+      key: const ValueKey('ha-entity-permissions'),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -520,12 +576,14 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
     final currentState = remoteState?.state ?? entity.currentState ?? '暂无状态';
 
     return Container(
+      key: ValueKey('ha-entity-$key'),
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         border: Border.all(color: Theme.of(context).dividerColor),
         borderRadius: BorderRadius.circular(12),
       ),
       child: ExpansionTile(
+        key: PageStorageKey('ha-entity-expansion-$key'),
         tilePadding: const EdgeInsets.symmetric(horizontal: 12),
         childrenPadding: const EdgeInsets.only(left: 12, right: 12, bottom: 8),
         leading: Icon(_entityIcon(entity.domain), color: Theme.of(context).colorScheme.primary),
@@ -559,6 +617,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
             )
           else ...[
             SwitchListTile.adaptive(
+              key: _permissionAnchor(permission, control: false),
               dense: true,
               contentPadding: EdgeInsets.zero,
               title: const Text('允许查看状态', style: TextStyle(fontSize: MomoTextSize.caption)),
@@ -568,6 +627,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
               onChanged: state.isLoading || !_canManageIntegration ? null : (value) => _updatePermission(permission, canView: value),
             ),
             SwitchListTile.adaptive(
+              key: _permissionAnchor(permission, control: true),
               dense: true,
               contentPadding: EdgeInsets.zero,
               title: const Text('允许控制实体', style: TextStyle(fontSize: MomoTextSize.caption)),

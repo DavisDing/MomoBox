@@ -2,7 +2,9 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"github.com/momobox/backend/internal/family"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -55,7 +57,8 @@ func (s *Service) Register(ctx context.Context, request RegisterRequest) (AuthRe
 	if err != nil {
 		return empty, err
 	}
-	if mode == RegistrationInviteOnly || (mode == RegistrationFirstSetup && count > 0) {
+	invited := strings.TrimSpace(request.InviteCode) != ""
+	if !invited && (mode == RegistrationInviteOnly || (mode == RegistrationFirstSetup && count > 0)) {
 		return empty, newError(CodeRegistrationClosed, "registration is not available")
 	}
 	if mode != RegistrationFirstSetup && mode != RegistrationOpen && mode != RegistrationInviteOnly {
@@ -71,7 +74,34 @@ func (s *Service) Register(ctx context.Context, request RegisterRequest) (AuthRe
 		return empty, err
 	}
 	stored := StoredUser{User: User{ID: userID, Email: normalizedEmail, Nickname: strings.TrimSpace(request.Nickname)}, PasswordHash: passwordHash}
-	if err := s.users.Create(ctx, stored); err != nil {
+	if invited {
+		repository, ok := s.users.(interface {
+			CreateInvited(context.Context, StoredUser, string, time.Time) (string, error)
+		})
+		if !ok {
+			return empty, newError(CodeRegistrationClosed, "invited registration unavailable")
+		}
+		pepper := sha256.Sum256(append([]byte("momobox/family-invite/v1\x00"), s.config.RefreshPepper...))
+		hash := family.InviteCodeHasher{Pepper: pepper[:]}.Hash(strings.TrimSpace(request.InviteCode))
+		familyID, err := repository.CreateInvited(ctx, stored, hash, s.clock.Now())
+		if err != nil {
+			return empty, err
+		}
+		return s.issueAuth(ctx, stored.User, "", familyID)
+	}
+	var createErr error
+	if mode == RegistrationFirstSetup {
+		if repository, ok := s.users.(interface {
+			CreateFirst(context.Context, StoredUser) error
+		}); ok {
+			createErr = repository.CreateFirst(ctx, stored)
+		} else {
+			createErr = s.users.Create(ctx, stored)
+		}
+	} else {
+		createErr = s.users.Create(ctx, stored)
+	}
+	if err := createErr; err != nil {
 		if hasCode(err, CodeEmailAlreadyExists) {
 			return empty, err
 		}

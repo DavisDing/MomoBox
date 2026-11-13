@@ -83,6 +83,8 @@ void main() {
           await tester.pumpWidget(
             ProviderScope(
               overrides: [
+          nasAppAccessProvider.overrideWithValue(NasAppAccess.connected),
+          legacyClientCleanupProvider.overrideWith((ref) async {}),
                 databaseProvider.overrideWithValue(database),
                 syncNetworkStatusSourceProvider.overrideWithValue(
                   _OfflineNetwork(),

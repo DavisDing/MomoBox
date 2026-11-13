@@ -8,12 +8,14 @@ class NasStoredCredentials {
     required this.refreshToken,
     required this.expiresAt,
     this.serverIdentity,
+    this.userId,
   });
 
   final String accessToken;
   final String refreshToken;
   final DateTime expiresAt;
   final String? serverIdentity;
+  final String? userId;
 }
 
 class NasCredentialsException implements Exception {
@@ -38,6 +40,7 @@ class NasCredentialsService {
   static const _refreshTokenKey = 'nas_refresh_token';
   static const _expiresAtKey = 'nas_access_token_expires_at_ms';
   static const _serverIdentityKey = 'nas_server_identity';
+  static const _userIdKey = 'nas_user_id';
 
   final FlutterSecureStorage _storage;
   Future<void> _tail = Future<void>.value();
@@ -68,6 +71,7 @@ class NasCredentialsService {
         _storage.read(key: _refreshTokenKey),
         _storage.read(key: _expiresAtKey),
         _storage.read(key: _serverIdentityKey),
+        _storage.read(key: _userIdKey),
       ]);
       if (serverIdentity != null && _normalize(values[3]) != serverIdentity) {
         return null;
@@ -82,6 +86,7 @@ class NasCredentialsService {
         accessToken: accessToken,
         refreshToken: refreshToken,
         serverIdentity: _normalize(values[3]),
+        userId: _normalize(values[4]),
         expiresAt: DateTime.fromMillisecondsSinceEpoch(
           expiresAtMillis,
           isUtc: true,
@@ -122,6 +127,7 @@ class NasCredentialsService {
       await _storage.delete(key: _serverIdentityKey);
       await _storage.write(key: _accessTokenKey, value: accessToken);
       await _storage.write(key: _refreshTokenKey, value: refreshToken);
+      await _storage.write(key: _userIdKey, value:response.user.id);
       await _storage.write(
         key: _expiresAtKey,
         value: expiresAt.millisecondsSinceEpoch.toString(),
@@ -150,6 +156,7 @@ class NasCredentialsService {
         _storage.delete(key: _refreshTokenKey),
         _storage.delete(key: _expiresAtKey),
         _storage.delete(key: _serverIdentityKey),
+        _storage.delete(key: _userIdKey),
       ]);
     } catch (error) {
       throw const NasCredentialsException('无法清除 NAS 安全凭证。');

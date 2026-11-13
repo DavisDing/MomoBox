@@ -2,7 +2,7 @@
 
 ## 原则
 
-本项目开发机不安装 Flutter。所有编译、代码生成、静态检查和测试由 GitHub Actions 执行，Android APK/AAB 下载后在真实设备上进行安装验收。
+长期工具链与本次临时SDK验证分开记录。2026-11-13本机使用已有隔离临时Flutter/Dart和Go工具链执行静态检查与测试；这些结果不作为Android/iOS构建、Release或NAS/设备验收。正式安装验收仍使用对应提交的发布制品。
 
 ## CI 与发布链路验证
 
@@ -26,7 +26,19 @@
 
 当前状态：`NOT_EXECUTED`（Flutter 构建未在本机执行）；`DEVICE_VALIDATION_PENDING`（Android/iOS 真机尚未验收）。
 
-## 安装验收清单
+## 当前NAS必选流程的设备验收（2026-11-13，尚未执行）
+
+1. 配套更新App与后端后，全新安装只能进入NAS连接；首账号注册后自动创建家庭、登记设备并同步进入业务页。注册无效输入不丢失。
+2. 第二台手机填写同一NAS、邀请码和自身账号资料即可加入；无效/过期/已用尽邀请码不得产生半成品账号或消耗次数；不能只凭NAS地址读取家庭。
+3. 局域网使用、外网恢复、后台再返回、NAS停止/重启；离线可查看原归属缓存且写入明确受阻，恢复后自动同步，今日页滚动位置保持。注销或换NAS/账号不能查看他人缓存。
+4. LiteLLM在NAS配置地址/虚拟Key/默认模型；App展示目录并切换允许别名，不出现手机地址/Key输入。测试网关无目录、模型失效、NAS未配置、超时及未知推理结果。
+5. HA可不配置；配置后验证家庭权限、发现实体及真实控制回执。离线缓存不能凭旧实体状态发命令。
+6. 旧资料升级、含旧AI设置的JSON恢复、中断重试、真实冲突与工作区不匹配；保留原数据和回执，正常接入不需要人工同步选项。
+7. 执行下述仍适用的库存/日期/采购/提醒/扫码/主题/布局回归；图片/OCR与AI按NAS路径验收。
+
+## 历史单机安装验收清单（追溯用）
+
+以下清单中的单机启动、手机AI配置及本地OCR已被AC-040～043替代，不能作为当前产品入口要求。
 
 安装 Release APK 后按以下顺序验证：
 
@@ -838,3 +850,31 @@ PostgreSQL16.4源码经官方SHA256校验，编译到 `/private/tmp/momobox-pg16
 - 初始新增测试曾因UTF-8夹具错误、缺少NAS处理guard配置、Widget/Drift不同事件循环等待及pump回调内expect冲突失败或中断；逐项修正夹具/等待方式后全套通过，没有屏蔽诊断、放宽超时或删除生产能力。
 - PASS：`git diff --check`。公开地名接口只读核对成功，仅发送“成都”；未发送用户账号/令牌、手机定位或请求用户NAS。地名接口记录不构成行政地理真实性证明。
 - NOT_EXECUTED：Android/iOS构建安装、真实NAS/HA/PG18联调、设备滚动/生命周期验收、镜像/APK发布及新远端CI。本轮未提交、推送或部署；当前已安装版本不含这些改动。修复不要求清库、重建家庭或更换用户密钥。
+
+## 2026-11-13：NAS必选、自动接入与服务端模型目录
+
+基于本轮开始时的HEAD `fb9a590`，按用户确认取消独立单机运行；首位使用者创建家庭、后续成员凭邀请码加入，NAS不可达时查看原归属缓存，恢复自动同步。需求/设计见REQUIREMENT第29节、DESIGN第47节。当前为未提交源码实现，无现场部署或发布。
+
+- PASS：Flutter 3.47.9 / Dart 3.13.7 全项目 `analyze --no-pub` 无问题；完整 `test --no-pub --reporter expanded` **997项全部通过，退出0**。日志 `/private/tmp/momobox-nas-required-final-analyze.log`、`/private/tmp/momobox-nas-required-final-tests.log`。复用现有隔离临时SDK及缓存，未安装系统工具；移除本地OCR/压缩包后离线pub解析成功，没有新增产品依赖。
+- 覆盖NAS接入：首次自动建家庭/设备/工作区/远端模式；受邀成员不再建家庭；无邀请码止步；归属错误不改绑；会话切换的迟到任务不能写完成标记；退避/冲突/未完成分页不冒充首轮完成。设置通知/令牌续期不重建同步链路的既有回归继续保留。
+- 覆盖缓存与UI：强制连接页在实际MaterialApp.builder层级拥有登录/恢复导航；320px和2倍文字下长错误可滚动并进入诊断；连接/缓存切换保留业务滚动状态。缓存读取校验安全存储用户、endpoint、原家庭及完成标记；登出不再放行。持有的旧库存Repository、采购/家务/附件/备份导入及HA命令均有即时写入检查；离线不初始化家务预设。设备列表暂时503后自动重查并登记，被撤销设备不重新激活。
+- 覆盖AI/备份：手机仅发送NAS认证、文字及所选模型别名，无直连地址/Key/工具；返回格式及错误分类、未知结果不重试、模型选择隔离；一次性清理已停用手机AI配置/Key，业务资料和聊天保留。JSON导出和v1-v3历史导入过滤已停用配置，保留条码配置脱敏、引用校验、全事务回滚和目标身份。恢复完成接回自动同步。删除的测试仅对应已停用本地OCR、手机服务编辑器/协议降级及手动初始化确认，新增NAS路径回归；没有skip、屏蔽lint或降低冲突/权限断言。
+- PASS：后端 `go test -ldflags=-linkmode=external -count=1 ./...` 全量基础回归，新增网关目录/别名允许列表/默认模型，以及HTTP目录的匿名、缺家庭、缺设备和授权访问、敏感配置不下发。日志 `/private/tmp/momobox-nas-only-final-go-unit2.log`；运行未设置MOMO_TEST_DATABASE_URL，既有真实PG opt-in不计为数据库通过。
+- PASS：真实隔离PostgreSQL16.4下 `go test -ldflags=-linkmode=external -count=1 -v ./internal/store/familypostgres ./internal/store/authpostgres`。8个顶层用例通过，其中新增真实家庭/注册事务及既有设备刷新SQL回归。覆盖并发首家庭幂等、首账号限制、后续非成员拒绝无邀请码初始化、邀请注册member归属、重复邮箱不消耗次数、无效邀请不残留账号；原刷新设备授权回滚保护保留。随机schema清理，临时服务已停止，无NAS/正式库访问。日志 `/private/tmp/momobox-nas-only-final-pg-onboarding.log`。该夹具仅复用初始schema并补所需time_zone，不是全量迁移验收。
+- PASS：`go vet ./...`、Linux amd64后端编译；`scripts/ci/test-prepare-flutter-platforms.sh`（移除MLKit注入后）；NAS发布附件1项与变体19项脚本回归；9份YAML解析、OpenAPI本地ref解析及 `git diff --check`。日志分别在 `/private/tmp/momobox-nas-required-final-vet.log`、`momobox-nas-only-final-linux-build.log`、`momobox-nas-only-final-platform.log`、`momobox-nas-only-final-assets.log`、`momobox-nas-only-final-variants.log`。
+- 开发中失败与修正：早期Flutter用例在本机OCR/手机配置入口删除后迁移到NAS协议；Widget数据库关闭、清理设置枚举和初始化绑定通知先后顺序曾失败/中断，修正后通过。收尾全量曾有两处旧“手动注册设备”提示断言失败，按新自动连接文案更新，保留401次数和冲突断言；格式化导致的多行分支lint补花括号，没有关闭规则。
+- 环境限制：曾向全后端测试提供临时PG URL，已有 `TestAutomaticStartupPostgresInitializesOnceAndPreservesData` 因该精简PG缺少pgcrypto扩展失败（SQLSTATE 0A000）。未安装扩展或修改测试掩盖失败；基础全量与本次真实PG事务分别通过，不能声称全量PG启动/迁移验收通过。系统Python没有PyYAML，改用已有Ruby YAML库完成配置解析，未安装依赖。
+- NOT_EXECUTED：Android/iOS打包、安装与真机生命周期；Docker/UGOS、PG18完整部署迁移、真实LiteLLM/AI/OCR/HA、NAS断网重启与双手机端到端；远端CI、Git提交/推送、APK与镜像发布。UGREEN模板保留旧固定digest，必须发布并明确更新镜像后才能使用新接口。没有本地/后端schema迁移或业务删库，旧资料重叠/归属不一致仍保守阻塞，跨家庭迁移不在本次范围。
+
+## 2026-11-13：HA 授权跳动、物品密度、助手定位与家居状态
+
+在包含前序 NAS 必选接入改动的未提交工作区实现用户四项 UI 修复。范围见 REQUIREMENT 第30节与 DESIGN 第48节；主要修改 assistant_screen、home_assistant_settings_screen、inventory_screen、smart_home_screen，新增 page_navigation_regression_test 并扩展 nas_setup_flow_test。没有新增依赖、后端协议、数据库迁移或业务数据删除。
+
+- PASS：Flutter 3.47.9 / Dart 3.13.7 全项目 `analyze --no-pub` 无问题，日志 `/private/tmp/momobox-ui-navigation-analyze-final.log`。
+- PASS：完整 `test --no-pub --reporter expanded` **1010项全部通过，退出0**，日志 `/private/tmp/momobox-ui-navigation-all-tests.log`。此前6个相关文件共158项通过，日志 `/private/tmp/momobox-ui-navigation-targeted-final.log`；随后补空白会话大字说明、真实视口夹具及格式/lint修正，以完整1010项为最终结果。
+- HA：先以18个实体、6个展开行复现权限保存成功/失败后实体State被替换，原State已defunct。稳定key保留展开后，反馈/状态高度仍移动操作位置378～424px；补开关锚点偏移后通过。最终覆盖成功、失败及请求中主动滚动，断言展开状态身份、开关值、未主动滚动时屏幕位置相差不超过1px，以及不覆盖用户主动滚动。复现日志 `/private/tmp/momobox-ui-permission-before.log`、仅key日志 `/private/tmp/momobox-ui-permission-after.log`；最终完整回归包含全部修复与三种情况。HTTP为隔离MockClient，不访问真实HA。
+- 物品：真实320/390逻辑像素视口下，分别检查1、2、6个同内容物品的首张卡片尺寸一致；单列72×72缩略图、双列96高图片，正常字号卡片保持紧凑。原移动端窄屏/横屏、深浅主题及最大3.4倍字回归保留。初始夹具只改setSurfaceSize，MediaQuery仍采用默认窗口尺寸，导致390px测试错误选择单列；改为匹配physicalSize和devicePixelRatio后通过，未弱化尺寸断言或修改生产断点。
+- 助手：40条变长存档、末条35行超过一屏，进入/离开再进入均显示最新消息结尾，存档及当前会话保留；迟到加载也定位最新端，320×600和2倍字下空会话说明从顶部可见。原AI授权、草稿及操作确认回归通过。
+- 家居：online/offline/stale/syncing/unconfigured五类状态保留徽章，均无“连接设置”“打开连接配置”按钮；既有环境与HA控制回执/权限测试通过。配置路径统一为“我的 → 家庭与连接”。
+- PASS：`git diff --check`。复用已有隔离Flutter SDK和pub缓存，没有安装软件、升级依赖或更改系统PATH。首次analyze发现4处新增多行分支缺花括号，补齐后复验无问题，没有屏蔽lint。
+- NOT_EXECUTED：Android/iOS原生打包、安装与真机触摸/读屏验收，真实NAS/HA权限操作和设备控制，远端CI、Git提交/推送及APK/镜像发布。Go/PG未在本UI批次重复执行，本批次没有后端修改；前节后端证据不作为此次新增运行结果。当前已安装App仍需更新后验证。

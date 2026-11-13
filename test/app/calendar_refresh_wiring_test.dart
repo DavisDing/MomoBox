@@ -81,6 +81,8 @@ void main() {
       })),
     ]);
     final container = ProviderContainer(overrides: [
+          nasAppAccessProvider.overrideWithValue(NasAppAccess.connected),
+          legacyClientCleanupProvider.overrideWith((ref) async {}),
       appRouterProvider.overrideWithValue(router),
       calendarClockProvider.overrideWithValue(() => now),
       syncSchedulerProvider.overrideWithValue(scheduler),
@@ -152,6 +154,8 @@ void main() {
       GoRoute(path: '/', builder: (_, __) => const SizedBox.shrink()),
     ]);
     final container = ProviderContainer(overrides: [
+          nasAppAccessProvider.overrideWithValue(NasAppAccess.connected),
+          legacyClientCleanupProvider.overrideWith((ref) async {}),
       appRouterProvider.overrideWithValue(router),
       calendarClockProvider.overrideWithValue(() => DateTime.utc(2026, 11, 2, 4)),
       syncSchedulerProvider.overrideWithValue(scheduler),

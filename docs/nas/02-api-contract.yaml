@@ -3,7 +3,7 @@ info:
   title: MomoBox NAS API
   version: 0.1.0
   description: |
-    MomoBox 家庭 NAS 后端 API。AI/Ollama 不经过此 API；Home Assistant 由后端代表家庭成员受控访问。
+    MomoBox 必选家庭 NAS 后端 API。设备和同步由 App 自动初始化；AI/OCR 通过受控后端执行，手机仅选择 NAS 允许的模型别名。Home Assistant 为可选家庭服务。
 servers:
   - url: /api/v1
 security:
@@ -15,6 +15,7 @@ tags:
   - name: devices
   - name: sync
   - name: home-assistant
+  - name: ai
 paths:
   /health:
     get:
@@ -54,9 +55,79 @@ paths:
               schema:
                 $ref: '#/components/schemas/CapabilitiesResponse'
 
+  /ai/models:
+    get:
+      tags: [ai]
+      description: |
+        需要当前有效家庭和已登记设备的 Bearer 会话。
+        AI_MODELS 非空时返回部署者允许列表；否则尝试主网关 /models，并兼容部署者固定模型。
+        仅返回去重别名和默认标记；无密钥、地址或上游元数据，不触发模型推理。
+      responses:
+        '200':
+          description: NAS 可用模型别名
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [models]
+                properties:
+                  models:
+                    type: array
+                    maxItems: 500
+                    items:
+                      $ref: '#/components/schemas/AIModel'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /ai/analyze:
+    post:
+      tags: [ai]
+      description: |
+        需要当前有效家庭和设备会话。客户端仅提供文字、合法参数及可选模型别名，不能提供地址、密钥或工具。
+        省略 model 使用 NAS 默认；显式 model 必须属于 NAS 允许目录。
+        request_id 为同家庭/用户下持久化幂等身份，相同 ID 不得更换内容；未知结果不自动重跑推理。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AIAnalyzeRequest'
+      responses:
+        '200':
+          description: 模型文字结果及用量；不执行业务写入
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AIAnalyzeResponse'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 请求正在处理、内容冲突或原结果未知（AI_RESULT_UNKNOWN），需核对后明确新建请求
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: 后端处理失败，响应不含上游正文或密钥
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
   /auth/register:
     post:
       tags: [auth]
+      description: 默认 first_setup 只允许首账号无邀请码注册；后续可携 invite_code 原子创建账号并以 member 加入家庭，不生成半成品账号或误消耗邀请。
       security: []
       requestBody:
         required: true
@@ -161,15 +232,38 @@ paths:
               $ref: '#/components/schemas/CreateFamilyRequest'
       responses:
         '201':
-          description: 家庭创建成功
+          description: 首家庭创建成功（旧客户端兼容入口）
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/FamilyResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
+
+  /families/initialize:
+    post:
+      tags: [families]
+      description: |
+        幂等初始化当前家庭。尚无家庭时原子创建“我的家庭”（Asia/Shanghai）并授予创建者 owner。
+        当前用户已有家庭时直接返回；NAS 已有家庭但用户不属于其中时返回 403，需要邀请码加入。
+        无请求体。旧 POST /families 同样禁止额外创建活跃家庭，避免绕过邀请。
+      responses:
+        '200':
+          description: 家庭已就绪（首次创建或已存在）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FamilyResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /families/current:
     get:
@@ -784,6 +878,77 @@ components:
               type: string
               format: uuid
 
+    AIModel:
+      type: object
+      additionalProperties: false
+      required: [id, default]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        default:
+          type: boolean
+
+    AIAnalyzeRequest:
+      type: object
+      additionalProperties: false
+      required: [request_id, user_prompt]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        model:
+          type: string
+          maxLength: 256
+          description: NAS允许的模型别名；为空或省略时使用NAS默认。
+        system_prompt:
+          type: string
+          description: 最多100000字节。
+        user_prompt:
+          type: string
+          minLength: 1
+          description: 最多100000字节。
+        history:
+          type: array
+          maxItems: 6
+          items:
+            type: object
+            additionalProperties: false
+            required: [role, content]
+            properties:
+              role:
+                type: string
+                enum: [user, assistant]
+              content:
+                type: string
+                description: 每条最多40000字节。
+        temperature:
+          type: number
+          minimum: 0
+          maximum: 1
+
+    AIAnalyzeResponse:
+      type: object
+      required: [content, usage, model, protocol, level, elapsed_ms]
+      properties:
+        content:
+          type: string
+        usage:
+          type: [object, 'null']
+          additionalProperties: true
+        model:
+          type: string
+        protocol:
+          type: string
+          enum: [chat, responses]
+        level:
+          type: string
+          enum: [primary, secondary, fallback]
+        elapsed_ms:
+          type: integer
+          minimum: 0
+
     RegisterRequest:
       type: object
       required: [email, password, nickname]
@@ -794,11 +959,16 @@ components:
         password:
           type: string
           minLength: 12
-          maxLength: 128
+          description: 至少12个Unicode字符，最多72个UTF-8字节；字节上限由后端额外校验。
+          maxLength: 72
         nickname:
           type: string
           minLength: 1
           maxLength: 80
+
+        invite_code:
+          type: string
+          description: 家庭创建者发出的有效邀请码；首账号可省略。原文仅用于本次验证，不写入日志。
 
     LoginRequest:
       type: object
@@ -810,7 +980,7 @@ components:
         password:
           type: string
           minLength: 1
-          maxLength: 128
+          maxLength: 72
         device:
           $ref: '#/components/schemas/RegisterDeviceRequest'
 

@@ -478,7 +478,7 @@ class _ManualQaSectionState extends ConsumerState<_ManualQaSection> {
                 children: [
                   Text('说明书问答', style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 4),
-                  const Text('单机时在本机检索；连接后端时在 NAS 检索 OCR 文字，确认后由 NAS 调用 AI，不向模型发送原图。'),
+                  const Text('在 NAS 检索 OCR 文字，确认后由 NAS 调用 AI，不向模型发送原图。'),
                   const SizedBox(height: 10),
                   Align(
                     alignment: Alignment.centerLeft,
@@ -563,7 +563,7 @@ class _ManualQaDialogState extends State<_ManualQaDialog> {
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('确认发送 OCR 片段？'),
-            content: const Text('将仅发送问题和相关 OCR 文字。连接后端时由 NAS 使用其配置的 AI 服务；单机模式使用手机配置的 AI 服务。不向模型发送原图。是否继续？'),
+            content: const Text('将仅发送问题和相关 OCR 文字，由 NAS 使用其配置的 AI 服务，不向模型发送原图。是否继续？'),
             actions: [
               TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
                   MomoCapsuleButton(onPressed: () => Navigator.pop(context, true),
@@ -994,7 +994,7 @@ class _ProductMediaSectionState extends ConsumerState<_ProductMediaSection> {
                 IconButton(onPressed: _addImage, tooltip: '添加商品图片', icon: const Icon(Icons.add_a_photo_outlined)),
               ],
             ),
-            const Text('单机时保存在本机；连接后端后上传图片，由 NAS 处理图片、OCR 和 AI。'),
+            const Text('图片保存在家庭 NAS，由 NAS 处理 OCR 和 AI；手机保留显示缓存。'),
             for (final asset in assets.where((a) => a.backendStatusLabel != null))
               Text('${asset.type.label}：${asset.backendStatusLabel}${asset.backendError == null ? '' : '，${asset.backendError}'}'),
             const SizedBox(height: 8),

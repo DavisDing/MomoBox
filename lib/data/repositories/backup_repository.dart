@@ -50,9 +50,10 @@ class ImportReport {
 }
 
 class BackupRepository {
-  BackupRepository(this._database);
+  BackupRepository(this._database, {this.assertWritable});
 
   final AppDatabase _database;
+  final void Function()? assertWritable;
 
   Future<String> exportJson() => _database.transaction(() async {
         final products = await _database.select(_database.products).get();
@@ -108,6 +109,7 @@ class BackupRepository {
     var skipped = excludedSettings;
 
     await _database.transaction(() async {
+      assertWritable?.call();
       final failures = await _validateReferences(
         products: products,
         batches: batches,
@@ -196,6 +198,7 @@ class BackupRepository {
         await _database.into(_database.barcodeLookupCache).insert(_barcodeCacheFromJson(row));
         imported++;
       }
+      assertWritable?.call();
     });
     return ImportReport(
       imported: imported,

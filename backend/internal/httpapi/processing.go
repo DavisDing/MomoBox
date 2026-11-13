@@ -167,6 +167,20 @@ func (h *Handler) analyze(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, out)
 }
+func (h *Handler) aiModels(w http.ResponseWriter, r *http.Request) {
+	if !h.method(w, r, http.MethodGet) {
+		return
+	}
+	if _, ok := h.processingActor(w, r); !ok {
+		return
+	}
+	models, err := h.deps.Processing.AI.Models(r.Context())
+	if err != nil {
+		processingError(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"models": models})
+}
 func (h *Handler) operationHistory(w http.ResponseWriter, r *http.Request) {
 	if !h.method(w, r, http.MethodGet) {
 		return

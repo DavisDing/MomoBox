@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:cross_file/cross_file.dart';
 import 'package:crypto/crypto.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
@@ -25,34 +25,6 @@ class MediaStorageService {
 
   final Uuid _uuid;
 
-  Future<StoredImageFile> storeImage(XFile source) async {
-    final bytes = await source.readAsBytes();
-    if (bytes.isEmpty) throw StateError('选择的图片为空。');
-    final directory = await _mediaDirectory();
-    final outputPath = p.join(directory.path, '${_uuid.v4()}.jpg');
-    final compressed = await FlutterImageCompress.compressWithList(
-      bytes,
-      minWidth: 1920,
-      minHeight: 1920,
-      quality: 82,
-      format: CompressFormat.jpeg,
-      keepExif: false,
-    );
-    if (compressed.isEmpty) {
-      throw StateError('图片压缩失败，请更换图片后重试。');
-    }
-    final output = compressed;
-    await File(outputPath).writeAsBytes(output, flush: true);
-    return StoredImageFile(
-      path: outputPath,
-      mimeType: 'image/jpeg',
-      sizeBytes: output.length,
-      sha256: sha256.convert(output).toString(),
-    );
-  }
-
-  /// Stage the original camera result for durable retry. All normalization and
-  /// OCR happen on the backend; the staged copy is a display/upload cache.
   Future<StoredImageFile> storeUploadSource(XFile source) async {
     final bytes = await source.readAsBytes();
     if (bytes.isEmpty || bytes.length > 8 * 1024 * 1024) {

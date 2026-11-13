@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:image_picker/image_picker.dart';
 
@@ -7,17 +6,16 @@ import '../data/repositories/media_repository.dart';
 import '../data/nas/nas_sync_api.dart';
 import 'backend_processing_service.dart';
 import '../domain/models/recognition_models.dart';
-import '../services/local_ocr_service.dart';
 import '../services/media_storage_service.dart';
 
 class MediaService {
-  MediaService(this._repository, this._storage, this._ocr, {this.backend});
+  MediaService(this._repository, this._storage, {required this.backend,this.assertWritable});
 
-  final BackendProcessingService? backend;
+  final BackendProcessingService backend;
+  final void Function()? assertWritable;
 
   final MediaRepository _repository;
   final MediaStorageService _storage;
-  final LocalOcrService _ocr;
 
   // Media files and their metadata are a single logical resource. Keep every
   // mutating/cleanup path in one isolate-wide queue so reconcile cannot observe
@@ -67,11 +65,10 @@ class MediaService {
     required MediaAssetType type,
   }) =>
       _runSerialized(() async {
+        assertWritable?.call();
         NasSyncApi? api;
-        var backendUnavailable = false;
-        try { api = await backend?.resolveApi(); } catch (_) { backendUnavailable = true; }
-        final stored = api == null && !backendUnavailable ? await _storage.storeImage(source)
-            : await _storage.storeUploadSource(source);
+        try { api = await backend.resolveApi(); } catch (_) { /* stage against the durable household below */ }
+        final stored = await _storage.storeUploadSource(source);
         var committed = false;
         try {
           final asset = await _repository.create(
@@ -84,10 +81,10 @@ class MediaService {
             sha256: stored.sha256,
           );
           committed = true;
-          if (backendUnavailable) await backend!.stage(asset);
+          if (api == null) await backend.stage(asset);
           // Metadata is committed first so an interrupted upload can recover.
           if (api != null) {
-            try { await backend!.upload(api, asset); } catch (_) {
+            try { await backend.upload(api, asset); } catch (_) {
               throw StateError('图片已暂存，后端上传未完成；请联网后重试 OCR 或同步。');
             }
           }
@@ -103,14 +100,9 @@ class MediaService {
 
   Future<String> runOcr(MediaAsset asset) =>
       _runSerialized(() async {
-        final api = await backend?.resolveApi();
-        if (api != null) return backend!.ocr(api, asset);
-        if (!await File(asset.localPath).exists()) {
-          throw StateError('图片文件已丢失，无法识别。');
-        }
-        final text = await _ocr.extractText(asset.localPath);
-        await _repository.updateOcr(asset.id, text);
-        return text;
+        final api = await backend.resolveApi();
+        if (api != null) return backend.ocr(api, asset);
+        throw StateError('NAS 暂不可用，请恢复连接后识别。');
       });
 
   Future<void> reassignIntakeAssets({
@@ -121,25 +113,18 @@ class MediaService {
         () async {
           final service = backend;
           final assets = await _repository.loadForEntity(entityType: 'intake_draft', entityId: intakeDraftId);
-          if (service != null) {
-            await service.reassignIntake(assets, productId);
-          } else {
-            await _repository.reassignEntity(fromEntityType: 'intake_draft', fromEntityId: intakeDraftId,
-              toEntityType: 'product', toEntityId: productId);
-          }
+          await service.reassignIntake(assets, productId);
         },
       );
 
   Future<void> delete(MediaAsset asset) =>
       _runSerialized(() async {
+        assertWritable?.call();
         NasSyncApi? api;
-        var unavailable = false;
-        try { api = await backend?.resolveApi(); } catch (_) { unavailable = true; }
-        if (api != null || unavailable) {
-          await backend!.stage(asset, deleting: true);
-          if (api != null) {
-            try { await backend!.delete(api, asset); } catch (_) { /* durable tombstone remains queued */ }
-          }
+        try { api = await backend.resolveApi(); } catch (_) { /* tombstone retains original household */ }
+        await backend.stage(asset, deleting: true);
+        if (api != null) {
+          try { await backend.delete(api, asset); } catch (_) { /* durable tombstone remains queued */ }
         }
         final removed = await _repository.markDeleted(asset.id);
         if (removed != null) await _storage.deleteIfExists(removed.localPath);
@@ -147,7 +132,6 @@ class MediaService {
 
   Future<void> syncBackend(NasSyncApi api) => _runSerialized(() async {
     final service = backend;
-    if (service == null) return;
     var failed = false;
     try { await service.flushDeletes(api); } catch (_) { api.assertCurrentSession(); failed = true; }
     for (final asset in await _repository.loadAllActive()) {
@@ -161,47 +145,8 @@ class MediaService {
     Duration intakeDraftRetention = const Duration(days: 1),
   }) =>
       _runSerialized(() async {
-        NasSyncApi? api;
-        var unavailable = false;
-        try { api = await backend?.resolveApi(); } catch (_) { unavailable = true; }
-        // Offline cleanup must not turn missing cache files into remote deletes.
-        if (api != null || unavailable) {
-          final references = (await _repository.loadAllActive()).map((a) => a.localPath).toSet();
-          return MediaCleanupReport(deletedFiles: await _storage.deleteUnreferenced(references), deletedMetadata: 0);
-        }
-        var deletedFiles = 0;
-        var deletedMetadata = 0;
-        final cutoff = DateTime.now().subtract(intakeDraftRetention);
-        final active = await _repository.loadAllActive();
-
-        // A dismissed intake sheet can leave a temporary draft behind. Keep it
-        // long enough for an interrupted flow to be recovered, then clean it up.
-        for (final asset in active.where(
-          (asset) =>
-              asset.entityType == 'intake_draft' && asset.createdAt.isBefore(cutoff),
-        )) {
-          final removed = await _repository.markDeleted(asset.id);
-          if (removed == null) continue;
-          deletedMetadata++;
-          if (await _storage.deleteIfExists(removed.localPath)) deletedFiles++;
-        }
-
-        final remaining = await _repository.loadAllActive();
-        final existing = await _storage.existingPaths();
-        for (final asset in remaining.where(
-          (asset) => !existing.contains(asset.localPath),
-        )) {
-          final removed = await _repository.markDeleted(asset.id);
-          if (removed != null) deletedMetadata++;
-        }
-
-        final referenced = (await _repository.loadAllActive())
-            .map((asset) => asset.localPath)
-            .toSet();
-        deletedFiles += await _storage.deleteUnreferenced(referenced);
-        return MediaCleanupReport(
-          deletedFiles: deletedFiles,
-          deletedMetadata: deletedMetadata,
-        );
+        // Missing phone cache files never mean the NAS original was deleted.
+        final references = (await _repository.loadAllActive()).map((a)=>a.localPath).toSet();
+        return MediaCleanupReport(deletedFiles:await _storage.deleteUnreferenced(references),deletedMetadata:0);
       });
 }

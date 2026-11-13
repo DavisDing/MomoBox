@@ -31,6 +31,10 @@ const _excludedSettings = <String, String>{
   'reminder_sync_policy:family:old-family:1': '{"enabled":false}',
   'ha_access_token': 'ha-secret',
   'home_assistant_connection': '{"token":"ha-secret"}',
+  'ai_api_endpoint': 'https://ai.invalid/v1',
+  'ai_model': 'model-1',
+  'ai_secondary_endpoint': '',
+  'ai_fallback_endpoint': '',
   'ai_api_key': 'ai-secret',
   'ai_api_key_profile_profile-1': 'profile-secret',
   'service_access_token': 'service-secret',
@@ -46,10 +50,6 @@ const _businessSettings = <String, String>{
       '{"currentId":"chat-1","sessions":[{"id":"chat-1","title":"采购建议"}]}',
   'ai_usage_logs': '[]',
   'ai_allow_inventory_writes': 'true',
-  'ai_api_endpoint': 'https://ai.invalid/v1',
-  'ai_model': 'model-1',
-  'ai_secondary_endpoint': '',
-  'ai_fallback_endpoint': '',
   'barcode_api_enabled': 'true',
   'custom_business_setting': 'preserved',
 };
@@ -183,18 +183,18 @@ void main() {
         'headers': {'Authorization': 'Bearer nested-secret'},
       },
     ]);
-    await _seed(source, {'ai_api_profiles': profiles});
+    await _seed(source, {'barcode_api_profiles': profiles});
     final exported = await backup.exportJson();
     for (final secret in [
       'url-secret', 'query-secret', 'legacy-secret', 'draft-secret', 'nested-secret',
     ]) {
       expect(exported, isNot(contains(secret)));
     }
-    expect(await SettingsRepository(source).getValue('ai_api_profiles'), profiles);
+    expect(await SettingsRepository(source).getValue('barcode_api_profiles'), profiles);
     await BackupRepository(target).importJson(
-        jsonEncode(_document(1, {'ai_api_profiles': profiles})));
+        jsonEncode(_document(1, {'barcode_api_profiles': profiles})));
     final restored = jsonDecode(
-        (await SettingsRepository(target).getValue('ai_api_profiles'))!) as List;
+        (await SettingsRepository(target).getValue('barcode_api_profiles'))!) as List;
     expect(restored.single, {
       'id': 'profile-1',
       'name': '主服务',
@@ -220,13 +220,14 @@ void main() {
     expect(restoredExport, contains('{barcode}'));
     expect(Uri.parse(restoredExport).queryParameters,
         {'fields': 'name', 'region': 'local'});
-    // Import the raw historical value into a different key so merge-only
-    // behavior cannot mask whether import actually applies the sanitization.
+    // Remove the restored setting so insert-missing behavior cannot mask
+    // whether historical import applies credential sanitization.
+    await (target.delete(target.appSettings)..where((row)=>row.key.equals('barcode_api_profiles'))).go();
     await BackupRepository(target).importJson(jsonEncode(_document(1, {
-      'ai_api_profiles': profiles,
+      'barcode_api_profiles': profiles,
     })));
     final restoredLegacy = (jsonDecode(
-      (await SettingsRepository(target).getValue('ai_api_profiles'))!,
+      (await SettingsRepository(target).getValue('barcode_api_profiles'))!,
     ) as List).single['endpoint'] as String;
     expect(restoredLegacy, restoredExport);
   });
@@ -464,7 +465,7 @@ void main() {
       await _seed(target, before);
       final document = _document(3, {
         'recurring_chores_list': '[]',
-        'ai_api_profiles': value,
+        'barcode_api_profiles': value,
       })..['products'] = [_product()];
       await expectLater(
         BackupRepository(target).importJson(jsonEncode(document)),
@@ -477,10 +478,10 @@ void main() {
 
   test('损坏服务配置导出失败，不回退泄露原文且不改写数据库', () async {
     const raw = '{"apiKey":"do-not-leak"';
-    await _seed(source, {'ai_api_profiles': raw, 'nas_device_id': 'source-id'});
+    await _seed(source, {'barcode_api_profiles': raw, 'nas_device_id': 'source-id'});
     await expectLater(backup.exportJson(), throwsFormatException);
     expect(await _storedSettings(source), {
-      'ai_api_profiles': raw,
+      'barcode_api_profiles': raw,
       'nas_device_id': 'source-id',
     });
   });

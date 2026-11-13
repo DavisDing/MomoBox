@@ -1,3 +1,4 @@
+import '../widgets/nas_ai_models.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -34,7 +35,9 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
   String get _currentSessionId => _store.currentId;
   bool get _isLoading => !_store.ready || _store.isLoading;
   final _textController = TextEditingController();
-  final _scrollController = ScrollController();
+  // Conversation entry always starts at the newest message. Do not restore an
+  // older reading position from the route's PageStorage when returning here.
+  final _scrollController = ScrollController(keepScrollOffset: false);
 
   bool _checkingConsent = false;
 
@@ -79,7 +82,9 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
   }
 
   void _deleteSession(String sessionId) {
+    final previousSessionId = _currentSessionId;
     _store.delete(sessionId);
+    if (_currentSessionId != previousSessionId) _scrollToBottom();
   }
 
   @override
@@ -93,11 +98,11 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _scrollController.hasClients) {
         if (MediaQuery.disableAnimationsOf(context) || MediaQuery.accessibleNavigationOf(context)) {
-          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+          _scrollController.jumpTo(_scrollController.position.minScrollExtent);
           return;
         }
         _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
+          _scrollController.position.minScrollExtent,
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut,
         );
@@ -118,7 +123,7 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
         final consent = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
           title: const Text('发送给你配置的 AI 服务？'), scrollable: true,
           content: const Text('提问会携带近期对话，以及当前库存/批次、采购、待处理提醒、已保存家务和已授权设备状态。'
-            '连接后端时先发送到 NAS，由 NAS 使用其配置的主服务和失败回退服务；单机时使用手机配置的 AI 服务。不向模型发送图片、密钥或账号凭据。'
+            '先发送到家庭 NAS，由 NAS 使用其配置的 AI 服务。不向模型发送图片、密钥或账号凭据。'
             '\n同意发送不代表同意操作，任何变更仍须逐次确认。此选择会保存在本机。'),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
@@ -300,18 +305,14 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                       IconButton(tooltip: '历史会话', icon: const Icon(Icons.history_rounded),
                         onPressed: () => _showHistorySessionsSheet(context)),
                     ],
-                    if (MediaQuery.textScalerOf(context).scale(14) > 21)
-                      IconButton(tooltip:'AI 服务',icon:const Icon(Icons.tune_rounded),
-                        onPressed:()=>Navigator.of(context,rootNavigator:true).push(
-                          MaterialPageRoute<void>(builder:(_)=>const AiSettingsScreen())))
-                    else OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(backgroundColor: theme.colorScheme.surface,
-                        padding: const EdgeInsets.symmetric(horizontal: 12), minimumSize: const Size(44, 44),
-                        textStyle: theme.textTheme.bodySmall),
-                      icon:const Icon(Icons.circle, size:5),label:const Text('AI 服务'),
-                      onPressed:()=>Navigator.of(context,rootNavigator:true).push(
-                        MaterialPageRoute<void>(builder:(_)=>const AiSettingsScreen())),
-                    ),
+                    if (MediaQuery.textScalerOf(context).scale(14) > 17 || constraints.maxWidth < 360)
+                      IconButton(tooltip:'选择 AI 模型',icon:const Icon(Icons.tune_rounded),
+                        onPressed:()=>NasAiModels.show(context))
+                    else ConstrainedBox(constraints:const BoxConstraints(maxWidth:170),
+                      child:OutlinedButton.icon(icon:const Icon(Icons.tune_rounded,size:16),
+                        label:Text(ref.watch(selectedAiModelProvider).valueOrNull?.isNotEmpty == true
+                          ? ref.watch(selectedAiModelProvider).valueOrNull! : 'NAS 默认模型',maxLines:1,overflow:TextOverflow.ellipsis),
+                        onPressed:()=>NasAiModels.show(context))),
                   ]);
                 }),
               ),
@@ -336,13 +337,15 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
               Expanded(
                 child: ListView.builder(
                   controller: _scrollController,
+                  reverse: !welcome,
                   padding: MomoMobileLayout.pageInsets(context).add(const EdgeInsets.only(bottom: 16)),
                   itemCount: _messages.length,
                   itemBuilder: (context, index) {
-                    if (welcome && index == 0) return _buildWelcome(theme);
-                    final msg = _messages[index];
+                    if (welcome) return _buildWelcome(theme);
+                    final msg = _messages[_messages.length - 1 - index];
                     final isUser = msg.role == 'user';
                     return Align(
+                      key: ValueKey(msg.id),
                       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
                       child: Container(
                         margin: const EdgeInsets.only(bottom: 12),

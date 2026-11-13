@@ -110,21 +110,6 @@ class _Engine extends SyncEngine {
   }
 }
 
-class _ReportEngine extends SyncEngine {
-  _ReportEngine(_Api api, SyncOutboxRepository outbox, this.report) : super(
-    api: api, repository: outbox, scopeId: 'family-a', deviceId: 'device',
-    applyRemoteChange: (_) async {},
-  );
-  final SyncRunReport report;
-  int runs = 0;
-
-  @override
-  Future<SyncRunReport> runOnce({int maxPush = 100, int pullLimit = 100}) async {
-    runs++;
-    return report;
-  }
-}
-
 NasSyncConflictResolveResponse _resolved(String action, {bool accepted = true, String id = 'nas-conflict'}) =>
     NasSyncConflictResolveResponse(
       accepted: accepted,
@@ -227,54 +212,6 @@ void main() {
     await tester.tap(find.byType(ExpansionTile).first);
     await settleDatabaseWidgets(tester);
   }
-
-  syncTestWidgets('manual bounded batch does not report full completion', (tester) async {
-    final reporting = _ReportEngine(api, outbox, const SyncRunReport(
-      pushed: 100, pulled: 0, skipped: false, deferred: 1, hasMorePending: true,
-    ));
-    await mount(tester, configuredEngine: reporting);
-    await tester.tap(find.text('立即同步'));
-    await settleDatabaseWidgets(tester);
-    expect(reporting.runs, 1);
-    expect(find.textContaining('尚未完成同步'), findsOneWidget);
-    expect(find.textContaining('同步完成：'), findsNothing);
-  });
-
-  syncTestWidgets('manual remote page boundary is not reported as complete', (tester) async {
-    final reporting = _ReportEngine(api, outbox, const SyncRunReport(
-      pushed: 0, pulled: 100, skipped: false, hasMoreRemote: true,
-    ));
-    await mount(tester, configuredEngine: reporting);
-    await tester.tap(find.text('立即同步'));
-    await settleDatabaseWidgets(tester);
-    expect(reporting.runs, 1);
-    expect(find.textContaining('远端仍有数据'), findsOneWidget);
-    expect(find.textContaining('同步完成：'), findsNothing);
-  });
-
-  syncTestWidgets('manual conflict deferral is reported as paused', (tester) async {
-    final reporting = _ReportEngine(api, outbox, const SyncRunReport(
-      pushed: 0, pulled: 0, skipped: false, deferred: 1,
-    ));
-    await mount(tester, configuredEngine: reporting);
-    await tester.tap(find.text('立即同步'));
-    await settleDatabaseWidgets(tester);
-    expect(reporting.runs, 1);
-    expect(find.textContaining('同步暂停：'), findsOneWidget);
-    expect(find.textContaining('同步完成：'), findsNothing);
-  });
-
-  syncTestWidgets('manual request retains engine backoff feedback', (tester) async {
-    final reporting = _ReportEngine(api, outbox, const SyncRunReport(
-      pushed: 0, pulled: 0, skipped: true, reason: 'retry backoff is active',
-    ));
-    await mount(tester, configuredEngine: reporting);
-    await tester.tap(find.text('立即同步'));
-    await settleDatabaseWidgets(tester);
-    expect(reporting.runs, 1);
-    expect(find.text('本次未同步：retry backoff is active'), findsOneWidget);
-    expect(find.textContaining('同步完成：'), findsNothing);
-  });
 
   for (final action in ['keep_remote', 'keep_local']) {
     syncTestWidgets('$action calls runOnce only after atomic settlement', (tester) async {

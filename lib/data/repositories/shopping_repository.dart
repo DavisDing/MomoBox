@@ -15,6 +15,7 @@ class ShoppingRepository {
     SyncOutboxRepository? outbox,
     String? syncScopeId,
     Future<String?> Function()? syncScopeResolver,
+    this.assertWritable,
   })  : _uuid = uuid ?? const Uuid(),
         _outbox = outbox,
         _syncScopeId = syncScopeId,
@@ -25,6 +26,7 @@ class ShoppingRepository {
   final SyncOutboxRepository? _outbox;
   final String? _syncScopeId;
   final Future<String?> Function()? _syncScopeResolver;
+  final void Function()? assertWritable;
 
   Future<String?> _mutationScope() async =>
       _syncScopeResolver == null ? _syncScopeId : await _syncScopeResolver();
@@ -424,6 +426,7 @@ class ShoppingRepository {
     required Map<String, dynamic> payload,
     required DateTime now,
   }) async {
+    assertWritable?.call();
     final scopeId = await _mutationScope();
     final outbox = _outbox;
     if (scopeId == null || scopeId.trim().isEmpty || outbox == null) return;
@@ -468,6 +471,7 @@ class ShoppingRepository {
     required int baseVersion,
     required DateTime now,
   }) async {
+    assertWritable?.call();
     final scopeId = await _mutationScope();
     final outbox = _outbox;
     if (scopeId == null || scopeId.trim().isEmpty || outbox == null) return;

@@ -104,7 +104,7 @@ void main() {
     });
   }
 
-  test('仅配置主 AI 时，空副服务和兜底设置可导出恢复', () async {
+  test('旧手机 AI 主副服务配置不会经备份恢复', () async {
     final settings = SettingsRepository(database);
     final values = {
       'ai_api_endpoint': 'https://example.invalid/v1',
@@ -124,12 +124,12 @@ void main() {
     final restore = BackupRepository(target);
     final backup = await repository.exportJson();
     final report = await restore.importJson(backup);
-    expect(report.imported, values.length);
+    expect(report.imported, 0);
     final rows = await target.select(target.appSettings).get();
-    expect({for (final row in rows) row.key: row.value}, values);
+    expect(rows, isEmpty);
     final repeated = await restore.importJson(backup);
     expect(repeated.imported, 0);
-    expect(repeated.skipped, values.length);
+    expect(repeated.skipped, 0);
   });
 
   for (final matchesLocalBatch in [false, true]) {
@@ -338,8 +338,7 @@ void main() {
 
     final exported = jsonDecode(await repository.exportJson()) as Map<String, dynamic>;
     final settings = (exported['settings'] as List).cast<Map<String, dynamic>>();
-    final profileSetting = settings.singleWhere((row) => row['key'] == 'ai_api_profiles');
-    expect(profileSetting['value'], isNot(contains('secret-value')));
+    expect(settings.where((row) => row['key'] == 'ai_api_profiles'), isEmpty);
 
     final target = AppDatabase.forTesting(NativeDatabase.memory());
     extraDatabases.add(target);
@@ -362,8 +361,7 @@ void main() {
       'reminder_acknowledgements': [],
       'barcode_lookup_cache': [],
     }));
-    final stored = (await target.select(target.appSettings).getSingle()).value;
-    expect(stored, isNot(contains('must-not-import')));
+    expect(await target.select(target.appSettings).get(), isEmpty);
   });
 
   test('备份会导出并恢复提醒已处理记录', () async {
