@@ -878,3 +878,28 @@ PostgreSQL16.4源码经官方SHA256校验，编译到 `/private/tmp/momobox-pg16
 - 家居：online/offline/stale/syncing/unconfigured五类状态保留徽章，均无“连接设置”“打开连接配置”按钮；既有环境与HA控制回执/权限测试通过。配置路径统一为“我的 → 家庭与连接”。
 - PASS：`git diff --check`。复用已有隔离Flutter SDK和pub缓存，没有安装软件、升级依赖或更改系统PATH。首次analyze发现4处新增多行分支缺花括号，补齐后复验无问题，没有屏蔽lint。
 - NOT_EXECUTED：Android/iOS原生打包、安装与真机触摸/读屏验收，真实NAS/HA权限操作和设备控制，远端CI、Git提交/推送及APK/镜像发布。Go/PG未在本UI批次重复执行，本批次没有后端修改；前节后端证据不作为此次新增运行结果。当前已安装App仍需更新后验证。
+
+## 2026-11-13：设置去重、填充布局与通知 TypeToken 发布问题
+
+基于包含前序修复的HEAD `e02d853`，处理用户本轮三项反馈。起始仅有未跟踪的包审查报告，保持原样；本轮没有产品依赖升级、数据库迁移、后端协议/服务或业务资料变更。需求/设计见REQUIREMENT第31节、DESIGN第49节。
+
+- PASS：Flutter3.47.9 / Dart3.13.7全项目`analyze --no-pub`无问题，日志`/private/tmp/momobox-settings-notification-analyze-final.log`。首次新增多行if有1条花括号lint，补齐后通过，未关闭规则。
+- PASS：完整`test --no-pub --reporter expanded` **1023项全部通过，退出0**，日志`/private/tmp/momobox-settings-notification-all-tests.log`。3个直接相关文件先通过31项，日志`/private/tmp/momobox-settings-notification-targeted2.log`。复用现有临时SDK、pub缓存及数据库夹具，没有安装软件或新增依赖。
+- 设置：一级无“家居连接”，进入“家庭与连接”后唯一HA设置项仍可达，NAS/自动同步入口保留；既有设置层级、返回位置、主题回归通过。
+- 布局：新填充夹具含长设备名/房间/状态、现场完整权限提示、耗材及采购建议。320/390px、1/2/3.4倍字下标题和HA徽章至提示至少12dp，保留全部内容及设备控件；灯光/空调/电视长内容弹窗可滚动至末端。最初回归记录了标题/提示仅2.5～5px的间隔；修正测试等待滚动布局后，确实捕获空调数值行62px横向溢出，修复Flexible/Wrap后通过。大字标题因惰性列表出视口而未挂载时，将标题和提示作为同一稳定布局块处理，没有删除几何断言或降低字号。过程日志`/private/tmp/momobox-settings-notice-layout-before.log`、`/private/tmp/momobox-settings-notification-targeted.log`；前者弹窗场景一度因测试滚动后缺少pump而未点中，不算产品弹窗异常证据。
+- 通知：模拟与现场同类PlatformException和40行Java详情，320px、1/2/3.4倍字下无TypeToken/Java原文和全屏SnackBar，权限仍显示“已允许”、失败不产生计划，重试成功才排程并清除提示；不重复申请授权，发送测试提醒仍可触达。原确认过滤、迟到数据、卸载保护、前台恢复、测试通知不被取消等回归保留。异常经现有诊断只记录脱敏类型/来源。
+- PASS：`scripts/ci/test-prepare-flutter-platforms.sh`，日志`/private/tmp/momobox-settings-notification-platform-final.log`。校验Groovy/Kotlin引用、具体Gson规则、两次生成仅一个管理块、自定义规则保留、原通知接收器/图标及平台补丁；bash语法、workflow YAML解析、Python验证器语法和`git diff --check`通过。
+- 已核实旧包缺陷：复用已校验SHA256和ZIP CRC的实际v0.12.98 APK，逐class解析DEX。包含现场错误字符串的TypeToken类为`Lqa1;`、子类`Lu20;`，两者均没有dalvik.annotation.Signature；NotificationDetails持久化字段本身仍在。证据`/private/tmp/momobox-notification-release-before.json`。结合固定通知插件18.0.1源码的匿名TypeToken恢复路径及Gson官方要求，确定需补release保留规则。新增`verify-notification-apk.py`拒绝这个旧包（预期退出1），CI已在实际release APK构建/验签后接入检查，不仅检查ProGuard源文本或DEX是否出现某段字符串。
+- NOT_EXECUTED：本机无Android SDK/JDK，**新规则经R8生成的新APK及其验证器通过结果尚未取得**；系统通知投递、开机恢复、旧计划跨版本恢复、Android/iOS安装及真实HA设备布局/控制仍待原生及现场验收。旧包验证器失败和Widget通过不代表新release包已经修好并验收。AAB/新远端CI、Git提交/推送、APK/镜像发布均未执行；本轮无Go改动，不重复后端测试。
+
+## 2026-11-13：AI 目录故障提示与中性主题替换
+
+基于HEAD `e02d853`及前序未提交修复继续工作，保护既有设置/家居/通知改动。用户随后确认现场原因是LiteLLM容器停止，启动后AI已可用；现场恢复不归功于本轮源码修改。需求/设计见REQUIREMENT第32节、DESIGN第50节。
+
+- PASS：Flutter3.47.9 / Dart3.13.7全项目`analyze --no-pub`无问题，日志`/private/tmp/momobox-ai-catalog-analyze.log`。完整`test --no-pub --reporter expanded` **1030项全部通过，退出0**，日志`/private/tmp/momobox-ai-catalog-flutter-all.log`；直接相关4个文件38项通过，日志`/private/tmp/momobox-ai-catalog-flutter-targeted.log`。
+- Flutter覆盖模型目录错误：NAS初始化未完成、旧后端404、上游拒绝Key、目录为空/格式错误、网关停止连接失败。携带模拟敏感正文的错误只显示静态安全提示和合法请求UUID；刷新再次调用Provider并恢复模型列表，旧错误消失，无手机地址/Key表单。旧主题值/旧AI建议转成sky，新执行持久化sky，主题色样/吉祥物与深浅色导航回归通过。
+- PASS：Go1.22.8 `go test -ldflags=-linkmode=external -count=1 ./...`全量基础回归与`go vet ./...`；最终测试日志`/private/tmp/momobox-ai-catalog-go-final.log`，vet退出0无输出。未设置MOMO_TEST_DATABASE_URL，已有真实PostgreSQL opt-in仍跳过，不计为数据库验收。
+- Go覆盖base/完整models/chat/responses URL、反代前缀、仅404/405有界目录兼容、URL+Key无默认模型、Key空白、去重/允许列表/固定模型兼容；网关401/403/404/503、重定向、HTML/缺data/null/无效data/超限/空列表/非法ID、超时及网络拒绝均有分类。实际本机HTTP重定向测试确认自定义client也不向新目标转发Key；HTTP错误码502/503/504及日志中的请求号与响应一致，不泄露URL/Key/上游正文。既有未知付费请求不自动重试测试继续通过。首次受限沙箱内Go环回端口被拒绝、Flutter启动退出255；允许本机测试所需环回后重新运行通过，未调整产品断言或关闭测试。
+- PASS：NAS发布附件脚本1项回归、修改的Compose/OpenAPI YAML解析、`git diff --check`。UGREEN单文件模板仅把默认模型改为可选空值，固定旧镜像digest保留，未访问用户NAS或修改数据库/网络。复用已有隔离工具链，无新增产品依赖、schema迁移或业务资料删除。
+- 资源检查：pubspec仅启用Material图标，无自定义角色图片资源；运行源码中角色旧标识仅剩两个兼容解析位置。蓝色主题改为晴空流云/云朵小云，樱花吉祥物改为花芽；历史设计稿、业务聊天和第三方许可未删除。此项是源码资源替换，不是法律授权审查或新APK资源验收。
+- NOT_EXECUTED：新Android/iOS安装包及原生运行、Docker镜像构建、真实LiteLLM目录/推理、NAS项目与容器日志界面差异的现场验证、真实数据库/HA/多设备验收、Git提交/推送、远端CI及发布。新增提示/日志需App和后端更新后才生效；不宣称用户当前容器已运行本轮代码。

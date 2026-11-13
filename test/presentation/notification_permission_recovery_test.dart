@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -24,33 +25,98 @@ void main() {
     await acknowledgements.close();
   });
 
-  Future<void> mount(WidgetTester tester, {bool seed = true}) async {
+  Future<void> mount(
+    WidgetTester tester, {
+    bool seed = true,
+    bool initiallyAllowed = false,
+    Object? schedulingFailure,
+  }) async {
     // Create async sources and the scheduling queue in the Widget fake zone.
     // Real-zone futures otherwise cannot progress while only pumping frames.
     plugin = _RecordingPlugin();
     service = _PermissionService(plugin);
     await tester.runAsync(service.initialize);
     service.permissionRequests = 0;
+    if (initiallyAllowed) service.status = NotificationPermissionStatus.allowed;
+    plugin.cancelFailure = schedulingFailure;
     inventory = StreamController<List<InventoryItem>>.broadcast();
-    acknowledgements = StreamController<List<ReminderAcknowledgement>>.broadcast();
-    container = ProviderContainer(overrides: [
-      localNotificationServiceProvider.overrideWithValue(service),
-      inventoryProvider.overrideWith((ref) => inventory.stream),
-      reminderAcknowledgementsProvider.overrideWith((ref) => acknowledgements.stream),
-    ]);
+    acknowledgements =
+        StreamController<List<ReminderAcknowledgement>>.broadcast();
+    container = ProviderContainer(
+      overrides: [
+        localNotificationServiceProvider.overrideWithValue(service),
+        inventoryProvider.overrideWith((ref) => inventory.stream),
+        reminderAcknowledgementsProvider.overrideWith(
+          (ref) => acknowledgements.stream,
+        ),
+      ],
+    );
     // Keep streams subscribed even while the initial permission is denied.
     container.listen(inventoryProvider, (_, __) {});
     container.listen(reminderAcknowledgementsProvider, (_, __) {});
-    await tester.pumpWidget(UncontrolledProviderScope(
-      container: container,
-      child: const MaterialApp(home: NotificationSettingsScreen()),
-    ));
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: NotificationSettingsScreen()),
+      ),
+    );
     if (seed) {
       inventory.add([_item('old', 1)]);
       acknowledgements.add([]);
     }
     await tester.pumpAndSettle();
-    expect(find.text('未允许'), findsOneWidget);
+    expect(find.text(initiallyAllowed ? '已允许' : '未允许'), findsOneWidget);
+  }
+
+  for (final scale in [1.0, 2.0, 3.4]) {
+    testWidgets('原生排程异常保持简短内联反馈且可重试，文字 $scale', (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 640);
+      tester.platformDispatcher.textScaleFactorTestValue = scale;
+      addTearDown(tester.view.reset);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await mount(
+        tester,
+        initiallyAllowed: true,
+        schedulingFailure: PlatformException(
+          code: 'error',
+          message:
+              'TypeToken must be created with a type argument: new TypeToken<...>() {}; '
+              'When using code shrinkers (ProGuard, R8, ...) make sure that generic signatures are preserved.',
+          details: List.filled(
+            40,
+            'java.lang.IllegalStateException at plugin.notification',
+          ).join('\n'),
+        ),
+      );
+      expect(find.textContaining('TypeToken'), findsNothing);
+      expect(find.textContaining('java.lang'), findsNothing);
+      expect(find.byType(SnackBar), findsNothing);
+      expect(find.textContaining('无法刷新通知状态或重排提醒'), findsOneWidget);
+      expect(find.text('已允许'), findsOneWidget);
+      expect(plugin.pending, isEmpty);
+      expect(tester.takeException(), isNull);
+      plugin.cancelFailure = null;
+      await tester.scrollUntilVisible(
+        find.text('重试'),
+        150,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('重试'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('无法刷新通知状态或重排提醒'), findsNothing);
+      expect(plugin.pending, hasLength(1));
+      expect(service.permissionRequests, 0);
+      await tester.scrollUntilVisible(
+        find.text('发送测试提醒'),
+        150,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('发送测试提醒').hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
   }
 
   testWidgets('授权成功无库存事件也立即重排正式通知，并过滤已确认提醒', (tester) async {
@@ -372,10 +438,12 @@ class _RecordingPlugin implements FlutterLocalNotificationsPlugin {
   final pending = <int, String>{};
   int cancelCalls = 0;
   bool failNextCancel = false;
+  Object? cancelFailure;
 
   @override
   Future<void> cancelAll() async {
     cancelCalls++;
+    if (cancelFailure != null) throw cancelFailure!;
     if (failNextCancel) {
       failNextCancel = false;
       throw StateError('scheduling unavailable');

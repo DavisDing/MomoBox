@@ -129,7 +129,7 @@ ${AiIntakeContract.assistant}
 - 完成/删除家务 {"kind":"chore_complete或chore_delete","id":"真实家务ID"}。
 - 启停家务 {"kind":"chore_toggle","id":"真实家务ID","enabled":true或false}。
 - 已授权设备 {"kind":"device_control","id":"上下文的真实设备ID","command":"列出的受支持命令"}；set_temperature/set_brightness 的 value 为数字，set_hvac_mode 的 value 为设备支持的模式。只能调用当前设备命令列表内的动作，不能生成任意服务调用、未接入场景或混合计划。
-- 更换主题 {"kind":"set_theme","value":"default/momo/doraemon/forest/sakura"}。
+- 更换主题 {"kind":"set_theme","value":"default/momo/sky/forest/sakura"}。
 - 调整字号 {"kind":"set_font_scale","value":0.9或1.0或1.15或1.3}。
 - 其他功能通过现有页面完成 {"kind":"open_page","page":"backup/storage/ai_settings/nas_settings/ha_settings/sync_settings/notifications/privacy/statistics/inventory/shopping/alerts/settings"}。备份、恢复、缓存清理及服务/账号配置须由用户在页面选择文件、填凭据或再次确认，不代表已经执行。
 数据库删除、全库清空、SQL、系统命令不提供给 AI。未知操作应说明限制或打开对应页面，不假造能力。

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:momo_box/application/ai_inventory_action_service.dart';
+import 'package:momo_box/app/momo_theme.dart';
 import 'package:momo_box/application/chore_service.dart';
 import 'package:momo_box/application/inventory_service.dart';
 import 'package:momo_box/application/reminder_service.dart';
@@ -38,6 +39,21 @@ void main() {
       shopping: shopping, chores: chores, reminders: reminders);
   });
   tearDown(() => db.close());
+
+  test('legacy theme and saved suggestion resolve to the neutral sky theme', () async {
+    expect(MomoPalette.fromStoredValue('doraemon'), same(MomoPalette.skyPalette));
+    expect(MomoPalette.fromStoredValue('sky').storedValue, 'sky');
+    expect(MomoPalette.skyPalette.mascot, '☁️');
+    expect(MomoPalette.skyPalette.label, '晴空流云（晴空蓝）');
+    final proposed = action({'kind': 'set_theme', 'value': 'doraemon'});
+    expect(proposed.string('value'), 'sky');
+    await confirm(proposed);
+    expect(await settings.getValue('theme'), 'sky');
+    for (final palette in MomoPalette.allPalettes) {
+      expect('${palette.label} ${palette.mascotName}', isNot(contains('哆啦')));
+      expect(palette.mascotName, isNot('小樱'));
+    }
+  });
 
   test('新旧安装可提议，明确关闭仍拒绝；解析/描述/上下文不写业务数据', () async {
     final proposed = action({'kind': 'shopping_add', 'name': '纸巾', 'quantity': 3});

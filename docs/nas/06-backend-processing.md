@@ -17,7 +17,8 @@
 
 ```dotenv
 AI_ENDPOINT=http://your-litellm-host:4000/v1
-AI_MODEL=your-default-model-alias
+# 可选默认模型，支持目录的网关只填 URL + Key 即可
+AI_MODEL=
 AI_API_KEY=your-litellm-virtual-key
 # 留空则尝试网关/models；非空为逗号分隔的允许模型列表
 AI_MODELS=
@@ -27,7 +28,7 @@ AI_PROTOCOL=auto
 MAX_REQUEST_BODY_BYTES=12582912
 ```
 
-协议支持 auto/chat/responses；目标仅来自NAS部署者配置，不接受客户端指定地址、密钥或工具。HTTP重定向不跟随；图片不发送给模型。每次外部尝试预算20秒、整体预算65秒（HTTP客户端上限60秒），只在明确不支持Chat接口时自动尝试Responses；服务失败可使用已配置的副/兜底服务。环境配置缺失时 `backend_ai=false`，App提示NAS配置缺失，不使用手机密钥代替。手机不再提供服务地址/Key编辑，助手与AI设置只选择NAS目录的模型别名。AI_MODELS非空时约束可选模型；为空时尝试主网关 /models，网关不支持目录时已配置固定模型仍可用。AI_MODEL可留空让目录首个模型成为默认；主网关完全未配置时能力关闭。只填主机的地址规范化为/v1，自定义前缀原样保留。
+协议支持 auto/chat/responses；目标仅来自NAS部署者配置，不接受客户端指定地址、密钥或工具。HTTP重定向不跟随；图片不发送给模型。每次外部尝试预算20秒、整体预算65秒（HTTP客户端上限60秒），只在明确不支持Chat接口时自动尝试Responses；服务失败可使用已配置的副/兜底服务。环境配置缺失时 `backend_ai=false`，App提示NAS配置缺失，不使用手机密钥代替。手机不再提供服务地址/Key编辑，助手与AI设置只选择NAS目录的模型别名。AI_MODELS非空时约束可选模型；为空时尝试主网关 /models，网关不支持目录时已配置固定模型仍可用。AI_MODEL可留空让目录首个模型成为默认；主网关完全未配置时能力关闭。只填主机的地址规范化为/v1，自定义前缀原样保留。目录地址兼容base URL及以/models、/chat/completions、/responses结尾的URL；仅GET目录返回404/405时，在同一前缀内尝试带/不带v1路径，总预算10秒，最多两次，不触发推理。其他错误不自动换地址或跟随重定向。粘贴Key两端的空白会去除。
 
 单张原图最大8 MiB，JPEG/PNG，最大2400万像素、单边12000像素。NAS负责解码、应用JPEG EXIF方向、重新编码、去除EXIF/GPS；手机只暂存/上传/缓存展示。HEIC等不支持格式明确失败，需要选择JPEG/PNG；没有假装处理成功。JSON base64有体积开销，反向代理需允许至少12 MiB请求，超时需覆盖OCR/AI处理时间。图片解码/正规化单路并发，EXIF方向通过坐标视图读取，不复制完整像素缓冲；OCR/AI仍为两路有界处理并发。后端容器上限768MiB，Go软内存目标512MiB；满载返回 PROCESSING_BUSY，真实容器峰值与OOM行为待验收。
 
@@ -46,6 +47,10 @@ MAX_REQUEST_BODY_BYTES=12582912
 | POST /api/v1/media/manual/search | product_id/query；在后端检索OCR并返回最多5个片段 |
 | GET /api/v1/ai/models | models:[{id,default}]；仅返回允许模型别名，最多500条，不触发推理 |
 | POST /api/v1/ai/analyze | request_id/system_prompt/user_prompt/history/temperature及可选model别名；仅后端配置的模型推理，不执行工具、SQL或库存写入 |
+
+模型目录失败使用独立错误码：AI_NOT_CONFIGURED、AI_MODELS_AUTH_FAILED、AI_MODELS_NOT_FOUND、AI_MODELS_REDIRECT、AI_MODELS_TIMEOUT、AI_MODELS_UNREACHABLE、AI_MODELS_INVALID_RESPONSE、AI_MODELS_EMPTY、AI_MODELS_UPSTREAM_FAILED。上游401/403返回NAS HTTP502，不能误触发NAS登录续期；未配置为503、超时为504。App显示对应排查提示和合法请求编号，不显示上游正文或URL。
+
+模型请求到达当前后端后记录`ai_models_lookup`，包含request_id、result、upstream_status、model_count、duration_ms；日志不包含密钥、地址、响应正文。沿用容器标准错误输出，无另建日志文件。可在Docker项目日志或`docker compose logs --tail=50 momo-backend`查看。若App的家庭/设备连接尚未就绪，请求会在本机拦截，后端没有该请求日志；旧镜像没有此诊断事件。模型目录失败不等于密钥错误，LiteLLM容器停止也会导致无法连接。
 
 ## 移动端流程
 

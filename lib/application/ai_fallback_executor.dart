@@ -67,7 +67,7 @@ class AiFallbackExecutor {
     api.assertCurrentSession();
     final capabilities = await api.processingRequest('/capabilities',method:'GET');
     if (capabilities['backend_ai'] != true) {
-      throw const BackendProcessingSetupException('NAS 尚未配置 AI 网关。请在 NAS Compose 设置 AI_ENDPOINT、AI_API_KEY 及 AI_MODEL 或 AI_MODELS 后重新部署。');
+      throw const BackendProcessingSetupException('NAS 尚未配置 AI 网关。请在 NAS Compose 设置 AI_ENDPOINT 和 AI_API_KEY 后重建后端容器（AI_MODEL 可留空自动获取）。');
     }
     final result = await api.processingRequest('/ai/analyze', body:{
       'request_id':const Uuid().v4(), 'system_prompt':systemPrompt,

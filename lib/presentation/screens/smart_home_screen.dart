@@ -60,12 +60,19 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
               ),
               const HomeEnvironmentCard(),
               const SizedBox(height: 24),
-              _deviceSectionHeader(context, homeState),
+              Column(
+                key: const ValueKey('smart-home-device-heading'),
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _deviceSectionHeader(context, homeState),
+                  if (homeState.haStatus != HaConnectionStatus.unconfigured &&
+                      (homeState.message != null || homeState.commandError != null || homeState.linkageError != null))
+                    _buildStateNotice(context, homeState),
+                ],
+              ),
               if (homeState.haStatus == HaConnectionStatus.unconfigured)
                 _buildUnconfiguredState(context)
               else ...[
-                  if (homeState.message != null || homeState.commandError != null || homeState.linkageError != null)
-                    _buildStateNotice(context, homeState),
                   _buildRoomsAndDevices(context, ref, homeState.devices),
                   const SizedBox(height:16),
                   // 耗材联动建议与日志入口 (洗衣机耗材、制冰机等)
@@ -89,11 +96,31 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
   }
 
   Widget _deviceSectionHeader(BuildContext context, SmartHomeState state) =>
-    Wrap(alignment: WrapAlignment.spaceBetween, crossAxisAlignment: WrapCrossAlignment.center,
-      spacing: 8, runSpacing: 4, children: [
-        Text('家里的设备', style: Theme.of(context).textTheme.titleLarge),
-        _buildHaBadge(context, state.haStatus),
-      ]);
+      Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final title = Text(
+              '家里的设备',
+              style: Theme.of(context).textTheme.titleLarge,
+            );
+            final badge = _buildHaBadge(context, state.haStatus);
+            if (MomoMobileLayout.stack(context, constraints.maxWidth)) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [title, const SizedBox(height: 8), badge],
+              );
+            }
+            return Row(
+              children: [
+                Expanded(child: title),
+                const SizedBox(width: 12),
+                badge,
+              ],
+            );
+          },
+        ),
+      );
 
   Widget _buildStateNotice(BuildContext context, SmartHomeState state) {
     final error = state.commandError ?? state.linkageError;
@@ -101,6 +128,7 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
     final isError = error != null || state.haStatus == HaConnectionStatus.offline;
     final color = isError ? Colors.red : Colors.amber.shade800;
     return MomoCard(
+      key: const ValueKey('smart-home-notice'),
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(12),
         child: Row(
@@ -139,7 +167,7 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
             decoration: BoxDecoration(shape: BoxShape.circle, color: color),
           ),
           const SizedBox(width: 4),
-          Text(label, style: TextStyle(fontSize: MomoTextSize.caption, color: color, fontWeight: FontWeight.bold)),
+          Flexible(child: Text(label, style: TextStyle(fontSize: MomoTextSize.caption, color: color, fontWeight: FontWeight.bold))),
         ],
       ),
     );
@@ -349,7 +377,8 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
     final selected = rooms.contains(_selectedRoom) ? _selectedRoom : null;
     final visible = devices.where((device) => selected == null || device.room == selected);
     final theme = Theme.of(context);
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    return Column(key: const ValueKey('smart-home-devices'),
+      crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       SingleChildScrollView(scrollDirection: Axis.horizontal,
         child: Row(children: [
           for (final room in <String?>[null, ...rooms]) Padding(
@@ -460,7 +489,7 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
             final latestDevice = matchingDevices.first;
             final controller = modalRef.read(smartHomeControllerProvider.notifier);
 
-            return Padding(
+            return SingleChildScrollView(
               padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(sheetCtx).padding.bottom + 20),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -582,11 +611,15 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
                       }).toList(),
                     ),
                     const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 12,
+                      runSpacing: 8,
                       children: [
                         const Text('设定温度', style: TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.bold)),
                         Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             IconButton(
                               icon: const Icon(Icons.remove_circle_outline),
@@ -594,10 +627,11 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
                                   ? () => controller.updateClimateTemperature(latestDevice.id, -1.0)
                                   : null,
                             ),
-                            Text(
+                            Flexible(child: Text(
                               '${latestDevice.temperature.toStringAsFixed(0)}°C',
                               style: const TextStyle(fontSize: MomoTextSize.section, fontWeight: FontWeight.bold),
-                            ),
+                              textAlign: TextAlign.center,
+                            )),
                             IconButton(
                               icon: const Icon(Icons.add_circle_outline),
                               onPressed: latestDevice.isOn
@@ -639,8 +673,10 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
                     const SizedBox(height: 12),
                     const Text('常用多媒体快捷指令', style: TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 10),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    Wrap(
+                      alignment: WrapAlignment.spaceAround,
+                      spacing: 8,
+                      runSpacing: 8,
                       children: [
                         MomoCapsuleButton(
                           onPressed: latestDevice.isOn

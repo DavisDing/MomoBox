@@ -9,13 +9,13 @@
 - DATABASE_URL：填写现有 PostgreSQL 的 Docker 网络别名、端口、MomoBox专属库、账号和URL编码后的密码。示例为 momobox / momobox_user；已有专属库时直接使用其实际名称。容器内 localhost 指向 MomoBox 容器，不能用来指代 PostgreSQL。
 - networks.database_network.name：填写现有 PostgreSQL 容器所在的 Docker 网络名，该网络须已存在。此模板按同一 NAS 的已有 Docker 网络连接，sslmode=disable 只用于这种受控网络。
 
-库存/账号基础部署填写以上两处；启用AI时还需填写下述三项AI配置。容器内部和宿主映射默认均为 `18473`，完整映射为 `18473:18473`；有冲突时仅修改左侧宿主端口。模板中的固定 `HTTP_ADDR` 与映射右端一致，内置健康检查读取同一配置。应用版本由镜像构建时写入，Compose 不再填写 APP_VERSION；镜像内置 APP_ENV=production。更新现有项目时同步调整 NAS 保存的映射和旧 `HTTP_ADDR`，重建后端容器后生效。
+库存/账号基础部署填写以上两处；启用AI时还需填写下述URL和Key。容器内部和宿主映射默认均为 `18473`，完整映射为 `18473:18473`；有冲突时仅修改左侧宿主端口。模板中的固定 `HTTP_ADDR` 与映射右端一致，内置健康检查读取同一配置。应用版本由镜像构建时写入，Compose 不再填写 APP_VERSION；镜像内置 APP_ENV=production。更新现有项目时同步调整 NAS 保存的映射和旧 `HTTP_ADDR`，重建后端容器后生效。
 
 已有 PG18 实例可直接复用，不要求更换 latest 标签或重新部署。MomoBox 需要自己的数据库和非超级用户角色，不与 LiteLLM 或其他业务共用同一数据库/账号。若专属库和角色已经存在，无需重复创建；若不存在，由管理员在现有实例中创建即可，不是重新部署数据库。迁移需要该库的对象创建权限和 pgcrypto 扩展，扩展权限不足时由管理员在该专属库处理。
 
 ## AI / LiteLLM配置
 
-在同一YAML的environment中填写AI_ENDPOINT（NAS可达的网关base URL，如http://litellm:4000/v1）、AI_API_KEY（网关虚拟Key）和AI_MODEL（默认模型别名）。AI_MODELS可留空自动读取/models，也可填写逗号分隔的允许模型别名；AI_PROTOCOL默认auto。未使用AI时将AI_ENDPOINT、AI_API_KEY、AI_MODEL置空，不能保留CHANGE_ME示例。更改后重建后端容器；App助手中选择NAS提供的模型，不再填写手机AI密钥。
+在同一YAML的environment中填写AI_ENDPOINT（NAS可达的网关base URL，如http://litellm:4000/v1）、AI_API_KEY（网关虚拟Key）即可。AI_MODEL可留空，自动获取模型并在App选择；需要固定默认模型时再填写。AI_MODELS可留空自动读取/models，也可填写逗号分隔的允许模型别名；AI_PROTOCOL默认auto。未使用AI时将AI_ENDPOINT、AI_API_KEY、AI_MODEL置空，不能保留CHANGE_ME示例。更改后重建后端容器；App助手中选择NAS提供的模型，不再填写手机AI密钥。
 
 模型目录和强制NAS自动接入需要新App与新后端，当前模板固定的2026-11-03 digest未包含本次未发布改动，发布后须明确更新image。HA仍按需在App配置。首账号自动创建家庭，后续成员填NAS地址、邀请码和账号资料加入，设备和同步自动准备。
 

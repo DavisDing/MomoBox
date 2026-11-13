@@ -3,10 +3,13 @@ package httpapi
 import (
 	"database/sql"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/momobox/backend/internal/auth"
+	"github.com/momobox/backend/internal/platform"
 	"github.com/momobox/backend/internal/processing"
 )
 
@@ -25,6 +28,19 @@ func (h *Handler) processingActor(w http.ResponseWriter, r *http.Request) (auth.
 	return claims, true
 }
 func processingError(w http.ResponseWriter, r *http.Request, err error) {
+	var catalog *processing.ModelCatalogError
+	if errors.As(err, &catalog) {
+		status := http.StatusBadGateway
+		if catalog.Code == "AI_NOT_CONFIGURED" {
+			status = http.StatusServiceUnavailable
+		}
+		if catalog.Code == "AI_MODELS_TIMEOUT" {
+			status = http.StatusGatewayTimeout
+		}
+		// Upstream 401/403 must not trigger NAS session refresh in the client.
+		writeError(w, r, status, catalog.Code, "NAS AI model discovery failed; check gateway configuration", nil)
+		return
+	}
 	switch {
 	case errors.Is(err, processing.ErrOutcomeUnknown):
 		writeError(w, r, 409, "AI_RESULT_UNKNOWN", "original AI request result is unknown; review before explicitly starting a new request", nil)
@@ -174,7 +190,18 @@ func (h *Handler) aiModels(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.processingActor(w, r); !ok {
 		return
 	}
+	started := time.Now()
 	models, err := h.deps.Processing.AI.Models(r.Context())
+	code, upstreamStatus := "OK", 0
+	if err != nil {
+		code = "AI_MODELS_FAILED"
+		var catalog *processing.ModelCatalogError
+		if errors.As(err, &catalog) {
+			code, upstreamStatus = catalog.Code, catalog.UpstreamStatus
+		}
+	}
+	slog.InfoContext(r.Context(), "ai_models_lookup", "request_id", platform.RequestIDFromContext(r.Context()),
+		"result", code, "upstream_status", upstreamStatus, "model_count", len(models), "duration_ms", time.Since(started).Milliseconds())
 	if err != nil {
 		processingError(w, r, err)
 		return

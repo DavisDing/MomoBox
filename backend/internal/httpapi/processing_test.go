@@ -1,7 +1,12 @@
 package httpapi
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +14,7 @@ import (
 	"time"
 
 	"github.com/momobox/backend/internal/auth"
+	"github.com/momobox/backend/internal/platform"
 	"github.com/momobox/backend/internal/processing"
 )
 
@@ -85,5 +91,63 @@ func TestAIClientCannotSupplyEndpointOrKeys(t *testing.T) {
 	h.ServeHTTP(response, request)
 	if response.Code != 400 || strings.Contains(response.Body.String(), "injected") {
 		t.Fatalf("untrusted destination accepted/leaked: %d %s", response.Code, response.Body.String())
+	}
+}
+
+type catalogTransport func(*http.Request) (*http.Response, error)
+
+func (f catalogTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestAIModelCatalogFailureCodeAndSafeDiagnosticLog(t *testing.T) {
+	for _, scenario := range []struct {
+		code           string
+		upstream, want int
+	}{
+		{"AI_MODELS_AUTH_FAILED", 401, 502},
+		{"AI_MODELS_NOT_FOUND", 404, 502},
+		{"AI_MODELS_TIMEOUT", 0, 504},
+		{"AI_MODELS_UNREACHABLE", -1, 502},
+		{"AI_NOT_CONFIGURED", -2, 503},
+	} {
+		t.Run(scenario.code, func(t *testing.T) {
+			var logs bytes.Buffer
+			previous := slog.Default()
+			slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+			t.Cleanup(func() { slog.SetDefault(previous) })
+			config := processing.AIConfig{Endpoints: []processing.AIEndpoint{{Endpoint: "http://private-gateway/v1", Key: "server-secret"}}, Client: &http.Client{Transport: catalogTransport(func(r *http.Request) (*http.Response, error) {
+				if scenario.upstream == 0 {
+					return nil, context.DeadlineExceeded
+				}
+				if scenario.upstream == -1 {
+					return nil, errors.New("server-secret http://private-gateway connection refused")
+				}
+				return &http.Response{StatusCode: scenario.upstream, Body: io.NopCloser(strings.NewReader("server-secret http://private-gateway upstream error"))}, nil
+			})}}
+			if scenario.upstream == -2 {
+				config = processing.AIConfig{}
+			}
+			handler := NewRouter(Dependencies{Processing: processing.New(nil, config), Verifier: testVerifier{claims: auth.AccessTokenClaims{UserID: "user", FamilyID: "family", DeviceID: "device", ExpiresAt: time.Now().Add(time.Hour)}}})
+			request := httptest.NewRequest(http.MethodGet, "/api/v1/ai/models", nil)
+			request.Header.Set("Authorization", "Bearer token")
+			response := httptest.NewRecorder()
+			platform.RequestIDMiddleware(handler).ServeHTTP(response, request)
+			if response.Code != scenario.want || !strings.Contains(response.Body.String(), scenario.code) {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+			requestID := response.Header().Get("X-Request-ID")
+			if requestID == "" || !strings.Contains(response.Body.String(), requestID) || !strings.Contains(logs.String(), "request_id="+requestID) {
+				t.Fatalf("request diagnostic is not correlated: body=%s log=%s", response.Body.String(), logs.String())
+			}
+			if !strings.Contains(logs.String(), "ai_models_lookup") || !strings.Contains(logs.String(), "result="+scenario.code) {
+				t.Fatalf("missing diagnostic: %s", logs.String())
+			}
+			for _, output := range []string{response.Body.String(), logs.String()} {
+				for _, secret := range []string{"server-secret", "private-gateway", "upstream error", "connection refused", "Bearer token"} {
+					if strings.Contains(output, secret) {
+						t.Fatalf("leaked upstream diagnostic: %s", output)
+					}
+				}
+			}
+		})
 	}
 }

@@ -363,6 +363,8 @@ jobs:
           python3 scripts/ci/android-release-signing.py verify \
             --apk build/app/outputs/flutter-apk/app-release.apk \
             --aab build/app/outputs/bundle/release/app-release.aab
+          python3 scripts/ci/verify-notification-apk.py \
+            --apk build/app/outputs/flutter-apk/app-release.apk
           mkdir -p dist
           cp build/app/outputs/flutter-apk/app-release.apk "dist/MomoBox-v${VERSION}.apk"
           cp build/app/outputs/bundle/release/app-release.aab "dist/MomoBox-v${VERSION}.aab"

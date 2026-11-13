@@ -36,7 +36,7 @@ func AIFromEnv() AIConfig {
 		}
 		endpoint := strings.TrimRight(strings.TrimSpace(os.Getenv(prefix+"ENDPOINT")), "/")
 		model := strings.TrimSpace(os.Getenv(prefix + "MODEL"))
-		key := os.Getenv(prefix + "API_KEY")
+		key := strings.TrimSpace(os.Getenv(prefix + "API_KEY"))
 		protocol := strings.TrimSpace(os.Getenv(prefix + "PROTOCOL"))
 		if protocol == "" {
 			protocol = "auto"
@@ -207,7 +207,7 @@ func (c AIConfig) call(ctx context.Context, r AIRequest) (AIResult, error) {
 			protocols = []string{"chat", "responses"}
 		}
 		for _, p := range protocols {
-			target := strings.TrimRight(e.Endpoint, "/")
+			target := strings.TrimSuffix(strings.TrimRight(e.Endpoint, "/"), "/models")
 			suffix := "/chat/completions"
 			if p == "responses" {
 				suffix = "/responses"

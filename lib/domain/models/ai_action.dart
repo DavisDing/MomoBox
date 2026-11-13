@@ -151,7 +151,11 @@ class AiInventoryAction {
           (!text('title') || !ChoreRepeatInterval.values.any((v) => v.name == data['repeatInterval']))) {
         return null;
       }
-      if (kind == 'set_theme' && !['default', 'momo', 'doraemon', 'forest', 'sakura'].contains(data['value'])) return null;
+      if (kind == 'set_theme') {
+        // Old saved suggestions keep working without reintroducing retired names.
+        if (data['value'] == 'doraemon') data = {...data, 'value': 'sky'};
+        if (!['default', 'momo', 'sky', 'forest', 'sakura'].contains(data['value'])) return null;
+      }
       if (kind == 'set_font_scale' && ![0.9, 1.0, 1.15, 1.3].contains(data['value'])) return null;
       if (kind == 'open_page' && !pages.containsKey(data['page'])) return null;
       if (kind == 'device_control') {

@@ -2,7 +2,7 @@ import 'momo_typography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-enum MomoSkin { defaultSkin, momo, doraemon, forest, sakura }
+enum MomoSkin { defaultSkin, momo, sky, forest, sakura }
 
 class MomoPalette {
   const MomoPalette({
@@ -59,16 +59,16 @@ class MomoPalette {
     shoppingIcon: Icons.assignment_outlined,
   );
 
-  static const doraemonPalette = MomoPalette(
-    skin: MomoSkin.doraemon,
-    label: '哆啦A梦（活力蓝）',
+  static const skyPalette = MomoPalette(
+    skin: MomoSkin.sky,
+    label: '晴空流云（晴空蓝）',
     primary: Color(0xFF1E90D2),
-    secondary: Color(0xFFFF4D4F),
+    secondary: Color(0xFF79BFC4),
     background: Color(0xFFF0F7FC),
     surface: Colors.white,
     text: Color(0xFF2A3B4C),
-    mascot: '🔔',
-    mascotName: '哆啦叮当',
+    mascot: '☁️',
+    mascotName: '小云',
     appLogoIcon: Icons.card_giftcard_rounded,
     shoppingIcon: Icons.receipt_long_outlined,
   );
@@ -96,7 +96,7 @@ class MomoPalette {
     surface: Colors.white,
     text: Color(0xFF4A1525),
     mascot: '🌸',
-    mascotName: '小樱',
+    mascotName: '花芽',
     appLogoIcon: Icons.local_florist_rounded,
     shoppingIcon: Icons.card_giftcard_outlined,
   );
@@ -104,7 +104,7 @@ class MomoPalette {
   static List<MomoPalette> get allPalettes => [
     defaultPalette,
     momoPalette,
-    doraemonPalette,
+    skyPalette,
     forestPalette,
     sakuraPalette,
   ];
@@ -112,7 +112,7 @@ class MomoPalette {
   static MomoPalette fromStoredValue(String? value) {
     return switch (value) {
       'momo' => momoPalette,
-      'doraemon' => doraemonPalette,
+      'sky' || 'doraemon' => skyPalette,
       'forest' => forestPalette,
       'sakura' => sakuraPalette,
       _ => defaultPalette,
@@ -122,7 +122,7 @@ class MomoPalette {
   String get storedValue => switch (skin) {
     MomoSkin.defaultSkin => 'default',
     MomoSkin.momo => 'momo',
-    MomoSkin.doraemon => 'doraemon',
+    MomoSkin.sky => 'sky',
     MomoSkin.forest => 'forest',
     MomoSkin.sakura => 'sakura',
   };

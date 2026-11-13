@@ -11,6 +11,7 @@ enum DiagnosticEvent {
   frameworkError,
   unhandledAsyncError,
   notificationInitializationFailed,
+  notificationOperationFailed,
   notificationTimeZoneFailed,
   systemUiSetupFailed,
   diagnosticsExportFailed,

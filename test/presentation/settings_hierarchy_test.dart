@@ -8,6 +8,23 @@ import 'package:momo_box/presentation/screens/settings_screen.dart';
 import '../support/memory_settings_repository.dart';
 
 void main() {
+  testWidgets('HA 只在家庭与连接分类提供设置入口', (tester) async {
+    final settings = MemorySettingsRepository();
+    addTearDown(settings.close);
+    await _mount(tester, settings);
+    expect(find.text('家居连接'), findsNothing);
+    expect(find.text('Home Assistant 连接配置'), findsNothing);
+    await tester.scrollUntilVisible(find.text('家庭与连接'), 160);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('家庭与连接'));
+    await tester.pumpAndSettle();
+    expect(find.text('Home Assistant 连接配置'), findsOneWidget);
+    expect(find.text('NAS 协同管理'), findsOneWidget);
+    expect(find.text('自动同步状态与待处理记录'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('我的逐级进入诊断，系统返回逐级恢复列表位置', (tester) async {
     final settings = MemorySettingsRepository();
     try {

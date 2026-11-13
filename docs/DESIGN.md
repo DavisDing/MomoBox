@@ -1873,3 +1873,32 @@ NAS 新增 `POST /families/initialize`，默认创建“我的家庭”/Asia/Sha
 SmartHomeScreen 移除两个连接配置按钮，保留所有 HA 状态徽章和刷新、设备、环境行为；未配置文字提示统一设置路径，家庭按钮导航到“我的”。没有新增依赖、接口或数据库迁移，也不改变业务资料。
 
 回归覆盖授权成功/失败/请求中滚动、320/390px 下 1/2/6 个物品尺寸、40 条变长会话及超过一屏的末条回复、迟到存档加载、空会话大字说明、五类 HA 状态及无配置按钮。真实 NAS/HA 和原生设备效果仍需单独验收，运行证据见 VALIDATION。
+
+## 49. 2026-11-13：设置收敛与通知 R8 元数据保留
+
+SettingsScreen 删除直接打开 HA 的重复链接，SettingsCategory.household 统一为“家庭与连接”。原家庭入口、返回栈及 HA 专用配置页保留，自动同步描述不再要求手动初始化。
+
+SmartHomeScreen 将设备标题、HA徽章和权限/错误提示放在同一有稳定身份的布局块；按宽度/文字缩放将标题与徽章分行，提示上方留12dp，设备区保留稳定key。弹窗改为纵向可滚动，空调温度步进器数值可换行，电视按钮使用Wrap。操作校验、NAS回执及只读禁用逻辑不变。填充回归覆盖长设备名、长状态、权限提示及耗材/采购建议，而不只检查空页面。
+
+flutter_local_notifications固定18.0.1，源码通过匿名TypeToken<ArrayList<NotificationDetails>>读取已保存计划；其文档要求应用补Gson ProGuard规则。原平台脚本只创建空proguard-rules.pro。新增android-notification-rules.pro保留Signature、相关类/注解元信息、TypeToken与匿名子类以及通知模型字段；prepare脚本在有界管理块内幂等更新，保留块外内容，Groovy/Kotlin release均继续引用规则。R8/minify保持启用，不升级插件或Gson依赖、不清通知存储。
+
+verify-notification-apk.py使用Python标准库读取正式APK的DEX，检查TypeToken类与子类的dalvik.annotation.Signature（不是仅搜索字符串）、NotificationDetails泛型参数及持久化字段。build-release-packages在签名验证后、复制发布附件前执行；任一检查失败阻止发布。该检查针对本项目固定插件/保留规则，未来插件更换序列化机制时需同步调整。它不证明系统通知投递或开机恢复已经完成验收。
+
+NotificationSettingsScreen将刷新/授权/测试失败保存为简短内联消息，重试重新检查权限并按最新库存/确认重排；允许权限下“重新检查”不再次请求授权。异常只通过DiagnosticLogService记录新事件notificationOperationFailed及原有脱敏类型/栈来源，不记录错误正文。状态卡窄屏/大字把操作移到下一行。测试通知后的检查仍reschedule=false，避免取消刚发出的测试。
+
+本轮没有数据库、API、依赖及后端改动。旧v0.12.98实际DEX中TypeToken（Lqa1;）和其子类（Lu20;）均无泛型Signature；该证据与现场异常一致。新规则、新APK和设备验证分别见VALIDATION，不把旧包失败或本地Widget通过当作新包已验收。AI_CONTEXT长期验证规则无需因此改写。
+
+
+## 50. 2026-11-13：AI 模型目录诊断与中性皮肤兼容
+
+处理REQUIREMENT第32节。现场LiteLLM停机已由用户恢复，源码补足可观察性与URL兼容，未连接用户NAS。
+
+AIConfig.Models保留AI_MODELS优先和固定AI_MODEL兜底。动态目录使用独立10秒上下文，最多两次GET；base URL、/models及chat/responses完整路径规范化为目录地址，保留反向代理前缀。仅404/405可尝试同前缀的v1/无版本形式；其他状态、网络或格式错误立即分类。任何客户端都不跟随目录重定向；读取上限1MiB，只返回去重模型ID，最多500条。AIFromEnv去除Key两端空白；以/models结尾的配置在实际推理时去除目录后缀，原auto协议及未知推理不重试规则不变。
+
+ModelCatalogError只保存静态code与上游HTTP状态，无原始URL/正文/transport error；兼容ErrUnavailable判定。HTTP层为未配置返回503、超时504、其他目录上游失败502，防止网关401触发NAS令牌刷新。ai_models_lookup在认证/设备校验后记录一次有限诊断，与既有http_request共用request_id及标准错误输出，不新增日志文件或修改容器日志驱动。
+
+NasAiModels显示本地安全设置异常或按稳定错误码/HTTP类别生成的排查提示；未知服务端正文不直接展示。合法UUID请求号可供日志匹配，刷新期间禁用按钮，用户刷新重新获取目录，恢复成功撤销错误。Compose示例不再把AI_MODEL占位值当必填，旧镜像digest保留并明确需要更新镜像获得新接口。
+
+MomoSkin.sky/skyPalette替代旧运行标识，名称晴空流云、云朵emoji与中性青色辅色；樱花吉祥物使用花芽。旧doraemon存储值映射skyPalette，新保存用sky；旧AI action在解析时复制并规范化参数，不修改输入Map。助手提示只生成sky。检查pubspec无自定义角色图片资源，运行皮肤使用通用emoji/Material图标，静物绘制与角色无关联；不删除历史设计稿或第三方许可，不声称法律授权验收。
+
+无新增依赖、schema或迁移。自动化测试与实际APK、Docker、LiteLLM及NAS验证分别记录。

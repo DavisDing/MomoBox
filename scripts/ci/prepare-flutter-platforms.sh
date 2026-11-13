@@ -18,6 +18,7 @@ export MOMO_ANDROID_MIN_SDK=36
 export MOMO_ANDROID_COMPILE_SDK=37
 export MOMO_ANDROID_TARGET_SDK=37
 export MOMO_IOS_DEPLOYMENT_TARGET=27.0
+export MOMO_ANDROID_NOTIFICATION_RULES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/android-notification-rules.pro"
 
 python3 - <<'PY'
 from pathlib import Path
@@ -91,8 +92,19 @@ keep.write_text('''<?xml version="1.0" encoding="utf-8"?>
 ''')
 
 proguard = Path('android/app/proguard-rules.pro')
-if not proguard.exists():
-    proguard.write_text('# App release rules\n')
+rules = Path(os.environ['MOMO_ANDROID_NOTIFICATION_RULES']).read_text().strip()
+begin = '# BEGIN MomoBox notification serialization'
+end = '# END MomoBox notification serialization'
+managed_rules = begin + '\n' + rules + '\n' + end
+text = proguard.read_text() if proguard.exists() else '# App release rules\n'
+if begin in text:
+    if end not in text:
+        raise SystemExit('Incomplete MomoBox notification ProGuard block.')
+    text = re.sub(re.escape(begin) + r'.*?' + re.escape(end),
+                  lambda _: managed_rules, text, flags=re.DOTALL)
+else:
+    text = text.rstrip() + '\n\n' + managed_rules + '\n'
+proguard.write_text(text)
 
 for gradle in (Path('android/app/build.gradle'), Path('android/app/build.gradle.kts')):
     if not gradle.exists():

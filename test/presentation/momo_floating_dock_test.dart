@@ -14,7 +14,7 @@ import 'package:momo_box/presentation/widgets/momo_floating_dock.dart';
 const _palettes = [
   MomoPalette.defaultPalette,
   MomoPalette.momoPalette,
-  MomoPalette.doraemonPalette,
+  MomoPalette.skyPalette,
   MomoPalette.forestPalette,
   MomoPalette.sakuraPalette,
 ];
@@ -475,10 +475,10 @@ Future<void> _pumpShell(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        themeNameProvider.overrideWith((_) => Stream.value('doraemon')),
+        themeNameProvider.overrideWith((_) => Stream.value('sky')),
       ],
       child: MaterialApp.router(
-        theme: buildMomoTheme(MomoPalette.doraemonPalette, Brightness.light),
+        theme: buildMomoTheme(MomoPalette.skyPalette, Brightness.light),
         routerConfig: router,
         builder:
             (context, child) => MediaQuery(

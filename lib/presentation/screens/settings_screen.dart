@@ -71,8 +71,6 @@ class SettingsScreen extends StatelessWidget {
           _SettingsGroup(title: '智能与连接', children: [
             _SettingsLink(icon: Icons.auto_awesome_outlined, title: 'AI 服务',
               subtitle: '查看 NAS 模型与应用操作权限', destination: (_) => const AiSettingsScreen()),
-            _SettingsLink(icon: Icons.hub_outlined, title: '家居连接',
-              subtitle: 'Home Assistant 与设备', destination: (_) => const HomeAssistantSettingsScreen()),
             _categoryLink(SettingsCategory.household),
           ]),
           _SettingsGroup(title: '日常偏好', children: [
@@ -101,7 +99,7 @@ class SettingsScreen extends StatelessWidget {
 enum SettingsCategory {
   appearance('外观与显示', '主题与字体大小', Icons.palette_outlined),
   intelligence('识别与用量', 'AI 调用记录与条码查询', Icons.qr_code_scanner),
-  household('家庭与同步', 'NAS、家居连接与同步', Icons.home_outlined),
+  household('家庭与连接', 'NAS、家庭成员与 Home Assistant', Icons.home_outlined),
   data('数据与隐私', '统计、备份与安全', Icons.shield_outlined);
 
   const SettingsCategory(this.title, this.summary, this.icon);
@@ -174,7 +172,7 @@ class SettingsCategoryScreen extends ConsumerWidget {
           _SettingsLink(
             icon: Icons.sync_outlined,
             title: '同步状态与冲突处理',
-            subtitle: '首次同步、手动同步与冲突记录',
+            subtitle: '自动同步状态与待处理记录',
             destination: (_) => const SyncSettingsScreen(),
           ),
         ]),
@@ -989,14 +987,18 @@ class NotificationSettingsScreen extends ConsumerStatefulWidget {
   const NotificationSettingsScreen({super.key});
 
   @override
-  ConsumerState<NotificationSettingsScreen> createState() => _NotificationSettingsScreenState();
+  ConsumerState<NotificationSettingsScreen> createState() =>
+      _NotificationSettingsScreenState();
 }
 
-class _NotificationSettingsScreenState extends ConsumerState<NotificationSettingsScreen>
+class _NotificationSettingsScreenState
+    extends ConsumerState<NotificationSettingsScreen>
     with WidgetsBindingObserver {
-  NotificationPermissionStatus _status = NotificationPermissionStatus.unavailable;
+  NotificationPermissionStatus _status =
+      NotificationPermissionStatus.unavailable;
   bool _busy = true;
   bool _refreshAfterResume = false;
+  String? _errorMessage;
 
   @override
   void initState() {
@@ -1019,8 +1021,31 @@ class _NotificationSettingsScreenState extends ConsumerState<NotificationSetting
       _refreshAfterResume = true;
       return;
     }
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _errorMessage = null;
+    });
     unawaited(_refreshStatus());
+  }
+
+  Future<void> _retryStatus() async {
+    if (_busy || !mounted) return;
+    setState(() {
+      _busy = true;
+      _errorMessage = null;
+    });
+    await _refreshStatus();
+  }
+
+  void _notificationFailed(Object error, StackTrace stack, String message) {
+    unawaited(
+      DiagnosticLogService.shared.record(
+        DiagnosticEvent.notificationOperationFailed,
+        error,
+        stackTrace: stack,
+      ),
+    );
+    if (mounted) setState(() => _errorMessage = message);
   }
 
   Future<void> _syncLatestNotifications() async {
@@ -1033,14 +1058,16 @@ class _NotificationSettingsScreenState extends ConsumerState<NotificationSetting
     if (!mounted) return;
     // Inventory may have changed while acknowledgements were loading.
     final items = ref.read(inventoryProvider).asData?.value;
-    final acknowledgements = ref.read(reminderAcknowledgementsProvider).asData?.value;
+    final acknowledgements = ref
+        .read(reminderAcknowledgementsProvider)
+        .asData
+        ?.value;
     if (items == null || acknowledgements == null) {
       throw StateError('库存或提醒确认状态尚未就绪，请重试。');
     }
-    await ref.read(localNotificationServiceProvider).sync(
-      items,
-      acknowledgements: acknowledgements,
-    );
+    await ref
+        .read(localNotificationServiceProvider)
+        .sync(items, acknowledgements: acknowledgements);
   }
 
   Future<void> _refreshStatus({
@@ -1049,16 +1076,18 @@ class _NotificationSettingsScreenState extends ConsumerState<NotificationSetting
   }) async {
     if (!mounted) return;
     try {
-      final status = await ref.read(localNotificationServiceProvider).permissionStatus();
+      final status = await ref
+          .read(localNotificationServiceProvider)
+          .permissionStatus();
       if (!mounted) return;
       setState(() => _status = status);
-      if (reschedule && (permissionGranted || status == NotificationPermissionStatus.allowed)) {
+      if (reschedule &&
+          (permissionGranted ||
+              status == NotificationPermissionStatus.allowed)) {
         await _syncLatestNotifications();
       }
-    } catch (error) {
-      if (mounted) {
-        showAppSnackBar(context, SnackBar(content: Text('无法刷新通知状态或重排提醒：$error')));
-      }
+    } catch (error, stack) {
+      _notificationFailed(error, stack, '无法刷新通知状态或重排提醒，请重试。');
     } finally {
       if (mounted) {
         final refreshAgain = _refreshAfterResume;
@@ -1071,17 +1100,25 @@ class _NotificationSettingsScreenState extends ConsumerState<NotificationSetting
 
   Future<void> _requestPermission() async {
     if (_busy || !mounted) return;
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _errorMessage = null;
+    });
     var granted = false;
     try {
-      granted = await ref.read(localNotificationServiceProvider).requestPermission();
+      granted = await ref
+          .read(localNotificationServiceProvider)
+          .requestPermission();
       if (mounted) {
-        showAppSnackBar(context,
-          SnackBar(content: Text(granted ? '通知权限已开启。' : '通知权限未开启，请在系统设置中允许通知。')),
+        showAppSnackBar(
+          context,
+          SnackBar(
+            content: Text(granted ? '通知权限已开启。' : '通知权限未开启，请在系统设置中允许通知。'),
+          ),
         );
       }
-    } catch (error) {
-      if (mounted) showAppSnackBar(context, SnackBar(content: Text('无法请求通知权限：$error')));
+    } catch (error, stack) {
+      _notificationFailed(error, stack, '无法请求通知权限，请重试。');
     } finally {
       if (mounted) await _refreshStatus(permissionGranted: granted);
     }
@@ -1089,12 +1126,17 @@ class _NotificationSettingsScreenState extends ConsumerState<NotificationSetting
 
   Future<void> _sendTest() async {
     if (_busy || !mounted) return;
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _errorMessage = null;
+    });
     try {
       await ref.read(localNotificationServiceProvider).showTestNotification();
-      if (mounted) showAppSnackBar(context, const SnackBar(content: Text('测试通知已发送。')));
-    } catch (error) {
-      if (mounted) showAppSnackBar(context, SnackBar(content: Text('$error')));
+      if (mounted) {
+        showAppSnackBar(context, const SnackBar(content: Text('测试通知已发送。')));
+      }
+    } catch (error, stack) {
+      _notificationFailed(error, stack, '测试通知发送失败，请重试。');
     } finally {
       // Business sync cancels old schedules; do not cancel the test just sent.
       if (mounted) await _refreshStatus(reschedule: false);
@@ -1102,19 +1144,42 @@ class _NotificationSettingsScreenState extends ConsumerState<NotificationSetting
   }
 
   String get _statusLabel => switch (_status) {
-        NotificationPermissionStatus.allowed => '已允许',
-        NotificationPermissionStatus.denied => '未允许',
-        NotificationPermissionStatus.unavailable => '暂时无法确认',
-      };
+    NotificationPermissionStatus.allowed => '已允许',
+    NotificationPermissionStatus.denied => '未允许',
+    NotificationPermissionStatus.unavailable => '暂时无法确认',
+  };
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: MomoAppBar.adaptive(context, title: const Text('提醒与通知')),
-        body: ListView(
-          padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
-          children: [
-            Card(
-              child: ListTile(
+    appBar: MomoAppBar.adaptive(context, title: const Text('提醒与通知')),
+    body: ListView(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        16,
+        16,
+        16 + MomoDockInsets.bottomOf(context),
+      ),
+      children: [
+        Card(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final stack = MomoMobileLayout.stack(
+                context,
+                constraints.maxWidth,
+              );
+              final action = TextButton(
+                onPressed: _busy
+                    ? null
+                    : _status == NotificationPermissionStatus.allowed
+                    ? _retryStatus
+                    : _requestPermission,
+                child: Text(
+                  _status == NotificationPermissionStatus.allowed
+                      ? '重新检查'
+                      : '请求授权',
+                ),
+              );
+              final tile = ListTile(
                 leading: Icon(
                   _status == NotificationPermissionStatus.allowed
                       ? Icons.notifications_active_outlined
@@ -1122,29 +1187,61 @@ class _NotificationSettingsScreenState extends ConsumerState<NotificationSetting
                 ),
                 title: const Text('通知权限'),
                 subtitle: Text(_busy ? '正在检查…' : _statusLabel),
-                trailing: TextButton(
-                  onPressed: _busy ? null : _requestPermission,
-                  child: Text(_status == NotificationPermissionStatus.allowed ? '重新检查' : '请求授权'),
-                ),
-              ),
-            ),
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.notification_important_outlined),
-                title: const Text('发送测试提醒'),
-                subtitle: const Text('确认系统通知是否能正常显示。'),
-                onTap: _busy ? null : _sendTest,
-              ),
-            ),
-            const Padding(
-              padding: EdgeInsets.all(12),
-              child: Text(
-                'MomoBox 会根据临期、过期和低库存状态在本地安排提醒。通知未开启时，库存和提醒页面仍可正常使用；打开 App 后可继续查看所有待处理项目。',
-              ),
-            ),
-          ],
+                trailing: stack ? null : action,
+              );
+              return stack
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        tile,
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: action,
+                          ),
+                        ),
+                      ],
+                    )
+                  : tile;
+            },
+          ),
         ),
-      );
+        if (_errorMessage != null)
+          MomoCard(
+            key: const ValueKey('notification-error'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _errorMessage!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: _busy ? null : _retryStatus,
+                  child: const Text('重试'),
+                ),
+              ],
+            ),
+          ),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.notification_important_outlined),
+            title: const Text('发送测试提醒'),
+            subtitle: const Text('确认系统通知是否能正常显示。'),
+            onTap: _busy ? null : _sendTest,
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.all(12),
+          child: Text(
+            'MomoBox 会根据临期、过期和低库存状态在本地安排提醒。通知未开启时，库存和提醒页面仍可正常使用；打开 App 后可继续查看所有待处理项目。',
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class StorageManagementScreen extends ConsumerStatefulWidget {

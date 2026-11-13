@@ -157,9 +157,11 @@ FLUTTER
 chmod +x "$temporary_root/bin/flutter"
 
 cp "$script_dir/prepare-flutter-platforms.sh" "$temporary_root/project/prepare.sh"
+cp "$script_dir/android-notification-rules.pro" "$temporary_root/project/android-notification-rules.pro"
 (
   cd "$temporary_root/project"
   PATH="$temporary_root/bin:$PATH" bash ./prepare.sh
+  printf '\n-keep class example.ExistingRule { *; }\n' >> android/app/proguard-rules.pro
   PATH="$temporary_root/bin:$PATH" bash ./prepare.sh
 
   test ! -e test/widget_test.dart
@@ -211,6 +213,13 @@ PY
   grep -q 'tools:keep="@mipmap/ic_launcher"' android/app/src/main/res/values/keep.xml
   grep -q 'proguardFiles' android/app/build.gradle
   grep -q 'proguardFiles' android/app/build.gradle.kts
+  grep -Fq -- '-keepattributes Signature,InnerClasses,EnclosingMethod,*Annotation*' android/app/proguard-rules.pro
+  grep -Fq -- '-keep class com.google.gson.reflect.TypeToken { *; }' android/app/proguard-rules.pro
+  grep -Fq -- '-keep class * extends com.google.gson.reflect.TypeToken { *; }' android/app/proguard-rules.pro
+  grep -Fq -- '-keep class com.dexterous.flutterlocalnotifications.models.** { *; }' android/app/proguard-rules.pro
+  grep -Fq -- '-keep class example.ExistingRule { *; }' android/app/proguard-rules.pro
+  test "$(grep -c '^# BEGIN MomoBox notification serialization$' android/app/proguard-rules.pro)" -eq 1
+  test "$(grep -c '^# END MomoBox notification serialization$' android/app/proguard-rules.pro)" -eq 1
   grep -q 'compileSdk' android/build.gradle
   grep -q 'compileSdk' android/build.gradle.kts
   grep -q 'import UserNotifications' ios/Runner/AppDelegate.swift

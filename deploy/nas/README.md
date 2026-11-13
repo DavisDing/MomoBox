@@ -1,6 +1,6 @@
 # MomoBox NAS 部署
 
-本目录只部署 `momo-backend` 和 PostgreSQL。生产 NAS 从 GitHub Container Registry（GHCR）拉取由 `.env` 明确指定的、可追溯的版本标签或 digest；不再默认使用可变的 `latest`。Home Assistant 是外部服务，由后端通过家庭管理员配置的地址和加密 Token 访问；LLM/Ollama 不在 NAS Compose 中，Flutter 客户端直接连接用户配置的外部服务。
+本目录只部署 `momo-backend` 和 PostgreSQL。生产 NAS 从 GitHub Container Registry（GHCR）拉取由 `.env` 明确指定的、可追溯的版本标签或 digest；不再默认使用可变的 `latest`。Home Assistant 是外部服务，由后端通过家庭管理员配置的地址和加密 Token 访问；模型运行器不在本 Compose 中，NAS 后端连接部署者配置的外部 AI 网关；手机只选择 NAS 提供的模型。
 
 ## 镜像与版本策略
 
@@ -165,6 +165,6 @@ docker compose \
 
 App先填写NAS地址并登录/注册，首位使用者自动创建家庭，后续成员使用邀请码；无需手动注册设备、选择bootstrap模式或配置同步队列。HA只在需要家居控制时配置。NAS断网时已初始化的原归属缓存只读，前台恢复连接后自动同步。
 
-AI在Compose设置AI_ENDPOINT（如 http://litellm:4000/v1）、AI_API_KEY（可用该网关虚拟Key）、AI_MODEL（网关配置的模型别名），可选AI_MODELS逗号分隔允许列表。留空列表时NAS尝试读取网关/models，配置固定模型可兼容无目录接口的服务；目录内容仅以别名返回手机。App助手只选择模型，不填写上游地址/密钥。网关地址必须从MomoBox容器可达，localhost表示容器本身。参考：[LiteLLM客户端配置](https://docs.litellm.ai/docs/proxy/client_setup/overview)、[虚拟Key](https://docs.litellm.ai/docs/proxy/virtual_keys)。
+AI在Compose设置AI_ENDPOINT（如 http://litellm:4000/v1）、AI_API_KEY（可用该网关虚拟Key）即可自动获取目录，AI_MODEL可留空或指定默认别名，可选AI_MODELS逗号分隔允许列表。留空列表时NAS尝试读取网关/models，配置固定模型可兼容无目录接口的服务；目录内容仅以别名返回手机。App助手只选择模型，不填写上游地址/密钥。网关地址必须从MomoBox容器可达，localhost表示容器本身。参考：[LiteLLM客户端配置](https://docs.litellm.ai/docs/proxy/client_setup/overview)、[虚拟Key](https://docs.litellm.ai/docs/proxy/virtual_keys)。
 
 以上新增家庭初始化和模型目录API需配套更新App/后端镜像；本轮仅源码与本地验证，未发布，旧固定镜像不会自动获得新行为。
