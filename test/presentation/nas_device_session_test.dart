@@ -122,7 +122,7 @@ void main() {
               controller.state.devices.status,
               NasDeviceStatus.needsRegistration,
             );
-            operation = controller.registerCurrentDevice(deviceName: '手机');
+            operation = controller.prepareCurrentDevice();
           }
           await entered.future;
           expect(controller.state.devices.status, NasDeviceStatus.loading);

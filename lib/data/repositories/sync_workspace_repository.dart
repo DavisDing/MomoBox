@@ -58,9 +58,11 @@ class SyncWorkspaceRepository {
   SyncWorkspaceRepository(this._database);
   final AppDatabase _database;
 
+  // An unchanged binding is not a new session, even when sync updates other
+  // settings in this table. Rebuilding access would invalidate in-flight APIs.
   Stream<String?> watchBinding() => (_database.select(_database.appSettings)
         ..where((row) => row.key.equals(syncWorkspaceBindingKey)))
-      .watchSingleOrNull().map((row) => row?.value);
+      .watchSingleOrNull().map((row) => row?.value).distinct();
 
   Future<SyncWorkspaceIdentity?> readOwner() async {
     final row = await (_database.select(_database.appSettings)

@@ -150,6 +150,10 @@ void main() {
     showScreen = ValueNotifier(true);
     database = AppDatabase.forTesting(NativeDatabase.memory());
     outbox = SyncOutboxRepository(database);
+    await outbox.saveState(SyncStateModel(scopeId:'family-a',bootstrapStatus:SyncBootstrapStatus.ready,
+      pullCursor:0,pushAckCursor:0,consecutiveFailures:0,updatedAt:DateTime.now()));
+    await (database.into(database.appSettings)).insert(AppSettingsCompanion.insert(
+      key:'sync_bootstrap:family-a',value:'{"mode":"join_and_merge"}',updatedAt:DateTime.now()));
     api = _Api();
     engine = _Engine(api, outbox);
     settings = MemorySettingsRepository();

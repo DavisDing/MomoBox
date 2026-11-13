@@ -34,6 +34,7 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
           onRefresh: () async {
             await controller.refresh();
             ref.read(publicWeatherServiceProvider).expireCache();
+            ref.invalidate(publicWeatherReadingProvider);
             ref.invalidate(homeEnvironmentProvider);
           },
           child: ListView(

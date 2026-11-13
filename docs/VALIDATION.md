@@ -825,3 +825,16 @@ PostgreSQL16.4源码经官方SHA256校验，编译到 `/private/tmp/momobox-pg16
 - 修复：分析、iOS及release构建三个Flutter job均固定Flutter 3.47.9，匹配最近完整成功的Actions基线及本机工具链。截图上传仅在截图生成成功后执行，避免未生成文件的次生失败。没有屏蔽 analyzer 诊断、改 lint 级别或尝试迁移67处全局Material API。
 - PASS：Flutter 3.47.9 `flutter analyze --no-pub` 全项目无问题；`scripts/ci/test-prepare-flutter-platforms.sh`；workflow YAML解析；`git diff --check`。
 - NOT_EXECUTED：本次修改后的 GitHub Actions、Android debug/release APK/AAB和 iOS build 均未运行。需要新 commit 触发 CI 后确认正式构建；上一次失败 run 内 APK构建步骤是 skipped，不是原生打包器报错。
+
+## 2026-11-13：同步200忙循环、今日页滚动与环境刷新
+
+基于HEAD `8c2b907`，继续本会话未提交的同步修复，并纳入今日页频闪/跳顶、HA环境来源、公共天气地名和刷新反馈。实现与边界见REQUIREMENT第28节、DESIGN第46节。本次只改App与文档，没有后端协议、产品依赖或数据库迁移。
+
+- PASS：Flutter3.47.9 / Dart3.13.7 `flutter analyze --no-pub`，最终全项目No issues found，日志 `/private/tmp/momobox-sync-env-analyze-final.log`。
+- PASS：`flutter test --no-pub --reporter expanded` 全套1054项通过，退出0，日志 `/private/tmp/momobox-sync-env-all-tests.log`。复用现有临时SDK和锁文件缓存，使用flutter_tools.dart入口；没有安装工具或修改pubspec.lock。工具需要临时缓存写入与127.0.0.1测试监听，按现有验证方式在允许环境运行。
+- 覆盖同步：真实Drift内存库内部设置写入后归属/API/engine/首次导入服务不替换；真实engine两轮成功pull不误报会话失效；一次401刷新重试界限、切NAS/账号/家庭旧API阻断、原冲突结算/游标/库存/退避保护；新同步入口自动准备设备、仍显示归属确认和空家庭三种模式且不自动选择。原9文件相关回归197项通过后，再纳入最新设置去重/今日页测试完成全套1054项。
+- 覆盖今日页：真实HomeScreen、真实库存Provider/内存库、MockClient NAS成功请求，先向下滚动再连续三轮同步并写内部告警及轮换token；断言ScrollState身份、滚动位置、库存Repository、模块顺序、engine不变，pull恰三次且API仅创建一次。单文件最终复验日志 `/private/tmp/momobox-today-scroll-test3.log`，也包含在完整回归中。无真实NAS或手机访问。
+- 覆盖环境：已授权无device_class模板温度可选择/读取；电量百分比、不兼容类型、未授权实体不冒充温湿度；分钟刷新同城保留旧读数、城市切换立即清旧、HA权限撤销清读数、前台HA刷新与后台跳过；10分钟自然到期重取、并发合并、原数据时间保留、失败旧数据明确过期；精确重复地名消重，成都市/吉安市/达州市/阿坝州可区分，坐标及类型可见；原窄屏/大字与HA typed control回归保留。视觉fixture仅适配Provider类型，没有降低断言。
+- 初始新增测试曾因UTF-8夹具错误、缺少NAS处理guard配置、Widget/Drift不同事件循环等待及pump回调内expect冲突失败或中断；逐项修正夹具/等待方式后全套通过，没有屏蔽诊断、放宽超时或删除生产能力。
+- PASS：`git diff --check`。公开地名接口只读核对成功，仅发送“成都”；未发送用户账号/令牌、手机定位或请求用户NAS。地名接口记录不构成行政地理真实性证明。
+- NOT_EXECUTED：Android/iOS构建安装、真实NAS/HA/PG18联调、设备滚动/生命周期验收、镜像/APK发布及新远端CI。本轮未提交、推送或部署；当前已安装版本不含这些改动。修复不要求清库、重建家庭或更换用户密钥。

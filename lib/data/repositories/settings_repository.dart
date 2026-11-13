@@ -13,10 +13,13 @@ class SettingsRepository {
   }
 
   Stream<String?> watchValue(String key) {
+    // Drift invalidates at table granularity. Internal sync checkpoints must
+    // not notify consumers of unrelated settings with an unchanged value.
     return (_database.select(_database.appSettings)
           ..where((setting) => setting.key.equals(key)))
         .watchSingleOrNull()
-        .map((entry) => entry?.value);
+        .map((entry) => entry?.value)
+        .distinct();
   }
 
   Future<void> setValue(String key, String value) async {

@@ -550,6 +550,26 @@ class NasAccountController extends StateNotifier<NasAccountState> {
     }
   }
 
+  /// An explicit sync action registers this installation without an extra
+  /// device-name dialog. Existing revoked records still require manual review.
+  Future<void> prepareCurrentDevice() async {
+    if (!state.isAuthenticated || !state.family.hasFamily) return;
+    final revision = _sessionRevision;
+    final familyId = state.family.familyId;
+    if (state.devices.status == NasDeviceStatus.needsRegistration) {
+      final stored = await _readDeviceId();
+      if (!_isCurrentSession(revision) || state.family.familyId != familyId ||
+          state.devices.status != NasDeviceStatus.needsRegistration) {
+        return;
+      }
+      if (state.devices.devices.any((device) => device.id == stored && device.revokedAt != null)) {
+        _setDeviceError('此设备已被撤销，请在 NAS 设置中核实后重新注册。');
+        return;
+      }
+      await registerCurrentDevice(deviceName: 'MomoBox ${_platformName()}');
+    }
+  }
+
   Future<void> registerCurrentDevice({
     required String deviceName,
     String? platform,

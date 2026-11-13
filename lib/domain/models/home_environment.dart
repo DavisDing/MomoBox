@@ -20,11 +20,14 @@ class HomeEnvironment {
 }
 
 class WeatherPlace {
-  const WeatherPlace(this.name, this.latitude, this.longitude);
+  const WeatherPlace(this.name, this.latitude, this.longitude, {this.description});
   final String name;
   final double latitude;
   final double longitude;
-  Map<String, Object> toJson() => {'name': name, 'latitude': latitude, 'longitude': longitude};
+  final String? description;
+  String get coordinates => '${latitude.toStringAsFixed(4)}, ${longitude.toStringAsFixed(4)}';
+  Map<String, Object> toJson() => {'name': name, 'latitude': latitude, 'longitude': longitude,
+    if (description != null) 'description': description!};
   static WeatherPlace? fromJson(Object? raw) {
     if (raw is! Map) return null;
     final lat = raw['latitude'], lon = raw['longitude'], name = raw['name'];
@@ -32,7 +35,8 @@ class WeatherPlace {
         !lat.isFinite || !lon.isFinite || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
       return null;
     }
-    return WeatherPlace(name, lat.toDouble(), lon.toDouble());
+    return WeatherPlace(name, lat.toDouble(), lon.toDouble(),
+      description: raw['description'] is String ? raw['description'] as String : null);
   }
 }
 

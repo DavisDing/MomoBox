@@ -16,6 +16,7 @@ import '../controllers/providers.dart';
 import '../widgets/momo_components.dart';
 import '../widgets/momo_floating_dock.dart';
 import '../widgets/initial_import_card.dart';
+import 'nas_settings_screen.dart';
 
 /// Sync controls intentionally remain explicit: the user must choose a
 /// bootstrap mode when the NAS reports that local and remote data need a
@@ -41,11 +42,17 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
   List<NasSyncConflictDetail> _remoteConflicts = const <NasSyncConflictDetail>[];
   List<SyncConflictEntry> _recoveryLocals = const <SyncConflictEntry>[];
   String? _recoveryScopeId;
+  SyncEngine? _bootstrapEngine;
 
   @override
   Widget build(BuildContext context) {
     final account = ref.watch(nasAccountProvider);
     final engine = ref.watch(syncEngineProvider);
+    if (!identical(_bootstrapEngine, engine)) {
+      _bootstrapEngine = engine;
+      _availableModes = const [];
+      _selectedMode = null;
+    }
     final syncApi = ref.watch(nasSyncApiProvider);
     final deviceId = account.devices.currentDeviceId;
     final scopeId = account.family.familyId;
@@ -98,6 +105,9 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     final enabled = engine != null;
     final workspaceAccess = ref.watch(syncWorkspaceAccessProvider);
     final access = workspaceAccess.asData?.value;
+    final canSetUp = account.isAuthenticated && account.family.hasFamily &&
+        !account.isLoading && !workspaceAccess.isLoading &&
+        (access?.canBind == true || access?.canSync == true);
     return MomoCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -117,8 +127,8 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           const SizedBox(height: 12),
           Text(
             enabled
-                ? '同步只在已登录、已加入家庭并注册当前设备后启用。'
-                : '请先在 NAS 协同管理中完成地址、登录、家庭和设备配置。',
+                ? '已连接当前家庭。完成一次同步确认后，后续自动同步。'
+                : '登录并创建或加入家庭后，点击下方按钮；设备登记和连接检查会自动完成。',
           ),
           if (familyId != null) ...[
             const SizedBox(height: 8),
@@ -167,20 +177,54 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           ],
           const SizedBox(height: 12),
           FilledButton.icon(
-            onPressed: !enabled || _working || _importWorking ? null : () => _runSync(engine),
+            onPressed: _working || _importWorking || workspaceAccess.isLoading ? null
+                : enabled ? () => _runSync(engine)
+                : canSetUp ? _setUpSync
+                : () => Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => const NasSettingsScreen())),
             icon: _working
                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.sync),
-            label: const Text('立即同步'),
+            label: Text(enabled ? '立即同步' : canSetUp ? '开始使用 NAS 同步' : '前往 NAS 登录与家庭设置'),
           ),
         ],
       ),
     );
   }
 
-  Future<void> _bindWorkspace() async {
+  Future<void> _setUpSync() async {
+    if (_working || _importWorking) return;
+    setState(() { _working = true; _message = '正在准备当前设备…'; });
+    try {
+      final identity = ref.read(syncWorkspaceIdentityProvider);
+      if (identity == null) return;
+      await ref.read(nasAccountProvider.notifier).prepareCurrentDevice();
+      if (!mounted) return;
+      final current = ref.read(syncWorkspaceIdentityProvider);
+      if (current == null || !identity.matches(current)) return;
+      if (ref.read(nasAccountProvider).devices.status != NasDeviceStatus.ready) {
+        setState(() => _message = ref.read(nasAccountProvider).devices.errorMessage ??
+            '当前设备尚未准备好，请前往 NAS 设置重试。');
+        return;
+      }
+      final access = await ref.read(syncWorkspaceAccessProvider.future);
+      if (!mounted) return;
+      if (!access.canSync && !await _bindWorkspace()) return;
+      if (!mounted) return;
+      setState(() => _working = true);
+      await ref.read(syncWorkspaceAccessProvider.future);
+      final engine = ref.read(syncEngineProvider);
+      if (engine != null) await _bootstrap(engine);
+    } catch (error) {
+      if (mounted) setState(() => _message = '准备同步失败：$error');
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  Future<bool> _bindWorkspace() async {
     final identity = ref.read(syncWorkspaceIdentityProvider);
-    if (identity == null) return;
+    if (identity == null) return false;
     final accepted = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -194,7 +238,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
         ],
       ),
     );
-    if (!mounted || accepted != true) return;
+    if (!mounted || accepted != true) return false;
     setState(() => _working = true);
     try {
       await SyncWorkspaceRepository(ref.read(databaseProvider)).bind(identity, isCurrent: () {
@@ -203,8 +247,10 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
       });
       ref.invalidate(syncWorkspaceAccessProvider);
       if (mounted) setState(() => _message = '本机数据归属已确认；首次同步模式仍需单独确认。');
+      return true;
     } catch (error) {
       if (mounted) setState(() => _message = '数据归属确认失败：$error');
+      return false;
     } finally {
       if (mounted) setState(() => _working = false);
     }
@@ -224,7 +270,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
               '首次连接只读取服务端提供的可选模式；不会自动覆盖本地库存，也不会把“合并”显示为已完成。',
             ),
             const SizedBox(height: 12),
-            if (awaitingChoice && _availableModes.isNotEmpty)
+            if (_availableModes.isNotEmpty)
               RadioGroup<String>(
                 groupValue: _selectedMode,
                 onChanged: (value) => setState(() => _selectedMode = value),
@@ -236,7 +282,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
               icon: const Icon(Icons.cloud_download_outlined),
               label: Text(awaitingChoice ? '重新读取可选模式' : '检查首次同步状态'),
             ),
-            if (awaitingChoice) ...[
+            if (_availableModes.isNotEmpty) ...[
               const SizedBox(height: 8),
               FilledButton.icon(
                 onPressed: engine == null || _working || _importWorking || _selectedMode == null
@@ -725,7 +771,9 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
         // Do not silently choose a destructive or data-merging bootstrap mode.
         // The user must explicitly select one before confirmation is enabled.
         _selectedMode = null;
-        _message = response.mergeRequired ? '服务端要求选择首次同步模式。' : '服务端已准备好同步，可以立即同步。';
+        _message = response.availableModes.isNotEmpty
+            ? '请选择首次同步方式并确认；确认后自动开始同步。'
+            : '当前没有可用的首次同步方式，请检查 NAS 状态。';
       });
     } catch (error) {
       if (_isCurrentEngine(engine)) setState(() => _message = '检查首次同步状态失败：$error');
@@ -758,11 +806,24 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
   }
 
   Future<void> _runSync(SyncEngine engine) async {
+    if (_working || _importWorking) return;
     setState(() {
       _working = true;
       _message = null;
     });
     try {
+      final scopeId = ref.read(nasAccountProvider).family.familyId;
+      if (scopeId == null) return;
+      final repository = SyncOutboxRepository(ref.read(databaseProvider));
+      final saved = await repository.getState(scopeId);
+      final mode = await repository.getConfirmedBootstrapMode(scopeId);
+      if (!_isCurrentEngine(engine)) return;
+      if (mode == null || saved == null ||
+          saved.bootstrapStatus == SyncBootstrapStatus.unconfigured ||
+          saved.bootstrapStatus == SyncBootstrapStatus.keepLocalOnly) {
+        await _bootstrap(engine);
+        return;
+      }
       final report = await ref.read(syncSchedulerProvider).runNow();
       if (!_isCurrentEngine(engine)) return;
       if (report == null) {

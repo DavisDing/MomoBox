@@ -9,10 +9,9 @@ class HomeEnvironmentCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(homeEnvironmentProvider);
-    // A provider rebuild can mean the NAS family/permission context changed.
-    // Do not render the previous context's retained AsyncValue while waiting.
-    final data = async.isLoading || async.hasError ? const HomeEnvironment() :
-      async.valueOrNull ?? const HomeEnvironment();
+    // The composer supplies current authorized HA readings and same-city
+    // weather while refreshing; it never retains the previous HA context.
+    final data = async.valueOrNull ?? const HomeEnvironment();
     final theme = Theme.of(context);
     final now = ref.watch(environmentClockProvider).valueOrNull ?? DateTime.now();
     String number(EnvironmentReading? reading, String unit) => reading == null ? '—' :

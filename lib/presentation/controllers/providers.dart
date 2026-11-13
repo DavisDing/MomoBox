@@ -1,3 +1,4 @@
+import 'dart:async';
 import '../../application/ai_inventory_action_service.dart';
 import '../../application/ai_fallback_executor.dart';
 import '../../application/ai_conversation_store.dart';
@@ -810,7 +811,7 @@ final publicWeatherServiceProvider = Provider<PublicWeatherService>((ref) {
 
 final homeEnvironmentConfigProvider = StreamProvider<HomeEnvironmentConfig>((ref) => ref
     .watch(settingsRepositoryProvider).watchValue(HomeEnvironmentConfig.settingsKey)
-    .map(HomeEnvironmentConfig.decode));
+    .distinct().map(HomeEnvironmentConfig.decode));
 
 // Only retained while the environment is visible. The weather service caches
 // requests for ten minutes; this tick updates age/expiry without extra traffic.
@@ -819,27 +820,58 @@ final environmentClockProvider = StreamProvider.autoDispose<DateTime>((ref) asyn
   yield* Stream.periodic(const Duration(minutes: 1), (_) => DateTime.now());
 });
 
-final homeEnvironmentProvider = FutureProvider.autoDispose<HomeEnvironment>((ref) async {
+final environmentHaRefreshProvider = Provider.autoDispose<void>((ref) {
   final config = ref.watch(homeEnvironmentConfigProvider).valueOrNull;
-  if (config == null) return const HomeEnvironment();
+  if (config == null || ![config.temperatureEntity, config.humidityEntity,
+      config.outdoorEntity, config.weatherEntity].any((key) => key?.isNotEmpty == true)) {
+    return;
+  }
+  ref.listen(environmentClockProvider, (previous, next) {
+    if (!next.hasValue || next.valueOrNull == previous?.valueOrNull) return;
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    if (lifecycle != null && lifecycle != AppLifecycleState.resumed) return;
+    // Refresh through the existing coalesced, authorized HA path so grants
+    // revoked since the previous read are rechecked along with the values.
+    unawaited(ref.read(smartHomeControllerProvider.notifier).refresh());
+  });
+});
+
+// A separate provider per city retains only that city's weather during a
+// refresh. HA permission/session changes are composed synchronously below,
+// never retained through an AsyncValue belonging to the previous family.
+final publicWeatherReadingProvider = FutureProvider.autoDispose.family<HomeEnvironment,
+    ({String name, double latitude, double longitude})>((ref, place) async {
+  ref.watch(environmentClockProvider);
+  final lifecycle = WidgetsBinding.instance.lifecycleState;
+  if (lifecycle != null && lifecycle != AppLifecycleState.resumed) return const HomeEnvironment();
+  return ref.watch(publicWeatherServiceProvider).current(
+    WeatherPlace(place.name, place.latitude, place.longitude));
+});
+
+final homeEnvironmentProvider = Provider.autoDispose<AsyncValue<HomeEnvironment>>((ref) {
+  ref.watch(environmentHaRefreshProvider);
+  final config = ref.watch(homeEnvironmentConfigProvider).valueOrNull;
+  if (config == null) return const AsyncData(HomeEnvironment());
   final home = ref.watch(smartHomeControllerProvider);
   final now = ref.watch(environmentClockProvider).valueOrNull ?? DateTime.now();
   final ha = environmentFromHa(config, home.entities, home.entityStates, now:now,
     staleEntityKeys:home.staleEntityIds,
     forceStale:!home.nasOnline || {HaConnectionStatus.offline,HaConnectionStatus.unconfigured}.contains(home.haStatus));
   final lifecycle = WidgetsBinding.instance.lifecycleState;
-  if (lifecycle != null && lifecycle != AppLifecycleState.resumed) return ha;
+  if (lifecycle != null && lifecycle != AppLifecycleState.resumed) return AsyncData(ha);
   if (config.place == null ||
       (ha.outdoorTemperature != null && !ha.outdoorTemperature!.isStale(now) &&
        ha.apparentTemperature != null && !ha.apparentTemperature!.isStale(now))) {
-    return ha;
+    return AsyncData(ha);
   }
-  try {
-    final weather = await ref.watch(publicWeatherServiceProvider).current(config.place!);
-    return mergeHomeEnvironment(ha,weather,now);
-  } catch (_) {
-    return HomeEnvironment(indoorTemperature:ha.indoorTemperature, indoorHumidity:ha.indoorHumidity,
+  final place = config.place!;
+  final weather = ref.watch(publicWeatherReadingProvider((name:place.name,
+    latitude:place.latitude, longitude:place.longitude)));
+  if (weather.hasError) {
+    return AsyncData(HomeEnvironment(indoorTemperature:ha.indoorTemperature, indoorHumidity:ha.indoorHumidity,
       outdoorTemperature:ha.outdoorTemperature, apparentTemperature:ha.apparentTemperature,
-      message:'公共天气暂不可用，可下拉重试');
+      message:'公共天气暂不可用，可下拉重试'));
   }
+  final result = mergeHomeEnvironment(ha, weather.valueOrNull ?? const HomeEnvironment(), now);
+  return weather.isLoading ? const AsyncLoading<HomeEnvironment>().copyWithPrevious(AsyncData(result)) : AsyncData(result);
 });

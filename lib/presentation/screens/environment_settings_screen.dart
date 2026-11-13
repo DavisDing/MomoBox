@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../domain/models/home_environment.dart';
 import '../../domain/models/nas_homeassistant_models.dart';
+import '../../application/home_environment_service.dart';
 import '../controllers/providers.dart';
 import '../widgets/momo_components.dart';
 import '../widgets/momo_mobile_layout.dart';
+import 'home_assistant_settings_screen.dart';
 
 class EnvironmentSettingsScreen extends ConsumerStatefulWidget {
   const EnvironmentSettingsScreen({super.key});
@@ -19,12 +21,17 @@ class _EnvironmentSettingsScreenState extends ConsumerState<EnvironmentSettingsS
   List<WeatherPlace> _places = [];
   bool _searching = false, _saving = false;
   String? _error;
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(() { if (mounted) _refreshSensors(); });
+  }
   String _sourceDetails() {
     final async = ref.read(homeEnvironmentProvider);
-    final data = async.isLoading || async.hasError ? null : async.valueOrNull;
+    final data = async.valueOrNull;
     if (data == null) return '尚未读取环境数据。';
     String line(String name, EnvironmentReading? reading) => reading == null ? '$name：未接入' :
-      '$name：${reading.value.toStringAsFixed(1)} · ${reading.source}\n读取时间：${reading.observedAt.toLocal()}${reading.isStale(DateTime.now()) ? ' · 上次数据' : ''}';
+      '$name：${reading.value.toStringAsFixed(1)} · ${reading.source}\n${reading.source.startsWith('Open-Meteo') ? '气象数据时间' : '读取时间'}：${reading.observedAt.toLocal()}${reading.isStale(DateTime.now()) ? ' · 上次数据' : ''}';
     return [line('室内温度',data.indoorTemperature),line('室内湿度',data.indoorHumidity),
       line('室外温度',data.outdoorTemperature),line('室外体感',data.apparentTemperature)].join('\n\n');
   }
@@ -58,6 +65,9 @@ class _EnvironmentSettingsScreenState extends ConsumerState<EnvironmentSettingsS
     } catch (_) { if(mounted) setState(() => _error='保存失败，请重试'); }
     finally { if(mounted) setState(() => _saving=false); }
   }
+  Future<void> _refreshSensors() async {
+    await ref.read(smartHomeControllerProvider.notifier).refresh();
+  }
   @override
   Widget build(BuildContext context) {
     ref.watch(homeEnvironmentProvider);
@@ -81,7 +91,7 @@ class _EnvironmentSettingsScreenState extends ConsumerState<EnvironmentSettingsS
     final sensors=entities.where((e)=>e.domain=='sensor');
     Iterable<NasHaEntity> sensorClass(String deviceClass) => sensors.where((entity) {
       final remote = home.entityStates['${entity.integrationId}::${entity.entityId}'];
-      return remote?.attributes['device_class'] == deviceClass;
+      return isEnvironmentSensor(entity, remote, deviceClass);
     });
     return Scaffold(appBar:MomoAppBar.adaptive(context,title:const Text('环境数据来源')),
       body: stored.isLoading && _draft==null ? const Center(child:CircularProgressIndicator()) :
@@ -89,6 +99,15 @@ class _EnvironmentSettingsScreenState extends ConsumerState<EnvironmentSettingsS
         ExpansionTile(tilePadding:EdgeInsets.zero,title:const Text('当前来源与读取时间'),
           children:[Padding(padding:const EdgeInsets.only(bottom:16),child:Text(_sourceDetails()))]),
         const Text('室内温湿度来自你选择的已授权传感器。没有传感器时留空，不以空调设定值或室外天气代替。温度统一显示为摄氏度。'),
+        Wrap(spacing:8,children:[
+          TextButton.icon(onPressed:home.isLoading?null:_refreshSensors,
+            icon:const Icon(Icons.refresh),label:Text(home.isLoading?'正在读取传感器…':'刷新传感器')),
+          TextButton(onPressed:()=>Navigator.of(context).push(MaterialPageRoute<void>(
+            builder:(_)=>const HomeAssistantSettingsScreen())),child:const Text('HA 连接与实体授权')),
+        ]),
+        if(sensors.isEmpty) const Text('暂无已授权传感器。HA 连接成功后，还需在“实体权限与状态”中为当前家庭角色开启查看权限，再刷新此页。')
+        else if(sensorClass('temperature').isEmpty && sensorClass('humidity').isEmpty)
+          const Text('暂未读到可识别的温湿度。请刷新并检查传感器的状态、单位和设备类型；未知或无权限的状态不会用作测量值。'),
         const SizedBox(height:20),
         selector('室内温度传感器',config.temperatureEntity,sensorClass('temperature'),(v)=>_update(temperature:v)),
         selector('室内湿度传感器',config.humidityEntity,sensorClass('humidity'),(v)=>_update(humidity:v)),
@@ -104,12 +123,13 @@ class _EnvironmentSettingsScreenState extends ConsumerState<EnvironmentSettingsS
         const SizedBox(height:8),
         OutlinedButton.icon(onPressed:_searching?null:_search,icon:const Icon(Icons.search),label:Text(_searching?'查询中…':'查询城市')),
         for(final place in _places) ListTile(title:Text(place.name),
+          subtitle:Text('${place.description ?? '地点'} · ${place.coordinates}'),
           leading:const Icon(Icons.location_city_outlined),onTap:_saving?null:()=>_update(place:place)),
         if(config.place!=null) ListTile(contentPadding:EdgeInsets.zero,title:Text('已选：${config.place!.name}'),
-          subtitle:const Text('保存后启用公共天气回退'),trailing:IconButton(tooltip:'停用公共天气',
+          subtitle:Text('${config.place!.description ?? '地点'} · ${config.place!.coordinates}\n保存后启用公共天气回退'),trailing:IconButton(tooltip:'停用公共天气',
             onPressed:_saving?null:()=>_update(removePlace:true),icon:const Icon(Icons.close))),
         const SizedBox(height:12),
-        const Text('天气数据：Open-Meteo / CC BY 4.0。数据由气象模型提供，城市天气不代表室内实测。'),
+        const Text('天气数据：Open-Meteo / CC BY 4.0。显示气象数据本身的时间，成功请求不代表数据时间立即变化；页面可见时每分钟检查，缓存满 10 分钟重新获取，也可在家居页下拉刷新。城市天气不代表室内实测。'),
         Wrap(spacing:8,children:[
           TextButton(onPressed:()=>launchUrl(Uri.parse('https://open-meteo.com/'),
             mode:LaunchMode.externalApplication),child:const Text('Open-Meteo')),

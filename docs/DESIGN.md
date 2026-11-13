@@ -1808,3 +1808,17 @@ AI连接测试复用backendResolver，但对选中NAS处理的认证、家庭绑
 HA新增owner/admin专用 GET /home-assistant/integrations/{id}/catalog，返回当前家庭已发现实体的权限设置目录，主动省略缓存状态及状态时间。常规 entities/state/commands保持原授权过滤。保存HA后先保留服务端返回的integration ID，再调用discover，刷新目录；发现失败保留已保存配置及可重试入口。配置页可为owner/admin自己或其他角色分别修改can_view/can_control及已有typed-command allowlist，默认不授予未记录的权限。没有数据库迁移或依赖变化。
 
 错误映射与本地模拟回归不代表现场NAS/HA或真实模型通过；接口需随NAS后端镜像更新，旧后端由404提示更新。
+
+## 46. 2026-11-13：设置通知隔离与同步/环境刷新稳定性
+
+现场200循环与此前401循环分开定位：Drift按表失效，sync_workspace_binding查询在任何app_settings写入后都重发同一字符串，导致FutureProvider重新加载归属、旧API失效、engine替换并触发调度。watchBinding对持久值distinct；SettingsRepository.watchValue同样按单键字符串distinct，避免同步元数据唤醒主题、字号、首页模块等无关消费者。归属/会话校验、错身份阻断、迟到响应保护不移除；库存仍按既有依赖重新计算，不能因此忽略真实业务或提醒策略变化。
+
+同步概要入口在已登录/有家庭/可绑定或已匹配时自动prepareCurrentDevice，复用原设备注册和令牌绑定；检测已保存设备撤销时拒绝自动准备。归属弹窗和服务端bootstrap模式选择继续显式保留，空家庭merge_required=false也显示available_modes。立即同步先检查是否已有确认mode；未确认则读取bootstrap，已有模式的中断恢复继续走原scheduler。engine变化时清空旧可选模式，避免跨上下文复用选择。
+
+环境配置监听先过滤相同原始字符串。公共天气FutureProvider按名称和坐标分组，独立于HA状态通知；homeEnvironmentProvider同步组合当前授权HA状态与同城市天气的AsyncValue，普通刷新保留值，城市变化切换到独立Provider。来源/权限变化时按当前HA实体重新计算，不复用上个家庭的整体环境快照。公共请求按城市合并在途请求，成功缓存仍10分钟；注入clock用于到期回归，不篡改服务端current.time。原下拉同时使服务缓存及天气Provider失效。
+
+environmentHaRefreshProvider只在环境被观察且配置了HA来源时监听分钟时钟；前台沿SmartHomeController.refresh既有并发合并/认证/目录/权限路径刷新，后台跳过。来源页打开后主动刷新并保留手动刷新及授权入口。模板温度sensor在device_class缺省时允许以C/F单位识别；显式不兼容类型、无状态、不可见实体拒绝，湿度仍要求humidity与百分比。
+
+搜索结果组合name/admin3/admin2/admin1/country，补充feature_code对应类型及经纬度，相同标签和坐标去重。保存的旧城市坐标保持原值，可重新搜索选择；新增可选description兼容既有ha_environment_v1 JSON，不改schema。公开接口实读的成都结果包含成都市省级行政中心、吉安市/达州市/阿坝州普通居民点；原页面省略admin2造成三条四川标签相同，不能把地名库记录当行政市真实性证明。
+
+必要UI变化限原同步按钮与引导、环境来源刷新/授权入口及地名说明，未重设计今日页/环境卡片。AI_CONTEXT更新建议：设备与NAS实测后记录“设置按值去重不改变会话、同城市环境刷新保留数据”的长期约定；本轮不以本地测试替代现场验收。

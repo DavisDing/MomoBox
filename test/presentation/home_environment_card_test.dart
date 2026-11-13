@@ -15,9 +15,9 @@ void main() {
         addTearDown(tester.view.reset);
         final now=DateTime.utc(2026,11,9,8);
         await tester.pumpWidget(ProviderScope(overrides:[
-          homeEnvironmentProvider.overrideWith((ref) async => HomeEnvironment(
+          homeEnvironmentProvider.overrideWith((ref) => AsyncData(HomeEnvironment(
             outdoorTemperature:EnvironmentReading(18,'Open-Meteo · 示例城市',now),
-            apparentTemperature:EnvironmentReading(17,'Open-Meteo · 示例城市',now))),
+            apparentTemperature:EnvironmentReading(17,'Open-Meteo · 示例城市',now)))),
           environmentClockProvider.overrideWith((ref)=>Stream.value(now)),
         ],child:MaterialApp(theme:buildMomoTheme(MomoPalette.defaultPalette,Brightness.light),
           home:MediaQuery(data:MediaQueryData(textScaler:TextScaler.linear(scale)),
@@ -35,9 +35,9 @@ void main() {
   testWidgets('separate weather sources and stale status remain visible',(tester) async {
     final now=DateTime.utc(2026,11,9,8);
     await tester.pumpWidget(ProviderScope(overrides:[
-      homeEnvironmentProvider.overrideWith((ref) async => HomeEnvironment(
+      homeEnvironmentProvider.overrideWith((ref) => AsyncData(HomeEnvironment(
         outdoorTemperature:EnvironmentReading(18,'室外传感器',now),
-        apparentTemperature:EnvironmentReading(17,'Open-Meteo · 城市',now,stale:true))),
+        apparentTemperature:EnvironmentReading(17,'Open-Meteo · 城市',now,stale:true)))),
       environmentClockProvider.overrideWith((ref)=>Stream.value(now)),
     ],child:MaterialApp(home:Scaffold(body:HomeEnvironmentCard()))));
     await tester.pumpAndSettle();

@@ -14,11 +14,14 @@ import 'package:momo_box/data/nas/nas_api_error.dart';
 import 'package:momo_box/data/nas/nas_sync_api.dart';
 import 'package:momo_box/data/repositories/settings_repository.dart';
 import 'package:momo_box/data/repositories/sync_workspace_repository.dart';
+import 'package:momo_box/data/repositories/sync_outbox_repository.dart';
+import 'package:momo_box/domain/models/sync_models.dart';
 import 'package:momo_box/domain/models/nas_family_device_models.dart';
 import 'package:momo_box/domain/models/nas_models.dart';
 import 'package:momo_box/presentation/controllers/nas_account_controller.dart';
 import 'package:momo_box/presentation/controllers/providers.dart';
 import 'package:momo_box/presentation/screens/sync_settings_screen.dart';
+import 'package:momo_box/presentation/screens/home_screen.dart';
 import 'package:momo_box/services/nas_credentials_service.dart';
 
 class Account extends NasAccountController {
@@ -33,6 +36,9 @@ class Account extends NasAccountController {
   int refreshCalls = 0;
   int conflictCalls = 0;
   bool rejectConflicts = false;
+  bool allowSync = false;
+  int pulls = 0;
+  int preparations = 0;
   String token = 'initial-token';
 
   void rotateToken() {
@@ -88,6 +94,16 @@ class Account extends NasAccountController {
     state = const NasAccountState.initial();
   }
 
+  void requireDevice() {
+    state = state.copyWith(devices:const NasDeviceState(status:NasDeviceStatus.needsRegistration));
+  }
+
+  @override
+  Future<void> prepareCurrentDevice() async {
+    preparations++;
+    state = state.copyWith(devices:const NasDeviceState(status:NasDeviceStatus.ready,currentDeviceId:'device'));
+  }
+
   @override
   NasSyncApi? createSyncApi({bool Function()? isWorkspaceCurrent}) {
     apiCreations++;
@@ -96,6 +112,22 @@ class Account extends NasAccountController {
       accessTokenProvider: () => token,
       isSessionCurrent: isWorkspaceCurrent,
       client: MockClient((request) async {
+        if (allowSync && request.url.path.endsWith('/sync/bootstrap')) {
+          return http.Response(jsonEncode({'schema_version':1,'sync_protocol_version':1,'server_cursor':0,
+            'merge_required':false,'available_modes':['join_and_merge','create_new_family','keep_local_only']}),200);
+        }
+        if (allowSync && request.url.path.endsWith('/sync/import/capabilities')) {
+          return http.Response(jsonEncode({'import_format_version':1,'atomic_import':true,
+            'history_archive':true,'calendar_dates':true,'max_records':1000,
+            'max_request_bytes':1000000,'family_time_zone':'Asia/Shanghai'}), 200);
+        }
+        if (allowSync && request.url.path.endsWith('/capabilities')) {
+          return http.Response('{"schema_version":1,"sync_protocol_version":1}', 200);
+        }
+        if (allowSync && request.url.path.endsWith('/sync/pull')) {
+          pulls++;
+          return http.Response('{"changes":[],"next_cursor":0,"has_more":false}', 200);
+        }
         if (request.url.path.endsWith('/sync/conflicts')) {
           conflictCalls++;
           if (rejectConflicts ||
@@ -127,6 +159,12 @@ class Account extends NasAccountController {
   }
 }
 
+class _LocalConnection extends NasConnectionService {
+  _LocalConnection(super.settings);
+  @override
+  Future<NasConnectionState> loadState() async => const NasConnectionState(status:NasConnectionStatus.unconfigured);
+}
+
 void main() {
   late AppDatabase db;
   late Account account;
@@ -143,6 +181,7 @@ void main() {
       databaseProvider.overrideWithValue(db),
       nasAccountProvider.overrideWith((ref) => account),
       localWorkspaceIdProvider.overrideWith((ref) async => 'local-device'),
+      nasConnectionServiceProvider.overrideWith((ref)=>_LocalConnection(settings)),
     ]);
     subscription = container.listen(syncWorkspaceAccessProvider, (_, __) {});
     await container.read(localWorkspaceIdProvider.future);
@@ -169,6 +208,51 @@ void main() {
     await bind();
     expect(container.read(nasSyncApiProvider), isNotNull);
     expect(container.read(syncEngineProvider), isNotNull);
+  });
+
+  test('unrelated setting writes cannot replace the bound session or engine', () async {
+    await bind();
+    final api = container.read(nasSyncApiProvider)!;
+    final engine = container.read(syncEngineProvider)!;
+    final importer = container.read(initialImportServiceProvider);
+    final identity = container.read(syncWorkspaceIdentityProvider);
+    final settings = container.read(settingsRepositoryProvider);
+    for (final key in ['sync_import_format:family-a', 'sync_processing_warning:family-a',
+      'sync_backend_history_cursor:family-a', 'ai_usage_logs', 'theme_name']) {
+      await settings.setValue(key, 'changed');
+      // Allow Drift's table invalidations and Riverpod dependencies to settle.
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(container.read(syncWorkspaceAccessProvider).isLoading, isFalse);
+      expect(identical(container.read(nasSyncApiProvider), api), isTrue);
+      expect(identical(container.read(syncEngineProvider), engine), isTrue);
+      expect(identical(container.read(initialImportServiceProvider), importer), isTrue);
+      expect(identical(container.read(syncWorkspaceIdentityProvider), identity), isTrue);
+      expect(api.assertCurrentSession, returnsNormally);
+    }
+    expect(account.apiCreations, 1);
+  });
+
+  test('successful pull and internal capability writes keep one engine without a restart loop', () async {
+    await bind();
+    account.allowSync = true;
+    final outbox = SyncOutboxRepository(db);
+    await container.read(settingsRepositoryProvider).setValue(nasServerUrlKey,'https://nas.example');
+    await outbox.saveState(SyncStateModel(scopeId:'family-a', bootstrapStatus:SyncBootstrapStatus.ready,
+      pullCursor:0,pushAckCursor:0,consecutiveFailures:0,updatedAt:DateTime.now(),
+      serverSchemaVersion:1,syncProtocolVersion:1));
+    await container.read(settingsRepositoryProvider).setValue('sync_bootstrap:family-a',
+      jsonEncode({'mode':'join_and_merge'}));
+    final engine = container.read(syncEngineProvider)!;
+    for (var i = 0; i < 2; i++) {
+      final result = await engine.runOnce();
+      expect(result.skipped, isFalse);
+      expect(result.postProcessingError, isNull);
+      await Future<void>.delayed(const Duration(milliseconds:30));
+      expect(identical(container.read(syncEngineProvider),engine),isTrue);
+    }
+    expect(account.pulls,2);
+    expect(account.apiCreations,1);
+    expect((await outbox.getState('family-a'))!.lastErrorMessage,isNull);
   });
 
   for (final reject in [false, true]) {
@@ -262,6 +346,22 @@ void main() {
     await tester.tap(hittable);
   }
 
+  Future<void> finishWidgetWork(WidgetTester tester, Future<void> work) async {
+    var completed = false;
+    Object? failure;
+    final result = work.then<void>((_) { completed = true; },onError:(Object error) {
+      failure = error;
+      completed = true;
+    });
+    for (var i = 0; i < 200 && !completed; i++) {
+      await tester.runAsync(()=>Future<void>.delayed(const Duration(milliseconds:1)));
+      await tester.pump(const Duration(milliseconds:16));
+    }
+    expect(completed,isTrue,reason:'页面挂载后的异步数据库操作未在有界等待内完成');
+    await result;
+    if (failure != null) throw failure!;
+  }
+
   Future<void> closeWidgetFixture(WidgetTester tester) async {
     try {
       await tester.pumpWidget(const SizedBox.shrink());
@@ -293,6 +393,76 @@ void main() {
       }
     }
   }
+
+  testWidgets('one setup action prepares device and opens explicit first-sync choices even for an empty family', (tester) async {
+    widgetOwnsCleanup = true;
+    try {
+      account.allowSync = true;
+      account.requireDevice();
+      await tester.binding.setSurfaceSize(const Size(600,1200));
+      await tester.pumpWidget(UncontrolledProviderScope(container:container,
+        child:const MaterialApp(home:SyncSettingsScreen())));
+      await tapButton(tester,find.widgetWithText(FilledButton,'开始使用 NAS 同步'));
+      await settle(tester,find.byType(AlertDialog));
+      expect(account.preparations,1);
+      await tapButton(tester,find.widgetWithText(FilledButton,'确认属于此身份'));
+      await settle(tester,find.textContaining('请选择首次同步方式并确认'));
+      expect(find.byType(RadioListTile<String>),findsNWidgets(3));
+      expect(await tester.runAsync(()=>SyncOutboxRepository(db).getConfirmedBootstrapMode('family-a')),isNull);
+      expect(find.textContaining('请选择首次同步方式并确认'),findsOneWidget);
+      expect(tester.takeException(),isNull);
+    } finally { await closeWidgetFixture(tester); }
+  });
+
+  testWidgets('today page keeps its scroll position while successful NAS sync writes internal settings', (tester) async {
+    widgetOwnsCleanup = true;
+    try {
+      account.allowSync = true;
+      await tester.runAsync(() async {
+        await bind();
+        final outbox = SyncOutboxRepository(db);
+        await outbox.saveState(SyncStateModel(scopeId:'family-a',bootstrapStatus:SyncBootstrapStatus.ready,
+          pullCursor:0,pushAckCursor:0,consecutiveFailures:0,updatedAt:DateTime.now(),
+          serverSchemaVersion:1,syncProtocolVersion:1));
+        await container.read(settingsRepositoryProvider).setValue('sync_bootstrap:family-a','{"mode":"join_and_merge"}');
+        await container.read(settingsRepositoryProvider).setValue(nasServerUrlKey,'https://nas.example');
+      });
+      await tester.binding.setSurfaceSize(const Size(390,700));
+      await tester.pumpWidget(UncontrolledProviderScope(container:container,
+        child:const MaterialApp(home:HomeScreen())));
+      await settle(tester,find.byType(CustomScrollView));
+      final scrollable = find.descendant(of:find.byType(CustomScrollView),matching:find.byType(Scrollable));
+      await tester.drag(find.byType(CustomScrollView),const Offset(0,-450));
+      await settle(tester,find.byType(CustomScrollView),readyWhen:()=>container.read(choresProvider).hasValue);
+      final scroll = tester.state<ScrollableState>(scrollable);
+      final offset = scroll.position.pixels;
+      expect(offset,greaterThan(100));
+      final inventoryRepository = container.read(inventoryRepositoryProvider);
+      final order = container.read(homeSectionOrderProvider).value;
+      final engine = container.read(syncEngineProvider)!;
+      for (var i = 0; i < 3; i++) {
+        var skipped = true;
+        await finishWidgetWork(tester,() async {
+          final report = await engine.runOnce();
+          skipped = report.skipped;
+          await container.read(settingsRepositoryProvider).setValue('sync_processing_warning:family-a','round-$i');
+          account.rotateToken();
+        }());
+        expect(skipped,isFalse);
+        await tester.pump(const Duration(milliseconds:100));
+        expect(find.byType(CustomScrollView),findsOneWidget);
+        expect(identical(tester.state<ScrollableState>(scrollable),scroll),isTrue);
+        expect(scroll.position.pixels,closeTo(offset,1));
+        expect(container.read(inventoryProvider).isLoading,isFalse);
+        expect(identical(container.read(inventoryRepositoryProvider),inventoryRepository),isTrue);
+        expect(identical(container.read(homeSectionOrderProvider).value,order),isTrue);
+        expect(identical(container.read(syncEngineProvider),engine),isTrue);
+      }
+      expect(account.pulls,3);
+      expect(account.apiCreations,1);
+      expect(tester.takeException(),isNull);
+    } finally { await closeWidgetFixture(tester); }
+  });
 
   for (final reject in [false, true]) {
     testWidgets('同步设置在401刷新后保持稳定，不重建冲突请求：持续拒绝=$reject', (tester) async {

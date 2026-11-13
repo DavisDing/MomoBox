@@ -88,7 +88,7 @@ void main() {
                   _OfflineNetwork(),
                 ),
                 homeEnvironmentProvider.overrideWith(
-                  (ref) async => HomeEnvironment(
+                  (ref) => AsyncData(HomeEnvironment(
                     indoorTemperature: EnvironmentReading(23.6, '客厅传感器', now),
                     indoorHumidity: EnvironmentReading(48, '客厅传感器', now),
                     outdoorTemperature: EnvironmentReading(
@@ -101,7 +101,7 @@ void main() {
                       'Open-Meteo · 测试城市',
                       now,
                     ),
-                  ),
+                  )),
                 ),
                 environmentClockProvider.overrideWith(
                   (ref) => Stream.value(now),
