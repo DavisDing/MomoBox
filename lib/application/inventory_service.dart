@@ -1,6 +1,7 @@
 import '../data/repositories/inventory_repository.dart';
 import '../domain/inventory/expiry_rules.dart';
 import '../domain/models/inventory_models.dart';
+import '../domain/models/product_details_patch.dart';
 
 class InventoryService {
   InventoryService(this._repository);
@@ -53,6 +54,16 @@ class InventoryService {
 
   Future<List<StockMovement>> loadMovements(String productId) =>
       _repository.loadMovements(productId);
+
+  Future<void> updateProductDetails(
+    String productId,
+    ProductDetailsPatch patch, {
+    required Map<String, String?> expectedDetails,
+  }) => _repository.updateProductDetails(
+    productId,
+    patch,
+    expectedDetails: expectedDetails,
+  );
 
   Future<void> consume(String productId, int quantity) {
     if (quantity < 1) throw ArgumentError('消耗数量必须为大于 0 的整数。');

@@ -1902,3 +1902,47 @@ NasAiModels显示本地安全设置异常或按稳定错误码/HTTP类别生成�
 MomoSkin.sky/skyPalette替代旧运行标识，名称晴空流云、云朵emoji与中性青色辅色；樱花吉祥物使用花芽。旧doraemon存储值映射skyPalette，新保存用sky；旧AI action在解析时复制并规范化参数，不修改输入Map。助手提示只生成sky。检查pubspec无自定义角色图片资源，运行皮肤使用通用emoji/Material图标，静物绘制与角色无关联；不删除历史设计稿或第三方许可，不声称法律授权验收。
 
 无新增依赖、schema或迁移。自动化测试与实际APK、Docker、LiteLLM及NAS验证分别记录。
+
+## 51. 2026-11-13：助手 Markdown 消息正文
+
+对应REQUIREMENT第33节。现有助手使用SelectableText直接显示AiInventoryAction.displayText，无法解释Markdown。新增AssistantMessageBody复用同一displayText提取，再由非纵向滚动的MarkdownBody渲染；用户气泡继续原SelectableText，消息ID、原始JSON存档、reverse列表及确认按钮不变。操作建议优先沿用已有安全概要，不能用模型reply冒充执行成功。
+
+新增直接依赖flutter_markdown_plus固定1.0.12，其传递依赖markdown7.3.1；lock仅新增这两个包，已有依赖版本不变。仓库此前无Markdown解析/渲染器，使用库处理嵌套/转义/表格，避免正则替换样式；不引入WebView、HTML脚本或原生插件。包的来源与接口按维护者文档核对： https://pub.dev/packages/flutter_markdown_plus/versions/1.0.12 。第三方LICENSE文件保留，未因主题更名移除依赖声明。
+
+正文保留16字号/1.5行高，标题按全局22/18/16/14层级，表格和代码14，采用当前ColorScheme和MediaQuery.textScaler。softLineBreak保持历史纯文本换行；selectable允许混合TextSpan完整复制。代码块使用库的独立横向控制器；表格用随正文字号增长的固定列宽，使单元格可换行且表格整体横向滚动。列表缩进同样随字号增长，不限系统字号；整个消息无固定高度。
+
+链接复用已有url_launcher，仅接受有host、无userinfo的HTTP/HTTPS地址，用户点击后externalApplication打开；原生拒绝/异常以简短SnackBar反馈。自定义imageBuilder将远程图片显示为“查看图片”入口，渲染期间不发网络图片请求或读取手机文件；非网页图片入口禁用。任务列表为展示，无业务回调；回复中的代码块不参与action解析。
+
+AiAssistantService保留外层JSON及原action约束，明确reply可含Markdown、外层对象不包代码围栏；没有改变NAS执行、授权、上下文范围或未知请求不自动重试规则。无需迁移已有聊天、Drift/PostgreSQL schema或服务端API。实际验证见VALIDATION，模拟原生URL/剪贴板不代表设备系统集成验收。
+
+## 52. 物品按可见数量排布与今日区块清理
+
+对应REQUIREMENT第34节，取代第48节中数量无关的卡片密度设计。InventoryScreen对已经过滤并排序的列表计算min(3,max(1,count))列，沿用惰性SliverList分行和可变高度Row；行内间隔8、行间12，不采用固定aspectRatio。末排用空Expanded保留列宽，搜索/筛选后自动重排。
+
+单列使用原72×72横向缩略图。两列图片高80、三列高64，信息区边距8，名称使用全局14字号层级，数量/单位与分类分行，位置有值时展示；不限制长名称行数、不压缩系统字号。低库存/临期/过期改在信息区显示，不叠在小图上。多列消耗与更多为44×44图标点击区，极窄情况下允许内部Wrap换行；全部业务仍调用原库存/采购服务。
+
+多列更多按钮打开可滚动安全区底部弹层，操作通过ListTile纵向呈现，保留原快速消耗/补充/采购处理器。开着弹层时禁用原更多按钮，避免重复打开；选择后关闭弹层再按原物品执行。单列保留原内联快捷区。数量对话框返回后增加mounted检查，避免重排移除原卡片时对已销毁State写入。
+
+HomeScreen取消追加service_status/reminder_details，渲染只接受既有可排序模块键；删除两个case及专用服务行、NAS状态标签、提醒统计卡片/统计格函数和无引用导入。HA状态标签仍为真实家居预览使用，提醒汇总Provider仍为今日关注/其他页面使用；日历入口继续在提醒页。没有清理设置值、业务数据或删除共享服务。
+
+本批不新增依赖或schema。开始时含前一轮Markdown未提交改动，保留并纳入集成回归；截图为带隔离测试数据的真实Flutter页面渲染，不作为APK或NAS/设备验收。验证结果见VALIDATION。
+
+## 53. 2026-11-14：物品资料修改与执行后状态回复
+
+对应REQUIREMENT第35节。原助手白名单没有商品资料修改动作；聊天在执行成功后直接拼接操作前的description，导致开灯完成消息仍显示确认时的off。已有控制路径会核验目标状态，问题不能通过把回复中的off硬改成on解决。
+
+新增ProductDetailsPatch限定name/category/brand/specification/location/barcode，区分字段省略与显式null，复用ProductCategories分类规范；名称遵守NAS的255个Unicode字符上限。AiInventoryAction新增product_update，非法字段/类型、无效分类和空修改不成为可执行建议。提示词明确使用真实ID、歧义追问、逐字段修改及确认，不再把open_page当作完成资料编辑的替代。
+
+AiInventoryActionService的describe展示现有资料与新值，指纹包含六项完整资料。executeWithResult保留执行前复核和一次确认，再将确认快照传到InventoryService/Repository。Repository在Drift事务内复核即时可写、家庭scope、商品存在性及快照；只写资料和updatedAt，保留批次、流水、库存和其他商品字段。沿用sync_import_format=1、分类ID创建/复用/绑定、nextEntityBaseVersion及既有entity_upsert队列；可空字段显式出站null。事务结束前再次校验可写及scope，任何失败连同分类/出站回滚。NAS已有产品同步支持这些字段，无新API或迁移；不改动既有资料或执行批量重分类。
+
+executeWithResult返回执行后的完成消息，原execute的Future<void>接口继续包装它供已有调用使用。设备回调返回SmartHomeController实际核验后的结果；灯/开关turn_on必须观察到on，其他受支持域保留既有有效活动状态判定。继续核对命令/实体回执、状态身份与新鲜度；无状态回执沿已有路径读取一次状态，不自动重发控制。实际亮度按brightness_pct或HA的0～255 brightness换算，没有属性就不补默认值。
+
+设备确认使用“操作前状态”，设备名称压缩空白及重复的末尾灯字，房间有值才展示，规范后同名才附实体标识。AssistantScreen使用独立完成消息；状态未确认/执行失败保存在发起会话，配合既有actionReceipts保留执行锁，避免只闪过SnackBar或重新提交。确认框标题区分物品修改和设备控制，Markdown/会话存档及前轮物品/今日UI改动保留。
+
+无本批新增依赖、schema、平台或后端改动。测试使用真实应用服务、内存Drift事务及生产HA控制器，仓库假回执仅作为夹具，不代表物理设备已开灯。AI_CONTEXT长期事实更新建议：实际安装及NAS验收后，在第5节“AI可提议”范围补充商品资料修改与设备执行后状态反馈；本轮运行结果见VALIDATION。
+
+## 54. 2026-11-14：家居权限说明关闭
+
+对应REQUIREMENT第36节。SmartHomeState用稳定的说明常量识别可关闭提示，SmartHomeScreen仅在该说明实际显示时提供带“关闭权限提示”语义的关闭图标。真实commandError/linkageError及离线提示不因此隐藏。
+
+SmartHomeController保存当前连接内的关闭标志，关闭后重算提示，设备刷新继续遵守标志；状态过期则展示独立过期提示。状态由既有非autoDispose控制器持有，切页不重置，账号/连接更换重建控制器时重置；不新增设置持久化或改动实体权限/命令校验。必要UI变化限说明右侧关闭按钮，本批不改依赖、schema、后端或AI_CONTEXT长期架构。

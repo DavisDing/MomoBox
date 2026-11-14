@@ -5,6 +5,7 @@ import '../inventory/product_categories.dart';
 import '../recognition/ai_intake_limits.dart';
 import 'chore_models.dart';
 import 'inventory_models.dart';
+import 'product_details_patch.dart';
 
 /// A proposal only. The legacy name also covers the assistant's other app actions.
 /// Neither arbitrary tools nor SQL/settings keys are accepted from a model.
@@ -31,6 +32,8 @@ class AiInventoryAction {
   static const maxDateYear = 2100;
 
   static const schemas = <String, Set<String>>{
+    'product_update': {'productId', 'name', 'category', 'brand', 'specification',
+      'location', 'barcode'},
     'consume': {'productId', 'quantity', 'batchId'},
     'replenish': {'productId', 'batchId', 'quantity'},
     'discard': {'productId', 'batchId'},
@@ -99,6 +102,13 @@ class AiInventoryAction {
           (data[key] as String).trim().isNotEmpty && (data[key] as String).length <= maxTextLength;
       bool integer(String key) => data[key] is int && (data[key] as int) > 0;
       // Preserve category diagnostics before generic text checks can erase them.
+      if (kind == 'product_update') {
+        if (!text('productId')) return null;
+        final patch = ProductDetailsPatch.fromJson(
+          {...data}..remove('kind')..remove('productId'),
+        );
+        data = {...data, ...patch.values};
+      }
       if (kind == 'intake') ProductCategories.validateAiCategory(data['category']);
       for (final key in ['name', 'title', 'category', 'brand', 'specification',
         'barcode', 'location', 'batchNo', 'reason', 'notes', 'productId', 'batchId', 'id']) {
@@ -212,6 +222,15 @@ class AiInventoryAction {
     String? validationError;
     final action = parse(text, onError: (message) => validationError = message);
     if (validationError != null) return '$validationError\n未执行任何操作。';
+    if (action != null && action.kind == 'product_update') {
+      final patch = ProductDetailsPatch.fromJson(action.arguments);
+      return [
+        '物品资料修改建议：',
+        for (final entry in patch.values.entries)
+          '${ProductDetailsPatch.labels[entry.key]} → ${entry.value ?? '清空'}',
+        '尚未修改，查看修改前后内容并确认后才保存。',
+      ].join('\n');
+    }
     if (action != null && action.kind == 'intake') {
       final draft = action.intakeDraft;
       final lines = [

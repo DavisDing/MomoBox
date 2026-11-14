@@ -90,51 +90,43 @@ class _StaticHome extends SmartHomeController {
 
 void main() {
   for (final width in [320.0, 390.0]) {
-    testWidgets(
-      'inventory keeps a compact, count-independent card size at width $width',
-      (tester) async {
-        tester.view.devicePixelRatio = 1;
-        tester.view.physicalSize = Size(width, 844);
-        addTearDown(tester.view.reset);
-        final heights = <double>[];
-        for (final count in [1, 2, 6]) {
-          await tester.pumpWidget(
-            ProviderScope(
-              key: ValueKey(count),
-              overrides: [
-                inventoryProvider.overrideWith(
-                  (ref) => Stream.value(List.generate(count, _item)),
-                ),
-                reminderSummaryProvider.overrideWithValue(_summary),
-                mediaAssetsProvider.overrideWith(
-                  (ref, target) => Stream.value(const []),
-                ),
-              ],
-              child: const MaterialApp(home: InventoryScreen()),
-            ),
-          );
-          await tester.pumpAndSettle();
-          final card = find.byKey(const ValueKey('inventory-card-product-0'));
-          heights.add(tester.getSize(card).height);
-          expect(find.text('$count 种物品'), findsOneWidget);
-          final photo = find.byKey(const ValueKey('inventory-photo-product-0'));
-          expect(tester.getSize(photo).height, width == 320 ? 72 : 96);
-          expect(
-            tester.getSize(card).height,
-            lessThan(width == 320 ? 200 : 280),
-          );
-          if (width == 320) {
-            expect(tester.getSize(photo).width, 72);
-          } else {
-            expect(tester.getSize(card).width, lessThan(200));
-          }
-          expect(tester.takeException(), isNull);
+    testWidgets('inventory uses 1/2/3 columns by visible count at width $width', (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = Size(width, 844);
+      addTearDown(tester.view.reset);
+      for (final count in [1, 2, 3, 4, 6, 7]) {
+        await tester.pumpWidget(ProviderScope(key: ValueKey(count), overrides: [
+          inventoryProvider.overrideWith((ref) => Stream.value(List.generate(count, _item))),
+          reminderSummaryProvider.overrideWithValue(_summary),
+          mediaAssetsProvider.overrideWith((ref, target) => Stream.value(const [])),
+        ], child: const MaterialApp(home: InventoryScreen())));
+        await tester.pumpAndSettle();
+        final columns = count.clamp(1, 3);
+        final first = find.byKey(const ValueKey('inventory-card-product-0'));
+        final firstRect = tester.getRect(first);
+        expect(find.text('$count 种物品'), findsOneWidget);
+        expect(tester.getSize(find.byKey(const ValueKey('inventory-photo-product-0'))).height, columns == 1 ? 72 : columns == 2 ? 80 : 64);
+        for (var index = 1; index < columns; index++) {
+          final rect = tester.getRect(find.byKey(ValueKey('inventory-card-product-$index')));
+          expect(rect.top, closeTo(firstRect.top, .01));
+          expect(rect.width, closeTo(firstRect.width, .01));
+          expect(rect.left, closeTo(firstRect.left + index * (firstRect.width + 8), .01));
         }
-        expect(heights[1], heights.first);
-        expect(heights[2], heights.first);
-        await tester.pumpWidget(const SizedBox.shrink());
-      },
-    );
+        if (count > columns) {
+          final nextRect = tester.getRect(find.byKey(ValueKey('inventory-card-product-$columns')));
+          expect(nextRect.top, greaterThan(firstRect.bottom));
+          expect(nextRect.left, closeTo(firstRect.left, .01));
+          expect(nextRect.width, closeTo(firstRect.width, .01));
+        }
+        if (columns > 1) {
+          expect(firstRect.height, lessThan(250));
+          expect(tester.getSize(find.byKey(const ValueKey('inventory-consume-product-0'))), const Size(44, 44));
+          expect(tester.getSize(find.byKey(const ValueKey('inventory-more-product-0'))), const Size(44, 44));
+        }
+        expect(tester.takeException(), isNull);
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
   }
 
   testWidgets(

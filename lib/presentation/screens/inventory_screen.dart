@@ -73,6 +73,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
               return matchesQuery && matchesCategory && matchesAnomaly;
             }).toList();
             final sorted = sortInventoryItems(filtered, _sortOption);
+            final columns = sorted.length.clamp(1, 3);
             final filterHeight = (MediaQuery.textScalerOf(context)
                 .scale(MomoTextSize.body) * 1.4 + 28).clamp(56.0, double.infinity);
             return RefreshIndicator(
@@ -160,19 +161,31 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                     ))
                   else SliverPadding(
                     padding: insets.add(const EdgeInsets.only(top: 12)),
-                    sliver: SliverLayoutBuilder(builder:(context,constraints) {
-                      final columns = MomoMobileLayout.stack(context,constraints.crossAxisExtent,minimum:330) ? 1 : 2;
-                      return SliverList(delegate:SliverChildBuilderDelegate((context,index) => Padding(
-                        padding:const EdgeInsets.only(bottom:16),
-                        child:Row(crossAxisAlignment:CrossAxisAlignment.start,children:[
-                          for(var column=0;column<columns;column++) ...[
-                            if(column>0) const SizedBox(width:12),
-                            Expanded(child:index*columns+column<sorted.length ?
-                              _InventoryCard(key:ValueKey(sorted[index*columns+column].id),item:sorted[index*columns+column],compact:columns==1) : const SizedBox.shrink()),
-                          ],
-                        ]),
-                      ),childCount:(sorted.length/columns).ceil()));
-                    }),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate((context, index) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Row(
+                            key: ValueKey('inventory-row-$index'),
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              for (var column = 0; column < columns; column++) ...[
+                                if (column > 0) const SizedBox(width: 8),
+                                Expanded(
+                                  child: index * columns + column < sorted.length
+                                      ? _InventoryCard(
+                                          key: ValueKey(sorted[index * columns + column].id),
+                                          item: sorted[index * columns + column],
+                                          columns: columns,
+                                        )
+                                      : const SizedBox.shrink(),
+                                ),
+                              ],
+                            ],
+                          ),
+                        );
+                      }, childCount: (sorted.length / columns).ceil()),
+                    ),
                   ),
                   SliverToBoxAdapter(child: SizedBox(height: 20 + MomoDockInsets.bottomOf(context))),
                 ],
@@ -257,9 +270,9 @@ class _SortSelector extends StatelessWidget {
 }
 
 class _InventoryCard extends ConsumerStatefulWidget {
-  const _InventoryCard({required this.item, required this.compact, super.key});
+  const _InventoryCard({required this.item, required this.columns, super.key});
   final InventoryItem item;
-  final bool compact;
+  final int columns;
 
   @override
   ConsumerState<_InventoryCard> createState() => _InventoryCardState();
@@ -274,30 +287,69 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
   @override
   Widget build(BuildContext context) {
     final batch = item.nearestDatedBatch;
+    final single = widget.columns == 1;
     final canConsume = item.activeBatches.any(
       (candidate) => candidate.expiryStatus != ExpiryStatus.expired,
     );
-    final canReplenish = item.batches.any((candidate) => !candidate.isDiscarded);
+    final canReplenish = item.batches.any(
+      (candidate) => !candidate.isDiscarded,
+    );
     final theme = Theme.of(context);
     final showExpiry =
         item.overallExpiryStatus == ExpiryStatus.expiring ||
         item.overallExpiryStatus == ExpiryStatus.expired;
+    final expiryLabel = item.overallExpiryStatus == ExpiryStatus.expired
+        ? '已过期'
+        : batch?.daysUntilExpiry == 0
+        ? '今日到期'
+        : '${batch?.daysUntilExpiry} 天内到期';
+    final expiryColor = item.overallExpiryStatus == ExpiryStatus.expired
+        ? theme.colorScheme.error
+        : theme.brightness == Brightness.dark
+        ? Colors.orange.shade300
+        : Colors.orange.shade900;
+    final iconStyle = IconButton.styleFrom(
+      minimumSize: const Size(44, 44),
+      maximumSize: const Size(44, 44),
+      padding: EdgeInsets.zero,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
     Widget details() => Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(item.name, style: theme.textTheme.titleMedium),
-        const SizedBox(height: 4),
         Text(
-          '${item.totalStock} ${item.unit} · ${item.category}',
-          style: theme.textTheme.bodyMedium,
+          item.name,
+          style: single
+              ? theme.textTheme.titleMedium
+              : theme.textTheme.titleSmall,
         ),
         const SizedBox(height: 4),
         Text(
-          item.location ?? '未设置位置',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+          single
+              ? '${item.totalStock} ${item.unit} · ${item.category}'
+              : '${item.totalStock} ${item.unit}',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: single ? null : FontWeight.w600,
           ),
         ),
+        if (!single) ...[
+          const SizedBox(height: 3),
+          Text(
+            item.category,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+        if (single || item.location?.trim().isNotEmpty == true) ...[
+          const SizedBox(height: 4),
+          Text(
+            item.location ?? '未设置位置',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
         if (item.isLowStock)
           Padding(
             padding: const EdgeInsets.only(top: 4),
@@ -308,13 +360,21 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
               ),
             ),
           ),
-        if (widget.compact && showExpiry)
+        if (showExpiry)
           Padding(
             padding: const EdgeInsets.only(top: 6),
-            child: StatusBadge(
-              status: item.overallExpiryStatus,
-              days: batch?.daysUntilExpiry,
-            ),
+            child: single
+                ? StatusBadge(
+                    status: item.overallExpiryStatus,
+                    days: batch?.daysUntilExpiry,
+                  )
+                : Text(
+                    expiryLabel,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: expiryColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
           ),
       ],
     );
@@ -326,7 +386,7 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (widget.compact)
+          if (single)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
               child: Row(
@@ -346,89 +406,151 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
               ),
             )
           else ...[
-            Container(
-              key: ValueKey('inventory-photo-${item.id}'),
-              height: 96,
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primaryContainer,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(18),
-                ),
+            ClipRRect(
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(18),
               ),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  MomoProductImage(productId: item.id),
-                  if (showExpiry)
-                    Positioned(
-                      top: 8,
-                      left: 8,
-                      right: 8,
-                      child: Align(
-                        alignment: Alignment.topLeft,
-                        child: StatusBadge(
-                          status: item.overallExpiryStatus,
-                          days: batch?.daysUntilExpiry,
-                        ),
-                      ),
-                    ),
-                ],
+              child: SizedBox(
+                key: ValueKey('inventory-photo-${item.id}'),
+                height: widget.columns == 3 ? 64 : 80,
+                child: MomoProductImage(productId: item.id),
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
               child: details(),
             ),
           ],
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Wrap(
-                  alignment: WrapAlignment.spaceBetween,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    TextButton(
-                      onPressed: canConsume && !_busy
-                          ? () => _showConsumeDialog(context)
-                          : null,
-                      child: const Text('消耗'),
-                    ),
-                    IconButton(
-                      tooltip: _actionsVisible ? '收起快捷操作' : '物品快捷操作',
-                      onPressed: _busy
-                          ? null
-                          : () => setState(
-                              () => _actionsVisible = !_actionsVisible,
-                            ),
-                      icon: Icon(
-                        _actionsVisible
-                            ? Icons.expand_less_rounded
-                            : Icons.more_horiz_rounded,
+          if (single)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      TextButton(
+                        onPressed: canConsume && !_busy
+                            ? () => _showConsumeDialog(context)
+                            : null,
+                        child: const Text('消耗'),
                       ),
+                      IconButton(
+                        tooltip: _actionsVisible ? '收起快捷操作' : '物品快捷操作',
+                        onPressed: _busy
+                            ? null
+                            : () => setState(
+                                () => _actionsVisible = !_actionsVisible,
+                              ),
+                        icon: Icon(
+                          _actionsVisible
+                              ? Icons.expand_less_rounded
+                              : Icons.more_horiz_rounded,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_actionsVisible) ...[
+                    const Divider(),
+                    _QuickActions(
+                      busy: _busy,
+                      canConsume: canConsume,
+                      canReplenish: canReplenish,
+                      onConsume: () => _consumeOne(context),
+                      onReplenish: () => _replenishOne(context),
+                      onShopping: () => _addToShopping(context),
+                      onClose: () => setState(() => _actionsVisible = false),
                     ),
                   ],
-                ),
-                if (_actionsVisible) ...[
-                  const Divider(),
-                  _QuickActions(
-                    busy: _busy,
-                    canConsume: canConsume,
-                    canReplenish: canReplenish,
-                    onConsume: () => _consumeOne(context),
-                    onReplenish: () => _replenishOne(context),
-                    onShopping: () => _addToShopping(context),
-                    onClose: () => setState(() => _actionsVisible = false),
+                ],
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Wrap(
+                alignment: WrapAlignment.spaceEvenly,
+                children: [
+                  IconButton(
+                    key: ValueKey('inventory-consume-${item.id}'),
+                    tooltip: '消耗',
+                    style: iconStyle,
+                    onPressed: canConsume && !_busy
+                        ? () => _showConsumeDialog(context)
+                        : null,
+                    icon: const Icon(Icons.remove_circle_outline, size: 20),
+                  ),
+                  IconButton(
+                    key: ValueKey('inventory-more-${item.id}'),
+                    tooltip: '物品快捷操作',
+                    style: iconStyle,
+                    onPressed: _busy || _actionsVisible
+                        ? null
+                        : () => _showQuickActions(
+                            context,
+                            canConsume: canConsume,
+                            canReplenish: canReplenish,
+                          ),
+                    icon: const Icon(Icons.more_horiz_rounded, size: 20),
                   ),
                 ],
-              ],
+              ),
             ),
-          ),
         ],
       ),
     );
+  }
+
+  Future<void> _showQuickActions(
+    BuildContext context, {
+    required bool canConsume,
+    required bool canReplenish,
+  }) async {
+    setState(() => _actionsVisible = true);
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        useSafeArea: true,
+        isScrollControlled: true,
+        builder: (sheetContext) => SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                item.name,
+                style: Theme.of(sheetContext).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              _QuickActions(
+                busy: false,
+                canConsume: canConsume,
+                canReplenish: canReplenish,
+                listLayout: true,
+                onConsume: () {
+                  Navigator.pop(sheetContext);
+                  if (mounted) _consumeOne(context);
+                },
+                onReplenish: () {
+                  Navigator.pop(sheetContext);
+                  if (mounted) _replenishOne(context);
+                },
+                onShopping: () {
+                  Navigator.pop(sheetContext);
+                  if (mounted) _addToShopping(context);
+                },
+                onClose: () => Navigator.pop(sheetContext),
+              ),
+            ],
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _actionsVisible = false);
+    }
   }
 
   Future<void> _showConsumeDialog(BuildContext context) async {
@@ -579,7 +701,7 @@ class _InventoryCardState extends ConsumerState<_InventoryCard> {
       ),
     );
 
-    if (result == null || result < 1) return;
+    if (result == null || result < 1 || !mounted) return;
     setState(() => _busy = true);
     try {
       await ref.read(inventoryServiceProvider).consume(item.id, result);
@@ -681,8 +803,10 @@ class _QuickActions extends StatelessWidget {
     required this.onReplenish,
     required this.onShopping,
     required this.onClose,
+    this.listLayout = false,
   });
 
+  final bool listLayout;
   final bool busy;
   final bool canConsume;
   final bool canReplenish;
@@ -693,6 +817,17 @@ class _QuickActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (listLayout) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        ListTile(leading: const Icon(Icons.remove_circle_outline), title: const Text('快速消耗 1 件'),
+          enabled: !busy && canConsume, onTap: busy || !canConsume ? null : onConsume),
+        ListTile(leading: const Icon(Icons.add_circle_outline), title: const Text('快速补充 1 件'),
+          enabled: !busy && canReplenish, onTap: busy || !canReplenish ? null : onReplenish),
+        ListTile(leading: const Icon(Icons.add_shopping_cart_outlined), title: const Text('加入采购清单'),
+          enabled: !busy, onTap: busy ? null : onShopping),
+        TextButton(onPressed: busy ? null : onClose, child: const Text('关闭')),
+      ]);
+    }
     return Wrap(
       spacing: 8, runSpacing: 8,
       children: [

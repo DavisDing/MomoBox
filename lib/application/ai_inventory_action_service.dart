@@ -6,6 +6,7 @@ import '../domain/inventory/reminder_rules.dart';
 import '../domain/models/ai_action.dart';
 import '../domain/models/chore_models.dart';
 import '../domain/models/inventory_models.dart';
+import '../domain/models/product_details_patch.dart';
 import 'chore_service.dart';
 import 'inventory_service.dart';
 import 'reminder_service.dart';
@@ -18,7 +19,7 @@ class AiInventoryActionService {
     ShoppingService? shopping, ChoreService? chores, ReminderService? reminders,
     Future<String> Function()? deviceContext,
     Future<String> Function(AiInventoryAction)? describeDevice,
-    Future<void> Function(AiInventoryAction)? executeDevice,
+    Future<String> Function(AiInventoryAction)? executeDevice,
   }) : _shopping = shopping, _chores = chores, _reminders = reminders,
        _deviceContext = deviceContext, _describeDevice = describeDevice,
        _executeDevice = executeDevice;
@@ -30,7 +31,7 @@ class AiInventoryActionService {
   final ReminderService? _reminders;
   final Future<String> Function()? _deviceContext;
   final Future<String> Function(AiInventoryAction)? _describeDevice;
-  final Future<void> Function(AiInventoryAction)? _executeDevice;
+  final Future<String> Function(AiInventoryAction)? _executeDevice;
   final Map<AiInventoryAction, String> _previews = {};
 
   // An existing explicit opt-out is preserved. New installations may propose
@@ -80,6 +81,14 @@ class AiInventoryActionService {
   Future<String?> _describeAppAction(AiInventoryAction action) async {
     final a = action;
     switch (a.kind) {
+      case 'product_update':
+        final items = await _inventory.watchInventory().first;
+        final item = items.where((item) => item.id == a.productId).firstOrNull;
+        if (item == null) throw StateError('物品已不存在，请重新提问。');
+        final patch = ProductDetailsPatch.fromJson(a.arguments);
+        final changes = patch.changesFrom(ProductDetailsPatch.snapshot(item));
+        if (changes.isEmpty) throw StateError('这些资料已与目标一致，无需修改。');
+        return '修改「${item.name}」的资料：\n$changes';
       case 'intake':
         final draft = a.intakeDraft;
         return '打开可编辑入库草稿：「${draft.name}」${draft.quantity} 件。'
@@ -164,6 +173,13 @@ class AiInventoryActionService {
   /// Equal names/quantities must not hide replacement of a batch or reminder.
   Future<String> _fingerprint(AiInventoryAction action) async {
     switch (action.kind) {
+      case 'product_update':
+        final item = (await _inventory.watchInventory().first)
+            .where((item) => item.id == action.productId)
+            .firstOrNull;
+        return jsonEncode(
+          item == null ? null : ProductDetailsPatch.snapshot(item),
+        );
       case 'consume':
       case 'replenish':
       case 'discard':
@@ -276,6 +292,13 @@ class AiInventoryActionService {
     AiInventoryAction action, {
     required String confirmedDescription,
   }) async {
+    await executeWithResult(action, confirmedDescription: confirmedDescription);
+  }
+
+  Future<String> executeWithResult(
+    AiInventoryAction action, {
+    required String confirmedDescription,
+  }) async {
     // Revalidate permission and identity immediately before invoking existing
     // transactional rules. UI confirmation is mandatory at the caller.
     final prepared = await _prepare(action);
@@ -284,13 +307,29 @@ class AiInventoryActionService {
       throw StateError('操作对象或数据已变化，请重新确认。');
     }
     await checkPermission();
-    _previews.remove(action);
+    final confirmedSnapshot = _previews.remove(action);
     switch (action.kind) {
+      case 'product_update':
+        final before = Map<String, String?>.from(
+          jsonDecode(confirmedSnapshot!) as Map,
+        );
+        final patch = ProductDetailsPatch.fromJson(action.arguments);
+        await _inventory.updateProductDetails(
+          action.productId,
+          patch,
+          expectedDetails: before,
+        );
+        return '已更新「${patch.values['name'] ?? before['name']}」的资料。\n'
+            '${patch.changesFrom(before)}\n已保存，等待家庭同步。';
       case 'consume':
         if (action.batchId == null) {
           await _inventory.consume(action.productId, action.quantity!);
         } else {
-          await _inventory.consumeBatch(action.productId, action.batchId!, action.quantity!);
+          await _inventory.consumeBatch(
+            action.productId,
+            action.batchId!,
+            action.quantity!,
+          );
         }
       case 'replenish':
         await _inventory.replenishBatch(action.batchId!, action.quantity!);
@@ -300,46 +339,79 @@ class AiInventoryActionService {
           expectedRemainingQuantity: prepared.remaining,
         );
       case 'shopping_add':
-        await _shopping!.addOrMerge(itemName: action.string('name')!,
-          targetQuantity: action.quantity!, reason: action.string('reason') ?? 'AI 助手建议',
+        await _shopping!.addOrMerge(
+          itemName: action.string('name')!,
+          targetQuantity: action.quantity!,
+          reason: action.string('reason') ?? 'AI 助手建议',
           productId: action.productId.isEmpty ? null : action.productId,
-          category: action.string('category'));
+          category: action.string('category'),
+        );
       case 'shopping_complete':
-        await _shopping!.setCompleted(action.id, action.arguments['completed'] as bool);
+        await _shopping!.setCompleted(
+          action.id,
+          action.arguments['completed'] as bool,
+        );
       case 'shopping_delete':
         await _shopping!.delete(action.id);
       case 'reminder_acknowledge':
-        final candidate = (await _pendingReminders()).where((c) => c.key == action.id).firstOrNull;
+        final candidate = (await _pendingReminders())
+            .where((c) => c.key == action.id)
+            .firstOrNull;
         if (candidate == null) throw StateError('提醒已变化，请重新确认。');
-        await _reminders!.acknowledge(reminderKey: candidate.key, fingerprint: candidate.fingerprint);
+        await _reminders!.acknowledge(
+          reminderKey: candidate.key,
+          fingerprint: candidate.fingerprint,
+        );
       case 'chore_add':
-        await _chores!.addChore(title: action.string('title')!,
+        await _chores!.addChore(
+          title: action.string('title')!,
           initializePresets: false,
           category: action.string('category') ?? '家居清洁',
-          repeatInterval: ChoreRepeatInterval.values.byName(action.string('repeatInterval')!),
-          nextDueDate: AiInventoryAction.date(action.arguments['nextDueDate']), notes: action.string('notes'));
+          repeatInterval: ChoreRepeatInterval.values.byName(
+            action.string('repeatInterval')!,
+          ),
+          nextDueDate: AiInventoryAction.date(action.arguments['nextDueDate']),
+          notes: action.string('notes'),
+        );
       case 'chore_update':
         final choreService = _chores!;
-        final existing = (await choreService.readSavedChores()).firstWhere((c) => c.id == action.id);
-        await choreService.updateChore(id: action.id, title: action.string('title')!,
+        final existing = (await choreService.readSavedChores()).firstWhere(
+          (c) => c.id == action.id,
+        );
+        await choreService.updateChore(
+          id: action.id,
+          title: action.string('title')!,
           category: action.string('category') ?? existing.category,
-          repeatInterval: ChoreRepeatInterval.values.byName(action.string('repeatInterval')!),
-          nextDueDate: AiInventoryAction.date(action.arguments['nextDueDate']), notes: action.string('notes'));
+          repeatInterval: ChoreRepeatInterval.values.byName(
+            action.string('repeatInterval')!,
+          ),
+          nextDueDate: AiInventoryAction.date(action.arguments['nextDueDate']),
+          notes: action.string('notes'),
+        );
       case 'chore_complete':
-        if (await _chores!.completeChore(action.id) == null) throw StateError('家务已不存在。');
+        if (await _chores!.completeChore(action.id) == null) {
+          throw StateError('家务已不存在。');
+        }
       case 'chore_delete':
         await _chores!.deleteChore(action.id);
       case 'chore_toggle':
-        await _chores!.toggleChore(action.id, action.arguments['enabled'] as bool);
+        await _chores!.toggleChore(
+          action.id,
+          action.arguments['enabled'] as bool,
+        );
       case 'device_control':
         if (_executeDevice == null) throw StateError('设备控制不可用。');
-        await _executeDevice(action);
+        return _executeDevice(action);
       case 'set_theme':
         await _settings.setValue('theme', action.string('value')!);
       case 'set_font_scale':
-        await _settings.setValue('font_scale', action.arguments['value'].toString());
+        await _settings.setValue(
+          'font_scale',
+          action.arguments['value'].toString(),
+        );
       default:
         throw StateError('此操作需要在对应页面中由用户完成确认。');
     }
+    return '已完成：${prepared.description}';
   }
 }

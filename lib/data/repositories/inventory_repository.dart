@@ -8,6 +8,7 @@ import '../../domain/inventory/batch_consumption.dart';
 import '../../domain/inventory/fefo.dart';
 import '../../domain/inventory/calendar_date.dart';
 import '../../domain/models/inventory_models.dart';
+import '../../domain/models/product_details_patch.dart';
 import '../../domain/models/sync_models.dart';
 import 'sync_outbox_repository.dart';
 import 'reminder_repository.dart';
@@ -236,6 +237,93 @@ class InventoryRepository {
           ),
         )
         .toList(growable: false);
+  }
+
+  Future<void> updateProductDetails(
+    String productId,
+    ProductDetailsPatch patch, {
+    required Map<String, String?> expectedDetails,
+  }) async {
+    assertWritable?.call();
+    // Validate again at the persistence boundary, including directly held callers.
+    final fields = ProductDetailsPatch.fromJson(patch.values).values;
+    if (expectedDetails.length != ProductDetailsPatch.labels.length ||
+        !ProductDetailsPatch.labels.keys.every(expectedDetails.containsKey)) {
+      throw StateError('物品资料确认快照无效，请重新确认。');
+    }
+    await _database.transaction(() async {
+      assertWritable?.call();
+      final scope = await _mutationScope();
+      if (_syncScopeId != null && scope != _syncScopeId) {
+        throw StateError('家庭归属已变化，请重新确认物品资料。');
+      }
+      if (_outbox != null) {
+        final capability = scope == null
+            ? null
+            : await (_database.select(_database.appSettings)..where(
+                    (row) => row.key.equals('sync_import_format:$scope'),
+                  ))
+                  .getSingleOrNull();
+        if (scope == null || scope.trim().isEmpty || capability?.value != '1') {
+          throw StateError('家庭资料同步尚未就绪，请更新 NAS 并重试连接后再修改。');
+        }
+      }
+      final product = await getProductRecord(productId);
+      if (product == null || product.deletedAt != null) {
+        throw StateError('物品已不存在，请重新提问。');
+      }
+      final before = <String, String?>{
+        'name': product.name,
+        'category': product.category,
+        'brand': product.brand,
+        'specification': product.specification,
+        'location': product.location,
+        'barcode': product.barcode,
+      };
+      if (before.entries.any(
+        (entry) => expectedDetails[entry.key] != entry.value,
+      )) {
+        throw StateError('物品资料已变化，请重新确认。');
+      }
+      if (fields.entries.every((entry) => before[entry.key] == entry.value)) {
+        return;
+      }
+      final after = {...before, ...fields};
+      final now = DateTime.now();
+      assertWritable?.call();
+      await (_database.update(
+        _database.products,
+      )..where((row) => row.id.equals(productId))).write(
+        ProductsCompanion(
+          name: Value(after['name']!),
+          category: Value(after['category']!),
+          brand: Value(after['brand']),
+          specification: Value(after['specification']),
+          location: Value(after['location']),
+          barcode: Value(after['barcode']),
+          updatedAt: Value(now),
+        ),
+      );
+      // Full metadata plus explicit nulls retain/clear fields correctly; the
+      // existing category binding and outbox version/dependency logic is reused.
+      await _enqueueEntityUpsert(
+        entity: 'products',
+        entityId: productId,
+        baseVersion: product.serverVersion,
+        now: now,
+        payload: {
+          'name': after['name'],
+          'brand': after['brand'],
+          'specification': after['specification'],
+          'barcode': after['barcode'],
+        },
+      );
+      assertWritable?.call();
+      if (scope != await _mutationScope()) {
+        throw StateError('家庭归属已变化，请重新确认物品资料。');
+      }
+      assertWritable?.call();
+    });
   }
 
   Future<String> createProductWithBatch(

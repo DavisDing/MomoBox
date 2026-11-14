@@ -126,6 +126,7 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
     final error = state.commandError ?? state.linkageError;
     final text = error ?? state.message!;
     final isError = error != null || state.haStatus == HaConnectionStatus.offline;
+    final canDismiss = !isError && state.isPermissionNotice;
     final color = isError ? Colors.red : Colors.amber.shade800;
     return MomoCard(
       key: const ValueKey('smart-home-notice'),
@@ -137,6 +138,15 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
             Icon(isError ? Icons.error_outline : Icons.info_outline, size: 20, color: color),
             const SizedBox(width: 8),
             Expanded(child: Text(text, style: TextStyle(fontSize: MomoTextSize.caption, color: color))),
+            if (canDismiss)
+              IconButton(
+                tooltip: '关闭权限提示',
+                icon: const Icon(Icons.close_rounded, size: 20),
+                color: color,
+                onPressed: () => ref
+                    .read(smartHomeControllerProvider.notifier)
+                    .dismissPermissionNotice(),
+              ),
           ],
       ),
     );

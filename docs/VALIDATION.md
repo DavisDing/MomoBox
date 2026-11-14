@@ -903,3 +903,48 @@ PostgreSQL16.4源码经官方SHA256校验，编译到 `/private/tmp/momobox-pg16
 - PASS：NAS发布附件脚本1项回归、修改的Compose/OpenAPI YAML解析、`git diff --check`。UGREEN单文件模板仅把默认模型改为可选空值，固定旧镜像digest保留，未访问用户NAS或修改数据库/网络。复用已有隔离工具链，无新增产品依赖、schema迁移或业务资料删除。
 - 资源检查：pubspec仅启用Material图标，无自定义角色图片资源；运行源码中角色旧标识仅剩两个兼容解析位置。蓝色主题改为晴空流云/云朵小云，樱花吉祥物改为花芽；历史设计稿、业务聊天和第三方许可未删除。此项是源码资源替换，不是法律授权审查或新APK资源验收。
 - NOT_EXECUTED：新Android/iOS安装包及原生运行、Docker镜像构建、真实LiteLLM目录/推理、NAS项目与容器日志界面差异的现场验证、真实数据库/HA/多设备验收、Git提交/推送、远端CI及发布。新增提示/日志需App和后端更新后才生效；不宣称用户当前容器已运行本轮代码。
+
+## 2026-11-13：移动助手 Markdown 会话适配
+
+基于HEAD `66ec616`，开始时工作区干净。需求/设计见REQUIREMENT第33节、DESIGN第51节。主要修改assistant_screen消息正文、ai_assistant_service格式提示，新增assistant_message_body及assistant_markdown_test；pubspec/lock增加flutter_markdown_plus1.0.12及其传递依赖markdown7.3.1。没有升级已有依赖、修改服务端、数据库schema/存档格式或删除聊天。
+
+- PASS：现有隔离Flutter3.47.9 / Dart3.13.7工具链执行pub get，仅新增2个依赖；日志`/private/tmp/momobox-assistant-markdown-pub.log`。使用原临时SDK/pub缓存，没有安装系统工具或原生插件。两个库的LICENSE保留于包中，未删除第三方声明；本机未生成新APK来核查打包后的许可页。
+- PASS：全项目`analyze --no-pub`无问题，最终日志`/private/tmp/momobox-assistant-markdown-analyze-final2.log`。收尾曾发现新增剪贴板夹具的一处多行if缺少花括号，补齐后复验通过，没有关闭lint。
+- PASS：完整`test --no-pub --reporter expanded` **1045项全部通过，退出0**，日志`/private/tmp/momobox-assistant-markdown-all.log`；随后仅增加上述测试分支花括号，不改变测试逻辑。4个相关文件先通过40项，日志`/private/tmp/momobox-assistant-markdown-targeted.log`；最终Markdown专项15项通过，日志`/private/tmp/momobox-assistant-markdown-specific-final.log`。
+- Markdown专项覆盖混合加粗/斜体/删除线/行内代码的真实TextSpan样式、标题/列表/任务/引用/普通换行、JSON reply提取与无原始协议对象展示；通过EditableText真实选择/复制路径及模拟系统剪贴板核实“牛奶 共 2 件”完整复制、没有Markdown标记。最初复制夹具未注册剪贴板平台模拟而等待，主动终止该次运行并补齐模拟后通过，不把原生通道等待当作产品缺陷或通过证据。
+- 布局覆盖320/390逻辑像素、1/3.4倍文字、深浅主题：长名称列表、只读任务列表、引用、四列表格、长代码均不溢出消息边界。代码和表格各有独立可滚动横轴，分别移动不会改变另一块偏移，字号/表面色随当前Theme和TextScaler。已有会话最新端、离页返回、长回复、授权、入库/库存确认、在途归属与失败反馈回归保留。
+- 链接通过真实点击及模拟url_launcher通道核对external模式、成功/失败反馈；应用私有scheme不触发系统通道或业务动作。网页/本地Markdown图片都不生成Image，不自动获取或读取文件，网页图片提供主动查看入口。实际存档夹具确认用户输入保留原文、原始reply/action字符串和存档不被渲染改写，原“查看并确认操作”仍在且无执行回执，模型自称已执行的reply不能覆盖安全概要。
+- PASS：`git diff --check`；源码变更限移动端会话展示、格式提示及配套文档/依赖。未重复执行Go/PG测试，本轮没有后端、API或数据库修改。
+- NOT_EXECUTED：Android/iOS原生构建、新APK安装与设备视觉/文字选择工具栏、系统浏览器真实打开、真实NAS/模型往返、远端CI、Git提交/推送与发布。Widget中的剪贴板和URL平台通道为模拟，不作为原生验收；源码适配需更新App后生效，NAS无需更改AI配置。
+
+## 物品按数量分列与今日页精简
+
+基于HEAD `66ec616`继续实现用户新确认；起始保留前一轮Markdown未提交改动，本批未覆盖它。需求/设计见REQUIREMENT第34节、DESIGN第52节。主要修改inventory_screen、home_screen及对应Widget回归，新增inventory_density_test；无额外依赖、数据库迁移、后端接口或业务数据删除。
+
+- PASS：Flutter3.47.9 / Dart3.13.7全项目`analyze --no-pub`无问题，日志`/private/tmp/momobox-inventory-count-analyze.log`。完整`test --no-pub --reporter expanded` **1059项全部通过，退出0**，日志`/private/tmp/momobox-inventory-count-all.log`，包含前轮Markdown与原权限/同步/提醒/业务回归。
+- PASS：3个相关文件121项，日志`/private/tmp/momobox-inventory-count-targeted.log`。原“1/2/6卡片相同尺寸”断言按新确认改为320/390px下1/2/3/4/6/7件的列数、同排坐标、等宽、下一排坐标、末排不拉宽及44×44操作点击区；没有删除原助手最新端/家居状态断言。旧服务详情测试转为验证今日不再显示指定两个区块、旧模块键不能恢复它们、原入库与真实家居预览仍可达。
+- PASS：新增密度专项14项，最终日志`/private/tmp/momobox-inventory-count-density2.log`。320/390px、1/2/3.4倍字、深浅色下3列长名称/分类/位置/临期/低库存不横向溢出，更多弹层可滚动触达末项；搜索4件到1件再清空能恢复三列。内存SQLite真实服务核对详情跳转产品ID、快速消耗/补充只改目标物品、采购项关联原产品。首次大字夹具在scrollUntilVisible后未pump，点击使用旧屏幕坐标而失败；补足帧等待及hitTestable断言后通过，没有压低字号、放宽三列或屏蔽点击警告。
+- PASS：已有V2真实页面渲染夹具深浅色2项，日志`/private/tmp/momobox-inventory-count-visual.log`；生成五个生产路由截图及总览，并人工查看物品/今日截图。目录`/private/tmp/momobox-inventory-count-captures`，重点`light-inventory-fixture.png`、`light-today-fixture.png`及从物品页裁剪的`inventory-three-columns.png`。截图为390×844逻辑视口、2倍导出、隔离样例数据；使用本机Songti字体仅供渲染识别中文，没有将系统字体加入App或替换产品字体。源码/几何测试及截图共同确认三列、第四件另起一排、两个指定今日折叠区删除；不据截图承诺原生手机效果。
+- PASS：`git diff --check`。仅删除已确认无其他调用的今日服务/提醒展示函数和专用导入；HA状态标签仍供今日家居预览，日历同步入口仍在提醒页，共享Provider、服务、提醒计划和数据未删除。保留原模块顺序设置，渲染过滤旧键，不清空用户偏好。
+- NOT_EXECUTED：新Android/iOS构建、APK安装与真机手势/系统字体/读屏验证、实际图片/NAS同步/真实HA控制、Go/PG重复验证、远端CI、Git提交/推送及发布。无本批后端修改；本地内存数据和渲染不是真实家庭验收。最初截图裁剪Python缺少Pillow，未安装依赖，使用系统sips完成裁剪，不影响产品和测试。
+
+## 2026-11-14：助手修改物品资料与设备执行后反馈
+
+在HEAD `66ec616`上继续用户确认范围，保留原Markdown、物品分列与今日精简未提交改动。需求见REQUIREMENT第35节，设计见DESIGN第53节。本批修改action模型/提示、InventoryService/Repository、AiInventoryActionService、SmartHomeController和助手确认/结果展示，新增ProductDetailsPatch及三份专项测试，并补充原HA控制器回归；没有新增依赖、schema、后端或平台改动。
+
+- PASS：最终全项目`analyze --no-pub`无问题，日志`/private/tmp/momobox-assistant-edit-analyze-final2.log`。沿用临时Flutter3.47.9 / Dart3.13.7工具链和pub缓存，没有安装系统软件。首次受限分析未能写入用户工具遥测缓存而退出，使用获准的本地工具缓存权限后成功；不把该启动失败当作源码检查通过。
+- PASS：完整`test --no-pub --reporter expanded` **1084项全部通过，退出0**，日志`/private/tmp/momobox-assistant-edit-all.log`，包含原库存/同步/权限、Markdown、分页和布局回归。资料解析/事务及真实HA控制器3个文件专项117项通过，日志`/private/tmp/momobox-assistant-edit-targeted.log`。
+- 资料测试使用内存Drift及真实InventoryService/Repository/AiInventoryActionService，核实确认前无业务写入、真实前后差异、仅明确字段变更、可空资料以null出站、分类ID绑定/创建、基准版本7延续到8、批次/流水/数量/单位/阈值保留。未预览、撤权、无变化、已删/缺失商品、确认后资料变化和事务内旧快照均拒绝；独立消耗后资料更新保留新库存。扩展同步未就绪、离线、家庭scope不匹配及出站后失去写权限均拒绝/回滚；模拟产品出站失败同时回滚商品、分类及绑定。
+- 解析测试核实分类兼容别名、显式清空与省略区别、不可变patch、NAS名称255个Unicode字符边界；空修改/非法分类/必填清空/控制字符/非文字/超长字段、夹带数量/日期/单位/家庭/版本/SQL/凭据和围栏JSON都不成为可执行资料动作。模型自称已经修改不能覆盖“尚未修改”的安全摘要。
+- HA专项使用生产SmartHomeController及仅测试的repository，核实off操作前确认与on执行后结果分离、灯名去重/房间/同名标识、实际brightness=64换算25%、无状态回执后只读取一次状态以及关闭结果。返回off/unknown、过期状态、错实体/命令回执、未接受、超时、403均不产生成功回复；每次最多一条实体指令，无自动重发，离线或无控制权限时不发送。
+- PASS：新增助手Widget专项3项通过，最终日志`/private/tmp/momobox-assistant-edit-ui-final.log`。真实资料建议取消不改、重新确认保存且执行按钮锁定；设备完成消息来自执行结果而非旧description，未确认状态写回原会话并持久化执行锁。首次夹具在Provider已释放AiConversationStore后又手动dispose，3项均在teardown报重复释放；移除冗余释放后专项及完整套件通过，没有削弱业务断言。其他19项原AI应用/工作流回归在初次组合运行中通过，并纳入最终完整回归。
+- PASS：`git diff --check`。源码核对NAS既有产品entity_upsert支持这些字段及null清空，复用原协议，不执行额外Go/PG验证。UI影响限资料差异、确认标题和反馈文字，不新增手工商品编辑页，不删除业务资料或凭据。AI_CONTEXT后续更新建议记录在DESIGN第53节。
+- NOT_EXECUTED：Android/iOS原生构建、新APK安装、系统字体/真实手势、真实模型生成资料修改建议、真实NAS推送/回读及双手机同步、HA实体实际控制和状态时序、远端CI、Git提交/推送、镜像/安装包发布。测试中的设备回执和内存数据库仅验证本地边界，不表示用户NAS或床头灯已验收；需要更新App后本批源码才生效。
+
+## 2026-11-14：家居权限说明关闭按钮
+
+保留此前未提交工作，仅修改SmartHomeController/SmartHomeScreen和对应需求/设计记录，见REQUIREMENT第36节及DESIGN第54节。关闭标志保留在当前连接的控制器内，刷新/切页不反复显示该说明；不持久化设置、不改权限或实体控制边界，新的错误/离线/过期提示继续可见。
+
+- PASS：全项目`analyze --no-pub`无问题，日志`/private/tmp/momobox-ha-notice-analyze.log`；已有HA控制及填充布局两个测试文件 **116项全部通过，退出0**，日志`/private/tmp/momobox-ha-notice-tests.log`。覆盖现有权限拒绝、控制回执/错误展示和窄屏大字填充布局；没有新增仅复述关闭按钮实现的测试。
+- PASS：`git diff --check`。没有新增依赖、schema、配置或后端改动，不重复执行完整套件或Go/PG验证。
+- NOT_EXECUTED：原生构建、新APK、真机点击关闭与重连体验、实际NAS/HA、远端CI、提交/推送/发布。已有回归不等于新按钮的真机交互验收；此前完整1084项通过是前一批基线，本批以本节静态及116项相关回归为准。

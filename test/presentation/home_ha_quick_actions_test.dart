@@ -4,11 +4,14 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:momo_box/application/ai_inventory_action_service.dart';
+import 'package:momo_box/application/inventory_service.dart';
 import 'package:momo_box/application/nas_connection_service.dart';
 import 'package:momo_box/application/settings_service.dart';
 import 'package:momo_box/core/database/app_database.dart';
 import 'package:momo_box/data/nas/nas_api_error.dart';
 import 'package:momo_box/data/repositories/nas_smart_home_repository.dart';
+import 'package:momo_box/data/repositories/inventory_repository.dart';
 import 'package:momo_box/data/repositories/settings_repository.dart';
 import 'package:momo_box/domain/models/inventory_models.dart';
 import 'package:momo_box/domain/models/nas_homeassistant_models.dart';
@@ -22,6 +25,95 @@ const _entityId = 'light.living_room';
 const _deviceId = 'ha::$_entityId';
 
 void main() {
+  group('助手控制的实际状态回复', () {
+    const action = AiInventoryAction(kind: 'device_control', arguments: {
+      'id': _deviceId, 'command': 'turn_on',
+    });
+
+    test('确认展示操作前状态，完成使用新的on回执和真实亮度', () async {
+      final repository = _FakeHaRepository()
+        ..entities = [_entity(name: '床头灯  灯')]
+        ..result = _result(command: 'turn_on', attributes: {'brightness': 64});
+      final controller = await _controller(repository);
+      addTearDown(controller.dispose);
+      final db = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final actions = AiInventoryActionService(SettingsRepository(db),
+        InventoryService(InventoryRepository(db)),
+        describeDevice: controller.describeAssistantCommand,
+        executeDevice: controller.executeAssistantCommand);
+      final before = await actions.describe(action);
+      expect(before, contains('打开「床头灯」'));
+      expect(before, contains('操作前状态：已关闭'));
+      expect(before, isNot(contains('未指定房间')));
+      expect(before, isNot(contains(_entityId)));
+      final result = await actions.executeWithResult(action, confirmedDescription: before);
+      expect(result, '已打开「床头灯」。\n设备反馈：已开启（on）。\n亮度：25%。');
+      expect(result, isNot(contains('off')));
+      expect(result, isNot(contains('操作前')));
+      expect(repository.commands, [NasHaCommand.turnOn]);
+      expect(controller.state.entityStates[_deviceId]!.state, 'on');
+    });
+
+    test('回执无状态时读取一次真实状态，关闭回复也使用操作后状态', () async {
+      final repository = _FakeHaRepository()
+        ..entities = [_entity(areaName: '卧室')]
+        ..remoteState = _state(value: 'on');
+      final controller = await _controller(repository);
+      addTearDown(controller.dispose);
+      repository.result = _result(command: 'turn_off', withState: false);
+      repository.remoteState = _state(value: 'off');
+      final reads = repository.stateReads;
+      final result = await controller.executeAssistantCommand(const AiInventoryAction(
+        kind: 'device_control', arguments: {'id': _deviceId, 'command': 'turn_off'}));
+      expect(result, '已关闭「卧室 · 客厅灯」。\n设备反馈：已关闭（off）。');
+      expect(repository.commands, [NasHaCommand.turnOff]);
+      expect(repository.stateReads, reads + 1);
+    });
+
+    test('显示名规范后重名才附设备标识用于确认', () async {
+      final repository = _FakeHaRepository()
+        ..entities = [_entity(name: '床头灯  灯'), _entity(entityId: 'light.other', name: '床头灯')]
+        ..permissions = [_permission(), _permission(entityId: 'light.other')];
+      final controller = await _controller(repository);
+      addTearDown(controller.dispose);
+      expect(await controller.describeAssistantCommand(action), contains('设备标识：$_entityId'));
+      expect(repository.commands, isEmpty);
+    });
+
+    for (final failure in ['off', 'unknown', 'stale', 'wrong_state', 'wrong_receipt', 'not_accepted', 'timeout', '403']) {
+      test('$failure 不能生成已打开回复，也不能自动重发', () async {
+        final repository = _FakeHaRepository();
+        final controller = await _controller(repository);
+        addTearDown(controller.dispose);
+        repository.result = _result(command: 'turn_on',
+          value: failure == 'off' ? 'off' : failure == 'unknown' ? 'unknown' : 'on',
+          accepted: failure != 'not_accepted',
+          entityId: failure == 'wrong_receipt' ? 'light.other' : _entityId,
+          stateEntityId: failure == 'wrong_state' ? 'light.other' : _entityId,
+          fetchedAt: failure == 'stale' ? DateTime.now().subtract(const Duration(minutes: 6)) : null);
+        if (failure == 'timeout' || failure == '403') {
+          repository.commandFailure = NasApiError(kind: failure == '403'
+            ? NasApiErrorKind.forbidden : NasApiErrorKind.timeout, message: '测试失败');
+        }
+        await expectLater(controller.executeAssistantCommand(action), throwsStateError);
+        expect(repository.commands, [NasHaCommand.turnOn]);
+      });
+    }
+
+    test('只读或无控制权限时不发送助手指令', () async {
+      for (final readonly in [true, false]) {
+        final repository = _FakeHaRepository()
+          ..permissions = [_permission(canControl: readonly)];
+        final controller = await _controller(repository,
+          assertWritable: readonly ? () => throw StateError('NAS 离线，只能查看缓存。') : null);
+        addTearDown(controller.dispose);
+        await expectLater(controller.executeAssistantCommand(action), throwsStateError);
+        expect(repository.commands, isEmpty);
+      }
+    });
+  });
+
   group('首页 HA 控制器边界（真实控制器 + 仅测试 fake repository）', () {
     test('member 读取授权设备闭环，不调用仅 owner/admin 可用的管理测试', () async {
       final repository = _FakeHaRepository();
@@ -881,18 +973,15 @@ void main() {
       }
     }
 
-    testWidgets('首页 HA 服务行读取真实控制器状态，而非固定未接入', (tester) async {
+    testWidgets('今日忽略旧服务/提醒模块，家居预览仍使用真实HA状态', (tester) async {
       final controller = await _controller(_FakeHaRepository());
-      await _pumpHome(tester, controller, sections: ['quick_intake']);
+      await _pumpHome(tester, controller, sections: ['service_status', 'reminder_details', 'smart_home_quick']);
+      expect(find.text('服务状态'), findsNothing);
+      expect(find.text('提醒汇总'), findsNothing);
+      expect(find.text('NAS服务'), findsNothing);
       expect(find.text('HA服务'), findsNothing);
-      await tester.scrollUntilVisible(find.text('服务状态'), 160,
-        scrollable: find.descendant(of: find.byType(HomeScreen), matching: find.byType(Scrollable)).first);
-      await tester.tap(find.text('服务状态'));
-      await tester.pumpAndSettle();
-      expect(find.text('HA服务'), findsOneWidget);
-      final haRow = find.ancestor(of: find.text('HA服务'), matching: find.byType(Row)).first;
-      expect(find.descendant(of: haRow, matching: find.text('已连接')), findsOneWidget);
-      expect(find.descendant(of: haRow, matching: find.text('未接入')), findsNothing);
+      expect(find.text('AI服务'), findsNothing);
+      expect(find.text('智能家居预览（已连接）'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await _unmountHome(tester);
     });

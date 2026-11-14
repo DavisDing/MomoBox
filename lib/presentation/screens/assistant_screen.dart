@@ -1,4 +1,5 @@
 import '../widgets/nas_ai_models.dart';
+import '../widgets/assistant_message_body.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -207,7 +208,11 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
         return;
       }
       final confirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
-        title: const Text('确认操作'),
+        title: Text(switch (action.kind) {
+          'product_update' => '确认修改物品资料',
+          'device_control' => '确认控制设备',
+          _ => '确认操作',
+        }),
         scrollable: true,
         content: Text(description),
         actions: [
@@ -219,27 +224,34 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
       store.actionReceipts[message.id] = '执行中／中断后请核实结果，勿重复提交';
       await store.save();
       executing = true;
+      late final String completionMessage;
       if (action.kind == 'open_page') {
         await service.checkPermission();
         if (!mounted) return;
         await Navigator.of(context).push<void>(MaterialPageRoute(
           builder: (_) => _actionPage(action.string('page')!),
         ));
+        completionMessage = '已打开${AiInventoryAction.pages[action.string('page')]}页面；具体操作以页面结果为准。';
       } else {
-        await service.execute(action, confirmedDescription: description);
+        completionMessage = await service.executeWithResult(action, confirmedDescription: description);
       }
       store.actionReceipts[message.id] = action.kind == 'open_page' ? '已打开页面' : '已执行';
       if (store.sessions.contains(origin)) {
         origin.messages.add(ChatMessage(id: const Uuid().v4(), role: 'assistant',
-          content: action.kind == 'open_page' ? '已打开${AiInventoryAction.pages[action.string('page')]}页面；具体操作以页面结果为准。' : '已完成：$description', timestamp: DateTime.now()));
+          content: completionMessage, timestamp: DateTime.now()));
       }
       await store.save();
     } catch (error) {
       if (executing && !{'已执行', '已打开页面'}.contains(store.actionReceipts[message.id])) {
         store.actionReceipts[message.id] = '执行结果未确认，请核实后重新提问';
       }
+      final detail = error is StateError ? error.message : '操作或记录保存失败，请先核实实际结果。';
+      if (executing && !{'已执行', '已打开页面'}.contains(store.actionReceipts[message.id]) &&
+          store.sessions.contains(origin)) {
+        origin.messages.add(ChatMessage(id: const Uuid().v4(), role: 'assistant',
+          content: '本次操作未确认完成：$detail', timestamp: DateTime.now()));
+      }
       if (mounted) {
-        final detail = error is StateError ? error.message : '操作或记录保存失败，请先核实实际结果。';
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(detail)));
       }
     } finally {
@@ -362,22 +374,27 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [SelectableText(
-                          isUser ? msg.content : AiInventoryAction.displayText(msg.content),
-                          style: TextStyle(
-                            color: theme.colorScheme.onSurface,
-                            fontSize: MomoTextSize.title,
-                            height: 1.5,
-                          ),
+                          children: [
+                            if (!isUser)
+                              AssistantMessageBody(content: msg.content)
+                            else
+                              SelectableText(
+                                msg.content,
+                                style: TextStyle(
+                                  color: theme.colorScheme.onSurface,
+                                  fontSize: MomoTextSize.title,
+                                  height: 1.5,
+                                ),
+                              ),
+                            if (!isUser && AiInventoryAction.parse(msg.content) != null)
+                              TextButton(
+                                onPressed: _store.actionReceipts.containsKey(msg.id) ||
+                                    !(ref.watch(aiInventoryPermissionProvider).valueOrNull ?? false)
+                                    ? null : () => _confirmInventoryAction(msg),
+                                child: Text(_store.actionReceipts[msg.id] ?? '查看并确认操作'),
+                              ),
+                          ],
                         ),
-                        if (!isUser && AiInventoryAction.parse(msg.content) != null)
-                          TextButton(
-                            onPressed: _store.actionReceipts.containsKey(msg.id) ||
-                                !(ref.watch(aiInventoryPermissionProvider).valueOrNull ?? false)
-                                ? null : () => _confirmInventoryAction(msg),
-                            child: Text(_store.actionReceipts[msg.id] ?? '查看并确认操作'),
-                          ),
-                        ],),
                       ),
                     );
                   },

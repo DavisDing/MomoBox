@@ -33,7 +33,7 @@ void main() {
 
   tearDown(() => database.close());
 
-  testWidgets('首页只有一个入库入口，服务详情按需展开且保持真实状态', (tester) async {
+  testWidgets('今日保留单一入库入口并移除重复服务和提醒汇总', (tester) async {
     await tester.binding.setSurfaceSize(const Size(320, 720));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await SettingsRepository(database).setValue(homeSectionOrderKey, 'quick_intake');
@@ -47,32 +47,17 @@ void main() {
       of: find.byType(HomeScreen),
       matching: find.byType(Scrollable),
     ).first;
-    await tester.scrollUntilVisible(find.text('服务状态'), 160, scrollable: homeScroll);
-    await Scrollable.ensureVisible(tester.element(find.text('服务状态')), alignment: 0.15);
+    final scroll = tester.state<ScrollableState>(homeScroll).position;
+    scroll.jumpTo(scroll.maxScrollExtent);
     await _pumpForUi(tester);
-    if (find.text('服务状态').hitTestable().evaluate().isEmpty) {
-      await tester.drag(homeScroll, const Offset(0, -200));
-      await _pumpForUi(tester);
-    }
-    expect(find.text('服务状态').hitTestable(), findsOneWidget);
-    expect(find.text('NAS 暂不可达 · 缓存查看'), findsOneWidget);
-    await tester.tap(find.text('服务状态'));
-    await _pumpForUi(tester);
-    await tester.scrollUntilVisible(find.text('AI服务'), 160, scrollable: homeScroll);
-    final nas = tester.getTopLeft(find.text('NAS服务'));
-    final ha = tester.getTopLeft(find.text('HA服务'));
-    final ai = tester.getTopLeft(find.text('AI服务'));
-    final serviceOffset = tester.state<ScrollableState>(homeScroll).position.pixels;
-    expect(nas.dx, ha.dx);
-    expect(ha.dx, ai.dx);
-    expect(nas.dy, lessThan(ha.dy));
-    expect(ha.dy, lessThan(ai.dy));
-    expect(find.text('未接入'), findsNWidgets(2));
-    expect(find.text('未配置'), findsOneWidget);
+    expect(find.text('服务状态'), findsNothing);
+    expect(find.text('提醒汇总'), findsNothing);
+    expect(find.text('NAS服务'), findsNothing);
+    expect(find.text('HA服务'), findsNothing);
+    expect(find.text('AI服务'), findsNothing);
     final intakeEntry = find.text('记录新物品');
     await tester.scrollUntilVisible(intakeEntry, -160, scrollable: homeScroll);
     await _pumpForUi(tester);
-    expect(tester.state<ScrollableState>(homeScroll).position.pixels, lessThan(serviceOffset));
     expect(intakeEntry.hitTestable(), findsOneWidget);
     await tester.tap(intakeEntry);
     await _pumpUntilFound(tester, find.byType(IntakeSheet));

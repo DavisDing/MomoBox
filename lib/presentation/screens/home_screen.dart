@@ -2,7 +2,6 @@ import '../widgets/momo_mobile_layout.dart';
 import '../widgets/momo_floating_dock.dart';
 import '../widgets/momo_components.dart';
 import '../../app/momo_typography.dart';
-import '../widgets/calendar_sync_dialog.dart';
 import '../widgets/chores_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,7 +12,6 @@ import '../../app/momo_theme.dart';
 import '../../domain/models/inventory_models.dart';
 import '../../domain/models/smart_home_models.dart';
 import '../../domain/inventory/expiry_rules.dart';
-import '../../application/nas_connection_service.dart';
 import '../controllers/providers.dart';
 import '../controllers/smart_home_controller.dart';
 import '../widgets/intake_sheet.dart';
@@ -65,18 +63,13 @@ class HomeScreen extends ConsumerWidget {
                 return _buildChoresCard(context, ref);
               case 'smart_home_quick':
                 return _buildSmartHomeQuickSection(context, ref, homeState);
-              case 'service_status':
-                return _buildServiceStatus(context, ref);
-              case 'reminder_details':
-                return ExpansionTile(tilePadding:EdgeInsets.zero,title:const Text('提醒汇总'),
-                  children:[_buildAlertSummaryCard(context,summary)]);
               default:
                 return const SizedBox.shrink();
             }
           }
 
           final insets = MomoMobileLayout.pageInsets(context);
-          final ordered = [...sectionOrder, 'reminder_details', 'service_status'];
+          final ordered = sectionOrder.where(defaultHomeSectionOrder.contains);
           final today = items.isEmpty ? DateTime.now() : items.first.calendarToday;
           const weekdays = ['一', '二', '三', '四', '五', '六', '日'];
 
@@ -167,51 +160,6 @@ class HomeScreen extends ConsumerWidget {
   }));
   }
 
-  Widget _buildStatusDot(
-    BuildContext context, {
-    required String label,
-    required String detail,
-    required bool isConnected,
-  }) {
-    final statusColor = isConnected ? Colors.green : Colors.blueGrey.shade400;
-    final scheme = Theme.of(context).colorScheme;
-    final detailColor = isConnected
-            ? (Theme.of(context).brightness == Brightness.dark
-                ? Colors.green.shade300
-                : Colors.green.shade800)
-            : scheme.onSurfaceVariant;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(width: 8, height: 8,
-            decoration: BoxDecoration(shape: BoxShape.circle, color: statusColor)),
-          const SizedBox(width: 8),
-          Expanded(child: Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            spacing: 8, runSpacing: 2,
-            children: [
-              Text(label, style: const TextStyle(fontSize: MomoTextSize.body, fontWeight: FontWeight.w600)),
-              Text(detail, style: TextStyle(fontSize: MomoTextSize.caption, color: detailColor)),
-            ],
-          )),
-        ],
-      ),
-    );
-  }
-
-  String _nasStatusLabel(NasConnectionStatus status) {
-    return switch (status) {
-      NasConnectionStatus.unconfigured => '未接入',
-      NasConnectionStatus.checking => '连接中',
-      NasConnectionStatus.connected => '已连接',
-      NasConnectionStatus.unavailable => '服务不可用',
-      NasConnectionStatus.failed => '连接失败',
-    };
-  }
-
   String _haStatusLabel(SmartHomeState state) {
     if (state.isLoading) return '连接中';
     return switch (state.haStatus) {
@@ -231,84 +179,6 @@ class HomeScreen extends ConsumerWidget {
       _HomeShortcut(label: '采买清单', icon: Icons.checklist_rounded,
         onPressed: () => context.push('/shopping')),
     ]);
-  }
-
-  Widget _buildServiceStatus(BuildContext context, WidgetRef ref) {
-    final aiConfigured = ref.watch(aiConfigurationStatusProvider).valueOrNull == true;
-    final nasState = ref.watch(nasConnectionProvider);
-    final homeState = ref.watch(smartHomeControllerProvider);
-    return ExpansionTile(tilePadding:EdgeInsets.zero,childrenPadding:const EdgeInsets.only(bottom:4),
-        shape:const Border(),collapsedShape:const Border(),title:const Text('服务状态'),
-        subtitle:Text(nasState.isConnected?'NAS 协同模式':'NAS 暂不可达 · 缓存查看'),
-        children:[
-          _buildStatusDot(context,label:'NAS服务',isConnected:nasState.isConnected,detail:_nasStatusLabel(nasState.status)),
-          _buildStatusDot(context,label:'HA服务',isConnected:homeState.nasOnline && homeState.haStatus==HaConnectionStatus.online && !homeState.isLoading,detail:_haStatusLabel(homeState)),
-          _buildStatusDot(context,label:'AI服务',isConnected:false,detail:aiConfigured?'待验证':'未配置'),
-        ]);
-  }
-
-  Widget _buildAlertSummaryCard(BuildContext context, ReminderSummary summary) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _HomeFlowRow(children: [
-          Expanded(child: Semantics(
-            header: true,
-            child: Text('需要留意', style: Theme.of(context).textTheme.titleLarge),
-          )),
-          IconButton(
-            tooltip: '同步到日历',
-            icon: const Icon(Icons.calendar_month_outlined, size: 22),
-            onPressed: () => CalendarSyncDialog.show(context),
-          ),
-          TextButton(onPressed: () => context.push('/alerts'), child: const Text('提醒明细')),
-        ]),
-        const SizedBox(height: 8),
-        MomoAdaptiveTiles(
-          minimumWidth: 128,
-          children: [
-            _buildSummaryGridItem(context, icon: Icons.error_outline_rounded,
-              label: '已过期批次', count: summary.expired.length,
-              color: Theme.of(context).colorScheme.error,
-              onTap: () => context.push('/alerts?filter=expired')),
-            _buildSummaryGridItem(context, icon: Icons.timelapse_rounded,
-              label: '3 天内到期', count: summary.expiringWithinDays(3),
-              color: Colors.orange.shade800,
-              onTap: () => context.push('/alerts?filter=expiring')),
-            _buildSummaryGridItem(context, icon: Icons.schedule_rounded,
-              label: '临期提醒', count: summary.expiring.length,
-              color: Colors.orange.shade800,
-              onTap: () => context.push('/alerts?filter=expiring')),
-            _buildSummaryGridItem(context, icon: Icons.inventory_2_outlined,
-              label: '库存偏低', count: summary.lowStock.length,
-              color: Theme.of(context).colorScheme.primary,
-              onTap: () => context.push('/alerts?filter=low_stock')),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSummaryGridItem(BuildContext context, {
-    required IconData icon, required String label, required int count,
-    required Color color, required VoidCallback onTap,
-  }) {
-    final theme = Theme.of(context);
-    return MomoCard(
-      onTap: onTap,
-      margin: EdgeInsets.zero,
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 24, color: color),
-          const SizedBox(height: 12),
-          Text('$count', style: theme.textTheme.headlineLarge),
-          const SizedBox(height: 4),
-          Text(label, style: theme.textTheme.bodyMedium),
-        ],
-      ),
-    );
   }
 
   Widget _buildShoppingSummaryCard(

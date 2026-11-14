@@ -11,6 +11,8 @@ import '../../domain/models/ai_action.dart';
 import '../../domain/models/smart_home_models.dart';
 
 const _unset = Object();
+const _permissionNotice = '部分设备当前没有控制权限，控制请求仍以 NAS 服务端授权为准。';
+const _staleNotice = '部分设备状态已过期，当前仅展示最近已知状态。';
 
 /// The HA controller deliberately owns the remote-to-UI mapping.
 ///
@@ -75,6 +77,7 @@ class SmartHomeState {
   final DateTime? lastRefreshedAt;
 
   bool get hasPermissionError => accessDeniedEntityIds.isNotEmpty;
+  bool get isPermissionNotice => message == _permissionNotice;
 
   SmartHomeState copyWith({
     List<SmartDevice>? devices,
@@ -166,6 +169,7 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
   final void Function()? assertWritable;
   bool get _canManageIntegration => _role == 'owner' || _role == 'admin';
   Future<void>? _refreshInFlight;
+  bool _permissionNoticeDismissed = false;
   final Map<String, NasHaEntity> _entitiesByKey = <String, NasHaEntity>{};
   final Map<String, NasHaEntityState> _statesByKey = <String, NasHaEntityState>{};
   final Map<String, bool> _stateFetchDenied = <String, bool>{};
@@ -173,6 +177,22 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
   final Uuid _uuid = const Uuid();
 
   String _key(String integrationId, String entityId) => '$integrationId::$entityId';
+
+  void dismissPermissionNotice() {
+    if (!mounted || !state.isPermissionNotice) return;
+    _permissionNoticeDismissed = true;
+    state = state.copyWith(
+      message: _deviceAccessNotice(
+        hasDenied: state.hasPermissionError,
+        hasStale: state.staleEntityIds.isNotEmpty,
+      ),
+    );
+  }
+
+  String? _deviceAccessNotice({required bool hasDenied, required bool hasStale}) {
+    if (hasDenied && !_permissionNoticeDismissed) return _permissionNotice;
+    return hasStale ? _staleNotice : null;
+  }
 
   @override
   void dispose() {
@@ -338,9 +358,10 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
         devices: _mapDevices(entities, staleEntityIds),
         message: entities.isEmpty && !_canManageIntegration
             ? '当前账号没有可查看的设备，无法确认 Home Assistant 实时状态。'
-            : accessDenied.isEmpty
-                ? (staleEntityIds.isEmpty ? null : '部分设备状态已过期，当前仅展示最近已知状态。')
-                : '部分设备当前没有控制权限，控制请求仍以 NAS 服务端授权为准。',
+            : _deviceAccessNotice(
+                hasDenied: accessDenied.isNotEmpty,
+                hasStale: staleEntityIds.isNotEmpty,
+              ),
         lastRefreshedAt: DateTime.now().toUtc(),
       );
     } catch (error) {
@@ -744,10 +765,15 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
     ])}';
   }
 
-  ({NasHaCommand command, NasHaCommandParameters? parameters, String description})
-      _assistantCommand(AiInventoryAction action) {
+  ({
+    NasHaCommand command,
+    NasHaCommandParameters? parameters,
+    String description,
+  })
+  _assistantCommand(AiInventoryAction action) {
     final command = NasHaCommand.values.firstWhere(
-      (value) => nasHaCommandValue(value) == action.string('command') &&
+      (value) =>
+          nasHaCommandValue(value) == action.string('command') &&
           AiInventoryAction.deviceCommands.contains(nasHaCommandValue(value)),
       orElse: () => throw StateError('不支持该设备命令。'),
     );
@@ -758,53 +784,126 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
     NasHaCommandParameters? parameters;
     switch (command) {
       case NasHaCommand.setBrightness:
-        if (value is! int || value < 0 || value > 100) throw StateError('亮度应为 0～100。');
+        if (value is! int || value < 0 || value > 100) {
+          throw StateError('亮度应为 0～100。');
+        }
         parameters = NasHaBrightnessParameters(value);
       case NasHaCommand.setTemperature:
-        if (value is! num || !value.isFinite || value < (entity.temperatureMin ?? 16) ||
+        if (value is! num ||
+            !value.isFinite ||
+            value < (entity.temperatureMin ?? 16) ||
             value > (entity.temperatureMax ?? 30)) {
           throw StateError('温度超出设备支持范围。');
         }
         parameters = NasHaTemperatureParameters(value.toDouble());
       case NasHaCommand.setHvacMode:
-        if (value is! String || !entity.hvacModes.contains(value)) throw StateError('设备不支持该模式。');
+        if (value is! String || !entity.hvacModes.contains(value)) {
+          throw StateError('设备不支持该模式。');
+        }
         parameters = NasHaHvacModeParameters(value);
       default:
         break;
     }
-    const labels = {'turn_on': '打开', 'turn_off': '关闭', 'set_brightness': '设置亮度',
-      'set_temperature': '设置温度', 'set_hvac_mode': '设置空调模式', 'play': '播放', 'pause': '暂停'};
-    return (command: command, parameters: parameters,
-      description: '${labels[nasHaCommandValue(command)]}「${entity.name}」'
-        '（${entity.areaName ?? '未指定房间'} / ${entity.entityId}）'
-        '${value == null ? '' : '：$value'}。\n当前状态：${state.entityStates[action.id]?.state}。');
+    const labels = {
+      'turn_on': '打开',
+      'turn_off': '关闭',
+      'set_brightness': '设置亮度',
+      'set_temperature': '设置温度',
+      'set_hvac_mode': '设置空调模式',
+      'play': '播放',
+      'pause': '暂停',
+    };
+    final target = _assistantDeviceTarget(entity);
+    final ambiguous =
+        state.entities
+            .where((other) => _assistantDeviceTarget(other) == target)
+            .length >
+        1;
+    return (
+      command: command,
+      parameters: parameters,
+      description:
+          '${labels[nasHaCommandValue(command)]}$target'
+          '${value == null ? '' : '：$value'}。\n操作前状态：${_localizedState(state.entityStates[action.id]?.state ?? 'unknown')}。'
+          '${ambiguous ? '\n设备标识：${entity.entityId}' : ''}',
+    );
+  }
+
+  String _assistantDeviceTarget(NasHaEntity entity) {
+    var name = entity.name.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (entity.domain == 'light') {
+      name = name.replaceFirst(RegExp(r'灯 灯$'), '灯');
+    }
+    final room = entity.areaName?.trim();
+    return room == null || room.isEmpty ? '「$name」' : '「$room · $name」';
   }
 
   Future<String> describeAssistantCommand(AiInventoryAction action) async =>
       _assistantCommand(action).description;
 
-  Future<void> executeAssistantCommand(AiInventoryAction action) async {
+  Future<String> executeAssistantCommand(AiInventoryAction action) async {
     final prepared = _assistantCommand(action);
-    await _sendCommandForDevice(action.id, prepared.command, parameters: prepared.parameters);
+    await _sendCommandForDevice(
+      action.id,
+      prepared.command,
+      parameters: prepared.parameters,
+    );
     if (!mounted) throw StateError('设备连接已变化，请核实设备状态。');
     if (state.commandError != null) throw StateError(state.commandError!);
-    if (state.staleEntityIds.contains(action.id)) throw StateError('命令已接受，设备状态仍待核实。');
+    if (state.staleEntityIds.contains(action.id)) {
+      throw StateError('命令已接受，设备状态仍待核实。');
+    }
     final remote = state.entityStates[action.id];
     final value = action.arguments['value'];
     final reachedTarget = switch (prepared.command) {
-      NasHaCommand.turnOn => remote?.state == 'on' ||
-          (remote != null && !{'off', 'unknown', 'unavailable'}.contains(remote.state)),
+      NasHaCommand.turnOn =>
+        remote?.state == 'on' ||
+            (!{'light', 'switch'}.contains(_entityFor(action.id)?.domain) &&
+                remote != null &&
+                !{'off', 'unknown', 'unavailable'}.contains(remote.state)),
       NasHaCommand.turnOff => remote?.state == 'off',
       NasHaCommand.play => remote?.state == 'playing',
       NasHaCommand.pause => remote?.state == 'paused',
-      NasHaCommand.setHvacMode => remote?.state == value || remote?.attributes['hvac_mode'] == value,
+      NasHaCommand.setHvacMode =>
+        remote?.state == value || remote?.attributes['hvac_mode'] == value,
       NasHaCommand.setTemperature => remote?.attributes['temperature'] == value,
-      NasHaCommand.setBrightness => remote?.attributes['brightness_pct'] == value ||
-          (remote?.attributes['brightness'] is num && value is int &&
-           (((remote!.attributes['brightness'] as num) * 100 / 255).round() - value).abs() <= 1),
+      NasHaCommand.setBrightness =>
+        remote?.attributes['brightness_pct'] == value ||
+            (remote?.attributes['brightness'] is num &&
+                value is int &&
+                (((remote!.attributes['brightness'] as num) * 100 / 255)
+                                .round() -
+                            value)
+                        .abs() <=
+                    1),
       _ => false,
     };
-    if (!reachedTarget) throw StateError('命令已接受，设备尚未返回目标状态，请核实后再操作。');
+    if (!reachedTarget) {
+      throw StateError('指令已接受，设备尚未确认目标状态。请在家居页查看后再操作，避免重复发送。');
+    }
+    final entity = _entityFor(action.id);
+    if (entity == null || remote == null) throw StateError('设备连接已变化，请核实设备状态。');
+    final target = _assistantDeviceTarget(entity);
+    final summary = switch (prepared.command) {
+      NasHaCommand.turnOn => '已打开$target。',
+      NasHaCommand.turnOff => '已关闭$target。',
+      NasHaCommand.setBrightness => '已将$target的亮度设为 $value%。',
+      NasHaCommand.setTemperature => '已将$target的设定温度调为 $value°C。',
+      NasHaCommand.setHvacMode =>
+        '已将$target切换为${_localizedState(value as String)}模式。',
+      NasHaCommand.play => '$target已开始播放。',
+      NasHaCommand.pause => '$target已暂停播放。',
+      _ => '设备操作已确认。',
+    };
+    final brightnessPercent =
+        _numberAttribute(remote.attributes, 'brightness_pct') ??
+        (_numberAttribute(remote.attributes, 'brightness') == null
+            ? null
+            : _numberAttribute(remote.attributes, 'brightness')! * 100 / 255);
+    final brightness = entity.domain == 'light' && brightnessPercent != null
+        ? '\n亮度：${brightnessPercent.round().clamp(0, 100)}%。'
+        : '';
+    return '$summary\n设备反馈：${_localizedState(remote.state)}（${remote.state}）。$brightness';
   }
 
   /// Set an explicit target instead of assuming that every HA power entity
