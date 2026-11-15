@@ -840,7 +840,7 @@ void main() {
       final controller = await _controller(repository);
       repository.pendingCommand = Completer<NasHaCommandResult>();
       await _pumpHome(tester, controller);
-      expect(find.text('智能家居预览（已连接）'), findsOneWidget);
+      expect(find.text('家居 · 已连接'), findsOneWidget);
       expect(find.text('客厅灯'), findsOneWidget);
       expect(find.text('示例设备，未连接'), findsNothing);
       final toggle = find.byKey(const ValueKey('home-ha-toggle-$_deviceId'));
@@ -919,7 +919,7 @@ void main() {
           expect(toggle.value, isFalse);
         }
         if (controller.state.haStatus == HaConnectionStatus.unconfigured) {
-          expect(find.text('智能家居预览（未接入）'), findsOneWidget);
+          expect(find.text('家居 · 未接入'), findsOneWidget);
         }
         if (controller.state.devices.isEmpty) {
           expect(find.byType(Switch), findsNothing);
@@ -981,7 +981,7 @@ void main() {
       expect(find.text('NAS服务'), findsNothing);
       expect(find.text('HA服务'), findsNothing);
       expect(find.text('AI服务'), findsNothing);
-      expect(find.text('智能家居预览（已连接）'), findsOneWidget);
+      expect(find.text('家居 · 已连接'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await _unmountHome(tester);
     });

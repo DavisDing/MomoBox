@@ -108,6 +108,10 @@ void main() {
       expect(find.textContaining('无法刷新通知状态或重排提醒'), findsNothing);
       expect(plugin.pending, hasLength(1));
       expect(service.permissionRequests, 0);
+      // Removing the error card can move the shorter action above the old
+      // scroll offset. Start at the top before checking forward navigation.
+      tester.state<ScrollableState>(find.byType(Scrollable).first).position.jumpTo(0);
+      await tester.pump();
       await tester.scrollUntilVisible(
         find.text('发送测试提醒'),
         150,

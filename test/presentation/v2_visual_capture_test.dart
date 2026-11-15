@@ -20,7 +20,6 @@ import 'package:momo_box/domain/models/inventory_models.dart';
 import 'package:momo_box/domain/models/nas_homeassistant_models.dart';
 import 'package:momo_box/presentation/controllers/providers.dart';
 import 'package:momo_box/presentation/controllers/smart_home_controller.dart';
-import 'package:momo_box/presentation/widgets/momo_still_life.dart';
 import 'package:momo_box/presentation/widgets/momo_components.dart';
 import 'package:momo_box/presentation/widgets/momo_mobile_layout.dart';
 
@@ -131,7 +130,6 @@ void main() {
           );
           final router = container.read(appRouterProvider);
           expect(router.routeInformationProvider.value.uri.path, '/');
-          expect(find.byType(MomoStillLife), findsOneWidget);
           expect(find.text('记录新物品').hitTestable(), findsOneWidget);
           expect(find.text('最近需要关注').hitTestable(), findsOneWidget);
 
@@ -163,7 +161,7 @@ void main() {
               ['助手', '物品', '今日', '家居', '设置'],
             );
             if (route == '/assistant') {
-              expect(find.text('生活的小事，\n一起理清楚。'), findsOneWidget);
+              expect(find.text('哪些物品需要先用？'), findsOneWidget);
               expect(find.byTooltip('发送消息').hitTestable(), findsOneWidget);
             }
             final directory = Platform.environment['MOMO_UI_CAPTURE_DIR'];
@@ -206,15 +204,7 @@ void main() {
 
 String _todayLayout(WidgetTester tester) {
   final regions = {
-    'household': find.byType(MomoHouseholdBar),
     'header': find.byType(MomoPageHeader),
-    'hero':
-        find
-            .ancestor(
-              of: find.text('今天，先照顾这些'),
-              matching: find.byType(MomoCard),
-            )
-            .first,
     'quickIntake':
         find
             .ancestor(of: find.text('记录新物品'), matching: find.byType(MomoCard))

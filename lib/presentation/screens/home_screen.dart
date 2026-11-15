@@ -16,7 +16,6 @@ import '../controllers/providers.dart';
 import '../controllers/smart_home_controller.dart';
 import '../widgets/intake_sheet.dart';
 import '../widgets/momo_product_image.dart';
-import '../widgets/momo_still_life.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -54,9 +53,7 @@ class HomeScreen extends ConsumerWidget {
               case 'quick_intake':
                 return _buildQuickIntakeBar(context);
               case 'alert_summary':
-                return Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
-                  _buildAttentionList(context,summary),
-                ]);
+                return _buildAttentionList(context, summary);
               case 'shopping_summary':
                 return _buildShoppingSummaryCard(context, shoppingAsync, summary, palette);
               case 'chores_card':
@@ -79,25 +76,20 @@ class HomeScreen extends ConsumerWidget {
               key: const PageStorageKey('today-page'),
               keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               slivers: [
-                SliverPadding(padding: insets,
-                  sliver: SliverToBoxAdapter(child: MomoHouseholdBar(
-                    onPressed: () => context.go('/settings'),
-                    actions: [IconButton(tooltip: '自定义首页模块排序',
-                      icon: const Icon(Icons.tune_rounded, size: 20),
-                      onPressed: () => _showHomeOrderDialog(context, ref, sectionOrder))],
-                  ))),
                 SliverPadding(
                   padding: insets,
                   sliver: SliverToBoxAdapter(
                     child: MomoPageHeader(
-                      title: '日常，有序。',
-                      eyebrow: '${today.month} 月 ${today.day} 日，星期${weekdays[today.weekday - 1]}',
-                      subtitle: const Text('家里的小事，都在这里。'),
+                      title: '今日',
+                      actions: [IconButton(
+                        tooltip: '自定义首页模块排序',
+                        icon: const Icon(Icons.tune_rounded, size: 20),
+                        onPressed: () => _showHomeOrderDialog(context, ref, sectionOrder),
+                      )],
+                      subtitle: Text('${today.month} 月 ${today.day} 日，星期${weekdays[today.weekday - 1]}'),
                     ),
                   ),
                 ),
-                SliverPadding(padding: insets.add(const EdgeInsets.only(bottom: 12)),
-                  sliver: SliverToBoxAdapter(child: _buildTodayHero(context, summary))),
                 ...ordered.map((key) => SliverPadding(
                   padding: insets.add(const EdgeInsets.only(bottom: 16)),
                   sliver: SliverToBoxAdapter(child: buildSectionByKey(key)),
@@ -126,38 +118,7 @@ class HomeScreen extends ConsumerWidget {
       if(attention.isEmpty) Padding(padding:const EdgeInsets.symmetric(vertical:12),
         child:Text('目前没有需要关注的物品。',style:theme.textTheme.bodyMedium)),
       for(final item in attention) _AttentionItem(item: item),
-      TextButton.icon(onPressed:()=>context.go('/assistant'),
-        icon:const Icon(Icons.auto_awesome_outlined,size:18),label:const Text('家里有什么，可以问问我')),
     ]);
-  }
-
-  Widget _buildTodayHero(BuildContext context, ReminderSummary summary) {
-    final theme = Theme.of(context);
-    final count = {...summary.expiring.map((item) => item.id), ...summary.expired.map((item) => item.id)}.length;
-    return MomoCard(color: theme.colorScheme.primaryContainer,
-      borderRadius: 24, margin: EdgeInsets.zero, padding: EdgeInsets.zero,
-      child: LayoutBuilder(builder: (context, constraints) {
-        final showArt = constraints.maxWidth >= 280 && MediaQuery.textScalerOf(context).scale(14) <= 18.2;
-        return Stack(children: [
-          if (showArt) const Positioned(right: 4, bottom: 8, width: 112, height: 150, child: MomoStillLife()),
-          Padding(padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [Icon(Icons.eco_outlined, size: 16, color: theme.colorScheme.primary),
-          const SizedBox(width: 6), Expanded(child:Text('今天，先照顾这些', style: theme.textTheme.bodySmall))]),
-        const SizedBox(height: 8),
-        Padding(padding: EdgeInsets.only(right: showArt ? 85 : 0),
-          child: Text(count > 0 ? '别让好东西，\n被时间忘记。' : '物品有归处，\n日子有秩序。',
-          style: theme.textTheme.headlineMedium)),
-        const SizedBox(height: 6),
-        Padding(padding: EdgeInsets.only(right: showArt ? 92 : 0),
-          child: Text(count > 0 ? '$count 件物品需要留意效期。' : '暂时没有效期提醒。',
-          style: theme.textTheme.bodySmall)),
-        TextButton.icon(onPressed: () => context.push('/alerts'),
-          style: TextButton.styleFrom(padding: EdgeInsets.zero, alignment: Alignment.centerLeft),
-          label: const Text('看看是哪几件'), icon: const Icon(Icons.north_east_rounded, size: 16)),
-      ])),
-    ]);
-  }));
   }
 
   String _haStatusLabel(SmartHomeState state) {
@@ -201,13 +162,13 @@ class HomeScreen extends ConsumerWidget {
                 const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  '采买速览清单',
+                  '采买清单',
                   style: theme.textTheme.titleLarge,
                 ),
               ),
                 TextButton(
                   onPressed: () => context.push('/shopping'),
-                  child: const Text('查看完整清单 >', style: TextStyle(fontSize: MomoTextSize.caption)),
+                  child: const Text('查看全部', style: TextStyle(fontSize: MomoTextSize.caption)),
                 ),
               ],
             ),
@@ -222,12 +183,13 @@ class HomeScreen extends ConsumerWidget {
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     child: _HomeFlowRow(
                       children: [
-                        const Text('🛒 ', style: TextStyle(fontSize: 18)),
+                        const Icon(Icons.shopping_cart_outlined, size: 18),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             summary.lowStock.isNotEmpty
                                 ? '待采购清单已清空，但有 ${summary.lowStock.length} 件低库存物品建议补货。'
-                                : '待采购清单已清空，所有常备物资充足。',
+                                : '暂无待采买物品。',
                             style: theme.textTheme.bodySmall,
                           ),
                         ),
@@ -315,13 +277,13 @@ class HomeScreen extends ConsumerWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    '智能家居预览（${_haStatusLabel(homeState)}）',
+                    '家居 · ${_haStatusLabel(homeState)}',
                     style: theme.textTheme.titleLarge,
                   ),
                 ),
                 TextButton(
                   onPressed: () => context.go('/smart-home'),
-                  child: const Text('进入家居页 >', style: TextStyle(fontSize: MomoTextSize.caption)),
+                  child: const Text('查看全部', style: TextStyle(fontSize: MomoTextSize.caption)),
                 ),
               ],
             ),
@@ -680,10 +642,10 @@ class _AttentionItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final days = item.nearestDatedBatch?.daysUntilExpiry;
-    final (detail, note) = switch (item.overallExpiryStatus) {
-      ExpiryStatus.expired => ('已过期', '查看处理方式'),
-      ExpiryStatus.expiring when days != null => (days == 0 ? '今日到期' : '$days 天后到期', '优先安排使用'),
-      _ => ('库存偏低', '建议安排采买'),
+    final detail = switch (item.overallExpiryStatus) {
+      ExpiryStatus.expired => '已过期',
+      ExpiryStatus.expiring when days != null => days == 0 ? '今日到期' : '$days 天后到期',
+      _ => '库存偏低',
     };
     final detailColor = item.overallExpiryStatus == ExpiryStatus.expired
         ? theme.colorScheme.error
@@ -712,13 +674,8 @@ class _AttentionItem extends StatelessWidget {
                 style: theme.textTheme.bodySmall),
             ])),
             const SizedBox(width: 8),
-            Flexible(child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              Text(detail, textAlign: TextAlign.end,
-                style: theme.textTheme.bodySmall?.copyWith(color: detailColor)),
-              const SizedBox(height: 3),
-              Text(note, textAlign: TextAlign.end, style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant)),
-            ])),
+            Flexible(child: Text(detail, textAlign: TextAlign.end,
+              style: theme.textTheme.bodySmall?.copyWith(color: detailColor))),
           ]),
         ),
       ),

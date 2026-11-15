@@ -16,6 +16,7 @@ import 'package:momo_box/presentation/controllers/providers.dart';
 import 'package:momo_box/presentation/screens/home_assistant_settings_screen.dart';
 import 'package:momo_box/presentation/screens/nas_settings_screen.dart';
 import 'package:momo_box/services/nas_credentials_service.dart';
+import 'package:momo_box/services/local_network_permission_service.dart';
 
 import '../support/memory_settings_repository.dart';
 
@@ -45,6 +46,74 @@ http.Response _family([String role = 'owner']) => _json({
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => FlutterSecureStorage.setMockInitialValues({}));
+
+  testWidgets('Android17主动连接申请权限时禁用重复点击，拒绝后公网NAS仍可连接', (tester) async {
+    final response = Completer<String>();
+    final methods = <String>[];
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(LocalNetworkPermissionService.channel, (
+      call,
+    ) async {
+      methods.add(call.method);
+      return call.method == 'request' ? response.future : 'denied';
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(
+        LocalNetworkPermissionService.channel,
+        null,
+      ),
+    );
+    var healthRequests = 0;
+    final fixture = _Fixture(
+      (_) async => _json({}, 404),
+      health: (_) async {
+        healthRequests++;
+        return _json({'status': 'ok', 'database': 'ok'});
+      },
+    );
+    await tester.binding.setSurfaceSize(const Size(430, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          settingsRepositoryProvider.overrideWithValue(
+            fixture.settingsRepository,
+          ),
+          nasConnectionServiceProvider.overrideWithValue(fixture.connection),
+          nasAccountProvider.overrideWith((ref) => fixture.account),
+        ],
+        child: const MaterialApp(home: NasSettingsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final initialRequests = healthRequests;
+    expect(methods, isEmpty, reason: '被动恢复连接不能弹系统授权框');
+    final connect = find.text('测试并保存 NAS 连接');
+    await tester.ensureVisible(connect);
+    await tester.pumpAndSettle();
+    await tester.tap(connect);
+    await tester.pump();
+    await tester.pump();
+    expect(methods, ['request']);
+    expect(healthRequests, initialRequests);
+    final busy = find.widgetWithText(FilledButton, '检测中…');
+    expect(tester.widget<FilledButton>(busy).onPressed, isNull);
+    await tester.tap(busy);
+    response.complete('denied');
+    await tester.pumpAndSettle();
+    expect(methods, ['request']);
+    expect(healthRequests, initialRequests + 1);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(NasSettingsScreen)),
+    );
+    expect(container.read(nasConnectionProvider).isConnected, isTrue);
+    expect(find.text('测试并保存 NAS 连接'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    await fixture.close(disposeAccount: false);
+  });
 
   for (final join in [false, true]) {
     for (final refreshFails in [false, true]) {
@@ -447,12 +516,14 @@ void main() {
 }
 
 class _Fixture {
-  _Fixture(Future<http.Response> Function(http.Request) handler) {
+  _Fixture(Future<http.Response> Function(http.Request) handler, {
+    Future<http.Response> Function(http.Request)? health,
+  }) {
     settingsRepository.values[nasServerUrlKey] = 'https://nas.example';
     final settings = SettingsService(settingsRepository);
     connection = NasConnectionService(
       settings,
-      client: MockClient((_) async => _json({'status': 'ok'})),
+      client: MockClient(health ?? (_) async => _json({'status': 'ok'})),
     );
     account = NasAccountController(
       settings: settings,

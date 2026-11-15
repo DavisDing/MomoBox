@@ -123,7 +123,6 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
                   color: Colors.red,
                   items: summary.expired,
                   type: ReminderType.expired,
-                  suggestion: '建议：尽快核对并报废，避免继续使用。',
                 ),
 
               if (_currentFilter == 'all' || _currentFilter == 'expiring')
@@ -132,7 +131,6 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
                   color: Colors.orange,
                   items: summary.expiring,
                   type: ReminderType.expiring,
-                  suggestion: '建议：优先使用临近到期批次，必要时加入采购。',
                 ),
 
               if (_currentFilter == 'all' || _currentFilter == 'low_stock')
@@ -142,7 +140,6 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
                   items: summary.lowStock,
                   type: ReminderType.lowStock,
                   showStock: true,
-                  suggestion: '建议：确认用量后及时补货，避免断货。',
                 ),
             ],
           );
@@ -163,8 +160,6 @@ class _EmptyAlerts extends StatelessWidget {
             const Text('✨', style: TextStyle(fontSize: MomoTextSize.display)),
             const SizedBox(height: 12),
             Text('当前无待处理提醒。', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 4),
-            const Text('库存与效期状态都很安心。'),
           ],
         ),
       );
@@ -278,7 +273,6 @@ class _AlertSection extends ConsumerWidget {
     required this.color,
     required this.items,
     required this.type,
-    required this.suggestion,
     this.showStock = false,
   });
 
@@ -286,7 +280,6 @@ class _AlertSection extends ConsumerWidget {
   final Color color;
   final List<InventoryItem> items;
   final ReminderType type;
-  final String suggestion;
   final bool showStock;
 
   @override
@@ -307,10 +300,6 @@ class _AlertSection extends ConsumerWidget {
                 child: const Text('全部标记已处理'),
               ),
             ],
-          ),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(suggestion, style: Theme.of(context).textTheme.bodySmall),
           ),
           ...items.map((item) {
             final candidate = _candidateFor(item);

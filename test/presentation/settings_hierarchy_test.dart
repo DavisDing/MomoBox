@@ -20,7 +20,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Home Assistant 连接配置'), findsOneWidget);
     expect(find.text('NAS 协同管理'), findsOneWidget);
-    expect(find.text('自动同步状态与待处理记录'), findsOneWidget);
+    expect(find.text('同步状态与冲突处理'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
@@ -29,7 +29,7 @@ void main() {
     final settings = MemorySettingsRepository();
     try {
       await _mount(tester, settings);
-      expect(find.text('一切，按你喜欢。'), findsOneWidget);
+      expect(find.text('设置'), findsOneWidget);
       expect(find.text('本地诊断导出'), findsNothing);
       await tester.scrollUntilVisible(find.text('数据与隐私'), 200);
       await tester.pumpAndSettle();

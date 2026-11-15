@@ -43,6 +43,8 @@ if manifest.exists():
         if replacements != 1:
             raise SystemExit('Unable to locate Android <application> for cleartext NAS access.')
     permissions = (
+        '    <uses-permission android:name="android.permission.INTERNET" />\n'
+        '    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />\n'
         '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n'
         '    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />\n'
         '    <uses-permission android:name="android.permission.CAMERA" />\n'
@@ -396,7 +398,9 @@ if main_activity.exists():
     main_activity.write_text('''package com.example.momo_box
 
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
@@ -406,9 +410,65 @@ import java.io.File
 
 class MainActivity : FlutterActivity() {
     private val channelName = "com.example.momo_box/update"
+    private val localNetworkPermission = "android.permission.ACCESS_LOCAL_NETWORK"
+    private val localNetworkRequestCode = 19778
+    private val pendingLocalNetworkResults = mutableListOf<MethodChannel.Result>()
+
+    private fun localNetworkStatus(): String {
+        if (Build.VERSION.SDK_INT < 37 || applicationInfo.targetSdkVersion < 37) {
+            return "not_required"
+        }
+        return if (checkSelfPermission(localNetworkPermission) == PackageManager.PERMISSION_GRANTED) {
+            "granted"
+        } else {
+            "denied"
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == localNetworkRequestCode) {
+            val results = pendingLocalNetworkResults.toList()
+            pendingLocalNetworkResults.clear()
+            val status = localNetworkStatus()
+            results.forEach { it.success(status) }
+        }
+    }
+
+    override fun onDestroy() {
+        val results = pendingLocalNetworkResults.toList()
+        pendingLocalNetworkResults.clear()
+        results.forEach { it.error("ACTIVITY_CLOSED", "权限申请页面已关闭，请重试连接。", null) }
+        super.onDestroy()
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.example.momo_box/local_network").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "status" -> result.success(localNetworkStatus())
+                "request" -> {
+                    val status = localNetworkStatus()
+                    if (status != "denied") {
+                        result.success(status)
+                    } else if (isFinishing || isDestroyed) {
+                        result.error("ACTIVITY_CLOSED", "权限申请页面已关闭，请重试连接。", null)
+                    } else {
+                        pendingLocalNetworkResults.add(result)
+                        if (pendingLocalNetworkResults.size == 1) {
+                            try {
+                                requestPermissions(arrayOf(localNetworkPermission), localNetworkRequestCode)
+                            } catch (error: Exception) {
+                                val results = pendingLocalNetworkResults.toList()
+                                pendingLocalNetworkResults.clear()
+                                results.forEach { it.error("PERMISSION_UNAVAILABLE", "无法申请局域网权限，请检查系统设置。", null) }
+                            }
+                        }
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
             when (call.method) {
                 "installApk" -> {

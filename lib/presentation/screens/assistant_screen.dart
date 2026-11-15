@@ -283,7 +283,6 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
     ref.watch(aiInventoryPermissionProvider);
     final palette = MomoPalette.fromStoredValue(ref.watch(themeNameProvider).valueOrNull);
     final theme = Theme.of(context);
-    final configured = ref.watch(aiConfigurationStatusProvider).valueOrNull == true;
 
     final welcome = _messages.length == 1 && _messages.first.content.startsWith('你好呀！');
     final content = SafeArea(
@@ -424,12 +423,7 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                 child: MomoCard(
                   margin: EdgeInsets.zero, borderRadius: 22,
                   padding: const EdgeInsets.fromLTRB(14, 10, 8, 8),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                    if (MediaQuery.viewInsetsOf(context).bottom == 0 && MediaQuery.textScalerOf(context).scale(14) <= 21)
-                      Padding(padding: const EdgeInsets.only(bottom: 6),
-                        child: Text('我的小家 · 库存与家居', style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant))),
-                    Row(
+                  child: Row(
                   children: [
                     Expanded(
                       child: TextField(
@@ -454,12 +448,7 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                       onPressed: _isLoading ? null : () => _sendMessage(),
                     ),
                   ],
-                ),
-                    if (MediaQuery.viewInsetsOf(context).bottom == 0 && MediaQuery.textScalerOf(context).scale(14) <= 21)
-                      Align(alignment: Alignment.center,
-                        child: Text(configured ? '写入前会请你确认' : '连接 AI 服务后开始对话',
-                          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant))),
-                  ]),
+                  ),
                 ),
               ),
             ],
@@ -479,14 +468,6 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
           borderRadius: BorderRadius.circular(24)),
         child: Icon(Icons.auto_awesome_outlined, size: 32, color: theme.colorScheme.primary)),
       const SizedBox(height: 22),
-      Text('YOUR EVERYDAY COMPANION', style: theme.textTheme.bodySmall?.copyWith(
-        color: theme.colorScheme.onSurfaceVariant, letterSpacing: 1.3)),
-      const SizedBox(height: 14),
-      Text('生活的小事，\n一起理清楚。', style: theme.textTheme.headlineLarge),
-      const SizedBox(height: 12),
-      Text('找物品、记采买、照顾你的家。\n想起什么，就问一句。',
-        style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-      const SizedBox(height: 24),
       for (final entry in [
         (Icons.schedule_outlined, '哪些物品需要先用？'),
         (Icons.shopping_bag_outlined, '帮我整理下次采买清单'),

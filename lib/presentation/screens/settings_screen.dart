@@ -43,34 +43,9 @@ class SettingsScreen extends StatelessWidget {
         padding: MomoMobileLayout.pageInsets(context).add(
           EdgeInsets.only(bottom: 20 + MomoDockInsets.bottomOf(context))),
         children: [
-          MomoHouseholdBar(onPressed: () => _openSettingsPage(context,
-            (_) => const SettingsCategoryScreen(category: SettingsCategory.household))),
-          const MomoPageHeader(
-            eyebrow: 'MAKE IT YOURS',
-            title: '一切，按你喜欢。',
-            subtitle: Text('你的家，你的习惯。'),
-          ),
-          MomoCard(
-            margin: const EdgeInsets.only(bottom: 24),
-            color: Theme.of(context).colorScheme.primaryContainer,
-            onTap: () => _openSettingsPage(context,
-              (_) => const SettingsCategoryScreen(category: SettingsCategory.household)),
-            child: Row(children: [
-              CircleAvatar(backgroundColor: Theme.of(context).colorScheme.surface,
-                foregroundColor: Theme.of(context).colorScheme.primary,
-                child: const Icon(Icons.home_outlined)),
-              const SizedBox(width: 12),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('我的小家', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 4),
-                Text('物品与日常，都在自己手里。', style: Theme.of(context).textTheme.bodySmall),
-              ])),
-              const Icon(Icons.chevron_right_rounded, size: 18),
-            ]),
-          ),
+          const MomoPageHeader(title: '设置'),
           _SettingsGroup(title: '智能与连接', children: [
-            _SettingsLink(icon: Icons.auto_awesome_outlined, title: 'AI 服务',
-              subtitle: '查看 NAS 模型与应用操作权限', destination: (_) => const AiSettingsScreen()),
+            _SettingsLink(icon: Icons.auto_awesome_outlined, title: 'AI 服务', destination: (_) => const AiSettingsScreen()),
             _categoryLink(SettingsCategory.household),
           ]),
           _SettingsGroup(title: '日常偏好', children: [
@@ -78,7 +53,6 @@ class SettingsScreen extends StatelessWidget {
             _SettingsLink(
               icon: Icons.notifications_active_outlined,
               title: '提醒与通知',
-              subtitle: '权限与测试提醒',
               destination: (_) => const NotificationSettingsScreen(),
             ),
             _categoryLink(SettingsCategory.data),
@@ -91,21 +65,19 @@ class SettingsScreen extends StatelessWidget {
   Widget _categoryLink(SettingsCategory category) => _SettingsLink(
     icon: category.icon,
     title: category.title,
-    subtitle: category.summary,
     destination: (_) => SettingsCategoryScreen(category: category),
   );
 }
 
 enum SettingsCategory {
-  appearance('外观与显示', '主题与字体大小', Icons.palette_outlined),
-  intelligence('识别与用量', 'AI 调用记录与条码查询', Icons.qr_code_scanner),
-  household('家庭与连接', 'NAS、家庭成员与 Home Assistant', Icons.home_outlined),
-  data('数据与隐私', '统计、备份与安全', Icons.shield_outlined);
+  appearance('外观与显示', Icons.palette_outlined),
+  intelligence('识别与用量', Icons.qr_code_scanner),
+  household('家庭与连接', Icons.home_outlined),
+  data('数据与隐私', Icons.shield_outlined);
 
-  const SettingsCategory(this.title, this.summary, this.icon);
+  const SettingsCategory(this.title, this.icon);
 
   final String title;
-  final String summary;
   final IconData icon;
 }
 
@@ -130,7 +102,6 @@ class SettingsCategoryScreen extends ConsumerWidget {
           _SettingsLink(
             icon: Icons.format_size_rounded,
             title: '界面字体大小',
-            subtitle: '选择适合自己的阅读大小',
             destination: (_) => const FontScaleSettingsScreen(),
           ),
         ]),
@@ -140,7 +111,6 @@ class SettingsCategoryScreen extends ConsumerWidget {
           _SettingsLink(
             icon: Icons.analytics_outlined,
             title: 'AI 用量与日志汇总',
-            subtitle: '查看 Token 用量与调用明细',
             destination: (_) => const AiUsageScreen(),
           ),
         ]),
@@ -148,7 +118,6 @@ class SettingsCategoryScreen extends ConsumerWidget {
           _SettingsLink(
             icon: Icons.qr_code_scanner,
             title: '外部条码 API 接口',
-            subtitle: '管理查询接口与调用顺序',
             destination: (_) => const BarcodeSettingsScreen(),
           ),
         ]),
@@ -158,13 +127,11 @@ class SettingsCategoryScreen extends ConsumerWidget {
           _SettingsLink(
             icon: Icons.dns_outlined,
             title: 'NAS 协同管理',
-            subtitle: '服务地址、账号与家庭成员',
             destination: (_) => const NasSettingsScreen(),
           ),
           _SettingsLink(
             icon: Icons.hub_outlined,
             title: 'Home Assistant 连接配置',
-            subtitle: '连接授权与设备权限',
             destination: (_) => const HomeAssistantSettingsScreen(),
           ),
         ]),
@@ -172,7 +139,6 @@ class SettingsCategoryScreen extends ConsumerWidget {
           _SettingsLink(
             icon: Icons.sync_outlined,
             title: '同步状态与冲突处理',
-            subtitle: '自动同步状态与待处理记录',
             destination: (_) => const SyncSettingsScreen(),
           ),
         ]),
@@ -182,13 +148,11 @@ class SettingsCategoryScreen extends ConsumerWidget {
           _SettingsLink(
             icon: Icons.insert_chart_outlined,
             title: '库存统计',
-            subtitle: '消耗、入库与报废趋势',
             destination: (_) => const StatisticsScreen(),
           ),
           _SettingsLink(
             icon: Icons.backup_outlined,
             title: '数据备份与迁移',
-            subtitle: '核心数据 JSON 导出与合并导入',
             destination: (_) => const BackupSettingsScreen(),
           ),
         ]),
@@ -196,23 +160,19 @@ class SettingsCategoryScreen extends ConsumerWidget {
           _SettingsLink(
             icon: Icons.shield_outlined,
             title: '隐私与密钥安全',
-            subtitle: '了解凭证存储与数据边界',
             destination: (_) => const PrivacySettingsScreen(),
           ),
           _SettingsLink(
             icon: Icons.bug_report_outlined,
             title: '本地诊断导出',
-            subtitle: '查看记录范围并导出脱敏诊断',
             destination: (_) => const DiagnosticExportScreen(),
           ),
         ]),
         _SettingsGroup(title: '识别与应用', children: [
           _SettingsLink(icon: SettingsCategory.intelligence.icon,
             title: SettingsCategory.intelligence.title,
-            subtitle: SettingsCategory.intelligence.summary,
             destination: (_) => const SettingsCategoryScreen(category: SettingsCategory.intelligence)),
-          _SettingsLink(icon: Icons.info_outline, title: '关于与存储信息',
-            subtitle: '版本、空间与许可', destination: (_) => const AboutSettingsScreen()),
+          _SettingsLink(icon: Icons.info_outline, title: '关于与存储信息', destination: (_) => const AboutSettingsScreen()),
         ]),
       ],
     };
@@ -269,13 +229,13 @@ class _SettingsLink extends StatelessWidget {
   const _SettingsLink({
     required this.icon,
     required this.title,
-    required this.subtitle,
+    this.subtitle,
     required this.destination,
   });
 
   final IconData icon;
   final String title;
-  final String subtitle;
+  final String? subtitle;
   final WidgetBuilder destination;
 
   @override
@@ -284,12 +244,12 @@ class _SettingsLink extends StatelessWidget {
     final largeText = MediaQuery.textScalerOf(context).scale(MomoTextSize.body) >
         MomoTextSize.body * 1.5;
     return ListTile(
-      minTileHeight: 68,
+      minTileHeight: 56,
       contentPadding: EdgeInsets.zero,
       horizontalTitleGap: 12,
       leading: largeText ? null : Icon(icon, size: 22, color: theme.colorScheme.primary),
       title: Text(title, style: theme.textTheme.titleMedium),
-      subtitle: Text(subtitle, style: theme.textTheme.bodySmall?.copyWith(
+      subtitle: subtitle == null ? null : Text(subtitle!, style: theme.textTheme.bodySmall?.copyWith(
         color: theme.colorScheme.onSurfaceVariant,
       )),
       trailing: const Icon(Icons.chevron_right_rounded, size: 20),
@@ -883,10 +843,10 @@ class FontScaleSettingsScreen extends ConsumerWidget {
   const FontScaleSettingsScreen({super.key});
 
   static const _options = [
-    (scale: 0.9, label: '紧凑 (0.9x)', desc: '适合喜欢一屏查看更多物品清单的用户'),
-    (scale: 1.0, label: '标准 (1.0x - 默认)', desc: '系统标准字体排版比例'),
-    (scale: 1.15, label: '大号 (1.15x)', desc: '字迹更加清晰醒目'),
-    (scale: 1.3, label: '关怀超大号 (1.3x)', desc: '专为长辈设计，大字易读不易看错'),
+    (scale: 0.9, label: '紧凑 (0.9x)'),
+    (scale: 1.0, label: '标准 (1.0x - 默认)'),
+    (scale: 1.15, label: '大号 (1.15x)'),
+    (scale: 1.3, label: '关怀超大号 (1.3x)'),
   ];
 
   @override
@@ -899,25 +859,6 @@ class FontScaleSettingsScreen extends ConsumerWidget {
       body: ListView(
         padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MomoDockInsets.bottomOf(context)),
         children: [
-          Card(
-            margin: const EdgeInsets.only(bottom: 20),
-            color: theme.colorScheme.primaryContainer.withValues(alpha: 0.5),
-            child: const Padding(
-              padding: EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Icon(Icons.info_outline, size: 22),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      '设置字体大小后将即时应用于全应用界面，方便不同视力习惯与家庭长辈轻松查看效期与库存。',
-                      style: TextStyle(fontSize: MomoTextSize.body),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
           ..._options.map((opt) {
             final isSelected = (currentScale - opt.scale).abs() < 0.01;
             return Card(
@@ -947,7 +888,6 @@ class FontScaleSettingsScreen extends ConsumerWidget {
                     fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                   ),
                 ),
-                subtitle: Text(opt.desc, style: const TextStyle(fontSize: MomoTextSize.caption)),
                 trailing: isSelected
                     ? Icon(Icons.check_circle, color: theme.colorScheme.primary)
                     : null,
@@ -1229,14 +1169,7 @@ class _NotificationSettingsScreenState
           child: ListTile(
             leading: const Icon(Icons.notification_important_outlined),
             title: const Text('发送测试提醒'),
-            subtitle: const Text('确认系统通知是否能正常显示。'),
             onTap: _busy ? null : _sendTest,
-          ),
-        ),
-        const Padding(
-          padding: EdgeInsets.all(12),
-          child: Text(
-            'MomoBox 会根据临期、过期和低库存状态在本地安排提醒。通知未开启时，库存和提醒页面仍可正常使用；打开 App 后可继续查看所有待处理项目。',
           ),
         ),
       ],
@@ -1411,7 +1344,6 @@ class _StorageManagementScreenState extends ConsumerState<StorageManagementScree
             child: ListTile(
               leading: const Icon(Icons.auto_delete_outlined),
               title: const Text('清理过期条码缓存'),
-              subtitle: const Text('删除已过期的条码查询结果。'),
               onTap: _busy ? null : _clearExpiredBarcodeCache,
             ),
           ),
@@ -1590,7 +1522,6 @@ class _AboutSettingsScreenState extends ConsumerState<AboutSettingsScreen> {
                 child: Icon(palette.appLogoIcon, color: Theme.of(context).colorScheme.primary),
               ),
               title: const Text('嬷嬷的小箱子'),
-              subtitle: const Text('本地优先的家庭物品效期与库存管理工具'),
             ),
           ),
           Card(
@@ -1613,7 +1544,6 @@ class _AboutSettingsScreenState extends ConsumerState<AboutSettingsScreen> {
                           contentPadding: EdgeInsets.zero,
                           leading: Icon(Icons.system_update_outlined),
                           title: Text('检测更新'),
-                          subtitle: Text('从 GitHub Releases 检查最新版本'),
                         ),
                       ),
                       TextButton(
@@ -1673,7 +1603,6 @@ class _AboutSettingsScreenState extends ConsumerState<AboutSettingsScreen> {
             child: ListTile(
               leading: const Icon(Icons.storage_outlined),
               title: const Text('数据存储与空间管理'),
-              subtitle: const Text('核心数据仅保存于本机；可查看本地占用并清理条码与图片缓存。'),
               trailing: const Icon(Icons.arrow_forward_ios, size: 14),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const StorageManagementScreen()),
@@ -1684,7 +1613,6 @@ class _AboutSettingsScreenState extends ConsumerState<AboutSettingsScreen> {
             child: ListTile(
               leading: const Icon(Icons.description_outlined),
               title: const Text('第三方许可'),
-              subtitle: const Text('本应用使用 Flutter 及其开源依赖构建；完整许可信息随应用和依赖包提供。'),
             ),
           ),
         ],

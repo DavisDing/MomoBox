@@ -396,7 +396,9 @@ void main() {
         await container.read(settingsRepositoryProvider).setValue('sync_bootstrap:family-a','{"mode":"join_and_merge"}');
         await container.read(settingsRepositoryProvider).setValue(nasServerUrlKey,'https://nas.example');
       });
-      await tester.binding.setSurfaceSize(const Size(390,700));
+      // The simplified home has less content; use a short viewport so this
+      // still exercises a substantial scroll offset across successful syncs.
+      await tester.binding.setSurfaceSize(const Size(390,500));
       await tester.pumpWidget(UncontrolledProviderScope(container:container,
         child:const MaterialApp(home:HomeScreen())));
       await settle(tester,find.byType(CustomScrollView));

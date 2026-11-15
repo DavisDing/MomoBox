@@ -94,10 +94,7 @@ class _ProductDetailBody extends ConsumerWidget {
           icon: const Icon(Icons.remove),
         ),
         const SizedBox(height: 24),
-        _SectionTitle(
-          title: '批次',
-          subtitle: '有到期日的批次按到期日升序排列；未设置效期的批次单独归类。',
-        ),
+        const _SectionTitle(title: '批次'),
         const SizedBox(height: 10),
         if (datedBatches.isNotEmpty) ...[
           const _BatchGroupHeader(
@@ -243,20 +240,15 @@ class _InfoRow extends StatelessWidget {
 }
 
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({required this.title, this.subtitle});
+  const _SectionTitle({required this.title});
 
   final String title;
-  final String? subtitle;
 
   @override
   Widget build(BuildContext context) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(title, style: Theme.of(context).textTheme.titleLarge),
-          if (subtitle != null) ...[
-            const SizedBox(height: 4),
-            Text(subtitle!, style: Theme.of(context).textTheme.bodySmall),
-          ],
         ],
       );
 }

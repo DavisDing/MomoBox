@@ -15,7 +15,6 @@ class NasAiModels extends ConsumerWidget {
       children: [
         ListTile(
           title: const Text('NAS AI 模型'),
-          subtitle: const Text('地址和密钥由 NAS Compose 管理，手机仅选择模型。'),
           trailing: IconButton(
             tooltip: '刷新模型列表',
             onPressed:

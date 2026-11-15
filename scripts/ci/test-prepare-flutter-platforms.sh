@@ -165,6 +165,18 @@ cp "$script_dir/android-notification-rules.pro" "$temporary_root/project/android
   PATH="$temporary_root/bin:$PATH" bash ./prepare.sh
 
   test ! -e test/widget_test.dart
+  for permission in INTERNET ACCESS_LOCAL_NETWORK; do
+    test "$(grep -c "android.permission.$permission\"" android/app/src/main/AndroidManifest.xml)" -eq 1
+  done
+  activity=android/app/src/main/kotlin/com/example/momo_box/MainActivity.kt
+  grep -q 'com.example.momo_box/local_network' "$activity"
+  grep -q 'Build.VERSION.SDK_INT < 37' "$activity"
+  grep -q 'applicationInfo.targetSdkVersion < 37' "$activity"
+  grep -q 'checkSelfPermission(localNetworkPermission)' "$activity"
+  grep -q 'requestPermissions(arrayOf(localNetworkPermission), localNetworkRequestCode)' "$activity"
+  grep -q 'super.onRequestPermissionsResult(requestCode, permissions, grantResults)' "$activity"
+  grep -q 'pendingLocalNetworkResults.clear()' "$activity"
+  grep -q '"installApk" ->' "$activity"
   grep -q 'android.permission.POST_NOTIFICATIONS' android/app/src/main/AndroidManifest.xml
   grep -q 'android.permission.RECEIVE_BOOT_COMPLETED' android/app/src/main/AndroidManifest.xml
   grep -q 'android.permission.CAMERA' android/app/src/main/AndroidManifest.xml

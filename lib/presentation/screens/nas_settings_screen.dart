@@ -24,6 +24,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
   final _serverUrlController = TextEditingController();
   final _familyCodeController = TextEditingController();
   bool _controllersInitialized = false;
+  bool _testingConnection = false;
 
   @override
   void dispose() {
@@ -52,20 +53,36 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
   }
 
   Future<void> _testConnection() async {
+    if (_testingConnection) return;
     FocusManager.instance.primaryFocus?.unfocus();
-    await ref.read(nasConnectionProvider.notifier).refresh(
-          serverUrl: _serverUrlController.text,
-          familyCode: _familyCodeController.text,
-        );
-    if (!mounted) return;
-    final connection = ref.read(nasConnectionProvider);
-    showAppSnackBar(
-      context,
-      SnackBar(content: Text(connection.message ?? _statusTitle(connection))),
-    );
+    setState(() => _testingConnection = true);
+    try {
+      if (NasConnectionService.normalizeServerUrl(_serverUrlController.text) !=
+          null) {
+        await ref
+            .read(nasConnectionServiceProvider)
+            .requestLocalNetworkAccess();
+        if (!mounted) return;
+      }
+      // A denial must not block a NAS reached through a public reverse proxy.
+      await ref
+          .read(nasConnectionProvider.notifier)
+          .refresh(
+            serverUrl: _serverUrlController.text,
+            familyCode: _familyCodeController.text,
+          );
+      if (!mounted) return;
+      final connection = ref.read(nasConnectionProvider);
+      showAppSnackBar(
+        context,
+        SnackBar(content: Text(connection.message ?? _statusTitle(connection))),
+      );
 
-    if (connection.status == NasConnectionStatus.connected) {
-      await ref.read(nasAccountProvider.notifier).restore();
+      if (connection.status == NasConnectionStatus.connected) {
+        await ref.read(nasAccountProvider.notifier).restore();
+      }
+    } finally {
+      if (mounted) setState(() => _testingConnection = false);
     }
   }
 
@@ -279,7 +296,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
     BuildContext context,
     NasConnectionState state,
   ) {
-    final isChecking = state.status == NasConnectionStatus.checking;
+    final isChecking = _testingConnection || state.status == NasConnectionStatus.checking;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),

@@ -1946,3 +1946,24 @@ executeWithResult返回执行后的完成消息，原execute的Future<void>接�
 对应REQUIREMENT第36节。SmartHomeState用稳定的说明常量识别可关闭提示，SmartHomeScreen仅在该说明实际显示时提供带“关闭权限提示”语义的关闭图标。真实commandError/linkageError及离线提示不因此隐藏。
 
 SmartHomeController保存当前连接内的关闭标志，关闭后重算提示，设备刷新继续遵守标志；状态过期则展示独立过期提示。状态由既有非autoDispose控制器持有，切页不重置，账号/连接更换重建控制器时重置；不新增设置持久化或改动实体权限/命令校验。必要UI变化限说明右侧关闭按钮，本批不改依赖、schema、后端或AI_CONTEXT长期架构。
+
+## 55. 2026-11-14：Android 17 NAS 局域网权限
+
+对应REQUIREMENT第37节。核对当前源码基线1004e8c及Android官方Local network permission文档（https://developer.android.com/privacy-and-security/local-network-permission，2026-11-03更新）：target37应用需声明并申请ACCESS_LOCAL_NETWORK，属于NEARBY_DEVICES组；公网访问不因此受限。现有平台生成脚本固定target37，但未声明该权限，Dart也没有运行时申请入口。用户手机浏览器健康接口成功支持“App侧问题”的判断，不能代替新APK现场验收或证明浏览器与App解析到相同地址。
+
+prepare-flutter-platforms.sh在正式AndroidManifest幂等补INTERNET/ACCESS_LOCAL_NETWORK，生成的MainActivity保留原安装更新通道，另增local_network通道。status只查询；request在SDK/target37以上未获权时调用系统requestPermissions，合并未决回调并接回系统结果；系统无需权限时返回not_required。Activity关闭/申请异常返回安全错误，不挂住Dart Future，也不展示底层异常正文。
+
+LocalNetworkPermissionService用既有MethodChannel适配notRequired/granted/denied/unavailable，非Android不调用通道，同一实例合并在途请求；无新增插件。NasConnectionService接收可注入的权限服务，只有明确连接测试才请求权限；checkHealth失败仅检查状态，未获权说明授权入口，仍以真实HTTP结果为准。NasSettingsScreen在原测试按钮处理器等待系统结果，以本地busy标志覆盖等待期并防重复；离页后不发起新的连接测试或写入已销毁State。拒绝后公网健康请求可以正常成功，自动重试不弹权限框。
+
+不修改地址、DNS、TLS信任、账号凭据、缓存归属、业务库或NAS Compose。本批没有数据/存档兼容分支、依赖或schema变化。AI_CONTEXT后续更新建议：新包及Android17设备验收后，在平台规则中记录局域网运行时权限入口；本地源码/通道夹具不作为操作系统授权成功证据。
+
+
+## 56. 页面文案与信息层级精简
+
+对应REQUIREMENT第38节。用户已授权对删除辅助文字后不清晰的布局做必要调整，本批沿用现有主题、Dock、路由和业务服务。
+
+HomeScreen以“今日”和日期起始，排序按钮并入页头，移除与关注列表重复的标语大卡及助手宣传入口；关注条目仅保留物品、位置/数量和真实异常状态。删除该大卡独占且已无调用的MomoStillLife。MomoPageHeader移除无使用者的eyebrow参数，移除仅跳往设置的伪家庭下拉MomoHouseholdBar；物品排序/入库及家居刷新继续留在页头。
+
+AssistantScreen移除欢迎标语、功能解释及输入区上下提示，保留可点击问题、模型选择、会话工具、发送和逐次确认。SettingsScreen移除重复家庭卡，导航行可省略副标题且最小高度56，当前主题值保留；字号页以选项和实际预览表达效果。家居未配置状态用直接按钮进入原HomeAssistantSettingsScreen，保留真实状态及错误提示。提醒页去除空态标语及各分组通用建议，商品详情按原批次分组表达效期排序，无重复说明。
+
+没有新增依赖、schema、API、账号/权限或业务服务变更。已有局域网权限相关未提交代码及文档保持；相关文案测试改为验证当前计数、可点击问题和原跳转。通知错误卡移除后页面会缩短，回归从顶部重新定位测试提醒，避免沿旧偏移仅向下找已位于上方的控件；仍核验重试真实排程、权限和操作可达性。首页同步位置夹具使用更矮视口，保留大于100的滚动量及同步后三轮位置不变断言。验证结果见VALIDATION；AI_CONTEXT长期建议是记录“直接标题、按布局表达关系、无重复常驻说明”的交互规则。

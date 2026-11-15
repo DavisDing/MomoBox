@@ -158,7 +158,7 @@ void main() {
   testWidgets('首页家居预览不伪报场景或设备执行成功', (tester) async {
     await SettingsRepository(database).setValue(homeSectionOrderKey, 'smart_home_quick');
     await _pumpApp(tester, database);
-    await _pumpUntilFound(tester, find.text('智能家居预览（未接入）'));
+    await _pumpUntilFound(tester, find.text('家居 · 未接入'));
     final container = ProviderScope.containerOf(tester.element(find.byType(MomoBoxApp)));
     final state = container.read(smartHomeControllerProvider);
     // The NAS-backed controller must not populate the preview with mock data.
@@ -417,8 +417,8 @@ testWidgets('提醒支持单条和分组已处理，确认状态持久化', (tes
     final batchId = (await database.select(database.productBatches).get()).single.id;
 
     await _pumpApp(tester, database);
-    await _pumpUntilFound(tester, find.text('看看是哪几件'));
-    await tester.tap(find.text('看看是哪几件'));
+    await _pumpUntilFound(tester, find.descendant(of: find.byType(HomeScreen), matching: find.text('查看全部')).first);
+    await tester.tap(find.descendant(of: find.byType(HomeScreen), matching: find.text('查看全部')).first);
     final alertItem = find.descendant(
       of: find.byType(AlertsScreen),
       matching: find.text('周期性低库存'),
@@ -532,8 +532,8 @@ testWidgets('提醒支持单条和分组已处理，确认状态持久化', (tes
     expect(tester.takeException(), isNull);
 
     // 访问首页提醒详情
-    await _pumpUntilFound(tester, find.text('看看是哪几件'));
-    await tester.tap(find.text('看看是哪几件'));
+    await _pumpUntilFound(tester, find.descendant(of: find.byType(HomeScreen), matching: find.text('查看全部')).first);
+    await tester.tap(find.descendant(of: find.byType(HomeScreen), matching: find.text('查看全部')).first);
     await _pumpUntilFound(tester, find.text('效期与库存提醒'));
     expect(find.text('效期与库存提醒'), findsOneWidget);
     tester.binding.handlePopRoute();

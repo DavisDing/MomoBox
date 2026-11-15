@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../application/settings_service.dart';
+import '../services/local_network_permission_service.dart';
 
 const nasServerUrlKey = 'nas_server_url';
 const nasFamilyCodeKey = 'nas_family_code';
@@ -64,10 +65,19 @@ class NasHealthResult {
 }
 
 class NasConnectionService {
-  NasConnectionService(this._settings, {http.Client? client}) : _client = client ?? http.Client();
+  NasConnectionService(
+    this._settings, {
+    http.Client? client,
+    LocalNetworkPermissionService? localNetworkPermission,
+  }) : _client = client ?? http.Client(),
+       _localNetworkPermission = localNetworkPermission ?? LocalNetworkPermissionService();
 
   final SettingsService _settings;
   final http.Client _client;
+  final LocalNetworkPermissionService _localNetworkPermission;
+
+  Future<LocalNetworkPermissionStatus> requestLocalNetworkAccess() =>
+      _localNetworkPermission.request();
 
   Future<NasConnectionState> loadState() async {
     final serverUrl = await _settings.getValue(nasServerUrlKey) ?? '';
@@ -152,9 +162,12 @@ class NasConnectionService {
         message: 'NAS 返回 HTTP ${response.statusCode}。',
       );
     } catch (error) {
+      final permission = await _localNetworkPermission.status();
       return NasHealthResult(
         status: NasConnectionStatus.failed,
-        message: _friendlyError(error),
+        message: permission == LocalNetworkPermissionStatus.denied
+            ? 'NAS 未连通，局域网访问也未授权。请重新测试连接并允许“附近设备”权限；已拒绝时可到系统设置中开启。'
+            : _friendlyError(error),
       );
     }
   }

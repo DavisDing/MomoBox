@@ -104,7 +104,7 @@ void main() {
         final columns = count.clamp(1, 3);
         final first = find.byKey(const ValueKey('inventory-card-product-0'));
         final firstRect = tester.getRect(first);
-        expect(find.text('$count 种物品'), findsOneWidget);
+        expect(find.text('全部物品 · $count'), findsOneWidget);
         expect(tester.getSize(find.byKey(const ValueKey('inventory-photo-product-0'))).height, columns == 1 ? 72 : columns == 2 ? 80 : 64);
         for (var index = 1; index < columns; index++) {
           final rect = tester.getRect(find.byKey(ValueKey('inventory-card-product-$index')));
@@ -214,7 +214,7 @@ void main() {
   );
 
   testWidgets(
-    'an empty conversation keeps its introduction visible with large text',
+    'an empty conversation keeps its suggested questions visible with large text',
     (tester) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(320, 600);
@@ -256,7 +256,7 @@ void main() {
                 matching: find.byType(Scrollable),
               )
               .first;
-      final introduction = find.text('YOUR EVERYDAY COMPANION');
+      final introduction = find.text('哪些物品需要先用？');
       expect(
         tester.getTopLeft(introduction).dy,
         greaterThanOrEqualTo(tester.getTopLeft(scroll).dy),

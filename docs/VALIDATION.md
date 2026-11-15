@@ -948,3 +948,25 @@ PostgreSQL16.4源码经官方SHA256校验，编译到 `/private/tmp/momobox-pg16
 - PASS：全项目`analyze --no-pub`无问题，日志`/private/tmp/momobox-ha-notice-analyze.log`；已有HA控制及填充布局两个测试文件 **116项全部通过，退出0**，日志`/private/tmp/momobox-ha-notice-tests.log`。覆盖现有权限拒绝、控制回执/错误展示和窄屏大字填充布局；没有新增仅复述关闭按钮实现的测试。
 - PASS：`git diff --check`。没有新增依赖、schema、配置或后端改动，不重复执行完整套件或Go/PG验证。
 - NOT_EXECUTED：原生构建、新APK、真机点击关闭与重连体验、实际NAS/HA、远端CI、提交/推送/发布。已有回归不等于新按钮的真机交互验收；此前完整1084项通过是前一批基线，本批以本节静态及116项相关回归为准。
+
+## 2026-11-14：Android 17 局域网权限适配
+
+本批基于HEAD `1004e8c`，需求/设计见REQUIREMENT第37节、DESIGN第55节。现场证据来自用户：Android17、同一反代域名、非同一局域网App可用，同Wi-Fi手机浏览器/api/v1/health返回database/status均ok。当前源码target37但缺少局域网权限声明/申请可确认；没有读取用户APK、手机系统权限或NAS，不能将源码缺口宣称为现场唯一原因。执行期间用户新增AGENTS.md两条指示，已读取并保持其改动原样。
+
+- PASS：`bash scripts/ci/test-prepare-flutter-platforms.sh`退出0，日志`/private/tmp/momobox-local-network-platforms.log`。隔离fixture两次生成平台，核实INTERNET及ACCESS_LOCAL_NETWORK仅声明一次、SDK/target37判断、原生权限检查/申请/回调、待办清理以及既有安装通道共存。此测试核查生成源码和配置，不是Android编译或OS授权验证。
+- PASS：最终全项目`analyze --no-pub`无问题，日志`/private/tmp/momobox-local-network-analyze-final2.log`。完整`test --no-pub --reporter expanded` **1096项全部通过，退出0**，日志`/private/tmp/momobox-local-network-all.log`。使用既有Flutter3.47.9 / Dart3.13.7工具链，没有安装新软件或依赖。
+- 新增权限服务/连接专项11项，核实只查询不弹窗、并发申请合并、拒绝后可主动重试、非Android不调用通道、原生缺失/关闭/未知结果不冒充获权；拒绝权限后真实MockClient公网健康200仍连通，原地址保留；被动失败只查询状态、提示附近设备且不泄露异常正文；超时和数据库503继续按实际结果判断，原账号/归属设置保留。
+- 新增真实NAS配置页流程回归：系统请求未决期间HTTP健康请求不提前发送，按钮禁用，拒绝后公网HTTP200仍连接成功且只请求一次权限。首次该夹具手动覆盖默认Android测试平台，仅在Widget结束不变量校验时失败；移除冗余全局覆盖后完整套件通过，保留所有业务断言。初次静态检查的测试if花括号及冗余import lint亦已修复。前四文件30项专项通过记录在`/private/tmp/momobox-local-network-targeted.log`，最终新增Widget覆盖以完整套件为准。
+- PASS：`git diff --check`。没有改动后端、Compose、账号/家庭绑定、TLS信任或地址路由，没有新依赖/schema或数据删除。权限提示属于连接失败时的必要反馈，不另增常驻说明或重复配置页；后台探测不会申请权限。
+- NOT_EXECUTED：Android Kotlin/Gradle编译、新APK生成/安装、真实Android17允许/拒绝/撤权/永久拒绝/Activity销毁时序、同Wi-Fi和外网切换、真实反代/NAS/HA、远端CI、提交/推送/发布。本机无可用Java Runtime及Android SDK；平台脚本和模拟MethodChannel不能替代Android原生验收。新包安装后须在原NAS配置页点击“测试并保存NAS连接”允许附近设备权限，再验证原域名；本批未改变已安装App。
+
+
+## 页面文案与信息层级精简
+
+对应REQUIREMENT第38节、DESIGN第56节。保留开始时已有的Android局域网权限代码、AGENTS及相关文档改动；本批只调整页面展示、必要直达入口和相关回归夹具，没有提交或发布。
+
+- PASS：最终全项目`analyze --no-pub`无问题，日志`/private/tmp/momobox-ui-cleanup-analyze-final.log`；`git diff --check`通过。复用已有Flutter3.47.9 / Dart3.13.7及缓存，无新依赖/安装、schema或后端修改。
+- 全目录界面回归最终一轮为409项通过、1项失败，日志`/private/tmp/momobox-ui-cleanup-tests-final.log`。失败仅为首页移除大卡后测试视口最大滚动量70、小于旧夹具要求100，并非同步后位置变化；将该夹具视口从390×700改为390×500，保留滚动量>100和三轮同步后位置/Provider/引擎身份不变的全部断言。该文件连同截图测试专项复跑12项全部通过，退出0，日志`/private/tmp/momobox-ui-cleanup-final-recheck.log`。这两批覆盖的410个界面用例均已通过，但不声称一次全目录运行得到410项全绿。
+- 初轮发现依赖已删除标语/重复计数的旧断言，按已确认需求改为可点击提问和现有筛选计数。通知错误卡重试移除后，目标可能移到旧滚动偏移上方；夹具回到顶部重新查找，并继续验证真实排程、权限、不含原生错误正文及操作可达性。没有屏蔽错误、降低业务断言或提高超时。首轮另有异步超时，后续同类回归正常通过，未由此修改同步/环境服务。
+- PASS：生产五页面在深浅色下使用隔离库存/设备夹具真实渲染，已目视复核两张总览及设置页；最终截图由上述12项复跑生成，路径`/private/tmp/momobox-ui-cleanup-captures/`，预览副本保存到本会话visualizations目录。截图中的NAS/HA和库存均为测试数据，不是现场服务或安装包。
+- NOT_EXECUTED：Android/iOS构建、新APK安装、系统读屏/原生手势、真实NAS/HA/AI、远端CI、提交/推送/发布。必要的真实状态、错误、隐私授权和操作确认仍保留；长期交互规则更新建议见DESIGN第56节。

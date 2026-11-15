@@ -4,13 +4,13 @@ import '../widgets/momo_components.dart';
 import '../../app/momo_typography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import '../widgets/app_feedback.dart';
 
 import '../../domain/models/smart_home_models.dart';
 import '../controllers/providers.dart';
 import '../controllers/smart_home_controller.dart';
 import '../widgets/home_environment_card.dart';
+import 'home_assistant_settings_screen.dart';
 
 class SmartHomeScreen extends ConsumerStatefulWidget {
   const SmartHomeScreen({super.key});
@@ -43,8 +43,8 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
             padding: MomoMobileLayout.pageInsets(context).add(
               EdgeInsets.only(bottom: 20 + MomoDockInsets.bottomOf(context))),
             children: [
-              MomoHouseholdBar(
-                onPressed: () => context.go('/settings'),
+              MomoPageHeader(
+                title: '家居',
                 actions: [IconButton(
                   tooltip: '刷新设备状态',
                   icon: homeState.isLoading
@@ -52,11 +52,6 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
                       : const Icon(Icons.refresh_rounded, size: 20),
                   onPressed: homeState.isLoading ? null : () => controller.refresh(),
                 )],
-              ),
-              MomoPageHeader(
-                title: '让家，懂你。',
-                eyebrow: 'HOME, JUST THE WAY YOU LIKE IT.',
-                subtitle: const Text('家里的温度，生活的分寸。'),
               ),
               const HomeEnvironmentCard(),
               const SizedBox(height: 24),
@@ -79,7 +74,6 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
                   _buildSectionHeader(
                     context,
                     title: '设备耗材联动与建议',
-                    subtitle: '设备事件触发的库存建议与自动扣减日志',
                     icon: Icons.recycling_rounded,
                   ),
                   const SizedBox(height: 10),
@@ -194,10 +188,12 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
             const SizedBox(height: 12),
             const Text('Home Assistant 尚未配置', style: TextStyle(fontSize: MomoTextSize.section, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            const Text(
-              '可在“我的 → 家庭与连接”中配置 Home Assistant。',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: MomoTextSize.body, color: Colors.grey),
+            OutlinedButton.icon(
+              onPressed: () => Navigator.of(context, rootNavigator: true).push(
+                MaterialPageRoute<void>(builder: (_) => const HomeAssistantSettingsScreen()),
+              ),
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('连接 Home Assistant'),
             ),
           ],
         ),
@@ -208,7 +204,6 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
   Widget _buildSectionHeader(
     BuildContext context, {
     required String title,
-    required String subtitle,
     required IconData icon,
   }) {
     final theme = Theme.of(context);
@@ -216,15 +211,7 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
       children: [
         Icon(icon, size: 20, color: theme.colorScheme.primary),
         const SizedBox(width: 8),
-        Expanded(
-          child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: theme.textTheme.titleLarge),
-            Text(subtitle, style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-          ],
-        ),
-        ),
+        Expanded(child: Text(title, style: theme.textTheme.titleLarge)),
       ],
     );
   }

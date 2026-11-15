@@ -85,11 +85,8 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                 slivers: [
                   SliverPadding(
                     padding: insets,
-                    sliver: SliverToBoxAdapter(child: Column(children: [
-                      MomoHouseholdBar(onPressed: () => context.go('/settings')),
-                      MomoPageHeader(
+                    sliver: SliverToBoxAdapter(child: MomoPageHeader(
                       title: '家里的物品',
-                      subtitle: Text('${items.length} 种物品'),
                       actions: [
                         _SortSelector(current: _sortOption,
                           onSelected: (value) => setState(() => _sortOption = value)),
@@ -99,7 +96,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                           icon: const Icon(Icons.add_rounded),
                         ),
                       ],
-                    )])),
+                    )),
                   ),
                   SliverPadding(
                     padding: insets.add(const EdgeInsets.only(bottom: 16)),
