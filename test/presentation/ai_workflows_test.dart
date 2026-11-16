@@ -18,6 +18,7 @@ import 'package:momo_box/domain/models/ai_usage_models.dart';
 import 'package:momo_box/presentation/controllers/providers.dart';
 import 'package:momo_box/presentation/screens/ai_usage_screen.dart';
 import 'package:momo_box/presentation/screens/assistant_screen.dart';
+import 'package:momo_box/presentation/widgets/assistant_action_review.dart';
 import 'package:momo_box/presentation/widgets/intake_sheet.dart';
 
 import '../support/memory_settings_repository.dart';
@@ -351,12 +352,10 @@ void main() {
       expect((await inventory.watchInventory().first).single.totalStock, 2);
     });
     expect(store.actionReceipts['proposal'], '已执行');
-    expect(
-      tester
-          .widget<TextButton>(find.widgetWithText(TextButton, '已执行'))
-          .onPressed,
-      isNull,
-    );
+    expect(find.text('已执行'), findsOneWidget);
+    expect(find.text('查看并确认操作'), findsNothing);
+    expect(tester.widget<AssistantActionEntry>(find.byType(AssistantActionEntry))
+        .onPressed, isNull);
     expect(settings.values[AiConversationStore.storageKey], contains('已执行'));
     expect(tester.takeException(), isNull);
   });

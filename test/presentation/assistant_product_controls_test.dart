@@ -13,6 +13,7 @@ import 'package:momo_box/data/repositories/inventory_repository.dart';
 import 'package:momo_box/domain/models/inventory_models.dart';
 import 'package:momo_box/presentation/controllers/providers.dart';
 import 'package:momo_box/presentation/screens/assistant_screen.dart';
+import 'package:momo_box/presentation/widgets/assistant_action_review.dart';
 
 import '../support/memory_settings_repository.dart';
 
@@ -70,12 +71,10 @@ void main() {
       fixture.store.current.messages.last.content,
       contains('已更新「急支糖浆」的资料'),
     );
-    expect(
-      tester
-          .widget<TextButton>(find.widgetWithText(TextButton, '已执行'))
-          .onPressed,
-      isNull,
-    );
+    expect(find.text('已执行'), findsOneWidget);
+    expect(find.text('查看并确认操作'), findsNothing);
+    expect(tester.widget<AssistantActionEntry>(find.byType(AssistantActionEntry))
+        .onPressed, isNull);
     expect(
       fixture.settings.values[AiConversationStore.storageKey],
       contains('已更新'),

@@ -1000,3 +1000,21 @@ PostgreSQL16.4源码经官方SHA256校验，编译到 `/private/tmp/momobox-pg16
 
 - PASS：git diff --check与源码差异复核。保留前轮家居状态按钮未提交调整；本轮只修改HA实体折叠控件的shape和通知权限卡布局，原授权、重查、忙碌禁用及排程回调不变。
 - NOT_EXECUTED：Flutter analyze/test/build、截图及设备验收。当前PATH无Flutter/Dart，未安装工具或依赖；已有notification_permission_recovery_test覆盖320宽及1/2/3.4倍字号、权限恢复与重查，nas_setup_flow_test覆盖实体展开和授权后滚动保持，待在可用Flutter环境复跑。源码复核不替代视觉及交互验收。
+
+## 2026-11-16：助手自适应表格
+
+基线4de8a18，开始时工作区干净。本次调整消息表格布局及相关回归源码，原会话存档、用户气泡、AI查询/授权/逐次确认逻辑不变。
+
+- PASS：git diff --check及源码调用链复核。对照项目锁定flutter_markdown_plus1.0.12与markdown7.3.1官方包源码核实扩展、原节点渲染和空单元格规则；仅下载官方源码到临时目录核对，未安装SDK或依赖。lock只将markdown7.3.1标为直接依赖，版本和校验和不变。
+- 回归源码：320/390宽度短四列表格无需横滑；长字段按内容分宽和自动换行；1/2/3.4倍字号及深浅色下字段完整、大字回流；转义管道、引用链接、空单元格、本地图片保护、重排后的整条复制与原生复制菜单；同一消息的表格各自布局、代码围栏不重排。原宽表/代码独立横滑用例改用七列对照表，保留滚动距离、独立控制器、颜色及字号断言。
+- NOT_EXECUTED：Flutter analyze/test/build、实际截图及设备验收。当前PATH及已检查的常见位置无Flutter/Dart，旧package_config仍引用已不存在的临时SDK/缓存。未安装工具或依赖；上述新增用例尚未运行，源码复核不能作为类型检查或视觉通过证明。
+- 待执行：flutter pub get；flutter analyze --no-pub；flutter test --no-pub test/presentation/assistant_markdown_test.dart test/presentation/ai_assistant_review_test.dart test/presentation/assistant_product_controls_test.dart。真机重点核对四列灯状态、字号切换、选择菜单、纵向滚动及复杂宽表横滑。未提交/推送/打包/发布。
+
+## 2026-11-16：助手操作审阅与统一页标题
+
+保留开始时已有的助手表格、依赖声明及文档未提交调整。本轮新增assistant_action_review组件，修改AssistantScreen的操作展示和页头，未改应用服务、存档或控制器。
+
+- PASS：git diff --check与差异调用链复核。确认前不执行、取消不写入、权限/快照复核与原会话锁定代码保留；操作前说明原样显示，执行后仍以真实完成消息记录。入口复用既有MomoCapsuleButton/MomoPressScale，减少动态效果开关作用于按压和新弹窗路线。
+- 回归源码：新增320×640/844×390、1/3.4倍字号、深浅色下长说明滚动、确认/取消按钮可达与结果，以及完成状态不可点击提交的组件用例。根页面矩阵补充助手使用共享标题及原字号缩放断言；原物品资料/库存工作流保留真实数据、取消、执行和回执断言，仅将灰色禁用TextButton断言改为可读状态、操作入口消失及绑定回调为空。
+- NOT_EXECUTED：Flutter analyze/test/build、真实截图、原生选择/读屏与真机验收。当前PATH无Flutter/Dart，未安装工具或依赖；新增/调整用例未运行，差异检查不代表类型检查或视觉通过。
+- 后续入口：flutter analyze --no-pub；flutter test --no-pub test/presentation/assistant_action_layout_test.dart test/presentation/assistant_product_controls_test.dart test/presentation/ai_workflows_test.dart test/presentation/ai_assistant_review_test.dart test/presentation/mobile_redesign_test.dart test/presentation/page_navigation_regression_test.dart test/presentation/assistant_markdown_test.dart。重点验收取消/返回不执行、快速重复点击、长说明与大字按钮可达、模型菜单及历史切换。未提交/推送/打包/发布。

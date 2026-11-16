@@ -174,7 +174,7 @@ void main() {
     for (final scale in [1.0, 3.4]) {
       for (final brightness in Brightness.values) {
         testWidgets(
-          'wide table/code stay within $width at $scale / ${brightness.name}',
+          'wide comparison table/code stay within $width at $scale / ${brightness.name}',
           (tester) async {
             addTearDown(tester.view.reset);
             final longName = List.filled(14, '很长的设备或物品名称').join();
@@ -185,9 +185,9 @@ void main() {
 
 > 普通读取说明，保留来源与时间。
 
-| 物品 | 位置 | 传感器 | 更新时间 |
-| --- | --- | --- | --- |
-| $longName | 储物柜 | sensor.temperature | 2026-11-13 |
+| 物品 | 位置 | 传感器 | 更新时间 | 功率 | 亮度 | 模式 |
+| --- | --- | --- | --- | --- | --- | --- |
+| $longName | 储物柜 | sensor.temperature | 2026-11-13 | 12W | 80% | 自动 |
 
 ```yaml
 entity_id: ${List.filled(40, 'sensor.long_name').join('_')}
@@ -247,6 +247,177 @@ entity_id: ${List.filled(40, 'sensor.long_name').join('_')}
       }
     }
   }
+
+  for (final width in [320.0, 390.0]) {
+    testWidgets('short four-column status table fits at $width', (tester) async {
+      addTearDown(tester.view.reset);
+      await _pumpBody(tester, '''
+| 灯具 | 房间 | 状态 | 亮度 |
+| --- | --- | --- | --- |
+| 台灯 | 客厅 | 开启 | 80% |
+| 壁灯 | 卧室 | 关闭 | 0% |
+''', width: width);
+      expect(find.byType(Table), findsOneWidget);
+      final table = tester.getRect(find.byType(Table));
+      final body = tester.getRect(find.byType(AssistantMessageBody));
+      expect(table.left, greaterThanOrEqualTo(body.left));
+      expect(table.right, lessThanOrEqualTo(body.right + .01));
+      for (final scroll in tester.widgetList<SingleChildScrollView>(
+        find.byType(SingleChildScrollView),
+      ).where((scroll) => scroll.scrollDirection == Axis.horizontal)) {
+        expect(scroll.controller!.position.maxScrollExtent, 0);
+      }
+      expect(tester.takeException(), isNull);
+    });
+
+    for (final scale in [1.0, 2.0, 3.4]) {
+      for (final brightness in Brightness.values) {
+        testWidgets(
+          'device table wraps or reflows without losing fields at $width / $scale / ${brightness.name}',
+          (tester) async {
+            addTearDown(tester.view.reset);
+            const name = '客厅沙发旁边的阅读灯';
+            await _pumpBody(tester, '''
+| 设备名称 | 所在房间 | 当前状态 | 实体标识 |
+| --- | --- | --- | --- |
+| **$name** | 客厅 | 已开启 | `light.living_room_reading_lamp` |
+| 卧室床头灯 | 主卧 | 已关闭 | `light.bedroom_lamp` |
+''', width: width, scale: scale, brightness: brightness);
+            expect(find.byType(Table), scale == 1 ? findsOneWidget : findsNothing);
+            expect(
+              tester.widgetList<SingleChildScrollView>(
+                find.byType(SingleChildScrollView),
+              ).where((scroll) => scroll.scrollDirection == Axis.horizontal),
+              isEmpty,
+            );
+            final text = _renderedSpans(tester)
+                .map((span) => span.text ?? '')
+                .join();
+            for (final field in [
+              name, '客厅', '已开启', 'light.living_room_reading_lamp',
+              '卧室床头灯', '主卧', '已关闭', 'light.bedroom_lamp',
+            ]) {
+              expect(text, contains(field));
+            }
+            if (scale > 1) {
+              expect(text, contains('设备名称：$name'));
+              expect(text, contains('当前状态：已关闭'));
+            } else {
+              final table = tester.widget<Table>(find.byType(Table));
+              final deviceWidth = (table.columnWidths![0] as FixedColumnWidth).value;
+              final roomWidth = (table.columnWidths![1] as FixedColumnWidth).value;
+              expect(deviceWidth, greaterThan(roomWidth));
+              expect(tester.getRect(find.byType(Table)).right,
+                lessThanOrEqualTo(width - 16 + .01));
+              expect(find.textContaining(name).evaluate().any((element) =>
+                tester.getSize(find.byWidget(element.widget)).height > 21), isTrue);
+            }
+            expect(_renderedSpans(tester).any((span) =>
+              span.text == name && span.style?.fontWeight == FontWeight.bold),
+              isTrue);
+            expect(_renderedSpans(tester).any((span) =>
+              span.text == 'light.bedroom_lamp' &&
+              span.style?.fontFamily == 'monospace'), isTrue);
+            final markdown = tester.widget<MarkdownBody>(find.byType(MarkdownBody));
+            expect(markdown.styleSheet!.textScaler!.scale(14), 14 * scale);
+            for (final element in find.byType(SelectableText).evaluate()) {
+              final rect = tester.getRect(find.byWidget(element.widget));
+              expect(rect.right, lessThanOrEqualTo(width - 16));
+            }
+            expect(tester.takeException(), isNull);
+          },
+        );
+      }
+    }
+  }
+
+  testWidgets('reflow preserves escaped pipes, reference links and image guards', (
+    tester,
+  ) async {
+    addTearDown(tester.view.reset);
+    await _pumpBody(tester, r'''
+| 设备 | 状态 | 标识 | 详情 |
+| --- | --- | --- | --- |
+| **客厅灯\|主灯** | 已开启 | `light.living_room` | [查看状态][status] |
+| 卧室灯 | | `light.bedroom` | ![本地图片](file:///private/secret.png) |
+
+[status]: https://example.com/status
+''', width: 320, scale: 2);
+    expect(find.byType(Table), findsNothing);
+    final spans = _renderedSpans(tester).toList();
+    expect(spans.map((span) => span.text ?? '').join(), contains('客厅灯|主灯'));
+    expect(spans.any((span) => span.text == '查看状态' &&
+      span.recognizer != null), isTrue);
+    expect(find.byType(Image), findsNothing);
+    final local = find.ancestor(
+      of: find.text('查看图片：本地图片'),
+      matching: find.byType(TextButton),
+    );
+    expect(tester.widget<TextButton>(local).onPressed, isNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('copying a reflowed device preserves every field and inline format', (
+    tester,
+  ) async {
+    addTearDown(tester.view.reset);
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied = (call.arguments as Map)['text'] as String;
+        }
+        if (call.method == 'Clipboard.getData') return {'text': copied};
+        if (call.method == 'Clipboard.hasStrings') return {'value': copied != null};
+        return null;
+      },
+    );
+    addTearDown(() => tester.binding.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, null));
+    await _pumpBody(tester, '''
+| 设备名称 | 所在房间 | 当前状态 | 实体标识 |
+| --- | --- | --- | --- |
+| **客厅灯** | 客厅 | 已开启 | `light.living_room` |
+''', width: 320, scale: 2);
+    final editable = tester.state<EditableTextState>(find.byType(EditableText));
+    editable.selectAll(SelectionChangedCause.toolbar);
+    await tester.pump();
+    editable.copySelection(SelectionChangedCause.toolbar);
+    await tester.pump();
+    expect(copied, '设备名称：客厅灯\n所在房间：客厅\n当前状态：已开启\n实体标识：light.living_room');
+    expect(tester.widget<SelectableText>(find.byType(SelectableText))
+        .contextMenuBuilder, isNotNull);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('separate tables choose their own layout and fenced pipes stay code', (
+    tester,
+  ) async {
+    addTearDown(tester.view.reset);
+    await _pumpBody(tester, '''
+| 灯 | 状态 |
+| --- | --- |
+| 台灯 | 开 |
+
+| 设备完整名称 | 所在房间位置 | 当前连接状态 | HA实体标识 |
+| --- | --- | --- | --- |
+| 客厅沙发旁阅读灯 | 客厅 | 已开启 | light.living_room_reading_lamp |
+
+```text
+| 原样 | 保留 | 代码 | 内容 |
+| --- | --- | --- | --- |
+```
+''', width: 320);
+    expect(find.byType(Table), findsNWidgets(2));
+    final spans = _renderedSpans(tester).toList();
+    expect(spans.map((span) => span.text ?? '').join(),
+      contains('light.living_room_reading_lamp'));
+    expect(spans.any((span) => span.text?.contains('| 原样 | 保留 |') == true &&
+      span.style?.fontFamily == 'monospace'), isTrue);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'image Markdown stays a user-opened link, never a network or local image',

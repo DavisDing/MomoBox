@@ -1993,3 +1993,19 @@ SettingsCategory.household显示为“连接与服务”，同组提供NAS、HA�
 ## 59. 2026-11-16：实体展开边框与通知权限操作位置
 
 HA实体ExpansionTile显式设置空shape和collapsedShape，去掉展开动画默认增加的上下横线，保留已有外层圆角边框、展开状态key及授权控件。“提醒与通知”的权限卡改为图标、可伸缩的标题/状态列及右对齐操作区；“重新检查”/“请求授权”保持在右侧，大字号文字自然换行并增高，不再通过通用stack规则移到下方。真实权限状态、忙碌禁用、授权/重查及通知重排逻辑不变，无依赖或数据结构改动。
+
+## 60. 2026-11-16：助手自适应表格
+
+对应REQUIREMENT第41节，替代第51节固定148dp列宽的方案。AssistantTableSyntax复用锁定markdown7.3.1的GFM解析，在完成整篇内联解析后由AssistantTableBuilder接管表格。通过公开MarkdownBuilder渲染原单元格节点，保留跨段引用链接、转义管道、格式、图片保护及原生复制菜单；不拆分原消息、重解析代码围栏或改存档。
+
+AssistantTable按自身LayoutBuilder实际宽度、当前字号与每列内容测量分配宽度。短字段少占宽，长字段按需求比例获得余量；优先完整利用可用宽度并自然换行。每列可读基准为三字宽加内边距，短内容可更窄；2至6列有数据表无法满足基准时按原行变为纵向字段，更多列保留独立横向滚动。表格采用8dp单元格内边距、10dp圆角、淡色表头和细横向分隔，无纵向重网格；不限制字号或正文高度。
+
+markdown7.3.1由已有传递依赖提升为直接依赖以使用解析器公开接口，版本、校验和及其余包不变；没有安装新软件、增加包版本、数据迁移或后端改动。AI_CONTEXT长期架构无需调整，视觉与设备结果另见VALIDATION。
+
+## 61. 2026-11-16：助手操作审阅与统一页标题
+
+对应REQUIREMENT第42节。AssistantScreen使用MomoPageHeader“助手”和MomoMobileLayout.pageInsets，移除原图标/小字工具栏；SafeArea左右交由同一页边距规则处理。保留新建、历史和模型选择，放大文字时模型选择并入会话菜单，避免挤压标题。
+
+AssistantActionEntry复用次级MomoCapsuleButton，保留原生按钮的焦点/语义与MomoPressScale按压弹簧；真实回执用正常对比度的状态行和liveRegion展示，替代灰色禁用按钮。AssistantActionReviewDialog采用24dp圆角、主题表面、小型动作图标、可选择的真实说明区域及主次胶囊按钮；宽度上限480dp，窄屏/大字按钮纵排，整个审阅可滚动，不固定内容高度。删除/报废沿类型使用错误动作色。showDialog保留原模态路径，减少动态效果时使用AnimationStyle.noAnimation。
+
+仅替换展示组件：description仍由原service.describe生成，确认后仍传原字符串至executeWithResult作快照复核；打开前锁定、取消解锁、执行中持久回执、权限与原会话检查、入库草稿及执行后真实反馈逻辑保持。无本批新增依赖、schema、后端或AI_CONTEXT长期架构变化。

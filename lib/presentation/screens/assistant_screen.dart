@@ -1,5 +1,6 @@
 import '../widgets/nas_ai_models.dart';
 import '../widgets/assistant_message_body.dart';
+import '../widgets/assistant_action_review.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -207,19 +208,17 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
         }
         return;
       }
-      final confirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
-        title: Text(switch (action.kind) {
-          'product_update' => '确认修改物品资料',
-          'device_control' => '确认控制设备',
-          _ => '确认操作',
-        }),
-        scrollable: true,
-        content: Text(description),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('确认执行')),
-        ],
-      ));
+      final confirmed = await showDialog<bool>(
+        context: context,
+        animationStyle: MediaQuery.disableAnimationsOf(context) ||
+                MediaQuery.accessibleNavigationOf(context)
+            ? AnimationStyle.noAnimation
+            : null,
+        builder: (_) => AssistantActionReviewDialog(
+          kind: action.kind,
+          description: description,
+        ),
+      );
       if (confirmed != true || !store.sessions.contains(origin)) return;
       store.actionReceipts[message.id] = '执行中／中断后请核实结果，勿重复提交';
       await store.save();
@@ -286,18 +285,20 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
 
     final welcome = _messages.length == 1 && _messages.first.content.startsWith('你好呀！');
     final content = SafeArea(
+          left: false, right: false,
           bottom: false,
           child: Column(
             children: [
               // Session tools share one menu when text or screen size needs space.
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: MomoMobileLayout.pageInsets(context),
                 child: LayoutBuilder(builder: (context, constraints) {
-                  final compact = MomoMobileLayout.stack(context, constraints.maxWidth, minimum: 390);
-                  return Row(children: [
-                    Icon(Icons.auto_awesome_outlined, size: 18, color: theme.colorScheme.primary),
-                    const SizedBox(width: 7),
-                    Expanded(child: Text('AI 助手', style: theme.textTheme.labelLarge)),
+                  final modelInMenu = MediaQuery.textScalerOf(context).scale(14) > 17;
+                  final compact = modelInMenu ||
+                      MomoMobileLayout.stack(context, constraints.maxWidth, minimum: 390);
+                  return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Expanded(child: MomoPageHeader(title: '助手')),
+                    const SizedBox(width: 8),
                     if (compact)
                       PopupMenuButton<String>(
                         tooltip: '会话选项',
@@ -305,10 +306,13 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                         onSelected: (value) {
                           if (value == 'new') _createNewSession();
                           if (value == 'history') _showHistorySessionsSheet(context);
+                          if (value == 'model') NasAiModels.show(context);
                         },
-                        itemBuilder: (_) => const [
-                          PopupMenuItem(value: 'new', child: Text('新建会话')),
-                          PopupMenuItem(value: 'history', child: Text('历史会话')),
+                        itemBuilder: (_) => [
+                          const PopupMenuItem(value: 'new', child: Text('新建会话')),
+                          const PopupMenuItem(value: 'history', child: Text('历史会话')),
+                          if (modelInMenu)
+                            const PopupMenuItem(value: 'model', child: Text('选择 AI 模型')),
                         ],
                       )
                     else ...[
@@ -316,10 +320,10 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                       IconButton(tooltip: '历史会话', icon: const Icon(Icons.history_rounded),
                         onPressed: () => _showHistorySessionsSheet(context)),
                     ],
-                    if (MediaQuery.textScalerOf(context).scale(14) > 17 || constraints.maxWidth < 360)
+                    if (!modelInMenu && constraints.maxWidth < 360)
                       IconButton(tooltip:'选择 AI 模型',icon:const Icon(Icons.tune_rounded),
                         onPressed:()=>NasAiModels.show(context))
-                    else ConstrainedBox(constraints:const BoxConstraints(maxWidth:170),
+                    else if (!modelInMenu) ConstrainedBox(constraints:const BoxConstraints(maxWidth:170),
                       child:OutlinedButton.icon(icon:const Icon(Icons.tune_rounded,size:16),
                         label:Text(ref.watch(selectedAiModelProvider).valueOrNull?.isNotEmpty == true
                           ? ref.watch(selectedAiModelProvider).valueOrNull! : 'NAS 默认模型',maxLines:1,overflow:TextOverflow.ellipsis),
@@ -386,11 +390,11 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                                 ),
                               ),
                             if (!isUser && AiInventoryAction.parse(msg.content) != null)
-                              TextButton(
+                              AssistantActionEntry(
+                                receipt: _store.actionReceipts[msg.id],
                                 onPressed: _store.actionReceipts.containsKey(msg.id) ||
                                     !(ref.watch(aiInventoryPermissionProvider).valueOrNull ?? false)
                                     ? null : () => _confirmInventoryAction(msg),
-                                child: Text(_store.actionReceipts[msg.id] ?? '查看并确认操作'),
                               ),
                           ],
                         ),

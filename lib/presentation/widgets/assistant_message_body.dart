@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/momo_typography.dart';
 import '../../domain/models/ai_action.dart';
+import 'assistant_table_layout.dart';
 
 /// Formats only the displayed reply. Stored messages and action parsing retain
 /// their original content and continue through the separate confirmation flow.
@@ -23,82 +24,75 @@ class AssistantMessageBody extends StatelessWidget {
       height: 1.5,
     );
     final tableText = body.copyWith(fontSize: MomoTextSize.body);
+    final styleSheet = MarkdownStyleSheet.fromTheme(theme).copyWith(
+      p: body,
+      h1: body.copyWith(
+        fontSize: MomoTextSize.page,
+        fontWeight: FontWeight.w600,
+      ),
+      h2: body.copyWith(
+        fontSize: MomoTextSize.section,
+        fontWeight: FontWeight.w600,
+      ),
+      h3: body.copyWith(fontWeight: FontWeight.w600),
+      h4: body.copyWith(fontWeight: FontWeight.w600),
+      h5: tableText.copyWith(fontWeight: FontWeight.w600),
+      h6: tableText.copyWith(fontWeight: FontWeight.w600),
+      a: body.copyWith(
+        color: colors.primary,
+        decoration: TextDecoration.underline,
+      ),
+      listBullet: body,
+      blockquote: body.copyWith(color: colors.onSurfaceVariant),
+      blockSpacing: 10,
+      listIndent: textScaler.scale(28),
+      blockquotePadding: const EdgeInsets.symmetric(
+        horizontal: 12,
+        vertical: 8,
+      ),
+      blockquoteDecoration: BoxDecoration(
+        color: colors.surfaceContainerHighest.withValues(alpha: .5),
+        border: Border(
+          left: BorderSide(color: colors.outlineVariant, width: 3),
+        ),
+      ),
+      code: tableText.copyWith(
+        fontFamily: 'monospace',
+        backgroundColor: colors.surfaceContainerHighest,
+      ),
+      codeblockPadding: const EdgeInsets.all(12),
+      codeblockDecoration: BoxDecoration(
+        color: colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      tableHead: tableText.copyWith(fontWeight: FontWeight.w600),
+      tableBody: tableText,
+      textScaler: textScaler,
+    );
+    Widget imageBuilder(Uri uri, String? title, String? alt) => TextButton.icon(
+      onPressed: _webUri(uri.toString()) == null
+          ? null
+          : () => _openLink(context, uri.toString()),
+      icon: const Icon(Icons.image_outlined, size: 18),
+      label: Text(alt?.trim().isNotEmpty == true ? '查看图片：$alt' : '查看图片'),
+    );
     return MarkdownBody(
       data: AiInventoryAction.displayText(content),
       selectable: true,
       softLineBreak: true,
       fitContent: false,
-      styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
-        p: body,
-        h1: body.copyWith(
-          fontSize: MomoTextSize.page,
-          fontWeight: FontWeight.w600,
+      blockSyntaxes: const [AssistantTableSyntax()],
+      builders: {
+        'section': AssistantTableBuilder(
+          styleSheet: styleSheet,
+          onTapLink: (_, href, _) => _openLink(context, href),
+          imageBuilder: imageBuilder,
         ),
-        h2: body.copyWith(
-          fontSize: MomoTextSize.section,
-          fontWeight: FontWeight.w600,
-        ),
-        h3: body.copyWith(fontWeight: FontWeight.w600),
-        h4: body.copyWith(fontWeight: FontWeight.w600),
-        h5: tableText.copyWith(fontWeight: FontWeight.w600),
-        h6: tableText.copyWith(fontWeight: FontWeight.w600),
-        a: body.copyWith(
-          color: colors.primary,
-          decoration: TextDecoration.underline,
-        ),
-        listBullet: body,
-        blockquote: body.copyWith(color: colors.onSurfaceVariant),
-        blockSpacing: 10,
-        listIndent: textScaler.scale(28),
-        blockquotePadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 8,
-        ),
-        blockquoteDecoration: BoxDecoration(
-          color: colors.surfaceContainerHighest.withValues(alpha: .5),
-          border: Border(
-            left: BorderSide(color: colors.outlineVariant, width: 3),
-          ),
-        ),
-        code: tableText.copyWith(
-          fontFamily: 'monospace',
-          backgroundColor: colors.surfaceContainerHighest,
-        ),
-        codeblockPadding: const EdgeInsets.all(12),
-        codeblockDecoration: BoxDecoration(
-          color: colors.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        tableHead: tableText.copyWith(fontWeight: FontWeight.w600),
-        tableBody: tableText,
-        // Fixed, scaled cells wrap long text while the whole table scrolls
-        // horizontally. It must not widen the conversation on a narrow phone.
-        tableColumnWidth: FixedColumnWidth(
-          148 *
-              (textScaler.scale(MomoTextSize.body) / MomoTextSize.body).clamp(
-                1.0,
-                double.infinity,
-              ),
-        ),
-        tableCellsPadding: const EdgeInsets.all(10),
-        tableBorder: TableBorder.all(color: colors.outlineVariant),
-        tableHeadCellsDecoration: BoxDecoration(
-          color: colors.surfaceContainerHighest,
-        ),
-        textScaler: textScaler,
-      ),
+      },
+      styleSheet: styleSheet,
       onTapLink: (_, href, _) => _openLink(context, href),
-      // Replies are untrusted. Do not fetch tracking images or read device
-      // files while rendering; a deliberate tap opens a web image externally.
-      imageBuilder:
-          (uri, title, alt) => TextButton.icon(
-            onPressed:
-                _webUri(uri.toString()) == null
-                    ? null
-                    : () => _openLink(context, uri.toString()),
-            icon: const Icon(Icons.image_outlined, size: 18),
-            label: Text(alt?.trim().isNotEmpty == true ? '查看图片：$alt' : '查看图片'),
-          ),
+      // Replies are untrusted. Images remain deliberate, guarded web links.
+      imageBuilder: imageBuilder,
     );
   }
 

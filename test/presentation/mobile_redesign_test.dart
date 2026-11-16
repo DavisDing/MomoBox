@@ -52,6 +52,9 @@ void main() {
               await _frames(tester);
               if (route == '/assistant') {
                 expect(find.byType(AssistantScreen),findsOneWidget);
+                expect(find.byType(MomoPageHeader), findsOneWidget);
+                expect(tester.widget<MomoPageHeader>(find.byType(MomoPageHeader)).title, '助手');
+                expect(MediaQuery.textScalerOf(tester.element(find.byType(MomoPageHeader))).scale(14), closeTo(14 * scale, 0.01));
                 expect(find.byTooltip('关闭助手'), findsNothing);
                 expect(find.byType(BottomSheet), findsNothing);
                 expect(find.byType(TextField),findsOneWidget);
