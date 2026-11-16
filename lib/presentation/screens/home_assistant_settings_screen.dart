@@ -614,6 +614,8 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
       ),
       child: ExpansionTile(
         key: PageStorageKey('ha-entity-expansion-$key'),
+        shape: const Border(),
+        collapsedShape: const Border(),
         tilePadding: const EdgeInsets.symmetric(horizontal: 12),
         childrenPadding: const EdgeInsets.only(left: 12, right: 12, bottom: 8),
         leading: Icon(_entityIcon(entity.domain), color: Theme.of(context).colorScheme.primary),

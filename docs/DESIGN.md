@@ -1973,6 +1973,8 @@ AssistantScreen移除欢迎标语、功能解释及输入区上下提示，保�
 
 对应REQUIREMENT第39节。SmartHomeScreen页头使用可伸缩的标题/操作两列，将原HA状态标签改为右上角TextButton.icon；状态颜色取自ColorScheme，至少44dp点击区。点击复用SmartHomeController.refresh，isLoading显示进度和“刷新中…”，禁用重复点击；下拉刷新仍保留原设备及环境刷新路径。设备区只保留标题。
 
+2026-11-16紧凑调整：按apple-design的层级、克制与可访问性原则，状态胶囊最小视觉高度由44dp降为30dp，内边距改为横向10dp/纵向4dp，刷新图标及进度为14dp，背景透明度降为0.06。沿用12dp文字和系统字号缩放，内容增高时按钮可自然增高；显式使用标准视觉密度及padded触摸区域，外围原生点击区至少48dp，保留按钮按压反馈、真实状态与刷新行为。
+
 权限提示沿用MomoCard，改为14dp圆角、surfaceContainerLow背景、18dp权限图标和14dp正文行高1.5；关闭按钮保留44dp点击区。正文占剩余宽度并随字号增高。命令/联动/离线错误使用errorContainer/onErrorContainer，不开放权限提示之外的关闭入口，不变更授权或控制器逻辑。
 
 HomeEnvironmentCard按用户实际看到的来源类别与age文案、stale状态判断是否重复，不再比较传感器原ID和精确时间。温度缺失但湿度存在时，来源行使用有效湿度；不同来源/显示时效/过期状态仍单独展示。不新增依赖、数据结构或后端改动。现有布局夹具调整为验证状态位于页头右侧，补充不同传感器的相同文案合并及湿度过期区分用例，均待Flutter环境运行。AI_CONTEXT长期架构无需修改。
@@ -1987,3 +1989,7 @@ NasAiModels改为ConsumerStatefulWidget，控制器在销毁时释放，查询tr
 HA实体卡在发现按钮后按文字缩放留距，授权角色字段isExpanded、isDense=false、itemHeight=null，允许长角色名称换行。用现有grantableCommands划分可控制/只读，两个ChoiceChip过滤本地目录，保留角色筛选、现有展开key、权限锚点及授权后的滚动保持；只读无授权实体不再显示无效控制开关，已有canControl仍保留撤销入口。分类不修改实体、权限或环境配置；查看授权继续可用，sensor/weather来源链仍在环境服务使用。
 
 SettingsCategory.household显示为“连接与服务”，同组提供NAS、HA、外部条码API；内部枚举、路由与存储键不变。intelligence分类移除条码后改为AI用量，保留用量记录入口。不新增依赖、schema、后端或同步协议。AI_CONTEXT长期交互事实建议补充连接入口归组及模型目录可搜索；源码验证与运行结果见VALIDATION。
+
+## 59. 2026-11-16：实体展开边框与通知权限操作位置
+
+HA实体ExpansionTile显式设置空shape和collapsedShape，去掉展开动画默认增加的上下横线，保留已有外层圆角边框、展开状态key及授权控件。“提醒与通知”的权限卡改为图标、可伸缩的标题/状态列及右对齐操作区；“重新检查”/“请求授权”保持在右侧，大字号文字自然换行并增高，不再通过通用stack规则移到下方。真实权限状态、忙碌禁用、授权/重查及通知重排逻辑不变，无依赖或数据结构改动。

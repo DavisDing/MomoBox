@@ -163,15 +163,18 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
         style: TextButton.styleFrom(
           foregroundColor: color,
           disabledForegroundColor: color,
-          backgroundColor: color.withValues(alpha: 0.08),
-          minimumSize: const Size(44, 44),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          backgroundColor: color.withValues(alpha: 0.06),
+          minimumSize: const Size(44, 30),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          // Keep the compact capsule inside a full-size native tap target.
+          tapTargetSize: MaterialTapTargetSize.padded,
+          visualDensity: VisualDensity.standard,
           shape: const StadiumBorder(),
         ),
         icon: state.isLoading
-            ? SizedBox.square(dimension: 16, child: CircularProgressIndicator(
-                strokeWidth: 2, color: color, semanticsLabel: '正在刷新设备状态'))
-            : const Icon(Icons.refresh_rounded, size: 16),
+            ? SizedBox.square(dimension: 14, child: CircularProgressIndicator(
+                strokeWidth: 1.5, color: color, semanticsLabel: '正在刷新设备状态'))
+            : const Icon(Icons.refresh_rounded, size: 14),
         label: Text(state.isLoading ? '刷新中…' : label,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color),
           textAlign: TextAlign.center),

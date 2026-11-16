@@ -989,3 +989,14 @@ PostgreSQL16.4源码经官方SHA256校验，编译到 `/private/tmp/momobox-pg16
 - 回归源码已更新：模型搜索大小写/空白、无结果、清空、仅选择才写设置；同一菜单包含三个服务；真实NAS HTTP夹具区分灯和只读温度传感器、只读仍有查看授权、切换分类不写权限，原逐角色授权/控制/撤销断言保留。没有放宽已有业务断言。
 - NOT_EXECUTED：Flutter analyze/test/build、新截图、窄屏大字号真实渲染及NAS/HA/模型实机验收。当前PATH无Flutter/Dart，旧临时工具链/缓存已不存在；未安装依赖或修改系统环境。前轮通过记录不覆盖本批。
 - 后续入口：flutter analyze --no-pub；flutter test --no-pub test/presentation/nas_ai_model_selection_test.dart test/presentation/settings_hierarchy_test.dart test/presentation/nas_setup_flow_test.dart test/presentation/mobile_redesign_test.dart test/presentation/ai_workflows_test.dart。重点检查键盘下模型列表可滚动、授权角色与发现按钮不重叠，以及只读传感器授权后环境数据仍可选。未提交/推送/发布，无新增依赖/schema或后端改动。
+
+## 2026-11-16：家居页HA状态按钮缩小
+
+- 仅调整SmartHomeScreen状态按钮的视觉尺寸、间距与底色；文字、系统字号缩放、五类状态、刷新回调和加载禁用逻辑保持。采用TextButton的padded触摸区域及标准视觉密度，将紧凑视觉与原生触摸范围分开。
+- PASS：git diff --check及源码差异复核；无业务逻辑、依赖或数据结构变化。
+- NOT_EXECUTED：Flutter analyze/test/build、截图及真机验收；当前PATH无Flutter/Dart，未安装工具或依赖。需在可用Flutter环境复跑populated_home_layout_test与page_navigation_regression_test，核对窄屏大字号、各连接状态及刷新交互。旧截图不作为本次视觉证据。
+
+## 2026-11-16：实体展开边框与通知权限操作位置
+
+- PASS：git diff --check与源码差异复核。保留前轮家居状态按钮未提交调整；本轮只修改HA实体折叠控件的shape和通知权限卡布局，原授权、重查、忙碌禁用及排程回调不变。
+- NOT_EXECUTED：Flutter analyze/test/build、截图及设备验收。当前PATH无Flutter/Dart，未安装工具或依赖；已有notification_permission_recovery_test覆盖320宽及1/2/3.4倍字号、权限恢复与重查，nas_setup_flow_test覆盖实体展开和授权后滚动保持，待在可用Flutter环境复跑。源码复核不替代视觉及交互验收。

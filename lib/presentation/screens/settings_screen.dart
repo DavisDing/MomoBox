@@ -1100,50 +1100,55 @@ class _NotificationSettingsScreenState
       ),
       children: [
         Card(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final stack = MomoMobileLayout.stack(
-                context,
-                constraints.maxWidth,
-              );
-              final action = TextButton(
-                onPressed: _busy
-                    ? null
-                    : _status == NotificationPermissionStatus.allowed
-                    ? _retryStatus
-                    : _requestPermission,
-                child: Text(
-                  _status == NotificationPermissionStatus.allowed
-                      ? '重新检查'
-                      : '请求授权',
-                ),
-              );
-              final tile = ListTile(
-                leading: Icon(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                Icon(
                   _status == NotificationPermissionStatus.allowed
                       ? Icons.notifications_active_outlined
                       : Icons.notifications_off_outlined,
                 ),
-                title: const Text('通知权限'),
-                subtitle: Text(_busy ? '正在检查…' : _statusLabel),
-                trailing: stack ? null : action,
-              );
-              return stack
-                  ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        tile,
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: action,
-                          ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '通知权限',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _busy ? '正在检查…' : _statusLabel,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
-                      ],
-                    )
-                  : tile;
-            },
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: _busy
+                          ? null
+                          : _status == NotificationPermissionStatus.allowed
+                          ? _retryStatus
+                          : _requestPermission,
+                      child: Text(
+                        _status == NotificationPermissionStatus.allowed
+                            ? '重新检查'
+                            : '请求授权',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         if (_errorMessage != null)
