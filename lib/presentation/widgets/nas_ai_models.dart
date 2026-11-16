@@ -4,12 +4,44 @@ import '../controllers/providers.dart';
 import '../../application/backend_processing_error.dart';
 import '../../data/nas/nas_api_error.dart';
 
-class NasAiModels extends ConsumerWidget {
+class NasAiModels extends ConsumerStatefulWidget {
   const NasAiModels({super.key});
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NasAiModels> createState() => _NasAiModelsState();
+
+  static Future<void> show(BuildContext context) => showModalBottomSheet<void>(
+    context: context,
+    useSafeArea: true,
+    isScrollControlled: true,
+    builder: (context) => Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: const FractionallySizedBox(
+        heightFactor: .7,
+        child: SingleChildScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          child: NasAiModels(),
+        ),
+      ),
+    ),
+  );
+}
+
+class _NasAiModelsState extends ConsumerState<NasAiModels> {
+  final _searchController = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final models = ref.watch(nasAiModelsProvider);
     final selected = ref.watch(selectedAiModelProvider).valueOrNull;
+    final filtered = models.valueOrNull?.where((model) =>
+        model.id.toLowerCase().contains(_query)).toList() ?? [];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -32,6 +64,27 @@ class NasAiModels extends ConsumerWidget {
             child: Text(_modelFailureMessage(models.error!)),
           )
         else ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                labelText: '搜索模型',
+                prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: _query.isEmpty ? null : IconButton(
+                  tooltip: '清除模型搜索',
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() => _query = '');
+                  },
+                ),
+              ),
+              onChanged: (value) => setState(() => _query = value.trim().toLowerCase()),
+            ),
+          ),
+          if (_query.isNotEmpty && filtered.isEmpty)
+            const Padding(padding: EdgeInsets.all(16), child: Text('没有匹配的模型')),
           if (selected?.isNotEmpty == true &&
               !models.value!.any((model) => model.id == selected))
             const Padding(
@@ -50,7 +103,7 @@ class NasAiModels extends ConsumerWidget {
             child: Column(
               children: [
                 const RadioListTile<String>(value: '', title: Text('NAS 默认模型')),
-                for (final model in models.value ?? [])
+                for (final model in filtered)
                   RadioListTile<String>(
                     value: model.id,
                     title: Text(model.id),
@@ -63,17 +116,6 @@ class NasAiModels extends ConsumerWidget {
       ],
     );
   }
-
-  static Future<void> show(BuildContext context) => showModalBottomSheet<void>(
-    context: context,
-    useSafeArea: true,
-    isScrollControlled: true,
-    builder:
-        (_) => const FractionallySizedBox(
-          heightFactor: .7,
-          child: SingleChildScrollView(child: NasAiModels()),
-        ),
-  );
 }
 
 String _modelFailureMessage(Object error) {

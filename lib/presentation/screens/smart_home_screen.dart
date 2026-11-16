@@ -43,15 +43,14 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
             padding: MomoMobileLayout.pageInsets(context).add(
               EdgeInsets.only(bottom: 20 + MomoDockInsets.bottomOf(context))),
             children: [
-              MomoPageHeader(
-                title: '家居',
-                actions: [IconButton(
-                  tooltip: '刷新设备状态',
-                  icon: homeState.isLoading
-                      ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.refresh_rounded, size: 20),
-                  onPressed: homeState.isLoading ? null : () => controller.refresh(),
-                )],
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Expanded(child: MomoPageHeader(title: '家居')),
+                  const SizedBox(width: 12),
+                  Flexible(child: _buildHaRefreshButton(context, homeState)),
+                ],
               ),
               const HomeEnvironmentCard(),
               const SizedBox(height: 24),
@@ -59,7 +58,10 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
                 key: const ValueKey('smart-home-device-heading'),
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _deviceSectionHeader(context, homeState),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Text('家里的设备', style: Theme.of(context).textTheme.titleLarge),
+                  ),
                   if (homeState.haStatus != HaConnectionStatus.unconfigured &&
                       (homeState.message != null || homeState.commandError != null || homeState.linkageError != null))
                     _buildStateNotice(context, homeState),
@@ -89,90 +91,90 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
     );
   }
 
-  Widget _deviceSectionHeader(BuildContext context, SmartHomeState state) =>
-      Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final title = Text(
-              '家里的设备',
-              style: Theme.of(context).textTheme.titleLarge,
-            );
-            final badge = _buildHaBadge(context, state.haStatus);
-            if (MomoMobileLayout.stack(context, constraints.maxWidth)) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [title, const SizedBox(height: 8), badge],
-              );
-            }
-            return Row(
-              children: [
-                Expanded(child: title),
-                const SizedBox(width: 12),
-                badge,
-              ],
-            );
-          },
-        ),
-      );
-
   Widget _buildStateNotice(BuildContext context, SmartHomeState state) {
     final error = state.commandError ?? state.linkageError;
     final text = error ?? state.message!;
     final isError = error != null || state.haStatus == HaConnectionStatus.offline;
     final canDismiss = !isError && state.isPermissionNotice;
-    final color = isError ? Colors.red : Colors.amber.shade800;
+    final scheme = Theme.of(context).colorScheme;
+    final color = isError ? scheme.onErrorContainer : scheme.onSurfaceVariant;
     return MomoCard(
       key: const ValueKey('smart-home-notice'),
       margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(isError ? Icons.error_outline : Icons.info_outline, size: 20, color: color),
-            const SizedBox(width: 8),
-            Expanded(child: Text(text, style: TextStyle(fontSize: MomoTextSize.caption, color: color))),
-            if (canDismiss)
-              IconButton(
+      padding: EdgeInsets.zero,
+      borderRadius: 14,
+      color: isError ? scheme.errorContainer : scheme.surfaceContainerLow,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 14, top: 16),
+            child: Icon(
+              isError ? Icons.error_outline_rounded :
+                  canDismiss ? Icons.lock_outline_rounded : Icons.info_outline_rounded,
+              size: 18,
+              color: color,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Text(text, style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: color,
+                height: 1.5,
+              )),
+            ),
+          ),
+          if (canDismiss)
+            Padding(
+              padding: const EdgeInsets.only(top: 2, right: 2),
+              child: IconButton(
                 tooltip: '关闭权限提示',
-                icon: const Icon(Icons.close_rounded, size: 20),
+                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                icon: const Icon(Icons.close_rounded, size: 18),
                 color: color,
                 onPressed: () => ref
                     .read(smartHomeControllerProvider.notifier)
                     .dismissPermissionNotice(),
               ),
-          ],
+            )
+          else
+            const SizedBox(width: 14),
+        ],
       ),
     );
   }
 
-  Widget _buildHaBadge(BuildContext context, HaConnectionStatus status) {
-    final (label, color) = switch (status) {
-      HaConnectionStatus.online => ('HA 已连接', Colors.green),
-      HaConnectionStatus.syncing => ('同步中', Colors.blue),
-      HaConnectionStatus.offline => ('HA 离线', Colors.orange),
-      HaConnectionStatus.stale => ('HA 状态过期', Colors.amber.shade800),
-      HaConnectionStatus.unconfigured => ('HA 未配置', Colors.grey),
+  Widget _buildHaRefreshButton(BuildContext context, SmartHomeState state) {
+    final scheme = Theme.of(context).colorScheme;
+    final (label, color) = switch (state.haStatus) {
+      HaConnectionStatus.online => ('HA 已连接', scheme.primary),
+      HaConnectionStatus.syncing => ('同步中', scheme.primary),
+      HaConnectionStatus.offline => ('HA 离线', scheme.error),
+      HaConnectionStatus.stale => ('HA 状态过期', scheme.tertiary),
+      HaConnectionStatus.unconfigured => ('HA 未配置', scheme.onSurfaceVariant),
     };
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 6,
-            height: 6,
-            decoration: BoxDecoration(shape: BoxShape.circle, color: color),
-          ),
-          const SizedBox(width: 4),
-          Flexible(child: Text(label, style: TextStyle(fontSize: MomoTextSize.caption, color: color, fontWeight: FontWeight.bold))),
-        ],
+    return Tooltip(
+      message: state.isLoading ? '正在刷新设备状态' : '刷新设备状态',
+      child: TextButton.icon(
+        onPressed: state.isLoading ? null :
+            () => ref.read(smartHomeControllerProvider.notifier).refresh(),
+        style: TextButton.styleFrom(
+          foregroundColor: color,
+          disabledForegroundColor: color,
+          backgroundColor: color.withValues(alpha: 0.08),
+          minimumSize: const Size(44, 44),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          shape: const StadiumBorder(),
+        ),
+        icon: state.isLoading
+            ? SizedBox.square(dimension: 16, child: CircularProgressIndicator(
+                strokeWidth: 2, color: color, semanticsLabel: '正在刷新设备状态'))
+            : const Icon(Icons.refresh_rounded, size: 16),
+        label: Text(state.isLoading ? '刷新中…' : label,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color),
+          textAlign: TextAlign.center),
       ),
     );
   }

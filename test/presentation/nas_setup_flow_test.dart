@@ -259,6 +259,9 @@ void main() {
     final entity = {'id': 'row', 'integration_id': 'ha', 'entity_id': 'light.kitchen',
       'domain': 'light', 'name': '厨房灯', 'is_visible': true, 'is_controllable': true,
       'capabilities': ['on_off']};
+    final sensor = {'id': 'sensor-row', 'integration_id': 'ha', 'entity_id': 'sensor.living_temperature',
+      'domain': 'sensor', 'name': '客厅温度', 'is_visible': true, 'is_controllable': false,
+      'capabilities': <String>[]};
     final fixture = _Fixture((request) async {
       final path = request.url.path;
       if (path.endsWith('/auth/login')) return _auth('owner-session');
@@ -272,7 +275,7 @@ void main() {
         }]});
       }
       if (path.endsWith('/test')) return _json({'connected': true, 'checked_at': DateTime.now().toUtc().toIso8601String()});
-      if (path.endsWith('/catalog')) return _json({'entities': [entity]});
+      if (path.endsWith('/catalog')) return _json({'entities': [entity, sensor]});
       if (path.endsWith('/entities')) return _json({'entities': grants['owner']?['can_view'] == true ? [entity] : []});
       if (path.endsWith('/permissions')) {
         if (request.method == 'PUT') {
@@ -299,6 +302,24 @@ void main() {
     ], child: const MaterialApp(home: HomeAssistantSettingsScreen())));
     await tester.pumpAndSettle();
     expect(writes, isEmpty);
+    expect(find.text('客厅温度'), findsNothing);
+    final readOnlyFilter = find.text('只读数据 (1)');
+    await tester.ensureVisible(readOnlyFilter);
+    await tester.pumpAndSettle();
+    await tester.tap(readOnlyFilter);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('客厅温度'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('客厅温度'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(SwitchListTile, '允许查看状态'), findsOneWidget);
+    expect(find.widgetWithText(SwitchListTile, '允许控制实体'), findsNothing);
+    expect(writes, isEmpty);
+    final controllableFilter = find.text('可控制 (1)');
+    await tester.ensureVisible(controllableFilter);
+    await tester.pumpAndSettle();
+    await tester.tap(controllableFilter);
+    await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('厨房灯'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('厨房灯'));

@@ -71,8 +71,8 @@ class SettingsScreen extends StatelessWidget {
 
 enum SettingsCategory {
   appearance('外观与显示', Icons.palette_outlined),
-  intelligence('识别与用量', Icons.qr_code_scanner),
-  household('家庭与连接', Icons.home_outlined),
+  intelligence('AI 用量', Icons.analytics_outlined),
+  household('连接与服务', Icons.hub_outlined),
   data('数据与隐私', Icons.shield_outlined);
 
   const SettingsCategory(this.title, this.icon);
@@ -114,13 +114,6 @@ class SettingsCategoryScreen extends ConsumerWidget {
             destination: (_) => const AiUsageScreen(),
           ),
         ]),
-        _SettingsGroup(title: '识别服务', children: [
-          _SettingsLink(
-            icon: Icons.qr_code_scanner,
-            title: '外部条码 API 接口',
-            destination: (_) => const BarcodeSettingsScreen(),
-          ),
-        ]),
       ],
       SettingsCategory.household => [
         _SettingsGroup(title: '连接', children: [
@@ -133,6 +126,11 @@ class SettingsCategoryScreen extends ConsumerWidget {
             icon: Icons.hub_outlined,
             title: 'Home Assistant 连接配置',
             destination: (_) => const HomeAssistantSettingsScreen(),
+          ),
+          _SettingsLink(
+            icon: Icons.qr_code_scanner,
+            title: '外部条码 API 接口',
+            destination: (_) => const BarcodeSettingsScreen(),
           ),
         ]),
         _SettingsGroup(title: '同步', children: [
@@ -168,7 +166,7 @@ class SettingsCategoryScreen extends ConsumerWidget {
             destination: (_) => const DiagnosticExportScreen(),
           ),
         ]),
-        _SettingsGroup(title: '识别与应用', children: [
+        _SettingsGroup(title: '用量与应用', children: [
           _SettingsLink(icon: SettingsCategory.intelligence.icon,
             title: SettingsCategory.intelligence.title,
             destination: (_) => const SettingsCategoryScreen(category: SettingsCategory.intelligence)),
@@ -676,11 +674,12 @@ class AiSettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) => Scaffold(
     appBar:MomoAppBar.adaptive(context,title:const Text('AI 模型与权限')),
     body:ListView(padding:const EdgeInsets.all(16),children:[
-      const NasAiModels(),
       SwitchListTile.adaptive(title:const Text('允许 AI 提议应用操作'),
         subtitle:const Text('所有写操作仍须逐次确认。关闭后只读。'),
         value:ref.watch(aiInventoryPermissionProvider).valueOrNull ?? false,
         onChanged:(value)=>ref.read(settingsServiceProvider).setValue('ai_allow_inventory_writes',value.toString())),
+      const SizedBox(height: 16),
+      const NasAiModels(),
     ]));
 }
 

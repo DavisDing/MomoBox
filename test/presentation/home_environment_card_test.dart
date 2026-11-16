@@ -32,6 +32,25 @@ void main() {
       });
     }
   }
+  testWidgets('different HA sensors share a freshness line; stale humidity stays distinct', (tester) async {
+    final now = DateTime.utc(2026, 11, 16, 8);
+    for (final stale in [false, true]) {
+      await tester.pumpWidget(ProviderScope(key: ValueKey(stale), overrides: [
+        homeEnvironmentProvider.overrideWith((ref) => AsyncData(HomeEnvironment(
+          indoorTemperature: EnvironmentReading(23, '客厅温度传感器', now),
+          indoorHumidity: EnvironmentReading(48, '客厅湿度传感器',
+            now.subtract(const Duration(seconds: 2)), stale: stale)))),
+        environmentClockProvider.overrideWith((ref) => Stream.value(now)),
+      ], child: const MaterialApp(home: Scaffold(body: HomeEnvironmentCard()))));
+      await tester.pumpAndSettle();
+      expect(find.text('HA · 刚刚'), findsOneWidget);
+      expect(find.text('湿度：HA · 刚刚'), findsNothing);
+      expect(find.text('湿度：HA · 上次数据'), stale ? findsOneWidget : findsNothing);
+      expect(find.text('湿度 48%'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
   testWidgets('separate weather sources and stale status remain visible',(tester) async {
     final now=DateTime.utc(2026,11,9,8);
     await tester.pumpWidget(ProviderScope(overrides:[

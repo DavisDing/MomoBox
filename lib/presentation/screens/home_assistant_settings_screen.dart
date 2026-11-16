@@ -31,6 +31,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
   String? _hydratedIntegrationId;
   bool _formDirty = false;
   String? _permissionRole;
+  bool _showReadOnlyEntities = false;
 
   @override
   void initState() {
@@ -501,6 +502,10 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
   Widget _buildEntitiesCard(SmartHomeState state) {
     final entities = _canManageIntegration && state.entityCatalog.isNotEmpty
         ? state.entityCatalog : state.entities;
+    final controller = ref.read(smartHomeControllerProvider.notifier);
+    final controllable = entities.where((entity) => controller.grantableCommands(entity).isNotEmpty).toList();
+    final readOnly = entities.where((entity) => controller.grantableCommands(entity).isEmpty).toList();
+    final visibleEntities = _showReadOnlyEntities ? readOnly : controllable;
     return Card(
       // Feedback can appear above this section after a grant or a failure.
       // Keep the same subtree so expanded rows do not collapse and clamp the
@@ -518,7 +523,6 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
                 const Expanded(
                   child: Text('实体权限与状态', style: TextStyle(fontWeight: FontWeight.bold, fontSize: MomoTextSize.body)),
                 ),
-                if (entities.isNotEmpty) Text('${entities.length} 个实体', style: const TextStyle(fontSize: MomoTextSize.caption, color: Colors.grey)),
               ],
             ),
             const SizedBox(height: 6),
@@ -533,7 +537,11 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
                 icon: const Icon(Icons.search_rounded),
                 label: const Text('发现实体'),
               ),
+              SizedBox(height: 12 + MediaQuery.textScalerOf(context).scale(MomoTextSize.caption)),
               DropdownButtonFormField<String>(
+                isExpanded: true,
+                isDense: false,
+                itemHeight: null,
                 initialValue: _permissionRole ?? ref.read(nasAccountProvider).family.current?.membership.role,
                 decoration: const InputDecoration(labelText: '授权角色'),
                 items: const [
@@ -543,8 +551,27 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
                 ],
                 onChanged: state.isLoading ? null : (value) => setState(() => _permissionRole = value),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 16),
               if (state.catalogError != null) Text(state.catalogError!),
+            ],
+            if (entities.isNotEmpty) ...[
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: Text('可控制 (${controllable.length})'),
+                    selected: !_showReadOnlyEntities,
+                    onSelected: (_) => setState(() => _showReadOnlyEntities = false),
+                  ),
+                  ChoiceChip(
+                    label: Text('只读数据 (${readOnly.length})'),
+                    selected: _showReadOnlyEntities,
+                    onSelected: (_) => setState(() => _showReadOnlyEntities = true),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
             ],
             if (state.isLoading && entities.isEmpty)
               const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()))
@@ -558,8 +585,11 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
               const _EmptyHint(icon: Icons.devices_other_outlined, text: '尚未发现实体。请点击“发现实体”重试，并检查 HA 地址和令牌。')
             else if (entities.isEmpty)
               const _EmptyHint(icon: Icons.devices_other_outlined, text: '当前没有可显示的实体，或账号没有查看权限。')
+            else if (visibleEntities.isEmpty)
+              _EmptyHint(icon: Icons.devices_other_outlined,
+                text: _showReadOnlyEntities ? '暂无只读数据实体。' : '暂无可控制实体。')
             else
-              ...entities.map((entity) => _buildEntityTile(state, entity)),
+              ...visibleEntities.map((entity) => _buildEntityTile(state, entity)),
           ],
         ),
       ),
@@ -603,7 +633,7 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
                 _statusChip('域：${entity.domain}'),
                 if (entity.areaName?.trim().isNotEmpty == true) _statusChip('区域：${entity.areaName}'),
                 if (remoteState != null) _statusChip('读取：${_formatTime(remoteState.fetchedAt)}'),
-                if (entity.isControllable) _statusChip('支持控制') else _statusChip('只读'),
+                if (commands.isNotEmpty) _statusChip('支持控制') else _statusChip('只读'),
               ],
             ),
           ),
@@ -626,26 +656,27 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
               activeThumbColor: Theme.of(context).colorScheme.primary,
               onChanged: state.isLoading || !_canManageIntegration ? null : (value) => _updatePermission(permission, canView: value),
             ),
-            SwitchListTile.adaptive(
-              key: _permissionAnchor(permission, control: true),
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              title: const Text('允许控制实体', style: TextStyle(fontSize: MomoTextSize.caption)),
-              subtitle: Text(
-                permission.allowedCommands.isNotEmpty
-                    ? '允许命令：${permission.allowedCommands.join('、')}'
-                    : commands.isEmpty ? '当前设备没有已支持的控制命令'
-                    : '开启后允许：${commands.join('、')}',
-                style: const TextStyle(fontSize: MomoTextSize.caption),
+            if (commands.isNotEmpty || permission.canControl)
+              SwitchListTile.adaptive(
+                key: _permissionAnchor(permission, control: true),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: const Text('允许控制实体', style: TextStyle(fontSize: MomoTextSize.caption)),
+                subtitle: Text(
+                  permission.allowedCommands.isNotEmpty
+                      ? '允许命令：${permission.allowedCommands.join('、')}'
+                      : commands.isEmpty ? '关闭此实体的控制授权'
+                      : '开启后允许：${commands.join('、')}',
+                  style: const TextStyle(fontSize: MomoTextSize.caption),
+                ),
+                value: permission.canControl,
+                activeThumbColor: Theme.of(context).colorScheme.primary,
+                onChanged: state.isLoading || !_canManageIntegration || !permission.canView ||
+                        (!permission.canControl && commands.isEmpty)
+                    ? null
+                    : (value) => _updatePermission(permission, canControl: value,
+                        allowedCommands: permission.allowedCommands.isNotEmpty ? permission.allowedCommands : commands),
               ),
-              value: permission.canControl,
-              activeThumbColor: Theme.of(context).colorScheme.primary,
-              onChanged: state.isLoading || !_canManageIntegration || !permission.canView ||
-                      (!permission.canControl && commands.isEmpty)
-                  ? null
-                  : (value) => _updatePermission(permission, canControl: value,
-                      allowedCommands: permission.allowedCommands.isNotEmpty ? permission.allowedCommands : commands),
-            ),
           ],
         ],
       ),

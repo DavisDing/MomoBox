@@ -67,6 +67,12 @@ void main() {
       ) async {
         await _mount(tester, width, scale, DeviceType.light);
         final scroll = find.byType(Scrollable).first;
+        final badge = find.text('HA 已连接');
+        expect(badge, findsOneWidget);
+        expect(tester.getCenter(badge).dx,
+            greaterThan(tester.getCenter(find.text('家居')).dx));
+        expect(tester.getBottomLeft(badge).dy,
+            lessThan(tester.getTopLeft(find.byKey(const ValueKey('home-environment-summary'))).dy));
         await tester.scrollUntilVisible(
           find.text(_notice),
           200,
@@ -81,13 +87,8 @@ void main() {
                 )
                 .first;
         final header = find.text('家里的设备');
-        final badge = find.text('HA 已连接');
         expect(
           tester.getTopLeft(notice).dy - tester.getBottomLeft(header).dy,
-          greaterThanOrEqualTo(12),
-        );
-        expect(
-          tester.getTopLeft(notice).dy - tester.getBottomLeft(badge).dy,
           greaterThanOrEqualTo(12),
         );
         await tester.scrollUntilVisible(

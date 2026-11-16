@@ -970,3 +970,22 @@ PostgreSQL16.4源码经官方SHA256校验，编译到 `/private/tmp/momobox-pg16
 - 初轮发现依赖已删除标语/重复计数的旧断言，按已确认需求改为可点击提问和现有筛选计数。通知错误卡重试移除后，目标可能移到旧滚动偏移上方；夹具回到顶部重新查找，并继续验证真实排程、权限、不含原生错误正文及操作可达性。没有屏蔽错误、降低业务断言或提高超时。首轮另有异步超时，后续同类回归正常通过，未由此修改同步/环境服务。
 - PASS：生产五页面在深浅色下使用隔离库存/设备夹具真实渲染，已目视复核两张总览及设置页；最终截图由上述12项复跑生成，路径`/private/tmp/momobox-ui-cleanup-captures/`，预览副本保存到本会话visualizations目录。截图中的NAS/HA和库存均为测试数据，不是现场服务或安装包。
 - NOT_EXECUTED：Android/iOS构建、新APK安装、系统读屏/原生手势、真实NAS/HA/AI、远端CI、提交/推送/发布。必要的真实状态、错误、隐私授权和操作确认仍保留；长期交互规则更新建议见DESIGN第56节。
+
+
+## 2026-11-16：家居页状态与提示整合
+
+基线HEAD fde6395，开始时工作区干净。本批对应REQUIREMENT第39节、DESIGN第57节，修改SmartHomeScreen、HomeEnvironmentCard及两份相关界面回归源码。未改控制器、服务、权限、依赖、schema或后端，未提交/推送/发布。
+
+- PASS：源码调用链复核及git diff --check。状态按钮继续使用真实SmartHomeState，点击复用原refresh，刷新中禁用；权限提示仍调用dismissPermissionNotice，错误优先级保留。来源合并仍保留不同新鲜度和来源差异。
+- NOT_EXECUTED：Flutter analyze/test/build、新截图、APK及真机/NAS验收。PATH无Flutter/Dart，之前/private/tmp中的Flutter3.47.9工具链与依赖缓存已被清理，.dart_tool/package_config.json只残留不存在的旧路径；未下载安装工具或修改系统环境。前轮截图和测试通过记录仅属于前轮版本，不作为本轮证据。
+- 待执行的已有检查入口：flutter analyze --no-pub；flutter test --no-pub test/presentation/home_environment_card_test.dart test/presentation/populated_home_layout_test.dart test/presentation/page_navigation_regression_test.dart test/presentation/mobile_redesign_test.dart test/presentation/home_ha_quick_actions_test.dart test/presentation/v2_visual_capture_test.dart。重点核对320/390宽度、3.4倍字号、深浅色、右上角状态刷新/重复点击、权限说明关闭和错误保留；夹具不是实际NAS/设备证明。
+
+
+## 2026-11-16：设置模型搜索与连接归组
+
+基线fde6395，开始时已有第39节/第57节家居页等七个文件的未提交改动，均保留。本批修改settings_screen、nas_ai_models、home_assistant_settings_screen及对应需求/设计与回归源码。
+
+- PASS：git diff --check；源码检查核对三个连接配置入口在同一菜单且条码入口仅一处，AI授权开关位于目录之前；模型过滤不写设置、不改变不可用判断；实体筛选不调用权限写入或删除接口。HA控制/查看仍走原服务端授权与命令白名单。
+- 回归源码已更新：模型搜索大小写/空白、无结果、清空、仅选择才写设置；同一菜单包含三个服务；真实NAS HTTP夹具区分灯和只读温度传感器、只读仍有查看授权、切换分类不写权限，原逐角色授权/控制/撤销断言保留。没有放宽已有业务断言。
+- NOT_EXECUTED：Flutter analyze/test/build、新截图、窄屏大字号真实渲染及NAS/HA/模型实机验收。当前PATH无Flutter/Dart，旧临时工具链/缓存已不存在；未安装依赖或修改系统环境。前轮通过记录不覆盖本批。
+- 后续入口：flutter analyze --no-pub；flutter test --no-pub test/presentation/nas_ai_model_selection_test.dart test/presentation/settings_hierarchy_test.dart test/presentation/nas_setup_flow_test.dart test/presentation/mobile_redesign_test.dart test/presentation/ai_workflows_test.dart。重点检查键盘下模型列表可滚动、授权角色与发现按钮不重叠，以及只读传感器授权后环境数据仍可选。未提交/推送/发布，无新增依赖/schema或后端改动。

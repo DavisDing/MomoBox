@@ -24,7 +24,11 @@ class HomeEnvironmentCard extends ConsumerWidget {
     Widget place({required String label, required IconData icon,
       required EnvironmentReading? main, required EnvironmentReading? secondary,
       required String secondaryLabel, required String secondaryUnit}) {
-      final source = main?.source.startsWith('Open-Meteo') == true ? '公共天气' : 'HA';
+      String stamp(EnvironmentReading reading) =>
+          '${reading.source.startsWith('Open-Meteo') ? '公共天气' : 'HA'} · ${age(reading)}';
+      final reading = main ?? secondary;
+      final showSecondaryStamp = main != null && secondary != null &&
+          (stamp(main) != stamp(secondary) || main.isStale(now) != secondary.isStale(now));
       return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
         Row(children: [Icon(icon,size:14,color:theme.colorScheme.primary), const SizedBox(width:4),
           Flexible(child:Text(label,style:theme.textTheme.bodySmall))]),
@@ -34,10 +38,10 @@ class HomeEnvironmentCard extends ConsumerWidget {
           Text('$secondaryLabel ${number(secondary,secondaryUnit)}',style:theme.textTheme.bodySmall),
         ]),
         const SizedBox(height:5),
-        Text(main == null ? '未接入' : '$source · ${age(main)}',style:theme.textTheme.bodySmall?.copyWith(
-          color: main?.isStale(now) == true ? theme.colorScheme.error : theme.colorScheme.onSurfaceVariant)),
-        if (secondary != null && (secondary.source != main?.source || secondary.observedAt != main?.observedAt))
-          Text('$secondaryLabel：${secondary.source.startsWith('Open-Meteo') ? '公共天气' : 'HA'} · ${age(secondary)}',
+        Text(reading == null ? '未接入' : stamp(reading),style:theme.textTheme.bodySmall?.copyWith(
+          color: reading?.isStale(now) == true ? theme.colorScheme.error : theme.colorScheme.onSurfaceVariant)),
+        if (secondary != null && showSecondaryStamp)
+          Text('$secondaryLabel：${stamp(secondary)}',
             style:theme.textTheme.bodySmall?.copyWith(color:secondary.isStale(now)
               ? theme.colorScheme.error : theme.colorScheme.onSurfaceVariant)),
       ]);

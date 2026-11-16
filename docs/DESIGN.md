@@ -1967,3 +1967,23 @@ HomeScreen以“今日”和日期起始，排序按钮并入页头，移除与�
 AssistantScreen移除欢迎标语、功能解释及输入区上下提示，保留可点击问题、模型选择、会话工具、发送和逐次确认。SettingsScreen移除重复家庭卡，导航行可省略副标题且最小高度56，当前主题值保留；字号页以选项和实际预览表达效果。家居未配置状态用直接按钮进入原HomeAssistantSettingsScreen，保留真实状态及错误提示。提醒页去除空态标语及各分组通用建议，商品详情按原批次分组表达效期排序，无重复说明。
 
 没有新增依赖、schema、API、账号/权限或业务服务变更。已有局域网权限相关未提交代码及文档保持；相关文案测试改为验证当前计数、可点击问题和原跳转。通知错误卡移除后页面会缩短，回归从顶部重新定位测试提醒，避免沿旧偏移仅向下找已位于上方的控件；仍核验重试真实排程、权限和操作可达性。首页同步位置夹具使用更矮视口，保留大于100的滚动量及同步后三轮位置不变断言。验证结果见VALIDATION；AI_CONTEXT长期建议是记录“直接标题、按布局表达关系、无重复常驻说明”的交互规则。
+
+
+## 57. 2026-11-16：家居页状态与提示整合
+
+对应REQUIREMENT第39节。SmartHomeScreen页头使用可伸缩的标题/操作两列，将原HA状态标签改为右上角TextButton.icon；状态颜色取自ColorScheme，至少44dp点击区。点击复用SmartHomeController.refresh，isLoading显示进度和“刷新中…”，禁用重复点击；下拉刷新仍保留原设备及环境刷新路径。设备区只保留标题。
+
+权限提示沿用MomoCard，改为14dp圆角、surfaceContainerLow背景、18dp权限图标和14dp正文行高1.5；关闭按钮保留44dp点击区。正文占剩余宽度并随字号增高。命令/联动/离线错误使用errorContainer/onErrorContainer，不开放权限提示之外的关闭入口，不变更授权或控制器逻辑。
+
+HomeEnvironmentCard按用户实际看到的来源类别与age文案、stale状态判断是否重复，不再比较传感器原ID和精确时间。温度缺失但湿度存在时，来源行使用有效湿度；不同来源/显示时效/过期状态仍单独展示。不新增依赖、数据结构或后端改动。现有布局夹具调整为验证状态位于页头右侧，补充不同传感器的相同文案合并及湿度过期区分用例，均待Flutter环境运行。AI_CONTEXT长期架构无需修改。
+
+
+## 58. 2026-11-16：模型搜索、HA实体分类与连接菜单
+
+对应REQUIREMENT第40节。保留第57节尚未提交的家居页工作。
+
+NasAiModels改为ConsumerStatefulWidget，控制器在销毁时释放，查询trim/toLowerCase后过滤当前模型ID；不可用判断仍对完整目录执行，NAS默认选项保留，查询不调用保存或推理。仅用户选择沿用原家庭作用域设置键；错误分类和刷新入口不变。共享选择弹层预留键盘insets，列表支持拖动收起键盘。AiSettingsScreen将操作许可开关放在目录前。
+
+HA实体卡在发现按钮后按文字缩放留距，授权角色字段isExpanded、isDense=false、itemHeight=null，允许长角色名称换行。用现有grantableCommands划分可控制/只读，两个ChoiceChip过滤本地目录，保留角色筛选、现有展开key、权限锚点及授权后的滚动保持；只读无授权实体不再显示无效控制开关，已有canControl仍保留撤销入口。分类不修改实体、权限或环境配置；查看授权继续可用，sensor/weather来源链仍在环境服务使用。
+
+SettingsCategory.household显示为“连接与服务”，同组提供NAS、HA、外部条码API；内部枚举、路由与存储键不变。intelligence分类移除条码后改为AI用量，保留用量记录入口。不新增依赖、schema、后端或同步协议。AI_CONTEXT长期交互事实建议补充连接入口归组及模型目录可搜索；源码验证与运行结果见VALIDATION。
