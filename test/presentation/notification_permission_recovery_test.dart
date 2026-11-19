@@ -89,36 +89,42 @@ void main() {
           ).join('\n'),
         ),
       );
-      expect(find.textContaining('TypeToken'), findsNothing);
-      expect(find.textContaining('java.lang'), findsNothing);
-      expect(find.byType(SnackBar), findsNothing);
-      expect(find.textContaining('无法刷新通知状态或重排提醒'), findsOneWidget);
       expect(find.text('已允许'), findsOneWidget);
       expect(plugin.pending, isEmpty);
+      expect(find.byType(SnackBar), findsNothing);
+
+      final scrollable = find.byType(Scrollable);
+      final errorMessage = find.textContaining('无法刷新通知状态或重排提醒');
+      // At large text scales the permission card can take up the first
+      // viewport. Reach the inline error before checking its contents.
+      await tester.scrollUntilVisible(errorMessage, 150, scrollable: scrollable);
+      await tester.pumpAndSettle();
+      expect(errorMessage, findsOneWidget);
+      expect(find.textContaining('TypeToken', skipOffstage: false), findsNothing);
+      expect(find.textContaining('java.lang', skipOffstage: false), findsNothing);
       expect(tester.takeException(), isNull);
+
       plugin.cancelFailure = null;
-      await tester.scrollUntilVisible(
-        find.text('重试'),
-        150,
-        scrollable: find.byType(Scrollable).first,
+      final retry = find.widgetWithText(TextButton, '重试');
+      await tester.scrollUntilVisible(retry, 150, scrollable: scrollable);
+      await tester.pumpAndSettle();
+      expect(retry.hitTestable(), findsOneWidget);
+      await tester.tap(retry);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('notification-error'), skipOffstage: false),
+        findsNothing,
       );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('重试'));
-      await tester.pumpAndSettle();
-      expect(find.textContaining('无法刷新通知状态或重排提醒'), findsNothing);
       expect(plugin.pending, hasLength(1));
       expect(service.permissionRequests, 0);
       // Removing the error card can move the shorter action above the old
       // scroll offset. Start at the top before checking forward navigation.
-      tester.state<ScrollableState>(find.byType(Scrollable).first).position.jumpTo(0);
+      tester.state<ScrollableState>(scrollable).position.jumpTo(0);
       await tester.pump();
-      await tester.scrollUntilVisible(
-        find.text('发送测试提醒'),
-        150,
-        scrollable: find.byType(Scrollable).first,
-      );
+      final testReminder = find.text('发送测试提醒');
+      await tester.scrollUntilVisible(testReminder, 150, scrollable: scrollable);
       await tester.pumpAndSettle();
-      expect(find.text('发送测试提醒').hitTestable(), findsOneWidget);
+      expect(testReminder.hitTestable(), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }
