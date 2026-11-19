@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../../domain/models/nas_models.dart';
 import 'nas_api_error.dart';
+import 'nas_endpoint.dart';
 
 typedef NasAccessTokenRefresh = Future<String?> Function();
 
@@ -20,7 +21,7 @@ class NasApiClient {
     Duration requestTimeout = const Duration(seconds: 15),
   })  : _client = client ?? http.Client(),
         _requestTimeout = requestTimeout,
-        _baseUri = _parseBaseUri(baseUrl);
+        _baseUri = nasApiBaseUri(baseUrl);
 
   final http.Client _client;
   final Duration _requestTimeout;
@@ -326,27 +327,4 @@ class NasApiClient {
       throw NasApiError.invalidResponse(error);
     }
   }
-}
-
-Uri _parseBaseUri(String baseUrl) {
-  final normalized = baseUrl.trim();
-  if (normalized.isEmpty) {
-    throw NasApiError.invalidBaseUrl('NAS 地址不能为空。');
-  }
-  final parsed = Uri.tryParse(normalized);
-  if (parsed == null ||
-      (parsed.scheme != 'http' && parsed.scheme != 'https') ||
-      parsed.host.isEmpty ||
-      parsed.userInfo.isNotEmpty ||
-      parsed.query.isNotEmpty ||
-      parsed.fragment.isNotEmpty) {
-    throw NasApiError.invalidBaseUrl('NAS 地址必须是有效的 http 或 https 地址。');
-  }
-
-  var path = parsed.path.replaceFirst(RegExp(r'/+$'), '');
-  if (path.endsWith('/api/v1')) {
-    path = path.substring(0, path.length - '/api/v1'.length);
-  }
-  if (path == '/') path = '';
-  return parsed.replace(path: '$path/api/v1/');
 }

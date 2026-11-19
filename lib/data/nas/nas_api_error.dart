@@ -17,6 +17,8 @@ enum NasApiErrorKind {
   unknown,
 }
 
+enum NasApiErrorReason { currentFamilyMissing, familyInviteRequired }
+
 /// A normalized, safe-to-display API error.
 ///
 /// Response bodies, request headers and request payloads are deliberately not
@@ -28,6 +30,7 @@ class NasApiError implements Exception {
     required this.message,
     this.statusCode,
     this.code,
+    this.reason,
     this.requestId,
     Map<String, dynamic>? details,
     this.cause,
@@ -37,6 +40,7 @@ class NasApiError implements Exception {
   final String message;
   final int? statusCode;
   final String? code;
+  final NasApiErrorReason? reason;
   final String? requestId;
   final Map<String, dynamic>? details;
   final Object? cause;
@@ -75,6 +79,13 @@ class NasApiError implements Exception {
       kind: _kindForStatus(response.statusCode),
       statusCode: response.statusCode,
       code: _redact(code),
+      reason: switch ((response.statusCode, code, message)) {
+        (404, 'NOT_FOUND', 'current family was not found') =>
+          NasApiErrorReason.currentFamilyMissing,
+        (403, 'FORBIDDEN', 'family already initialized; invite required') =>
+          NasApiErrorReason.familyInviteRequired,
+        _ => null,
+      },
       message: _knownMessage(code, message) ?? _redact(message) ?? _defaultMessage(response.statusCode),
       requestId: _redact(requestId),
       details: details,

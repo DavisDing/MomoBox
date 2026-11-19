@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -9,9 +10,11 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:momo_box/application/nas_connection_service.dart';
 import 'package:momo_box/application/settings_service.dart';
+import 'package:momo_box/core/database/app_database.dart';
 import 'package:momo_box/data/nas/nas_api_client.dart';
 import 'package:momo_box/domain/models/nas_models.dart';
 import 'package:momo_box/presentation/controllers/nas_account_controller.dart';
+import 'package:momo_box/presentation/controllers/nas_setup_controller.dart';
 import 'package:momo_box/presentation/controllers/providers.dart';
 import 'package:momo_box/presentation/screens/home_assistant_settings_screen.dart';
 import 'package:momo_box/presentation/screens/nas_settings_screen.dart';
@@ -26,6 +29,12 @@ http.Response _json(Map<String, Object?> body, [int status = 200]) =>
       status,
       headers: {'content-type': 'application/json; charset=utf-8'},
     );
+
+http.Response _apiError(int status, String code, String message) =>
+    _json({'error': {'code': code, 'message': message}}, status);
+
+http.Response _missingFamily() =>
+    _apiError(404, 'NOT_FOUND', 'current family was not found');
 
 http.Response _auth(String token) => _json({
   'user': {'id': 'user', 'email': 'user@example.com', 'nickname': '家人'},
@@ -46,6 +55,76 @@ http.Response _family([String role = 'owner']) => _json({
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => FlutterSecureStorage.setMockInitialValues({}));
+
+  for (final proxy404 in [false, true]) {
+    test('family route 404 is visible and does not initialize: proxy=$proxy404', () async {
+      final requests = <String>[];
+      var routeFixed = false;
+      final fixture = _Fixture((request) async {
+        requests.add('${request.method} ${request.url.path}');
+        return switch (request.url.path) {
+          '/api/v1/auth/login' => _auth('access'),
+          '/api/v1/families/current' => routeFixed
+              ? _missingFamily()
+              : proxy404
+                  ? http.Response('<html>Not found</html>', 404)
+                  : _apiError(404, 'NOT_FOUND', 'route not found'),
+          '/api/v1/families/initialize' =>
+            _apiError(403, 'FORBIDDEN', 'family already initialized; invite required'),
+          _ => throw StateError('unexpected request: ${request.url.path}'),
+        };
+      });
+      final db = AppDatabase.forTesting(NativeDatabase.memory());
+      final setup = _setupController(fixture, db);
+      addTearDown(fixture.close);
+      addTearDown(db.close);
+      addTearDown(setup.dispose);
+
+      await fixture.login();
+      expect(fixture.account.state.isAuthenticated, isTrue);
+      expect(fixture.account.state.family.status, NasFamilyStatus.error);
+      await setup.prepare();
+      expect(setup.state.status, NasSetupStatus.failed);
+      expect(setup.state.message, contains('HTTP 404'));
+      expect(requests, [
+        'POST /api/v1/auth/login',
+        'GET /api/v1/families/current',
+        'GET /api/v1/families/current',
+      ]);
+
+      routeFixed = true;
+      requests.clear();
+      await setup.prepare();
+      expect(setup.state.status, NasSetupStatus.inviteRequired);
+      expect(setup.state.message, contains('邀请码'));
+      expect(requests, [
+        'GET /api/v1/families/current',
+        'POST /api/v1/families/initialize',
+      ]);
+    });
+  }
+
+  test('initialization endpoint 404 is not an invite requirement', () async {
+    final fixture = _Fixture((request) async {
+      return switch (request.url.path) {
+        '/api/v1/auth/login' => _auth('access'),
+        '/api/v1/families/current' => _missingFamily(),
+        '/api/v1/families/initialize' => _apiError(404, 'NOT_FOUND', 'route not found'),
+        _ => throw StateError('unexpected request: ${request.url.path}'),
+      };
+    });
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    final setup = _setupController(fixture, db);
+    addTearDown(fixture.close);
+    addTearDown(db.close);
+    addTearDown(setup.dispose);
+
+    await fixture.login();
+    expect(fixture.account.state.family.status, NasFamilyStatus.missing);
+    await setup.prepare();
+    expect(setup.state.status, NasSetupStatus.failed);
+    expect(setup.state.message, contains('HTTP 404'));
+  });
 
   testWidgets('Android17主动连接申请权限时禁用重复点击，拒绝后公网NAS仍可连接', (tester) async {
     final response = Completer<String>();
@@ -130,7 +209,7 @@ void main() {
             final path = request.url.path;
             if (path.endsWith('/auth/login')) return _auth('without-family');
             if (path.endsWith('/families/current')) {
-              return familyCreated ? _family() : _json({}, 404);
+              return familyCreated ? _family() : _missingFamily();
             }
             if (path.endsWith('/families') || path.endsWith('/families/join')) {
               familyCalls++;
@@ -200,7 +279,7 @@ void main() {
           final path = request.url.path;
           if (path.endsWith('/auth/login')) return _auth('access');
           if (path.endsWith('/families/current')) {
-            return role == null ? _json({}, 404) : _family(role);
+            return role == null ? _missingFamily() : _family(role);
           }
           if (path.endsWith('/families/members')) return _json({'members': []});
           if (path.endsWith('/devices')) return _json({'devices': []});
@@ -535,6 +614,16 @@ void main() {
     );
   }
 }
+
+NasSetupController _setupController(_Fixture fixture, AppDatabase db) =>
+    NasSetupController(
+      database: db,
+      accountReader: () => fixture.account,
+      refreshAccess: () async => fail('must not bind a workspace'),
+      workspaceReady: () async => fail('must not sync'),
+      engineReader: () => null,
+      importReader: () => null,
+    );
 
 class _Fixture {
   _Fixture(Future<http.Response> Function(http.Request) handler, {

@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../../domain/models/nas_sync_models.dart';
 import '../../domain/models/nas_import_models.dart';
 import 'nas_api_error.dart';
+import 'nas_endpoint.dart';
 
 typedef NasSyncAccessTokenProvider = String? Function();
 typedef NasSyncTokenRefresh = Future<String?> Function();
@@ -27,7 +28,7 @@ class NasSyncApi {
     Duration requestTimeout = const Duration(seconds: 15),
   })  : _client = client ?? http.Client(),
         _requestTimeout = requestTimeout,
-        _baseUri = _parseBaseUri(baseUrl),
+        _baseUri = nasApiBaseUri(baseUrl),
         _accessToken = accessToken,
         _accessTokenProvider = accessTokenProvider,
         _refreshHandler = refreshHandler,
@@ -53,7 +54,11 @@ class NasSyncApi {
   }
 
   bool matchesEndpoint(String endpoint) {
-    try { return _baseUri == _parseBaseUri(endpoint); } catch (_) { return false; }
+    try {
+      return _baseUri == nasApiBaseUri(endpoint);
+    } on NasApiError {
+      return false;
+    }
   }
 
   /// Also guard database-only work after a network response has been parsed.
@@ -430,22 +435,4 @@ void _requireNonEmpty(String value, String field) {
       FormatException('$field must be a non-empty string'),
     );
   }
-}
-
-Uri _parseBaseUri(String baseUrl) {
-  final normalized = baseUrl.trim();
-  if (normalized.isEmpty) throw NasApiError.invalidBaseUrl('NAS 地址不能为空。');
-  final parsed = Uri.tryParse(normalized);
-  if (parsed == null ||
-      (parsed.scheme != 'http' && parsed.scheme != 'https') ||
-      parsed.host.isEmpty ||
-      parsed.userInfo.isNotEmpty ||
-      parsed.query.isNotEmpty ||
-      parsed.fragment.isNotEmpty) {
-    throw NasApiError.invalidBaseUrl('NAS 地址必须是有效的 http 或 https 地址。');
-  }
-  var path = parsed.path.replaceFirst(RegExp(r'/+$'), '');
-  if (path.endsWith('/api/v1')) path = path.substring(0, path.length - '/api/v1'.length);
-  if (path == '/') path = '';
-  return parsed.replace(path: '$path/api/v1/');
 }

@@ -40,7 +40,7 @@ class _Account extends NasAccountController {
       ),
       family:
           family == null
-              ? const NasFamilyState()
+              ? const NasFamilyState(status: NasFamilyStatus.missing)
               : NasFamilyState(
                 status: NasFamilyStatus.available,
                 current: NasFamilyResponseDto(
@@ -61,7 +61,13 @@ class _Account extends NasAccountController {
   @override
   Future<void> initializeFamily() async {
     creates++;
-    if (!inviteRequired) select(family: 'family');
+    if (inviteRequired) {
+      state = state.copyWith(
+        family: const NasFamilyState(status: NasFamilyStatus.inviteRequired),
+      );
+    } else {
+      select(family: 'family');
+    }
   }
 
   @override

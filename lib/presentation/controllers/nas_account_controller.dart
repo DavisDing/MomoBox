@@ -34,6 +34,7 @@ enum NasFamilyStatus {
   loading,
   available,
   missing,
+  inviteRequired,
   error,
 }
 
@@ -413,7 +414,7 @@ class NasAccountController extends StateNotifier<NasAccountState> {
         await _expireSession(error.message);
         return;
       }
-      if (error.kind == NasApiErrorKind.notFound) {
+      if (error.reason == NasApiErrorReason.currentFamilyMissing) {
         state = state.copyWith(
           family: const NasFamilyState(status: NasFamilyStatus.missing),
           devices: const NasDeviceState(),
@@ -421,13 +422,14 @@ class NasAccountController extends StateNotifier<NasAccountState> {
         );
         return;
       }
+      final message = _familyConnectionMessage(error);
       state = state.copyWith(
         family: NasFamilyState(
           status: NasFamilyStatus.error,
-          errorMessage: error.message,
+          errorMessage: message,
         ),
         devices: const NasDeviceState(),
-        errorMessage: error.message,
+        errorMessage: message,
       );
     } catch (error) {
       if (_isCurrentSession(revision)) await _handleFailure(error);
@@ -513,8 +515,12 @@ class NasAccountController extends StateNotifier<NasAccountState> {
 
   Future<void> initializeFamily() async {
     final service = _familyService;
-    if (service == null || !state.isAuthenticated || state.family.hasFamily) return;
-    await _changeFamily(service.initializeFamily);
+    if (service == null ||
+        !state.isAuthenticated ||
+        state.family.status != NasFamilyStatus.missing) {
+      return;
+    }
+    await _changeFamily(service.initializeFamily, initializing: true);
   }
 
   Future<void> joinFamily(String code) async {
@@ -747,8 +753,9 @@ class NasAccountController extends StateNotifier<NasAccountState> {
   }
 
   Future<void> _changeFamily(
-    Future<NasFamilyResponseDto> Function() operation,
-  ) async {
+    Future<NasFamilyResponseDto> Function() operation, {
+    bool initializing = false,
+  }) async {
     if (!state.isAuthenticated) {
       _setFamilyError('请先登录 NAS 账号。');
       return;
@@ -796,11 +803,27 @@ class NasAccountController extends StateNotifier<NasAccountState> {
       if (!_isCurrentSession(revision)) return;
       if (error is NasApiError && error.isUnauthorized) {
         await _expireSession(error.message);
+      } else if (initializing && error is NasApiError) {
+        if (error.reason == NasApiErrorReason.familyInviteRequired) {
+          state = state.copyWith(
+            family: NasFamilyState(
+              status: NasFamilyStatus.inviteRequired,
+              errorMessage: error.message,
+            ),
+          );
+        } else {
+          _setFamilyError(_familyConnectionMessage(error));
+        }
       } else {
         _setFamilyError(_messageFor(error));
       }
     }
   }
+
+  String _familyConnectionMessage(NasApiError error) =>
+      error.kind == NasApiErrorKind.notFound
+          ? 'NAS 家庭接口未找到（HTTP 404）。请核对 NAS 地址、反向代理及 App 与后端版本。'
+          : error.message;
 
   Future<void> _ensureConfigured(int revision) async {
     final connectionState = await _connection.loadState();

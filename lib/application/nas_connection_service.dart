@@ -2,8 +2,9 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-import '../application/settings_service.dart';
+import '../data/nas/nas_endpoint.dart';
 import '../services/local_network_permission_service.dart';
+import 'settings_service.dart';
 
 const nasServerUrlKey = 'nas_server_url';
 const nasFamilyCodeKey = 'nas_family_code';
@@ -129,32 +130,36 @@ class NasConnectionService {
 
     try {
       final response = await _client
-          .get(Uri.parse('$normalized/api/v1/health'))
+          .get(nasApiBaseUri(normalized).resolve('health'))
           .timeout(const Duration(seconds: 6));
-      Map<String, dynamic>? body;
-      if (response.body.isNotEmpty) {
-        try {
-          final decoded = jsonDecode(response.body);
-          if (decoded is Map<String, dynamic>) body = decoded;
-        } catch (_) {
-          // The HTTP status remains the source of truth for older servers.
-        }
-      }
 
       if (response.statusCode == 200) {
-        final serviceStatus = body?['status']?.toString();
-        if (serviceStatus == null || serviceStatus == 'ok') {
-          return const NasHealthResult(status: NasConnectionStatus.connected, message: '健康检查通过。');
+        try {
+          final body = jsonDecode(response.body);
+          if (body is Map<String, dynamic> && body['status'] == 'ok') {
+            return const NasHealthResult(
+              status: NasConnectionStatus.connected,
+              message: '健康检查通过。',
+            );
+          }
+        } on FormatException {
+          // An HTTP 200 from a proxy login or fallback page is not NAS health.
         }
-        return NasHealthResult(
-          status: NasConnectionStatus.unavailable,
-          message: 'NAS 服务已响应，但当前状态为 $serviceStatus。',
+        return const NasHealthResult(
+          status: NasConnectionStatus.failed,
+          message: '服务已响应，但不是有效的 MomoBox 健康检查响应。请核对 NAS 地址和反向代理。',
         );
       }
       if (response.statusCode == 503) {
         return const NasHealthResult(
           status: NasConnectionStatus.unavailable,
           message: 'NAS 服务可访问，但数据库当前不可用。',
+        );
+      }
+      if (response.statusCode == 404) {
+        return const NasHealthResult(
+          status: NasConnectionStatus.failed,
+          message: 'NAS 健康检查接口未找到（HTTP 404）。请核对 NAS 地址、端口和反向代理。',
         );
       }
       return NasHealthResult(
@@ -172,16 +177,8 @@ class NasConnectionService {
     }
   }
 
-  static String? normalizeServerUrl(String value) {
-    final trimmed = value.trim();
-    if (trimmed.isEmpty) return null;
-    final uri = Uri.tryParse(trimmed);
-    if (uri == null || !uri.hasScheme || (uri.scheme != 'http' && uri.scheme != 'https') || uri.host.isEmpty) {
-      return null;
-    }
-    final path = uri.path.replaceFirst(RegExp(r'/+$'), '');
-    return uri.replace(path: path).toString().replaceFirst(RegExp(r'/+$'), '');
-  }
+  static String? normalizeServerUrl(String value) =>
+      tryParseNasServerUri(value)?.toString();
 
   static String _friendlyError(Object error) {
     if (error is http.ClientException) return '无法连接 NAS，请检查地址和局域网网络。';

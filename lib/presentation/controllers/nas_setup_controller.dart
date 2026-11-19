@@ -100,20 +100,36 @@ class NasSetupController extends StateNotifier<NasSetupState> {
         account.snapshot.isAuthenticated &&
         account.snapshot.auth.user?.id == user &&
         account.serverIdentity == endpoint;
-    if (!current() || user == null || endpoint == null) return;
+    if (!current() ||
+        user == null ||
+        endpoint == null ||
+        account.snapshot.isLoading) {
+      return;
+    }
     state = const NasSetupState(
       NasSetupStatus.preparing,
       message: '正在连接家庭并同步数据…',
     );
     try {
-      if (!account.snapshot.family.hasFamily) await account.initializeFamily();
+      final status = account.snapshot.family.status;
+      if (status == NasFamilyStatus.error || status == NasFamilyStatus.idle) {
+        await account.refreshFamilyAndDevices();
+      }
+      if (!current()) return;
+      if (account.snapshot.family.status == NasFamilyStatus.missing) {
+        await account.initializeFamily();
+      }
       if (!current()) return;
       if (!account.snapshot.family.hasFamily) {
+        final inviteRequired =
+            account.snapshot.family.status == NasFamilyStatus.inviteRequired;
         state = NasSetupState(
-          NasSetupStatus.inviteRequired,
+          inviteRequired ? NasSetupStatus.inviteRequired : NasSetupStatus.failed,
           message:
               account.snapshot.family.errorMessage ??
-              '此 NAS 已有家庭，请输入创建者提供的邀请码加入。',
+              (inviteRequired
+                  ? '此 NAS 已有家庭，请输入创建者提供的邀请码加入。'
+                  : '未能连接 NAS 家庭，请重试。'),
         );
         return;
       }
