@@ -93,6 +93,8 @@ class _ProductDetailBody extends ConsumerWidget {
           label: '按最早到期优先消耗（最多 $fefoAvailableQuantity ${item.unit}）',
           icon: const Icon(Icons.remove),
         ),
+        const SizedBox(height: 8),
+        _AddToShoppingButton(item: item),
         const SizedBox(height: 24),
         const _SectionTitle(title: '批次'),
         const SizedBox(height: 10),
@@ -152,6 +154,49 @@ class _ProductDetailBody extends ConsumerWidget {
       if (context.mounted) _showMessage(context, '消耗失败：$error');
     }
   }
+}
+
+class _AddToShoppingButton extends ConsumerStatefulWidget {
+  const _AddToShoppingButton({required this.item});
+
+  final InventoryItem item;
+
+  @override
+  ConsumerState<_AddToShoppingButton> createState() => _AddToShoppingButtonState();
+}
+
+class _AddToShoppingButtonState extends ConsumerState<_AddToShoppingButton> {
+  bool _busy = false;
+
+  Future<void> _addToShopping() async {
+    if (_busy) return;
+    final item = widget.item;
+    final shortfall = item.lowStockThreshold - item.totalStock;
+    setState(() => _busy = true);
+    try {
+      await ref.read(shoppingServiceProvider).addOrMerge(
+        itemName: item.name,
+        targetQuantity: shortfall > 0 ? shortfall : 1,
+        reason: '来自商品详情',
+        productId: item.id,
+        category: item.category,
+      );
+      if (mounted) _showMessage(context, '已将 ${item.name} 加入采购清单。');
+    } catch (error) {
+      if (mounted) _showMessage(context, '加入采购失败：$error');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => MomoCapsuleButton(
+    onPressed: _busy ? null : _addToShopping,
+    isLoading: _busy,
+    isPrimary: false,
+    label: '加入采购清单',
+    icon: const Icon(Icons.add_shopping_cart_outlined),
+  );
 }
 
 class _ProductOverview extends StatelessWidget {

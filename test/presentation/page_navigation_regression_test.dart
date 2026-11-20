@@ -104,25 +104,27 @@ void main() {
         final columns = count.clamp(1, 3);
         final first = find.byKey(const ValueKey('inventory-card-product-0'));
         final firstRect = tester.getRect(first);
+        expect(find.text('物品'), findsOneWidget);
         expect(find.text('全部物品 · $count'), findsOneWidget);
-        expect(tester.getSize(find.byKey(const ValueKey('inventory-photo-product-0'))).height, columns == 1 ? 72 : columns == 2 ? 80 : 64);
+        final photoSide = columns == 1 ? 44.0 : columns == 2 ? 28.0 : 22.0;
+        expect(tester.getSize(find.byKey(const ValueKey('inventory-photo-product-0'))), Size.square(photoSide));
+        // Narrow three-column cards may wrap the name and location onto
+        // extra lines instead of truncating them to meet the height budget.
+        final maxHeight = columns == 1 ? 90 : columns == 3 && width == 320 ? 114 : 96;
+        expect(firstRect.height, lessThanOrEqualTo(maxHeight), reason: '$columns columns at $width');
         for (var index = 1; index < columns; index++) {
           final rect = tester.getRect(find.byKey(ValueKey('inventory-card-product-$index')));
           expect(rect.top, closeTo(firstRect.top, .01));
           expect(rect.width, closeTo(firstRect.width, .01));
-          expect(rect.left, closeTo(firstRect.left + index * (firstRect.width + 8), .01));
+          expect(rect.left, closeTo(firstRect.left + index * (firstRect.width + 6), .01));
         }
         if (count > columns) {
           final nextRect = tester.getRect(find.byKey(ValueKey('inventory-card-product-$columns')));
-          expect(nextRect.top, greaterThan(firstRect.bottom));
+          expect(nextRect.top, closeTo(firstRect.bottom + 8, .01));
           expect(nextRect.left, closeTo(firstRect.left, .01));
           expect(nextRect.width, closeTo(firstRect.width, .01));
         }
-        if (columns > 1) {
-          expect(firstRect.height, lessThan(250));
-          expect(tester.getSize(find.byKey(const ValueKey('inventory-consume-product-0'))), const Size(44, 44));
-          expect(tester.getSize(find.byKey(const ValueKey('inventory-more-product-0'))), const Size(44, 44));
-        }
+        expect(find.descendant(of: first, matching: find.byType(IconButton)), findsNothing);
         expect(tester.takeException(), isNull);
       }
       await tester.pumpWidget(const SizedBox.shrink());

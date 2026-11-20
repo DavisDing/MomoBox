@@ -8,9 +8,14 @@ import '../controllers/providers.dart';
 
 /// Product photography always comes from the saved product, never demo art.
 class MomoProductImage extends ConsumerWidget {
-  const MomoProductImage({required this.productId, super.key});
+  const MomoProductImage({
+    required this.productId,
+    this.placeholderIconSize = 32,
+    super.key,
+  });
 
   final String productId;
+  final double placeholderIconSize;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -25,7 +30,7 @@ class MomoProductImage extends ConsumerWidget {
     Widget placeholder() => Center(
       child: Icon(
         Icons.inventory_2_outlined,
-        size: 32,
+        size: placeholderIconSize,
         color: Theme.of(context).colorScheme.primary.withValues(alpha: .6),
       ),
     );
