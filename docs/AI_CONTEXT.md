@@ -11,8 +11,9 @@
 ## 2. 技术栈
 
 - Frontend：Flutter / Dart
-- NAS backend：Go 1.22 + PostgreSQL 16；独立 Go module 位于 `backend/`
+- NAS backend：Go 1.22 + PostgreSQL 19 部署基线；独立 Go module 位于 `backend/`
 - NAS deployment：生产 Compose 从公开 GHCR 拉取 `.env` 明确指定的固定版本标签或 digest；本地开发可通过 override 以 `backend/` 为独立 Docker build context；Compose 仅包含 `momo-backend` 与 `postgres`；生产入口为 `deploy/nas/docker-compose.yaml`，开发叠加文件为 `deploy/nas/docker-compose.local-build.yaml`
+- 2026-11-23 数据库容器源码更新：默认和 `with-postgres` 固定官方 PostgreSQL 19.0 多架构镜像，使用新卷 `postgres19_data:/var/lib/postgresql`，不接入或迁移旧卷。外部模板不管理数据库，可连接使用当前 `postgres:latest` 的 PG19；显式备份、恢复和更新要求固定的 PG19 client，与服务器主版本一致。真实 PG19 容器及 UGOS 验收另行记录。
 - 2026-11-10 容器启动源码更新：Dockerfile 默认以 root 执行 `start`，在监听前复用 migration runner 初始化专属空库或执行缺失迁移，之后进入 `serve` 只读门禁；`schema-check` 仍只读。有对象但无台账、台账缺口/未知版本/名称或checksum异常拒绝自动处理。此条替代历史“默认启动不迁移”的现状描述；具体发布和NAS验收另行核对，不能由源码推断。
 - 2026-11-11 默认端口源码更新：后端监听 `0.0.0.0:18473`，Docker EXPOSE 及四套 Compose 的容器端口统一18473，默认宿主映射 `18473:18473`；健康检查读取同一HTTP_ADDR。旧部署需同步调整原HTTP_ADDR、映射及宿主端口设置，保存的App连接地址不自动修改；发布和现场验收另行记录。
 - State：flutter_riverpod
@@ -152,7 +153,7 @@ JSON 为核心数据备份，导入/导出过滤设备身份、NAS/HA绑定、�
 - checkpoint 最终设计口径：相同 cursor 复用有效 token；cursor 改变生成新 token、清除旧确认并重新确认。最新后端源码已见该分支；不等于真实数据库验证通过。bootstrap 业务行和 cursor 使用同一 repeatable-read 快照，设备/checkpoint 锁用于协调 refresh 与确认。
 - 批次状态与网络竞态保护：`discarded` 映射 `isDiscarded=true`，`active/used_up/expired` 不映射为报废；`used_up/discarded` 必须零 quantity；`expired` 的过期性按真实 expiryDate 判定，不伪造日期；未知状态或冲突字段 fail closed。refresh 网络返回后必须核对原 pending/checkpoint 与当前用户选择，不能覆盖新选择的 `keep_local_only`。代码已落盘并完成源码复核，回归测试/验收未执行，不作为已通过事实。
 - NAS migration `0005_reminder_defaults_and_cursor_order.sql` 只将新提醒默认改为 30，不更新旧记录（包括已有 7）。`change_log` 使用全局 `BEFORE INSERT FOR EACH STATEMENT` 事务 advisory lock，在 identity cursor 分配前串行化并持锁至提交/回滚，sequence 为 `CACHE 1`。跨家庭写入也会竞争，吞吐/等待和部署窗口必须实测；部署、备份与补偿回滚约束见决策记录，不删除或修改已应用 migration 的 checksum。
-- CI 后端 job 已配置 PostgreSQL 16 service 和 `MOMO_TEST_DATABASE_URL`，执行 `go test -count=1 ./...`、`go vet ./...`。真实 PG 回归为显式 URL opt-in，未设置会 skip；SQL 文本契约与模拟事务测试不能替代真实并发验证。当前工作区的该 CI/真实 PG 测试尚未运行。
+- CI 后端 job 已配置官方 `postgres:latest` service（2026-11-23 为 PostgreSQL 19.0）和 `MOMO_TEST_DATABASE_URL`，执行 `go test -count=1 ./...`、`go vet ./...`。真实 PG 回归为显式 URL opt-in，未设置会 skip；SQL 文本契约与模拟事务测试不能替代真实并发验证。本次 PG19 CI/真实 PG 测试尚未运行。
 - 本轮提醒/库存补修的 UI 范围仅首页及提醒详情两处标题改为“临期提醒”和通知正文；其余既有未提交 HA/UI 改动不归入这两项决策的 UI 变更。消费历史恢复、出站分类 UUID 创建/映射、旧分类升级兼容、HA scene/script 与联动事件闭环仍未完成。
 - 2026-10-07 本机缺 Flutter、Dart、Go、gofmt、Docker、psql；本轮代码未验收，不声称测试通过或生产可用。2026-10-07 已执行的脚本/YAML/空白与 326 条非 package Dart 目标存在性检查已记入 `docs/VALIDATION.md`，这些不是代码验收；326 与历史 508 的扫描口径分开，历史成功不覆盖当前工作区。后续代码/CI/实机结果须依据实际执行补充。
 

@@ -36,7 +36,7 @@ class VariantOperationsTests(unittest.TestCase):
         return safety.ScriptSafetyTests.run_script(self, name, scenario, state, self.options + extra)
 
     def proof(self, **overrides):
-        values = dict(format='1', database='momo', role='momo_user', pg_major='18',
+        values = dict(format='1', database='momo', role='momo_user', pg_major='19',
                       server_address='10.0.0.2:5432', database_oid='42', cluster='12345',
                       client_image=DIGEST, schema_signature='ledger-v1', sha256='a' * 64,
                       candidate_database='momo_candidate',
@@ -47,7 +47,7 @@ class VariantOperationsTests(unittest.TestCase):
         return ('--exclusive-writer', '--restore-proof', str(path), '--proof-max-age', '3600')
 
     def source_meta(self, **overrides):
-        data = dict(format='1', database='momo', role='momo_user', pg_major='18',
+        data = dict(format='1', database='momo', role='momo_user', pg_major='19',
                     server_address='10.0.0.2:5432', database_oid='42', client_image=DIGEST,
                     schema_signature='ledger-v1',
                     sha256=hashlib.sha256((self.root / 'input.dump').read_bytes()).hexdigest())
@@ -88,7 +88,7 @@ class VariantOperationsTests(unittest.TestCase):
         env_file = self.deploy / '.env'
         original = env_file.read_text()
         for content in (original + 'PG_CLIENT_IMAGE=' + DIGEST + '\n',
-                        original.replace(DIGEST, 'docker.io/library/postgres:16')):
+                        original.replace(DIGEST, 'docker.io/library/postgres:latest')):
             env_file.write_text(content)
             result = safety.ScriptSafetyTests.run_script(self, 'backup', extra=(
                 '--deployment-dir', str(self.deploy), '--project-name', 'chosen-momo',

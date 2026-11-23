@@ -1,6 +1,6 @@
 # UGREEN NAS：复用现有 PostgreSQL 的单文件部署
 
-只部署 MomoBox 后端，连接 NAS 上已经运行的 PostgreSQL 18。不部署、升级或停止 PostgreSQL，不挂载或修改现有 PostgreSQL 数据卷。不使用 .env，所有部署参数直接填在 docker-compose.yaml。
+只部署 MomoBox 后端，连接 NAS 上已经运行的 PostgreSQL 19，可复用当前的官方 `postgres:latest`（截至 2026-11-23 为 19.0）。不部署、升级或停止 PostgreSQL，不挂载或修改现有 PostgreSQL 数据卷。不使用 `.env`，所有部署参数直接填在 `docker-compose.yaml`。
 
 模板使用2026-11-03从公开GHCR解析的固定manifest digest；更新时需明确更换digest，不随latest漂移。发布流程会把实际构建版本写入二进制。**容器自动初始化需要包含 `start` 入口的新镜像；本次改动尚未发布，现有固定 digest 不会自动获得此能力。** 它基于项目已有 external-postgres 方案精简，不是正式发布资产的逐字副本。
 
@@ -11,7 +11,7 @@
 
 库存/账号基础部署填写以上两处；启用AI时还需填写下述URL和Key。容器内部和宿主映射默认均为 `18473`，完整映射为 `18473:18473`；有冲突时仅修改左侧宿主端口。模板中的固定 `HTTP_ADDR` 与映射右端一致，内置健康检查读取同一配置。应用版本由镜像构建时写入，Compose 不再填写 APP_VERSION；镜像内置 APP_ENV=production。更新现有项目时同步调整 NAS 保存的映射和旧 `HTTP_ADDR`，重建后端容器后生效。
 
-已有 PG18 实例可直接复用，不要求更换 latest 标签或重新部署。MomoBox 需要自己的数据库和非超级用户角色，不与 LiteLLM 或其他业务共用同一数据库/账号。若专属库和角色已经存在，无需重复创建；若不存在，由管理员在现有实例中创建即可，不是重新部署数据库。迁移需要该库的对象创建权限和 pgcrypto 扩展，扩展权限不足时由管理员在该专属库处理。
+已经运行 PostgreSQL 19 时，无需更换标签或重新部署。若 `latest` 日后切换大版本，不要直接用新镜像挂载旧数据卷。MomoBox 需要自己的数据库和非超级用户角色，不与 LiteLLM 或其他业务共用同一数据库/账号。若专属库和角色已经存在，无需重复创建；若不存在，由管理员在现有实例中创建即可。迁移需要该库的对象创建权限和 pgcrypto 扩展，扩展权限不足时由管理员在该专属库处理。
 
 ## AI / LiteLLM配置
 
@@ -64,4 +64,4 @@ dc run --rm --no-deps momo-backend schema-check
 
 后端退出逻辑及Compose保留15秒优雅收尾。临时文件使用镜像内的 `/tmp`，持久化密钥继续使用 `./data:/data`；后端内存上限768MiB、Go软内存目标512MiB，日志按10m×3轮转。按本次审计修复要求，模板恢复只读根文件系统、64MiB临时目录、cap_drop及禁止提权；持久化密钥仍保存在可写data挂载中。请在 NAS 上创建 data 目录并确保镜像的运行用户可读写。
 
-本机验证结果见 `docs/VALIDATION.md` 对应的密钥自动管理记录。没有访问你的 NAS、改变 PostgreSQL 或执行迁移；实际镜像构建、PG18 权限/迁移、同步、UGOS 运行和备份恢复验收仍为 NOT_EXECUTED。
+本机验证结果见 `docs/VALIDATION.md` 对应的密钥自动管理记录。实际镜像构建、PG19 权限/迁移、同步、UGOS 运行和备份恢复验收仍为 NOT_EXECUTED。

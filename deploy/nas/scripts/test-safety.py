@@ -52,7 +52,7 @@ if command == 'run' and 'momo-pg-client' in args:
         if scenario=='identity-failure': sys.exit(1)
         print('database='+os.environ['MOMO_EXPECTED_DATABASE'])
         print('role='+os.environ['MOMO_EXPECTED_ROLE'])
-        print('pg_major=18\nserver_address=10.0.0.2:5432\ndatabase_oid=42')
+        print('pg_major=19\nserver_address=10.0.0.2:5432\ndatabase_oid=42')
         if os.environ['MOMO_DATABASE_MODE']=='managed': print('cluster=12345')
         sys.exit(0)
     if operation=='schema-signature':

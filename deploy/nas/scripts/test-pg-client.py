@@ -17,13 +17,13 @@ name=Path(sys.argv[0]).name
 with open(os.environ['CALLS'], 'a') as out:
     out.write(json.dumps([name]+sys.argv[1:])+'\n')
 if name=='pg_dump' and '--version' in sys.argv:
-    print('pg_dump (PostgreSQL) '+os.environ.get('CLIENT_MAJOR','18')+'.6'); sys.exit(0)
+    print('pg_dump (PostgreSQL) '+os.environ.get('CLIENT_MAJOR','19')+'.0'); sys.exit(0)
 if name=='psql':
     sql=sys.argv[-1]
     if os.environ.get('QUERY_ERROR'):
         print('private diagnostic',file=sys.stderr); sys.exit(1)
     if 'server_version_num' in sql:
-        print('momo|momo_user|'+os.environ.get('SERVER_MAJOR','18'))
+        print('momo|momo_user|'+os.environ.get('SERVER_MAJOR','19'))
     elif 'NOT rolsuper' in sql: print(os.environ.get('ROLE_ALLOWED','true'))
     elif 'pg_stat_activity' in sql: print(os.environ.get('CLIENTS','0'))
     elif 'pg_class' in sql: print(os.environ.get('OBJECTS','0'))
@@ -108,22 +108,32 @@ class PgClientTests(unittest.TestCase):
     def test_probe_checks_actual_identity_and_keeps_password_out_of_arguments(self):
         result = self.run_client('probe')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('pg_major=18', result.stdout)
+        self.assertIn('pg_major=19', result.stdout)
         self.assertIn('database_oid=42', result.stdout)
         self.assertNotIn('private', self.calls.read_text() + result.stdout + result.stderr)
         self.assertEqual((self.root / 'momo.pgpass').stat().st_mode & 0o777, 0o600)
         self.assertEqual((self.root / 'momo-service.conf').stat().st_mode & 0o777, 0o600)
 
-    def test_pg16_probe_and_managed_cluster(self):
-        result = self.run_client('probe', CLIENT_MAJOR='16', SERVER_MAJOR='16', MOMO_DATABASE_MODE='managed')
+    def test_pg19_probe_and_managed_cluster(self):
+        result = self.run_client('probe', MOMO_DATABASE_MODE='managed')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('pg_major=16\n', result.stdout)
+        self.assertIn('pg_major=19\n', result.stdout)
         self.assertIn('cluster=12345\n', result.stdout)
 
+    def test_unsupported_client_versions_refuse_before_connecting(self):
+        for major in ('16', '18', '20'):
+            with self.subTest(major=major):
+                self.calls.write_text('')
+                result = self.run_client('dump', CLIENT_MAJOR=major, SERVER_MAJOR=major)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('require a PostgreSQL 19 client', result.stderr)
+                calls = [json.loads(line) for line in self.calls.read_text().splitlines()]
+                self.assertEqual(calls, [['pg_dump', '--version']])
+
     def test_major_mismatch_and_elevated_role_refuse_before_dump(self):
-        for env in ({'SERVER_MAJOR': '16'}, {'ROLE_ALLOWED': 'false'},
-                    {'CLIENT_MAJOR': '17', 'SERVER_MAJOR': '17'}):
+        for env in ({'SERVER_MAJOR': '18'}, {'SERVER_MAJOR': '20'}, {'ROLE_ALLOWED': 'false'}):
             with self.subTest(env=env):
+                self.calls.write_text('')
                 result = self.run_client('dump', **env)
                 self.assertNotEqual(result.returncode, 0)
                 calls = [json.loads(line) for line in self.calls.read_text().splitlines()]

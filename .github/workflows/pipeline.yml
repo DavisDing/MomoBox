@@ -262,7 +262,8 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        # Exercise the same official tag as the external NAS deployment.
+        image: postgres:latest
         env:
           POSTGRES_USER: momobox_test
           POSTGRES_PASSWORD: ci_test_only
@@ -270,7 +271,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U momobox_test -d momobox_test"
+          --health-cmd "pg_isready -h 127.0.0.1 -U momobox_test -d momobox_test"
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       MOMO_TEST_DATABASE_URL: postgres://momobox_test:ci_test_only@127.0.0.1:5432/momobox_test?sslmode=disable

@@ -1,17 +1,17 @@
-# 两种独立 NAS Compose 模板（2026-10-11）
+# 两种独立 NAS Compose 模板
 
-> 已生成配置文件并完成静态检查；Docker、PG18、UGOS、外部数据库及恢复演练 **NOT_EXECUTED**。发布流程已接入这两套模板及操作指南，但新提交的远端发布尚待验证；这些模板不是PostgreSQL大版本升级工具。
+> PostgreSQL 19 的 Docker、UGOS、外部数据库及恢复演练尚未执行。发布流程已接入这两套模板，但未验证本次远端发布。这些模板不是 PostgreSQL 大版本升级工具。
 
 ## 选择一套，不要同时导入
 
 | 文件夹 | 适用情况 | 本项目管理范围 |
 | --- | --- | --- |
-| `with-postgres` | 全新部署，尚无可复用 PostgreSQL | 后端 + PostgreSQL 18.6 + 新数据卷 |
+| `with-postgres` | 全新部署，尚无可复用 PostgreSQL | 后端 + PostgreSQL 19.0 + 新数据卷 |
 | `external-postgres` | 已有 PostgreSQL，例如 LiteLLM 使用的实例 | 仅 MomoBox 后端；不创建、停止、升级或清理现有 PostgreSQL |
 
-两套都是完整的 `docker-compose.yaml`，不是 overlay，不要用多个 `-f` 合并。原 `deploy/nas/docker-compose.yaml` 保持 PG16.4 及原数据卷路径，镜像现按官方 registry digest 固定；共享运维脚本已增加显式部署上下文，原无参数入口保留兼容。
+两套都是完整的 `docker-compose.yaml`，不是 overlay，不要用多个 `-f` 合并。`with-postgres` 与默认 Compose 使用相同的 PostgreSQL 镜像和卷配置；两套独立模板的运维命令均使用显式部署上下文。
 
-“最新”指2026-10-11已核实稳定版本 **18.6**，固定镜像 `postgres:18.6-alpine3.24`，不使用浮动 `latest` 或19 beta。版本需定期审核，但不能随App升级自动跨PostgreSQL大版本。PG18官方镜像卷挂载 `/var/lib/postgresql`；本模板使用新命名卷 `postgres18_data`，不接旧的 `postgres_data`。既有PG16/17数据须另做经过验证的dump/restore或pg_upgrade，不能直接替换镜像/挂原数据目录，也不能用`down -v`处理启动错误。
+截至 2026-11-23，官方 `postgres:latest` 指向 PostgreSQL **19.0**。自带模板将 `postgres:19.0-alpine3.24` 固定到多架构 digest，避免重新拉取时意外跨大版本。新的 `postgres19_data` 挂到 `/var/lib/postgresql`，不接入旧版本数据卷。需要保留旧数据时，另行备份并验证迁移；不要用 `down -v` 处理启动错误。
 
 ## 绿联 NAS 导入和环境配置
 
@@ -30,7 +30,7 @@
 - 现有migration使用`public` schema、`pgcrypto`扩展及触发器，核对专属库中创建/使用权限；扩展不可用时由管理员在MomoBox库中解决，不用给App超级用户兜底。真实migration权限回归待执行。
 - `DATABASE_NETWORK`填写已存在的Docker网络名称，数据库容器须已连接该网络；`DATABASE_URL`的host填写该网络中数据库的唯一服务别名，例如`shared-postgres`。容器内`localhost`不是NAS/其他数据库容器。同名服务有歧义时由管理员设置唯一网络alias，模板不自动修改LiteLLM网络。
 - 模板固定采用**同一Docker主机的现有共享网络**作为连接方案；不自动探测本机实例，也不会连接失败后创建新库。网络不存在、库不存在或密码/权限错误，须先修正，不会降级到新数据库。
-- 外部数据库版本不强制改为18.6；原源码/CI基线是PG16，PG18属于待验收的新部署版本。目标外部版本和补丁号需记录并实测migration/幂等/并发cursor；不能宣称所有版本已经兼容。
+- 当前部署和运维基线为 PostgreSQL 19，后端 CI 使用官方 `postgres:latest`。外部模板不控制镜像版本，也不会替你升级数据库；如果 `latest` 日后切换大版本，先验证并安排数据库升级，不要直接用新镜像启动旧数据卷。
 - URL中的`sslmode=disable`仅是同机受控Docker网络示例。外部主机/TLS或证书挂载不在此模板方案内，另行配置来源控制和`verify-full`证书校验，不开放公网5432。
 
 ## 全新 MomoBox 数据库的初始化
@@ -80,14 +80,9 @@ dc ps
 
 ## 运维 client 是首次升级的前置条件
 
-external 模板只启动后端，不含 PostgreSQL 工具。**首次升级前**下载同版本 operations 包并配置显式 `--pg-client-image`；直接运行无参数 `update.sh` 会选择旧版默认部署，不能用于这两套模板。
+external 模板只启动后端，不含 PostgreSQL 工具。首次升级前下载同版本 operations 包；直接运行无参数 `update.sh` 会选择默认部署，不能用于这两套模板。
 
-2026-11-02 已从官方 Docker Hub registry 核对的多架构 manifest digest（部署前仍须核对 NAS 架构和目标服务器主版本）：
-
-- PG16：`docker.io/library/postgres@sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c`（16.4-alpine）。
-- PG18：`docker.io/library/postgres@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5`（18.6-alpine3.24）。
-
-external `.env.example` 已提供匹配 PG16 的 `PG_CLIENT_IMAGE`；服务器为 PG18 时将其改为上表的 PG18 digest。共享脚本从 `.env` 中严格读取且校验该单一键，不执行或加载其他环境文件代码；也可显式传 `--pg-client-image IMAGE` 覆盖。同样必须明确 project、deployment-dir、database-mode、库和角色。先成功执行 backup 和候选空库恢复演练，再带证明执行 update；不跳过备份。
+两套 `.env.example` 的 `PG_CLIENT_IMAGE` 都使用官方 PostgreSQL 19.0 Alpine 多架构 digest（`docker.io/library/postgres@sha256:8b0ff4cdf221f0c53d7fcda681d3b461be725c492cd881c5ec9c0ad25023f188`）。客户端和服务器必须同为 19，即使外部服务器使用 Debian 版 `latest`。脚本只读取该单一键，不执行 `.env`；也可用 `--pg-client-image IMAGE` 指定审核过的 PG19 digest。仍须明确 project、deployment-dir、database-mode、库和角色。先执行备份和候选空库恢复演练，再带证明执行更新。
 
 ## 容器加固与容量
 
@@ -95,12 +90,8 @@ external `.env.example` 已提供匹配 PG16 的 `PG_CLIENT_IMAGE`；服务器�
 
 ## 已有数据升级、备份与恢复
 
-共享脚本已支持显式选择managed/external部署，完整参数、固定client digest、专属角色、备份sidecar、独立空候选库恢复演练证明、更新准入与隔离规则见[../OPERATIONS.md](../OPERATIONS.md)。新模式禁止`--skip-backup`，不可无参数调用原PG16默认入口。
+共享脚本支持显式选择 managed/external 部署，参数、备份与恢复隔离规则见 [运维说明](../OPERATIONS.md)。显式模式禁止 `--skip-backup`，不能以无参数的默认入口替代。
 
-这是源码实现与离线故障模拟状态，不是Docker/PG18/外部数据库或UGOS验收通过。上线前须完成真实权限、网络、备份、候选恢复与失败隔离矩阵；D-07正式灾备、restore epoch及生产切库仍未实现。
+上线前须完成真实 PG19、外部专属角色权限、网络、备份、候选恢复和失败隔离验收；D-07 正式灾备、restore epoch 及生产切库仍未实现。
 
 发布资产：每个版本分别提供 `MomoBox-v版本-with-postgres-docker-compose.yaml` / `-with-postgres.env.example`、`-external-postgres-docker-compose.yaml` / `-external-postgres.env.example` 和 `-nas-variants-README.md`；共享脚本及操作指南另打包为 `MomoBox-v版本-nas-operations.tar.gz`，统一纳入 SHA256SUMS。下载选中模式的 Compose/env 并重命名为 `docker-compose.yaml` / `.env`；不要同时导入两套。新提交实际发布仍待验证。
-
-后续验收入口：真实PG16+PG18、外部专属角色、UGOS与远端发布；本次不修改现有数据库。
-
-参考：PostgreSQL版本策略与18.6发布说明；Docker官方PostgreSQL镜像PG18卷路径；Compose启动顺序和网络契约。

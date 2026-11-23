@@ -53,11 +53,11 @@ flutter test
 
 | 场景 | 入口 |
 | --- | --- |
-| 既有的标准双服务部署（后端 + PostgreSQL 16） | [NAS 部署说明](deploy/nas/README.md) |
-| 新建独立 PostgreSQL 18，或复用已有 PostgreSQL 实例 | [NAS 变体说明](deploy/nas/variants/README.md) |
-| 绿联 NAS 上复用现有 PG18、无需 `.env` 的单文件模板 | [UGREEN 外部 PostgreSQL 模板](deploy/nas/ugreen-v0.12.67/README.md) |
+| 标准双服务部署（后端 + PostgreSQL 19，使用全新数据卷） | [NAS 部署说明](deploy/nas/README.md) |
+| 新建独立 PostgreSQL 19，或复用已有 PostgreSQL 19 实例 | [NAS 变体说明](deploy/nas/variants/README.md) |
+| 绿联 NAS 上复用 `postgres:latest`（当前为 19.0）、无需 `.env` 的单文件模板 | [UGREEN 外部 PostgreSQL 模板](deploy/nas/ugreen-v0.12.67/README.md) |
 
-复用已有 PostgreSQL 时，为 MomoBox 创建专属数据库和非超级用户角色；容器内不能用 `localhost` 指向另一个数据库容器。UGREEN 单文件模板会首次生成并持久化内部密钥到 `data/secrets.json`，应与数据库一起备份；该模板要求使用包含该功能的已发布镜像，实际 NAS/PG18/Docker 验收仍待执行。NAS 必选与模型目录接口需要同时更新 App 和后端镜像；模板中旧的固定 digest 不会获得未发布的新代码。
+复用已有 PostgreSQL 时，为 MomoBox 创建专属数据库和非超级用户角色；容器内不能用 `localhost` 指向另一个数据库容器。UGREEN 单文件模板会首次生成并持久化内部密钥到 `data/secrets.json`，应与数据库一起备份；该模板要求使用包含该功能的已发布镜像，实际 NAS/PG19/Docker 验收仍待执行。NAS 必选与模型目录接口需要同时更新 App 和后端镜像；模板中旧的固定 digest 不会获得未发布的新代码。
 
 ## 目录概览
 

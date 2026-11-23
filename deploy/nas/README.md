@@ -2,6 +2,8 @@
 
 本目录只部署 `momo-backend` 和 PostgreSQL。生产 NAS 从 GitHub Container Registry（GHCR）拉取由 `.env` 明确指定的、可追溯的版本标签或 digest；不再默认使用可变的 `latest`。Home Assistant 是外部服务，由后端通过家庭管理员配置的地址和加密 Token 访问；模型运行器不在本 Compose 中，NAS 后端连接部署者配置的外部 AI 网关；手机只选择 NAS 提供的模型。
 
+**自带数据库现为 PostgreSQL 19.0。** 新卷 `postgres19_data` 挂到 `/var/lib/postgresql`，首次启动是空库。不要用此 Compose 或 `update.sh` 给有数据的旧大版本部署原地升级；它不会接入、迁移或删除旧卷。若要保留旧数据，另行备份并验证迁移。只想复用已有 `postgres:latest` 实例时，选下文的外部模板。
+
 ## 镜像与版本策略
 
 生产 Compose **不提供 `latest` 默认值**。必须在 `.env` 中显式设置镜像和应用版本，例如：
@@ -43,11 +45,11 @@ HA_TOKEN_ENCRYPTION_KEY=恰好32个ASCII字符
 
 创建项目后，先在 UGOS 的 Compose 编辑器中检查配置。包含2026-11-10自动启动改动的镜像默认执行 `start`：专属空库自动初始化，后续启动保留数据并只执行缺失迁移，校验通过后才监听 HTTP，无需在 Compose 添加初始化命令。旧镜像仍须显式 `migrate`；仅导入 YAML 不代表已部署新入口。已有业务数据升级继续按 `scripts/update.sh` 的备份、隔离和迁移流程处理。健康检查通过后访问 `http://NAS地址:映射端口/api/v1/health`。
 
-## 两种新增独立模板
+## 两种独立模板
 
-如需全新PostgreSQL18部署或复用LiteLLM已有PostgreSQL，参见 `variants/README.md`：`variants/with-postgres/docker-compose.yaml`（自带PG18.6）与`variants/external-postgres/docker-compose.yaml`（仅后端、复用现有Docker网络及专属库）。每套有独立`.env.example`。
+如需全新 PostgreSQL 19 部署或复用 LiteLLM 已有 PostgreSQL 19，参见 [变体说明](variants/README.md) 和对应的 `with-postgres`（自带）或 `external-postgres`（仅后端）模板。每套有独立 `.env.example`。
 
-下文无参数命令仍指本目录原PG16 Compose。新增模板使用同一套`scripts/`，但必须按[OPERATIONS.md](OPERATIONS.md)传入完整部署目录、project、模式、库/角色和固定PG client digest；不能直接无参数运行。新增运维入口已完成源码实现与离线故障模拟，PG18/外部库/UGOS真实验收仍未执行；现有部署不会自动换数据库或升级大版本。
+下文无参数命令指本目录的默认 PG19 Compose。独立模板使用同一套 `scripts/`，但须按 [运维说明](OPERATIONS.md) 显式传入部署目录、project、模式、库/角色和固定 PG client digest。PG19、外部库及 UGOS 的现场运行仍待验证。
 
 ## 首次部署
 
@@ -153,7 +155,7 @@ docker compose \
 
 这些服务的生命周期和网络可达性由用户自行管理。
 
-2026-11-02 审计修复：三套 Compose 均有 `json-file` 日志上限（每容器10m×3），自带 PostgreSQL 使用只读根文件系统、有界临时目录及最小启动 capabilities，镜像基础层固定官方 manifest digest。PG16版本和原数据卷路径未更改。`.env.example` 用同一份 POSTGRES_PASSWORD 展开 DATABASE_URL（推荐十六进制密码）；已有凭据不能直接重置。备份默认保留30份未固定归档，长期恢复点需 `.dump.keep`，参数和边界见 OPERATIONS。真实 Docker/UGOS 仍待验收。
+三套 Compose 均有 `json-file` 日志上限（每容器10m×3），自带 PostgreSQL 使用只读根文件系统、有界临时目录及最小启动 capabilities，镜像固定官方 manifest digest。`.env.example` 用同一份 POSTGRES_PASSWORD 展开 DATABASE_URL（推荐十六进制密码）；已有凭据不能直接重置。备份默认保留30份未固定归档，长期恢复点需 `.dump.keep`，参数和边界见 OPERATIONS。真实 Docker/UGOS 仍待验收。
 
 
 ### 图片/OCR与AI后端处理（2026-11-02）

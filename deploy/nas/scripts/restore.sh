@@ -19,7 +19,7 @@ usage() {
     cat <<USAGE
 Usage: $PROGRAM [--yes] [shared identity options] [--proof-output FILE] DUMP_FILE
 
-Without shared options, restore the original PG16 database configured in:
+Without shared options, restore the default managed database configured in:
   $COMPOSE_FILE
 
 Options:

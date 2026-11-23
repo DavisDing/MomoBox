@@ -1,6 +1,6 @@
 # NAS 运维入口（2026-10-22）
 
-同一套脚本支持原 PG16 默认目录、新建 managed PG18 部署，以及同主机 Docker 网络中的 external 专属 PG16/PG18 数据库。本文对应本次源码实现及离线测试；真实 Docker、PG18、外部角色和 UGOS 验收均为 **NOT_EXECUTED**。不要把脚本检查通过当作现场部署通过。
+同一套脚本的当前基线为 PostgreSQL 19，适用于默认双服务部署，以及同主机 Docker 网络中的显式 managed/external 部署。真实 Docker、PG19、外部角色和 UGOS 验收仍为 **NOT_EXECUTED**。不要用这些脚本原地升级 PostgreSQL 大版本。
 
 ## 取得同版本工具
 
@@ -8,7 +8,7 @@
 
 宿主需有 POSIX sh、Docker CLI 与 Compose、`mktemp`、`date`、`sed`、`wc`、`tr`、`cut` 和 `sha256sum` 或 `shasum`。宿主不需安装 PostgreSQL 工具或 Python；Python 仅用于开发/CI 离线测试。新模式用固定官方 PostgreSQL client 容器，内含 awk、psql、pg_dump 和 pg_restore。
 
-原模式继续从工具的 `scripts/..` 读取原 PG16 Compose 和 `.env`。若只下载工具包而未在其根目录安装原 Compose/env，不能直接无参数运行。新模式始终使用下述完整显式身份，不受调用工作目录影响。
+无参数模式从工具的 `scripts/..` 读取默认 Compose 和 `.env`。若只下载工具包而未在其根目录放置默认 PG19 Compose 和 `.env`，不能直接无参数运行。显式模式始终使用下述完整部署身份，不受调用工作目录影响。
 
 ## 固定部署身份与 client
 
@@ -36,7 +36,7 @@ momo_op() {
 
 使用导入 UGOS 时登记的真实 project 名；不要为了通过检查换成新名字。库名、角色名首版只支持字母、数字、下划线。脚本固定使用选中目录的 `docker-compose.yaml`、`.env`，不 source `.env`，也不打印展开后的含密钥配置。调用期间这两份文件改变会拒绝继续。
 
-`PG_CLIENT` 必须是 `docker.io/library/postgres@sha256:<64位小写hex>`。操作者负责审核该 digest、补丁版本及架构，脚本仅检查固定格式及运行时 `pg_dump` 与服务器主版本一致，并只接纳 16/18。digest 格式正确不证明镜像供应链已经审核。client 镜像须预先审核并准备可用；不可用时操作失败，不改用随机宿主工具。原 PG16 默认模式保持原容器内工具及原镜像/卷，本次不做 PostgreSQL 补丁或大版本升级。
+`PG_CLIENT` 必须是 `docker.io/library/postgres@sha256:<64位小写hex>`。操作者负责审核 digest、补丁版本及架构；脚本检查固定格式、`pg_dump` 主版本为 19 且与服务器主版本一致。镜像不可用时操作失败，不改用宿主工具。默认模式直接使用自带 PG19 容器内的工具，不从旧卷迁移。
 
 managed 比较后端 DSN 实际集群与选中 `postgres` 的 `system_identifier`，不只相信 `POSTGRES_DB`。external 不创建、启动、停止、迁移或清理共享 PostgreSQL 服务，client 只加入模板声明的 `database_network`，没有 Docker socket、host 网络或新数据卷。
 
@@ -102,10 +102,10 @@ proof 匹配当前 ledger 不代表新镜像一定兼容，最终仍依赖 migra
 
 `backup/update/restore` 共用选中部署目录的 `.momobox-deployment.lock`；嵌套备份必须持有同一上下文的临时 lease。未知任务保留锁，停写后的失败保持后端停止。不要直接删锁：先证明所有 backend/client one-off、宿主脚本与数据库任务已经结束，再按现场恢复流程处理。直接在 UGOS 启动可绕开脚本标记，因此隔离还依赖管理员遵守现场流程。
 
-原 PG16 无参数 restore 仍有原库 `--clean` 及终止目标会话的破坏性行为，执行前须另存备份；本次增加恢复隔离标记。新模式只恢复候选。所有模式都没有自动生产切库、restore epoch、会话撤权、App 离线意图审阅或完整 D-07 灾备，禁止将删除隔离标记当成灾备完成。
+默认无参数 restore 仍有原库 `--clean` 及终止目标会话的破坏性行为，执行前须另存备份。显式模式只恢复候选。所有模式都没有自动生产切库、restore epoch、会话撤权、App 离线意图审阅或完整 D-07 灾备，禁止将删除隔离标记当成灾备完成。
 
 ## 验证范围
 
 `sh deploy/nas/scripts/self-test.sh` 运行实际 shell 流程的 fake Docker 故障注入、URI解析及 fake PG client 测试；`python3 scripts/ci/test-nas-release-assets.py` 执行工作流的真实资产打包片段并核对校验和/归档白名单。它们不启动 Docker 或数据库。
 
-上线前还需真实原 PG16、自带 PG18、external PG16/PG18 非管理员角色的 migration/备份/候选恢复与异常验证，以及 UGOS 导入、卷持久化、权限/网络、信号中断和 LiteLLM 无影响记录。远端 CI、镜像 digest 与资产发布需绑定最终提交另行确认。
+上线前还需验证自带 PG19 和 external PG19 非管理员角色的 migration、备份、候选恢复与异常场景，以及 UGOS 导入、卷持久化、权限/网络、信号中断和 LiteLLM 无影响记录。远端 CI 与资产发布需绑定最终提交确认。

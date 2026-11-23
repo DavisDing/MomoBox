@@ -2009,3 +2009,7 @@ markdown7.3.1由已有传递依赖提升为直接依赖以使用解析器公开�
 AssistantActionEntry复用次级MomoCapsuleButton，保留原生按钮的焦点/语义与MomoPressScale按压弹簧；真实回执用正常对比度的状态行和liveRegion展示，替代灰色禁用按钮。AssistantActionReviewDialog采用24dp圆角、主题表面、小型动作图标、可选择的真实说明区域及主次胶囊按钮；宽度上限480dp，窄屏/大字按钮纵排，整个审阅可滚动，不固定内容高度。删除/报废沿类型使用错误动作色。showDialog保留原模态路径，减少动态效果时使用AnimationStyle.noAnimation。
 
 仅替换展示组件：description仍由原service.describe生成，确认后仍传原字符串至executeWithResult作快照复核；打开前锁定、取消解锁、执行中持久回执、权限与原会话检查、入库草稿及执行后真实反馈逻辑保持。无本批新增依赖、schema、后端或AI_CONTEXT长期架构变化。
+
+## 62. 2026-11-23：PostgreSQL 19 容器基线
+
+默认和 `with-postgres` Compose 固定官方 `postgres:19.0-alpine3.24` 多架构 digest，挂载新卷 `postgres19_data:/var/lib/postgresql`，使用镜像自身的版本化 `PGDATA`。后端 CI 改用 `postgres:latest`，跟踪外部部署所用标签；两种外部模板均不启动数据库。显式 managed/external 运维使用固定 PG19 客户端，仍核对实际服务器主版本和库/角色；清理旧版本白名单及预设，不改变现有权限规则、SQL schema 或 migration checksum。旧卷不挂载，不在启动时进行跨版本迁移或清理。

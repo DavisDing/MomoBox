@@ -16,10 +16,10 @@ query() {
     psql -X --no-password -A -t -v ON_ERROR_STOP=1 -c "$1" 2>/tmp/momo-pg-error || fail "database query failed (check identity, connectivity and permissions privately)"
 }
 client_major=$(pg_dump --version | sed -n 's/.* \([0-9][0-9]*\)\..*/\1/p')
+[ "$client_major" = 19 ] || fail "these operations require a PostgreSQL 19 client"
 identity=$(query "SELECT current_database() || '|' || current_user || '|' || (current_setting('server_version_num')::int / 10000)::text")
 expected="${MOMO_EXPECTED_DATABASE:?}|${MOMO_EXPECTED_ROLE:?}|$client_major"
 [ "$identity" = "$expected" ] || fail "database, role or client/server major mismatch"
-case "$client_major" in 16|18) ;; *) fail "only PostgreSQL 16 and 18 are supported by these operations" ;; esac
 if [ "${MOMO_DATABASE_MODE:?}" = external ]; then
     flags=$(query "SELECT (NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole AND NOT rolreplication AND NOT rolbypassrls AND NOT EXISTS (SELECT 1 FROM pg_auth_members WHERE member = pg_roles.oid))::text FROM pg_roles WHERE rolname=current_user")
     [ "$flags" = true ] || fail "external role must be dedicated, nonprivileged, and have no inherited role memberships"

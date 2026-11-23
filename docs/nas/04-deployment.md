@@ -121,8 +121,10 @@ home-assistant
 负责服务端数据持久化。必须挂载命名卷：
 
 ```text
-postgres_data:/var/lib/postgresql/data
+postgres19_data:/var/lib/postgresql
 ```
+
+自带 PostgreSQL 19 使用新的命名卷，不挂载或迁移旧版本数据库卷。使用外部 PostgreSQL 的模板不声明数据库服务或数据库卷。
 
 ## 4. 环境变量
 
