@@ -96,18 +96,6 @@ trap 'exit 143' TERM
 command -v mktemp >/dev/null 2>&1 || fail "mktemp is required"
 command -v date >/dev/null 2>&1 || fail "date is required"
 
-wait_for_postgres() {
-    attempts=0
-    while [ "$attempts" -lt 60 ]; do
-        if compose exec -T postgres sh -eu -c             'exec pg_isready --quiet --username "$POSTGRES_USER" --dbname "$POSTGRES_DB"'             >/dev/null 2>&1; then
-            return 0
-        fi
-        attempts=$((attempts + 1))
-        sleep 1
-    done
-    return 1
-}
-
 mkdir -p "$OUTPUT_DIR" || fail "cannot create output directory: $OUTPUT_DIR"
 [ -d "$OUTPUT_DIR" ] || fail "output path is not a directory: $OUTPUT_DIR"
 [ -w "$OUTPUT_DIR" ] || fail "output directory is not writable: $OUTPUT_DIR"

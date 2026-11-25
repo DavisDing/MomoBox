@@ -71,7 +71,7 @@ openssl rand -hex 16  # HA_TOKEN_ENCRYPTION_KEY：输出恰好 32 个 ASCII 字�
 ./scripts/update.sh
 ```
 
-4. 脚本会等待 `momo-backend` Docker healthcheck 变为 `healthy` 后才报告成功；也可再访问 `GET /api/v1/health`，确认 HTTP 200 且 `database` 为 `ok`。
+4. 脚本会创建并启动 PostgreSQL 19，等待正式实例监听 TCP 后再执行备份和初始化。`momo-backend` 的 Docker healthcheck 变为 `healthy` 后才报告成功；也可访问 `GET /api/v1/health`，确认 HTTP 200 且 `database` 为 `ok`。
 
 ## 安全更新到指定镜像
 
@@ -80,6 +80,8 @@ openssl rand -hex 16  # HA_TOKEN_ENCRYPTION_KEY：输出恰好 32 个 ASCII 字�
 ```sh
 ./scripts/update.sh
 ```
+
+脚本复用项目已有的 PostgreSQL 19 容器和挂载。更新末尾只启动 `momo-backend`。修改数据库服务的镜像、卷或配置时，通过 Compose 单独应用变更。
 
 该脚本会按顺序：获取部署互斥锁、在线预备份、拉取 `MOMO_BACKEND_IMAGE`、停止并核对本项目全部后端容器（含 restarting）、**停写后最终备份**、migration、只读 `schema-check`、启动新后端并等待全部容器 healthcheck。先拉取再停机，拉取失败不影响原服务；最终备份失败不回退到在线 dump 继续迁移。输出的最终备份才是本项目停写后的升级恢复点，NAS 上其他项目、手工进程或外部数据库写入者仍须单独隔离。
 

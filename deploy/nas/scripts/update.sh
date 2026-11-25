@@ -111,20 +111,6 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-wait_for_postgres() {
-    attempts=0
-    while [ "$attempts" -lt 60 ]; do
-        if compose exec -T postgres sh -eu -c \
-            'exec pg_isready --quiet --username "$POSTGRES_USER" --dbname "$POSTGRES_DB"' \
-            >/dev/null 2>&1; then
-            return 0
-        fi
-        attempts=$((attempts + 1))
-        sleep 1
-    done
-    return 1
-}
-
 wait_for_service_health() {
     service=$1
     attempts=0
@@ -162,6 +148,7 @@ if [ "$SKIP_BACKUP" -eq 0 ]; then
     BACKUP_PATH=$(momo_backup_child) || fail "backup failed; no image was pulled or service was stopped"
     printf '%s\n' "Backup created: $BACKUP_PATH"
 else
+    momo_database_ready
     printf '%s\n' 'WARNING: skipping backup at caller request.' >&2
 fi
 
@@ -199,7 +186,8 @@ fi
 compose run --rm --no-deps momo-backend schema-check || fail "schema identity check failed after migration; backend remains stopped"
 momo_backend_verify_stopped || fail "backend became active before validated start"
 
-compose up -d momo-backend >/dev/null
+# The database was verified above. Do not reconcile its Compose service here.
+compose up -d --no-deps momo-backend >/dev/null
 if ! wait_for_service_health momo-backend; then
     printf '%s: momo-backend did not become healthy within 60 seconds; inspect compose logs before retrying.\n' "$PROGRAM" >&2
     exit 1

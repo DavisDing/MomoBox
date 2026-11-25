@@ -40,6 +40,8 @@ momo_op() {
 
 managed 比较后端 DSN 实际集群与选中 `postgres` 的 `system_identifier`，不只相信 `POSTGRES_DB`。external 不创建、启动、停止、迁移或清理共享 PostgreSQL 服务，client 只加入模板声明的 `database_network`，没有 Docker socket、host 网络或新数据卷。
 
+操作自带数据库时，脚本使用 `up -d --no-recreate postgres`，复用现有容器和挂载，首次运行可创建容器。Compose 和脚本都通过 TCP 等待正式数据库实例。更新结束使用 `up -d --no-deps momo-backend`，只应用后端服务的变更。
+
 external 必须由管理员预创建 MomoBox 专属库和角色，不能复用 LiteLLM 库/角色。角色须非 superuser、无 CREATEDB/CREATEROLE/REPLICATION/BYPASSRLS，也不属于其他数据库角色。管理员另行核实对象所有权、migration 和 pgcrypto 权限，以及该角色没有其他业务库写权限；脚本不能从一个连接证明完整 ACL。未知或不满足条件时保持停止，不能通过提升到超级用户绕过。
 
 支持的 URI 为 `postgres[ql]://role:URL编码密码@host[:port]/database`，可带 `sslmode` 和 1–30 秒 `connect_timeout`；IPv6 用方括号。其他参数、缺密码、重复参数或库/角色不符均拒绝。首版限同机受控 Docker 网络，不提供跨主机证书挂载方案。密码在容器内解析到 0600 的临时 passfile，原始连接错误留在私有 tmpfs；命令参数与正常输出不含 DSN/密码。与现有 backend 一样，容器环境仍可被有 Docker 管理权限的人查看。

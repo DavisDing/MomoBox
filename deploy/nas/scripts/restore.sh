@@ -122,20 +122,6 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-wait_for_postgres() {
-    attempts=0
-    while [ "$attempts" -lt 60 ]; do
-        if compose exec -T postgres sh -eu -c \
-            'exec pg_isready --quiet --username "$POSTGRES_USER" --dbname "$POSTGRES_DB"' \
-            >/dev/null 2>&1; then
-            return 0
-        fi
-        attempts=$((attempts + 1))
-        sleep 1
-    done
-    return 1
-}
-
 # Start only PostgreSQL so validation can use the image-matched pg_restore.
 momo_database_ready
 if ! momo_dump_list <"$DUMP_FILE"; then

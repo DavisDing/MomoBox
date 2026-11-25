@@ -20,6 +20,7 @@ class VariantOperationsTests(unittest.TestCase):
     setUp = safety.ScriptSafetyTests.setUp
     tearDown = safety.ScriptSafetyTests.tearDown
     called = safety.ScriptSafetyTests.called
+    up_calls = safety.ScriptSafetyTests.up_calls
     assert_stopped = safety.ScriptSafetyTests.assert_stopped
 
     def prepare(self, mode='external', database='momo'):
@@ -62,7 +63,7 @@ class VariantOperationsTests(unittest.TestCase):
         self.assertEqual(path.parent, (self.deploy / 'backups').resolve())
         self.assertTrue(Path(str(path) + '.meta').is_file())
         self.assertEqual(path.stat().st_mode & 0o777, 0o600)
-        self.assertFalse(self.called('up -d postgres'))
+        self.assertFalse(self.up_calls('postgres'))
         self.assertFalse((self.deploy / '.momobox-deployment.lock').exists())
         for args in self.calls:
             if args[:2] == ['compose', 'version'] or args[0] != 'compose':
@@ -108,7 +109,7 @@ class VariantOperationsTests(unittest.TestCase):
         self.assertLess(dumps[0], stop)
         self.assertLess(stop, dumps[1])
         self.assertLess(dumps[1], migrate)
-        self.assertFalse(self.called('up -d postgres'))
+        self.assertFalse(self.up_calls('postgres'))
         self.assertFalse(self.called('stop postgres'))
 
     def test_new_update_cannot_skip_backup(self):
@@ -132,6 +133,8 @@ class VariantOperationsTests(unittest.TestCase):
         self.prepare('managed')
         result = self.run_script('backup', 'cluster-mismatch')
         self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(len(self.up_calls('postgres')), 1)
+        self.assertIn('--no-recreate', self.up_calls('postgres')[0])
         self.assertFalse(self.called('momo-pg-client dump'))
 
     def test_final_backup_failure_preserves_isolation(self):
@@ -140,7 +143,7 @@ class VariantOperationsTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assert_stopped()
         self.assertFalse(self.called('migrate'))
-        self.assertFalse(self.called('up -d momo-backend'))
+        self.assertFalse(self.up_calls('momo-backend'))
 
     def test_other_clients_refuse_migration(self):
         self.prepare()
@@ -199,7 +202,7 @@ class VariantOperationsTests(unittest.TestCase):
         self.assertIn('candidate_database=momo_candidate\n', output.read_text())
         self.assertTrue((self.deploy / '.momobox-restored').is_file())
         self.assertFalse(self.called('--clean'))
-        self.assertFalse(self.called('up -d momo-backend'))
+        self.assertFalse(self.up_calls('momo-backend'))
         self.assertFalse(self.called('pg_terminate_backend'))
 
     def test_candidate_restore_rejects_source_database_or_bad_checksum(self):

@@ -78,7 +78,16 @@ if command == 'run':
     raise SystemExit('unexpected run')
 if command == 'exec':
     text = ' '.join(args)
-    if 'pg_isready' in text: sys.exit(0)
+    if 'pg_isready' in text:
+        if scenario == 'postgres-cold-start' and '--host 127.0.0.1' in text:
+            ready = root / 'tcp-ready'
+            if not ready.exists():
+                ready.touch()
+                sys.exit(2)
+        sys.exit(0)
+    if 'SHOW server_version_num' in text:
+        print('180000' if scenario == 'postgres-major-mismatch' else '190000')
+        sys.exit(0)
     if 'pg_control_system' in text: print('99999' if scenario=='cluster-mismatch' else '12345'); sys.exit(0)
     if 'pg_dump' in text:
         count = root / 'dump-count'
@@ -141,6 +150,9 @@ class ScriptSafetyTests(unittest.TestCase):
     def called(self, text):
         return any(text in call for call in self.text_calls)
 
+    def up_calls(self, service):
+        return [call for call in self.calls if 'up' in call and call[-1] == service]
+
     def assert_stopped(self):
         self.assertEqual((self.root / 'state').read_text(), 'exited')
 
@@ -151,13 +163,35 @@ class ScriptSafetyTests(unittest.TestCase):
         dumps = [i for i, c in enumerate(self.text_calls) if 'pg_dump' in c]
         migrate = next(i for i, c in enumerate(self.text_calls) if c.endswith('migrate'))
         check = next(i for i, c in enumerate(self.text_calls) if c.endswith('schema-check'))
-        start = next(i for i, c in enumerate(self.text_calls) if c.endswith('up -d momo-backend'))
+        start = next(i for i, c in enumerate(self.text_calls) if c.endswith('up -d --no-deps momo-backend'))
+        postgres_starts = self.up_calls('postgres')
+        self.assertTrue(postgres_starts)
+        self.assertTrue(all('--no-recreate' in call for call in postgres_starts))
         self.assertEqual(len(dumps), 2)
         self.assertLess(dumps[0], stop)
         self.assertLess(stop, dumps[1])
         self.assertLess(dumps[1], migrate)
         self.assertLess(migrate, check)
         self.assertLess(check, start)
+
+    def test_first_deployment_waits_for_postgres_tcp_before_backup(self):
+        result = self.run_script('update', 'postgres-cold-start', state='absent')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        first_dump = next(i for i, call in enumerate(self.text_calls) if 'pg_dump' in call)
+        probes = [call for call in self.text_calls[:first_dump] if 'pg_isready' in call]
+        self.assertEqual(len(probes), 2)
+        self.assertTrue(all('--host 127.0.0.1' in call for call in probes))
+
+    def test_default_update_rejects_wrong_major_before_backup_or_backend_changes(self):
+        for options in ((), ('--skip-backup',)):
+            with self.subTest(options=options):
+                result = self.run_script('update', 'postgres-major-mismatch', extra=options)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('the bundled database must use PostgreSQL 19', result.stderr)
+                self.assertFalse(self.called('pg_dump'))
+                self.assertFalse(self.called('pull momo-backend'))
+                self.assertFalse(self.called(' stop '))
+                self.assertFalse(self.up_calls('momo-backend'))
 
     def test_backup_retention_keeps_pins_and_ignores_unrelated_files(self):
         directory = self.nas / 'backups'
@@ -212,7 +246,7 @@ class ScriptSafetyTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assert_stopped()
         self.assertFalse(self.called('migrate'))
-        self.assertFalse(self.called('up -d momo-backend'))
+        self.assertFalse(self.up_calls('momo-backend'))
 
     def test_update_failures_keep_backend_isolated(self):
         for scenario in ('migration-failure', 'schema-failure', 'health-failure'):
@@ -223,7 +257,7 @@ class ScriptSafetyTests(unittest.TestCase):
                 result = self.run_script('update', scenario, extra=('--skip-backup',))
                 self.assertNotEqual(result.returncode, 0)
                 self.assert_stopped()
-                if scenario != 'health-failure': self.assertFalse(self.called('up -d momo-backend'))
+                if scenario != 'health-failure': self.assertFalse(self.up_calls('momo-backend'))
 
     def test_unverified_stop_or_ps_retains_lock(self):
         for scenario in ('stop-failure', 'ps-failure', 'inspect-failure'):
@@ -245,7 +279,7 @@ class ScriptSafetyTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assert_stopped()
         self.assertTrue((self.nas / '.momobox-deployment.lock').exists())
-        self.assertFalse(self.called('up -d momo-backend'))
+        self.assertFalse(self.up_calls('momo-backend'))
 
     def test_backend_reactivation_during_final_backup_refuses_migration(self):
         result = self.run_script('update', 'backend-reactivated')
@@ -259,7 +293,7 @@ class ScriptSafetyTests(unittest.TestCase):
         self.assert_stopped()
         self.assertTrue(self.called('schema-check'))
         self.assertFalse(self.called(' start '))
-        self.assertFalse(self.called('up -d momo-backend'))
+        self.assertFalse(self.up_calls('momo-backend'))
         self.assertIn('not deployment approval', result.stdout)
 
     def test_restore_failures_never_restart(self):
@@ -272,7 +306,7 @@ class ScriptSafetyTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assert_stopped()
                 self.assertFalse(self.called(' start '))
-                self.assertFalse(self.called('up -d momo-backend'))
+                self.assertFalse(self.up_calls('momo-backend'))
                 if scenario in ('restore-failure', 'terminate-failure'):
                     self.assertTrue(lock.exists())
 

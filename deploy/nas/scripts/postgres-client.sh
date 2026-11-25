@@ -1,16 +1,38 @@
 #!/bin/sh
-# Shared managed/external DB adapter. Legacy default retains its original path.
+# Shared PostgreSQL adapter for the default and explicit deployment modes.
 momo_pg() { compose run --rm --no-deps -T momo-pg-client "$1"; }
 
+momo_wait_for_postgres() {
+    momo_attempts=0
+    while [ "$momo_attempts" -lt 60 ]; do
+        # The image's temporary init server only accepts Unix socket connections.
+        if compose exec -T postgres sh -eu -c \
+            'exec pg_isready --quiet --host 127.0.0.1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB"' \
+            >/dev/null 2>&1; then
+            return 0
+        fi
+        momo_attempts=$((momo_attempts + 1))
+        sleep 1
+    done
+    return 1
+}
+
 momo_database_ready() {
-    if [ "$MOMO_DATABASE_MODE" = legacy ]; then
-        compose up -d postgres >/dev/null
-        wait_for_postgres || fail "postgres did not become ready within 60 seconds"
-        return
+    if [ "$MOMO_DATABASE_MODE" != external ]; then
+        # Allow first-time creation, but keep existing containers and mounts
+        # when these scripts are run with an edited Compose file.
+        compose up -d --no-recreate postgres >/dev/null || fail "cannot start the bundled postgres service"
+        momo_wait_for_postgres || fail "postgres did not become ready within 60 seconds"
     fi
-    if [ "$MOMO_DATABASE_MODE" = managed ]; then
-        compose up -d postgres >/dev/null
-        wait_for_postgres || fail "postgres did not become ready within 60 seconds"
+    if [ "$MOMO_DATABASE_MODE" = legacy ]; then
+        momo_server_version=$(compose exec -T postgres sh -eu -c '
+            exec psql -XAt --no-password --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
+                -v ON_ERROR_STOP=1 -c "SHOW server_version_num"
+        ') || fail "cannot verify the bundled PostgreSQL version"
+        case "$momo_server_version" in
+            19[0-9][0-9][0-9][0-9]) return 0 ;;
+            *) fail "the bundled database must use PostgreSQL 19" ;;
+        esac
     fi
     momo_identity=$(momo_pg probe) || fail "database identity or PG client validation failed"
     if [ "$MOMO_DATABASE_MODE" = managed ]; then
