@@ -623,6 +623,7 @@ NasSetupController _setupController(_Fixture fixture, AppDatabase db) =>
       workspaceReady: () async => fail('must not sync'),
       engineReader: () => null,
       importReader: () => null,
+      cleanLocalMedia: () async => fail('must not reset local media'),
     );
 
 class _Fixture {

@@ -3,6 +3,8 @@ import 'dart:convert';
 import '../../core/database/app_database.dart';
 
 const syncWorkspaceBindingKey = 'sync_workspace_binding';
+const syncLocalWorkspaceIdKey = 'sync_local_workspace_id';
+const syncWorkspaceMediaCleanupKey = 'sync_workspace_media_cleanup';
 
 /// An endpoint identity is not a server-instance or restore-epoch identity.
 class SyncWorkspaceIdentity {
@@ -130,6 +132,53 @@ UNION SELECT scope_id FROM sync_applied_changes
             );
         if (!isCurrent()) throw StateError('身份已改变，数据归属确认已撤销。');
       });
+
+  Future<void> resetFor(
+    SyncWorkspaceIdentity identity, {
+    required Set<String> retainedSettings,
+    required bool Function() isCurrent,
+  }) => _database.transaction(() async {
+    final access = await inspect(identity);
+    if (!isCurrent() || access.status != SyncWorkspaceStatus.mismatch) {
+      throw StateError('本机数据归属或当前家庭已改变，请重新核对。');
+    }
+
+    // Keep the schema and delete child rows before their parents. The new
+    // binding and the empty database commit together, even across restarts.
+    await _database.delete(_database.stockMovements).go();
+    await _database.delete(_database.shoppingEntries).go();
+    await _database.delete(_database.productBatches).go();
+    await _database.delete(_database.products).go();
+    await _database.delete(_database.reminderAcknowledgments).go();
+    await _database.delete(_database.barcodeLookupCache).go();
+    await _database.delete(_database.mediaAssets).go();
+    await _database.delete(_database.syncConflicts).go();
+    await _database.delete(_database.syncOutbox).go();
+    await _database.delete(_database.syncAppliedChanges).go();
+    await _database.delete(_database.syncStates).go();
+    for (final table in [
+      'media_ocr_fts',
+      'backend_media_state',
+      'backend_media_reassign',
+      'stock_movement_sources',
+      'sync_initial_import_items',
+      'sync_initial_import_plans',
+      'sync_imported_history',
+    ]) {
+      await _database.customStatement('DELETE FROM $table');
+    }
+    await (_database.delete(_database.appSettings)
+      ..where((row) => row.key.isNotIn(retainedSettings))).go();
+    await bind(identity, isCurrent: isCurrent);
+    await _database.into(_database.appSettings).insert(
+      AppSettingsCompanion.insert(
+        key: syncWorkspaceMediaCleanupKey,
+        value: identity.encode(),
+        updatedAt: DateTime.now(),
+      ),
+    );
+    if (!isCurrent()) throw StateError('当前家庭已改变，未清除本机数据。');
+  });
 
   /// Local edits belong to the durable owner even while signed out or logged
   /// into a different server. Resolve inside the business transaction, not from

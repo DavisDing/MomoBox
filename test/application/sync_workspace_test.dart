@@ -111,6 +111,31 @@ void main() {
     expect(await workspace.readOwner(), isNull);
   });
 
+  test('重置事务写入失败时同时恢复旧归属、库存和待同步变更', () async {
+    await bind();
+    final inventory = InventoryRepository(database, outbox: outbox,
+      syncScopeResolver: workspace.localMutationScope);
+    await inventory.createProductWithBatch(const IntakeDraft(
+      name: '米', category: '食品', quantity: 3, lowStockThreshold: 1,
+    ));
+    final pending = await database.select(database.syncOutbox).get();
+    expect(pending, isNotEmpty);
+    await database.customStatement('''
+      CREATE TRIGGER abort_workspace_reset BEFORE INSERT ON app_settings
+      WHEN NEW.key = '$syncWorkspaceMediaCleanupKey'
+      BEGIN SELECT RAISE(ABORT, 'simulated reset failure'); END
+    ''');
+    const target = SyncWorkspaceIdentity(
+      endpoint: 'https://nas.example/api/v1', userId: 'user-b', familyId: 'family-b',
+    );
+    await expectLater(workspace.resetFor(
+      target, retainedSettings: const {}, isCurrent: () => true,
+    ), throwsA(predicate<Object>((error) => error.toString().contains('simulated reset failure'))));
+    expect((await workspace.readOwner())!.matches(original), isTrue);
+    expect((await inventory.loadInventory()).single.totalStock, 3);
+    expect(await database.select(database.syncOutbox).get(), pending);
+  });
+
   test('并发不同身份确认只能成功一个，不覆盖所有者', () async {
     const other = SyncWorkspaceIdentity(endpoint: 'https://other.example/api/v1', userId: 'b', familyId: 'family-b');
     final results = await Future.wait([

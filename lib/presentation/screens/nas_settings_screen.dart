@@ -14,7 +14,12 @@ import '../widgets/app_feedback.dart';
 import '../widgets/nas_auth_dialog.dart';
 
 class NasSettingsScreen extends ConsumerStatefulWidget {
-  const NasSettingsScreen({super.key});
+  const NasSettingsScreen({super.key}) : setupFeedback = null;
+
+  const NasSettingsScreen.setup({super.key, required Widget feedback})
+    : setupFeedback = feedback;
+
+  final Widget? setupFeedback;
 
   @override
   ConsumerState<NasSettingsScreen> createState() => _NasSettingsScreenState();
@@ -37,7 +42,8 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
     return switch (state.status) {
       NasConnectionStatus.unconfigured => '未配置',
       NasConnectionStatus.checking => '连接中',
-      NasConnectionStatus.connected => '已连接',
+      NasConnectionStatus.connected =>
+        widget.setupFeedback == null ? '已连接' : '服务可达',
       NasConnectionStatus.unavailable => '服务不可用',
       NasConnectionStatus.failed => '连接失败',
     };
@@ -218,7 +224,12 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
     }
 
     return Scaffold(
-      appBar: MomoAppBar.adaptive(context, title: const Text('NAS 协同与家庭共享')),
+      appBar: MomoAppBar.adaptive(
+        context,
+        title: Text(
+          widget.setupFeedback == null ? 'NAS 协同与家庭共享' : '连接家庭 NAS',
+        ),
+      ),
       body: ListView(
         padding: EdgeInsets.fromLTRB(
           16, 16, 16, 16 + MomoDockInsets.bottomOf(context),
@@ -229,6 +240,7 @@ class _NasSettingsScreenState extends ConsumerState<NasSettingsScreen> {
           _buildConnectionCard(context, connection),
           const SizedBox(height: 12),
           _buildAccountCard(context, account, connection),
+          if (widget.setupFeedback case final feedback?) feedback,
           if (account.isAuthenticated) ...[
             const SizedBox(height: 12),
             _buildFamilyCard(context, account),

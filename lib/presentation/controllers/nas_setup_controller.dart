@@ -1,8 +1,13 @@
 import 'dart:async';
+
+import 'package:drift/drift.dart' show BooleanExpressionOperators;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../core/database/app_database.dart';
 import '../../application/sync_engine.dart';
 import '../../application/initial_import_service.dart';
+import '../../application/nas_connection_service.dart';
+import '../../data/nas/nas_api_error.dart';
 import '../../data/repositories/sync_workspace_repository.dart';
 import '../../data/repositories/sync_outbox_repository.dart';
 import '../../domain/models/sync_models.dart';
@@ -13,14 +18,16 @@ enum NasSetupStatus {
   connectionRequired,
   preparing,
   inviteRequired,
+  workspaceMismatch,
   ready,
   failed,
 }
 
 class NasSetupState {
-  const NasSetupState(this.status, {this.message});
+  const NasSetupState(this.status, {this.message, this.resetTarget});
   final NasSetupStatus status;
   final String? message;
+  final SyncWorkspaceIdentity? resetTarget;
 }
 
 /// The normal connection path owns binding, device registration, bootstrap and
@@ -33,6 +40,9 @@ class NasSetupController extends StateNotifier<NasSetupState> {
     required this.workspaceReady,
     required this.engineReader,
     required this.importReader,
+    required this.cleanLocalMedia,
+    this.runLocalReset,
+    this.onResetStarted,
     this.onReady,
   }) : super(const NasSetupState(NasSetupStatus.connectionRequired));
   final AppDatabase database;
@@ -41,11 +51,15 @@ class NasSetupController extends StateNotifier<NasSetupState> {
   final Future<void> Function() workspaceReady;
   final SyncEngine? Function() engineReader;
   final InitialImportService? Function() importReader;
+  final Future<void> Function() cleanLocalMedia;
+  final Future<void> Function(Future<void> Function())? runLocalReset;
+  final void Function()? onResetStarted;
   final void Function()? onReady;
   Future<void>? _running;
   int _revision = 0;
   String? _attempted;
   String? _runningIdentity;
+  String? _runningFamily;
   bool _pendingChange = false;
 
   void changed() {
@@ -59,7 +73,9 @@ class NasSetupController extends StateNotifier<NasSetupState> {
       return;
     }
     if (_running != null) {
-      if (_runningIdentity != key) {
+      if (_runningIdentity != key ||
+          (_runningFamily != null &&
+              _runningFamily != account.snapshot.family.familyId)) {
         _revision++;
         _pendingChange = true;
       }
@@ -72,13 +88,26 @@ class NasSetupController extends StateNotifier<NasSetupState> {
     unawaited(prepare());
   }
 
-  Future<void> prepare() {
+  Future<void> prepare() => _run(_prepare);
+
+  Future<void> resetLocalWorkspace(NasSetupState confirmation) async {
+    final target = confirmation.resetTarget;
+    if (confirmation.status != NasSetupStatus.workspaceMismatch ||
+        target == null ||
+        !identical(confirmation, state)) {
+      return;
+    }
+    await _run((revision) => _resetLocalWorkspace(target, revision));
+  }
+
+  Future<void> _run(Future<void> Function(int) operation) {
     final running = _running;
     if (running != null) return running;
     final account = accountReader();
     _runningIdentity =
         '${account.serverIdentity}:${account.snapshot.auth.user?.id}';
-    final next = _prepare(++_revision);
+    _runningFamily = account.snapshot.family.familyId;
+    final next = operation(++_revision);
     _running = next;
     return next.whenComplete(() {
       if (identical(_running, next)) _running = null;
@@ -87,6 +116,57 @@ class NasSetupController extends StateNotifier<NasSetupState> {
         changed();
       }
     });
+  }
+
+  Future<void> _resetLocalWorkspace(
+    SyncWorkspaceIdentity target,
+    int revision,
+  ) async {
+    final account = accountReader();
+    bool isCurrent() =>
+        mounted &&
+        revision == _revision &&
+        identical(accountReader(), account) &&
+        account.snapshot.isAuthenticated &&
+        account.serverIdentity == target.endpoint &&
+        account.snapshot.auth.user?.id == target.userId &&
+        account.snapshot.family.hasFamily &&
+        account.snapshot.family.familyId == target.familyId &&
+        account.snapshot.devices.status == NasDeviceStatus.ready;
+
+    if (!isCurrent()) return;
+    state = const NasSetupState(
+      NasSetupStatus.preparing,
+      message: '正在清除本机数据并连接当前家庭…',
+    );
+    try {
+      onResetStarted?.call();
+      Future<void> resetDatabase() =>
+          SyncWorkspaceRepository(database).resetFor(
+            target,
+            retainedSettings: const {
+              nasServerUrlKey,
+              nasFamilyCodeKey,
+              nasLastCheckedAtKey,
+              nasDeviceIdKey,
+              syncLocalWorkspaceIdKey,
+              'theme',
+              'font_scale',
+            },
+            isCurrent: isCurrent,
+          );
+      await (runLocalReset?.call(resetDatabase) ?? resetDatabase());
+    } catch (_) {
+      if (isCurrent()) {
+        state = NasSetupState(
+          NasSetupStatus.workspaceMismatch,
+          message: '无法清除旧家庭数据，本机记录仍保留。请重试。',
+          resetTarget: target,
+        );
+      }
+      return;
+    }
+    if (isCurrent()) await _prepare(revision);
   }
 
   Future<void> _prepare(int revision) async {
@@ -124,7 +204,9 @@ class NasSetupController extends StateNotifier<NasSetupState> {
         final inviteRequired =
             account.snapshot.family.status == NasFamilyStatus.inviteRequired;
         state = NasSetupState(
-          inviteRequired ? NasSetupStatus.inviteRequired : NasSetupStatus.failed,
+          inviteRequired
+              ? NasSetupStatus.inviteRequired
+              : NasSetupStatus.failed,
           message:
               account.snapshot.family.errorMessage ??
               (inviteRequired
@@ -150,11 +232,43 @@ class NasSetupController extends StateNotifier<NasSetupState> {
       final workspace = SyncWorkspaceRepository(database);
       final access = await workspace.inspect(identity);
       if (!sameFamily()) return;
+      if (access.status == SyncWorkspaceStatus.mismatch) {
+        _attempted = '$endpoint:$user:${identity.familyId}';
+        state = NasSetupState(
+          NasSetupStatus.workspaceMismatch,
+          message: '本机仍保留原家庭的数据。可以返回原家庭，或清除本机数据后连接当前家庭。',
+          resetTarget: identity,
+        );
+        return;
+      }
       if (!access.canSync) {
         if (!access.canBind) {
           throw StateError(access.message ?? '已有数据属于另一家庭，请返回原账号。');
         }
         await workspace.bind(identity, isCurrent: sameFamily);
+      }
+      final resetOwner = identity.encode();
+      final needsMediaCleanup =
+          await (database.select(database.appSettings)..where(
+                (row) =>
+                    row.key.equals(syncWorkspaceMediaCleanupKey) &
+                    row.value.equals(resetOwner),
+              ))
+              .getSingleOrNull();
+      if (!sameFamily()) return;
+      if (needsMediaCleanup != null) {
+        try {
+          await cleanLocalMedia();
+        } catch (_) {
+          throw StateError('本机库存已清除，但图片缓存清理未完成。请重试。');
+        }
+        if (!sameFamily()) return;
+        await (database.delete(database.appSettings)..where(
+              (row) =>
+                  row.key.equals(syncWorkspaceMediaCleanupKey) &
+                  row.value.equals(resetOwner),
+            ))
+            .go();
       }
       await refreshAccess();
       await workspaceReady();
@@ -251,7 +365,11 @@ class NasSetupController extends StateNotifier<NasSetupState> {
       if (current()) {
         state = NasSetupState(
           NasSetupStatus.failed,
-          message: '连接初始化未完成，原数据已保留。$error',
+          message: switch (error) {
+            NasApiError(:final message) => message,
+            StateError(message: final String message) => message,
+            _ => '首次同步未完成。请重试或查看连接与同步状态。',
+          },
         );
       }
     }

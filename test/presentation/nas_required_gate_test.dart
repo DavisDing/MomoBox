@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:momo_box/application/nas_auth_service.dart';
 import 'package:momo_box/application/nas_connection_service.dart';
 import 'package:momo_box/application/settings_service.dart';
 import 'package:momo_box/core/database/app_database.dart';
 import 'package:momo_box/data/nas/nas_api_client.dart';
 import 'package:momo_box/data/repositories/settings_repository.dart';
 import 'package:momo_box/data/repositories/sync_workspace_repository.dart';
+import 'package:momo_box/domain/models/nas_family_device_models.dart';
 import 'package:momo_box/domain/models/nas_models.dart';
 import 'package:momo_box/presentation/controllers/nas_account_controller.dart';
 import 'package:momo_box/presentation/controllers/nas_setup_controller.dart';
@@ -29,30 +31,63 @@ class _Connection extends NasConnectionService {
       const NasHealthResult(status: NasConnectionStatus.unavailable);
 }
 
-class _SignedOut extends NasAccountController {
-  _SignedOut(SettingsService settings)
+class _TestAccount extends NasAccountController {
+  _TestAccount(SettingsService settings)
     : super(
         settings: settings,
         connection: _Connection(settings),
         credentials: NasCredentialsService(),
       );
+
+  void selectFamily(String id) {
+    state = NasAccountState(
+      status: NasAccountStatus.authenticated,
+      auth: const NasAuthSnapshot(
+        status: NasAuthStatus.authenticated,
+        user: NasUser(id: 'owner', email: 'owner@example.test', nickname: 'owner'),
+      ),
+      family: NasFamilyState(
+        status: NasFamilyStatus.available,
+        current: NasFamilyResponseDto(
+          family: NasFamilyDto(id: id, name: '家庭', createdAt: DateTime.utc(2026)),
+          membership: NasFamilyMembershipDto(familyId: id, role: 'owner'),
+        ),
+      ),
+    );
+  }
 }
 
 class _FailedSetup extends NasSetupController {
-  _FailedSetup(AppDatabase db, NasAccountController account)
-    : super(
-        database: db,
-        accountReader: () => account,
-        refreshAccess: () async {},
-        workspaceReady: () async {},
-        engineReader: () => null,
-        importReader: () => null,
-      ) {
-    state = NasSetupState(
-      NasSetupStatus.failed,
-      message: List.filled(20, '数据冲突，原数据已保留。').join(),
-    );
+  _FailedSetup(
+    AppDatabase db,
+    NasAccountController account, {
+    NasSetupState? problem,
+  }) : super(
+         database: db,
+         accountReader: () => account,
+         refreshAccess: () async {},
+         workspaceReady: () async {},
+         engineReader: () => null,
+         importReader: () => null,
+         cleanLocalMedia: () async {},
+       ) {
+    state =
+        problem ??
+        NasSetupState(
+          NasSetupStatus.failed,
+          message: List.filled(20, '数据冲突，原数据已保留。').join(),
+        );
   }
+
+  int resetCalls = 0;
+
+  @override
+  Future<void> resetLocalWorkspace(NasSetupState confirmation) async {
+    expect(confirmation, same(state));
+    resetCalls++;
+    state = const NasSetupState(NasSetupStatus.connectionRequired);
+  }
+
   @override
   void changed() {}
 }
@@ -67,7 +102,7 @@ void main() {
       addTearDown(() => tester.binding.setSurfaceSize(null));
       final db = AppDatabase.forTesting(NativeDatabase.memory());
       final settings = SettingsService(SettingsRepository(db));
-      final account = _SignedOut(settings);
+      final account = _TestAccount(settings);
       final container = ProviderContainer(
         overrides: [
           databaseProvider.overrideWithValue(db),
@@ -100,6 +135,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 16));
       }
       expect(tester.takeException(), isNull);
+      expect(find.byType(AlertDialog), findsOneWidget);
       await tester.ensureVisible(find.text('查看连接与同步状态'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('查看连接与同步状态'));
@@ -130,7 +166,7 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           databaseProvider.overrideWithValue(db),
-          nasAccountProvider.overrideWith((ref) => _SignedOut(settings)),
+          nasAccountProvider.overrideWith((ref) => _TestAccount(settings)),
           nasConnectionServiceProvider.overrideWith(
             (ref) => _Connection(settings),
           ),
@@ -151,7 +187,7 @@ void main() {
         );
         await tester.pump(const Duration(milliseconds: 16));
       }
-      expect(find.text('连接家庭 NAS 后开始使用'), findsOneWidget);
+      expect(find.text('连接家庭 NAS'), findsOneWidget);
       expect(find.text('business data'), findsNothing);
       expect(find.text('NAS 服务器地址'), findsOneWidget);
       expect(find.textContaining('本地模式'), findsNothing);
@@ -169,6 +205,73 @@ void main() {
       }
       expect(closed, isTrue);
       await closing;
+    },
+  );
+  testWidgets(
+    'the recovery dialog keeps data on cancel and requires a separate confirmation',
+    (tester) async {
+      final db = AppDatabase.forTesting(NativeDatabase.memory());
+      final settings = SettingsService(SettingsRepository(db));
+      final account = _TestAccount(settings);
+      final setup = _FailedSetup(
+        db,
+        account,
+        problem: const NasSetupState(
+          NasSetupStatus.workspaceMismatch,
+          message: '本机仍保留原家庭的数据。',
+          resetTarget: SyncWorkspaceIdentity(
+            endpoint: 'https://nas.example/api/v1',
+            userId: 'new',
+            familyId: 'new-family',
+          ),
+        ),
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            nasAppAccessProvider.overrideWithValue(NasAppAccess.setup),
+            nasSetupProvider.overrideWith((ref) => setup),
+            nasAccountProvider.overrideWith((ref) => account),
+            nasConnectionServiceProvider.overrideWith(
+              (ref) => _Connection(settings),
+            ),
+          ],
+          child: MaterialApp(
+            builder: (context, child) => NasRequiredGate(child: child!),
+            home: const Text('business data'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('此手机仍关联原家庭'), findsOneWidget);
+      expect(find.text('business data'), findsNothing);
+      await tester.tap(find.text('清除本机数据并继续'));
+      await tester.pumpAndSettle();
+      expect(setup.resetCalls, 0);
+      expect(find.text('确认清除本机数据？'), findsOneWidget);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(setup.resetCalls, 0);
+
+      final recovery = find.text('处理本机数据归属');
+      await tester.scrollUntilVisible(
+        recovery,
+        150,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(recovery);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('清除本机数据并继续'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('确认清除并继续'));
+      await tester.pumpAndSettle();
+      expect(setup.resetCalls, 1);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.text('business data'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      await tester.runAsync(db.close);
     },
   );
   testWidgets(
@@ -247,10 +350,11 @@ void main() {
       await SettingsRepository(
         db,
       ).setValue('nas_setup_complete', identity.encode());
+      final account = _TestAccount(settings);
       final container = ProviderContainer(
         overrides: [
           databaseProvider.overrideWithValue(db),
-          nasAccountProvider.overrideWith((ref) => _SignedOut(settings)),
+          nasAccountProvider.overrideWith((ref) => account),
           nasConnectionServiceProvider.overrideWith(
             (ref) => _Connection(settings, url: 'https://nas.example'),
           ),
@@ -266,6 +370,10 @@ void main() {
         ) {
           await Future<void>.delayed(const Duration(milliseconds: 5));
         }
+        expect(await container.read(nasCachedAccessProvider.future), isTrue);
+        account.selectFamily('another-family');
+        expect(await container.read(nasCachedAccessProvider.future), isFalse);
+        account.selectFamily('family');
         expect(await container.read(nasCachedAccessProvider.future), isTrue);
         await credentials.clear();
         container.invalidate(nasCachedAccessProvider);

@@ -169,7 +169,9 @@ class AiConversationStore extends ChangeNotifier {
     final raw = _corruptArchive;
     if (!canRecoverArchive || raw == null) throw StateError('当前会话无需重建。');
     await _writes;
-    if (await _settings.getValue(storageKey) != raw) {
+    final saved = await _settings.getValue(storageKey);
+    if (_disposed) return;
+    if (saved != raw) {
       throw StateError('会话存档已变化，请先重试读取。');
     }
     await _settings.setValue('ai_conversations_quarantine:${const Uuid().v4()}', raw);
@@ -190,6 +192,7 @@ class AiConversationStore extends ChangeNotifier {
   }
 
   Future<void> save() {
+    if (_disposed) return Future.value();
     if (!ready) return Future.error(StateError('会话尚未读取，不能覆盖存档。'));
     final snapshot = jsonEncode({
       'sessions': sessions.map((s) => s.toJson()).toList(),
@@ -197,9 +200,9 @@ class AiConversationStore extends ChangeNotifier {
       'pendingSession': _requestSession,
       'receipts': actionReceipts,
     });
-    final operation = _writes.then(
-      (_) => _settings.setValue(storageKey, snapshot),
-    );
+    final operation = _writes.then((_) async {
+      if (!_disposed) await _settings.setValue(storageKey, snapshot);
+    });
     _writes = operation.then<void>(
       (_) {
         storageError = null;
@@ -304,6 +307,8 @@ class AiConversationStore extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _request = null;
+    _requestSession = null;
     super.dispose();
   }
 }

@@ -1832,7 +1832,9 @@ environmentHaRefreshProvider只在环境被观察且配置了HA来源时监听�
 
 `NasRequiredGate` 包裹 App routed child。未连接时由独立 Navigator 承载 NAS 地址、账号、家庭邀请码和登录对话框；业务导航在完成前不可达。连接正常/缓存只读共用稳定 key，切换提示条不重建业务滚动状态。前台30秒探测和 resume 重连复用连接控制器；后台停止定时器。被动健康检查不先把已在线状态改为 checking。
 
-`NasSetupController` 按 endpoint/user/family 合并并发请求并检查会话代次，顺序执行家庭初始化、设备准备、持久化工作区检查、自动 `join_and_merge`、旧资料幂等导入和有界同步续跑。绑定流更新先落稳后才构造引擎；普通令牌轮换/内部设置通知不重建 transport。切账号使旧任务失效，不改绑旧数据。只有导入、分页和首轮同步完整才保存 `nas_setup_complete`；失败保留数据，连接页可进入冲突/拒绝记录审阅。
+`NasSetupController` 按 endpoint/user/family 合并并发请求并检查会话代次，顺序执行家庭初始化、设备准备、持久化工作区检查、自动 `join_and_merge`、旧资料幂等导入和有界同步续跑。绑定流更新先落稳后才构造引擎；普通令牌轮换/内部设置通知不重建 transport。切账号使旧任务失效，不自动改绑旧数据。只有导入、分页和首轮同步完整才保存 `nas_setup_complete`；自动接入失败保留数据，连接页可进入冲突/拒绝记录审阅。
+
+首次接入复用单一 NAS 设置页，进度显示在账号区域下方，失败弹窗关闭后可在页面再次打开。归属不一致时弹窗提供二次确认清除本机数据的入口。确认目标固定到当前 NAS、账号和家庭，SQLite 事务清除旧业务记录、媒体索引、待同步变更、同步游标和完成标记，同时绑定空的本机工作区。保留 NAS 连接、当前会话、设备标识和主题/字号；媒体文件清理可在中断或失败后续跑，随后走当前家庭的首次同步。
 
 NAS 新增 `POST /families/initialize`，默认创建“我的家庭”/Asia/Shanghai。事务 advisory lock 串行化首家庭创建，旧 POST /families 同样受约束。RegisterRequest 新增可选 invite_code；有效邀请码在一个事务内创建用户、member、current_family并消耗次数。first_setup首账号创建使用另一把事务锁关闭并发竞态；无新表或迁移。已有家庭/角色和数据保留。
 
@@ -1850,7 +1852,7 @@ NAS 新增 `POST /families/initialize`，默认创建“我的家庭”/Asia/Sha
 
 ### 升级、回滚与验证边界
 
-本轮不改Drift schema或PostgreSQL迁移，不删除业务库、原工作区、冲突/拒绝记录、媒体资料或NAS凭据。旧bootstrap模式解析仅用于升级，正常入口自动迁移到远端模式，不提供单机运行。异常重叠和跨家庭迁移仍保守阻塞；多工作区/自动改绑不在范围内。
+本轮不改Drift schema或PostgreSQL迁移。自动接入保留业务库、原工作区、冲突/拒绝记录、媒体资料和NAS凭据；只有归属不一致且用户明确确认时才执行上述本机重置。旧bootstrap模式解析仅用于升级，正常入口自动迁移到远端模式，不提供单机运行。异常重叠和跨家庭迁移仍保守阻塞；多工作区/自动改绑不在范围内。
 
 新API需要App与NAS后端一起升级；UGREEN模板原固定digest保持不变，必须发布后明确替换。手机AI旧密钥清理不可反向还原，若回退旧App需自行重新填写；服务端AI密钥未从手机上传。运行证据见VALIDATION；本地检查不代表镜像、安装包、真实LiteLLM、NAS/HA或双手机验收。
 

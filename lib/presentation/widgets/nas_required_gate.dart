@@ -102,61 +102,169 @@ class _NasRequiredGateState extends ConsumerState<NasRequiredGate>
   }
 }
 
-class _NasSetupPage extends ConsumerWidget {
+enum _SetupAction { retry, diagnostics, reset }
+
+class _NasSetupPage extends ConsumerStatefulWidget {
   const _NasSetupPage();
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final setup = ref.watch(nasSetupProvider);
-    return Scaffold(
-      body: Column(
-        children: [
-          ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.sizeOf(context).height * .4,
+  ConsumerState<_NasSetupPage> createState() => _NasSetupPageState();
+}
+
+class _NasSetupPageState extends ConsumerState<_NasSetupPage> {
+  NasSetupStatus? _shownProblem;
+  bool _dialogOpen = false;
+
+  Future<void> _showProblem(NasSetupState problem) async {
+    if (_dialogOpen) return;
+    _dialogOpen = true;
+    _shownProblem = problem.status;
+    try {
+      final mismatch = problem.status == NasSetupStatus.workspaceMismatch;
+      final action = await showDialog<_SetupAction>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          scrollable: true,
+          title: Text(mismatch ? '此手机仍关联原家庭' : '家庭接入未完成'),
+          content: Text(problem.message ?? '请重试或查看连接与同步状态。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('返回连接页'),
             ),
-            child: SafeArea(
-              bottom: false,
-              child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    children: [
-                      const Text('连接家庭 NAS 后开始使用'),
-                      if (setup.message != null) Text(setup.message!),
-                      if (setup.status == NasSetupStatus.preparing)
-                        const LinearProgressIndicator(),
-                      if (setup.status == NasSetupStatus.failed)
-                        Wrap(
-                          children: [
-                            TextButton(
-                              onPressed:
-                                  () =>
-                                      ref
-                                          .read(nasSetupProvider.notifier)
-                                          .prepare(),
-                              child: const Text('重试连接'),
-                            ),
-                            TextButton(
-                              onPressed:
-                                  () => Navigator.of(context).push(
-                                    MaterialPageRoute<void>(
-                                      builder:
-                                          (_) => const SyncSettingsScreen(),
-                                    ),
-                                  ),
-                              child: const Text('查看连接与同步状态'),
-                            ),
-                          ],
-                        ),
-                    ],
-                  ),
-                ),
+            if (mismatch)
+              TextButton(
+                onPressed: () =>
+                    Navigator.of(dialogContext).pop(_SetupAction.reset),
+                child: const Text('清除本机数据并继续'),
+              )
+            else ...[
+              TextButton(
+                onPressed: () =>
+                    Navigator.of(dialogContext).pop(_SetupAction.diagnostics),
+                child: const Text('查看连接与同步状态'),
               ),
-            ),
+              TextButton(
+                onPressed: () =>
+                    Navigator.of(dialogContext).pop(_SetupAction.retry),
+                child: const Text('重试连接'),
+              ),
+            ],
+          ],
+        ),
+      );
+      if (!mounted) return;
+      switch (action) {
+        case _SetupAction.retry:
+          _shownProblem = null;
+          unawaited(ref.read(nasSetupProvider.notifier).prepare());
+        case _SetupAction.diagnostics:
+          await Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const SyncSettingsScreen()),
+          );
+        case _SetupAction.reset:
+          await _confirmReset(problem);
+        case null:
+          break;
+      }
+    } finally {
+      _dialogOpen = false;
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _confirmReset(NasSetupState problem) async {
+    if (!identical(ref.read(nasSetupProvider), problem)) return;
+    final account = ref.read(nasAccountProvider);
+    final family = account.family.current?.family.name;
+    final email = account.auth.user?.email;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        scrollable: true,
+        title: const Text('确认清除本机数据？'),
+        content: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('将删除此手机上的库存、采购、历史、图片缓存、待同步变更等本机资料。操作无法撤销，NAS 上的数据会保留。'),
+            if (family != null) ...[
+              const SizedBox(height: 12),
+              Text('随后连接「$family」'),
+              if (email != null) Text(email),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
           ),
-          const Expanded(child: NasSettingsScreen()),
+          TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(dialogContext).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('确认清除并继续'),
+          ),
         ],
       ),
+    );
+    if (confirmed != true || !mounted) return;
+    _shownProblem = null;
+    await ref.read(nasSetupProvider.notifier).resetLocalWorkspace(problem);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final setup = ref.watch(nasSetupProvider);
+    final hasProblem =
+        setup.status == NasSetupStatus.failed ||
+        setup.status == NasSetupStatus.workspaceMismatch;
+    final isCurrentRoute = ModalRoute.of(context)?.isCurrent == true;
+    if (setup.status == NasSetupStatus.connectionRequired ||
+        setup.status == NasSetupStatus.inviteRequired) {
+      _shownProblem = null;
+    }
+    if (hasProblem &&
+        isCurrentRoute &&
+        !_dialogOpen &&
+        _shownProblem != setup.status) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted &&
+            ModalRoute.of(context)?.isCurrent == true &&
+            identical(ref.read(nasSetupProvider), setup) &&
+            _shownProblem != setup.status) {
+          unawaited(_showProblem(setup));
+        }
+      });
+    }
+    return NasSettingsScreen.setup(
+      feedback: switch (setup.status) {
+        NasSetupStatus.preparing => Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(setup.message ?? '正在连接家庭并同步数据…'),
+              const SizedBox(height: 8),
+              const LinearProgressIndicator(),
+            ],
+          ),
+        ),
+        NasSetupStatus.failed || NasSetupStatus.workspaceMismatch => Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(
+            onPressed: () => unawaited(_showProblem(setup)),
+            child: Text(
+              setup.status == NasSetupStatus.workspaceMismatch
+                  ? '处理本机数据归属'
+                  : '查看连接问题',
+            ),
+          ),
+        ),
+        _ => const SizedBox.shrink(),
+      },
     );
   }
 }

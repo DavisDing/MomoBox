@@ -18,6 +18,21 @@ class ControlledAssistant implements AiAssistantService {
 }
 
 void main() {
+  test('重置工作区后旧会话迟到的回复不会写回本机', () async {
+    final settings = MemorySettingsRepository();
+    addTearDown(settings.close);
+    final store = AiConversationStore(settings);
+    await store.load();
+    final service = ControlledAssistant();
+    final request = store.send('旧家庭库存查询', service);
+    await store.save();
+    store.dispose();
+    settings.values.remove(AiConversationStore.storageKey);
+    service.result.complete('旧家庭回复');
+    await request;
+    expect(settings.values[AiConversationStore.storageKey], isNull);
+  });
+
   test('消息立即保存，关闭页面后回复仍持久化，重启恢复当前会话', () async {
     final settings = MemorySettingsRepository();
     addTearDown(settings.close);

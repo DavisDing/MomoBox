@@ -149,4 +149,7 @@ class MediaService {
         final references = (await _repository.loadAllActive()).map((a)=>a.localPath).toSet();
         return MediaCleanupReport(deletedFiles:await _storage.deleteUnreferenced(references),deletedMetadata:0);
       });
+
+  Future<void> resetLocalWorkspace(Future<void> Function() resetDatabase) =>
+      _runSerialized(resetDatabase);
 }

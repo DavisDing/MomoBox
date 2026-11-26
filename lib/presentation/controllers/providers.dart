@@ -149,8 +149,6 @@ final settingsServiceProvider = Provider<SettingsService>(
 /// the ordinary local settings table (not in the NAS account) so the same
 /// device can be identified across app restarts while remaining usable in
 /// offline-only mode.
-const syncLocalWorkspaceIdKey = 'sync_local_workspace_id';
-
 final localWorkspaceIdProvider = FutureProvider<String>((ref) async {
   final settings = ref.watch(settingsServiceProvider);
   final stored = (await settings.getValue(syncLocalWorkspaceIdKey))?.trim();
@@ -625,6 +623,11 @@ final nasSetupProvider =
         },
         engineReader: () => ref.read(syncEngineProvider),
         importReader: () => ref.read(initialImportServiceProvider),
+        cleanLocalMedia: () async {
+          await ref.read(mediaServiceProvider).reconcile();
+        },
+        runLocalReset: (reset) => ref.read(mediaServiceProvider).resetLocalWorkspace(reset),
+        onResetStarted: () => ref.invalidate(aiConversationStoreProvider),
         onReady: () => ref.invalidate(nasCachedAccessProvider),
       );
       ref.listen(
@@ -652,30 +655,35 @@ final nasSetupProvider =
 enum NasAppAccess { setup, connected, cached }
 
 final nasCachedAccessProvider = FutureProvider<bool>((ref) async {
-  ref.watch(
+  final (_, _, activeFamilyId) = ref.watch(
     nasAccountProvider.select(
-      (account) => (account.status, account.auth.user?.id),
+      (account) => (
+        account.status,
+        account.auth.user?.id,
+        account.isAuthenticated && account.family.hasFamily
+            ? account.family.familyId
+            : null,
+      ),
     ),
   );
   final url = ref.watch(
     nasConnectionProvider.select((connection) => connection.serverUrl),
   );
   if (url.isEmpty) return false;
+  final binding = ref.watch(syncWorkspaceBindingProvider.future);
+  final credentialsService = ref.watch(nasCredentialsServiceProvider);
+  final settings = ref.watch(settingsRepositoryProvider);
   final client = NasApiClient(url);
   final endpoint = client.serverIdentity;
   client.close();
-  final credentials = await ref
-      .read(nasCredentialsServiceProvider)
-      .readForServer(endpoint);
-  if (credentials?.userId == null) return false;
-  final owner = await SyncWorkspaceRepository(ref.read(databaseProvider))
-      .readOwner();
-  final complete = await ref
-      .read(settingsRepositoryProvider)
-      .getValue('nas_setup_complete');
-  return owner != null &&
-      owner.userId == credentials!.userId &&
+  final credentials = await credentialsService.readForServer(endpoint);
+  final encodedOwner = await binding;
+  if (credentials?.userId == null || encodedOwner == null) return false;
+  final owner = SyncWorkspaceIdentity.decode(encodedOwner);
+  final complete = await settings.getValue('nas_setup_complete');
+  return owner.userId == credentials!.userId &&
       owner.endpoint == endpoint &&
+      (activeFamilyId == null || owner.familyId == activeFamilyId) &&
       complete == owner.encode();
 });
 final nasAppAccessProvider = Provider<NasAppAccess>((ref) {
@@ -695,7 +703,10 @@ final nasAppAccessProvider = Provider<NasAppAccess>((ref) {
       access?.owner?.matches(identity) == true) {
     return NasAppAccess.connected;
   }
-  if (cached) return NasAppAccess.cached;
+  if (setup.status != NasSetupStatus.workspaceMismatch && cached &&
+      (identity == null || access?.owner?.matches(identity) == true)) {
+    return NasAppAccess.cached;
+  }
   return NasAppAccess.setup;
 });
 
@@ -709,7 +720,8 @@ Future<void> reconnectNas(WidgetRef ref) async {
     await ref.read(nasAccountProvider.notifier).restore();
   }
   if (!ref.context.mounted) return;
-  if (ref.read(nasSetupProvider).status != NasSetupStatus.ready) {
+  final status = ref.read(nasSetupProvider).status;
+  if (status != NasSetupStatus.ready && status != NasSetupStatus.workspaceMismatch) {
     await ref.read(nasSetupProvider.notifier).prepare();
   }
 }

@@ -7,6 +7,7 @@ import 'package:momo_box/application/settings_service.dart';
 import 'package:momo_box/application/sync_engine.dart';
 import 'package:momo_box/core/database/app_database.dart';
 import 'package:momo_box/data/nas/nas_sync_api.dart';
+import 'package:momo_box/data/repositories/settings_repository.dart';
 import 'package:momo_box/data/repositories/sync_workspace_repository.dart';
 import 'package:momo_box/data/repositories/sync_outbox_repository.dart';
 import 'package:momo_box/domain/models/nas_models.dart';
@@ -139,6 +140,8 @@ void main() {
   late _Account account;
   late _Engine engine;
   late NasSetupController setup;
+  late int mediaCleanups;
+  late bool mediaCleanupFails;
   setUp(() {
     db = AppDatabase.forTesting(NativeDatabase.memory());
     final settings = MemorySettingsRepository();
@@ -147,6 +150,8 @@ void main() {
     final api = NasSyncApi('https://nas.example');
     addTearDown(api.close);
     engine = _Engine(db, api);
+    mediaCleanups = 0;
+    mediaCleanupFails = false;
     setup = NasSetupController(
       database: db,
       accountReader: () => account,
@@ -154,6 +159,10 @@ void main() {
       workspaceReady: () async {},
       engineReader: () => engine,
       importReader: () => null,
+      cleanLocalMedia: () async {
+        mediaCleanups++;
+        if (mediaCleanupFails) throw StateError('media cleanup failed');
+      },
     );
   });
   tearDown(() async {
@@ -195,24 +204,128 @@ void main() {
       expect(engine.bootstraps, 0);
     },
   );
+  const oldOwner = SyncWorkspaceIdentity(
+    endpoint: 'https://nas.example/api/v1',
+    userId: 'old',
+    familyId: 'old-family',
+  );
+
+  Future<void> prepareMismatchedFamily() async {
+    await SyncWorkspaceRepository(db).bind(oldOwner, isCurrent: () => true);
+    final settings = SettingsRepository(db);
+    await settings.setValue(nasServerUrlKey, 'https://nas.example');
+    await settings.setValue(nasDeviceIdKey, 'phone');
+    await settings.setValue('nas_setup_complete', oldOwner.encode());
+    await settings.setValue('sync_aux:old-family:old-category', 'test');
+    final now = DateTime.utc(2026);
+    await db
+        .into(db.products)
+        .insert(
+          ProductsCompanion.insert(
+            id: 'old-product',
+            name: '旧家庭库存',
+            category: '测试',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+    await db
+        .into(db.stockMovements)
+        .insert(
+          StockMovementsCompanion.insert(
+            id: 'old-movement',
+            productId: 'old-product',
+            type: 'restock',
+            quantity: 1,
+            createdAt: now,
+          ),
+        );
+    await db
+        .into(db.syncOutbox)
+        .insert(
+          SyncOutboxCompanion.insert(
+            changeId: 'old-change',
+            scopeId: 'old-family',
+            operation: 'entity_upsert',
+            idempotencyKey: 'old-key',
+            requestJson: '{}',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+    account.select(family: 'family');
+    await setup.prepare();
+    expect(setup.state.status, NasSetupStatus.workspaceMismatch);
+  }
+
   test(
-    'different durable owner is never silently rebound by automatic setup',
+    'mismatched setup retains old records until the user confirms a reset',
     () async {
-      await SyncWorkspaceRepository(db).bind(
-        const SyncWorkspaceIdentity(
-          endpoint: 'https://old.example/api/v1',
-          userId: 'old',
-          familyId: 'old-family',
-        ),
-        isCurrent: () => true,
-      );
-      await setup.prepare();
-      expect(setup.state.status, NasSetupStatus.failed);
+      await prepareMismatchedFamily();
       expect(engine.bootstraps, 0);
       expect(
         (await SyncWorkspaceRepository(db).readOwner())!.familyId,
         'old-family',
       );
+      expect(await db.select(db.products).get(), hasLength(1));
+      expect(await db.select(db.syncOutbox).get(), hasLength(1));
+      expect(mediaCleanups, 0);
+
+      await setup.resetLocalWorkspace(setup.state);
+      expect(setup.state.status, NasSetupStatus.ready);
+      expect(engine.bootstraps, 1);
+      expect(engine.modes, ['join_and_merge']);
+      expect(await db.select(db.products).get(), isEmpty);
+      expect(await db.select(db.stockMovements).get(), isEmpty);
+      expect(await db.select(db.syncOutbox).get(), isEmpty);
+      expect(mediaCleanups, 1);
+      final current = (await SyncWorkspaceRepository(db).readOwner())!;
+      expect(current.familyId, 'family');
+      final settings = SettingsRepository(db);
+      expect(await settings.getValue('nas_setup_complete'), current.encode());
+      expect(
+        await settings.getValue('sync_aux:old-family:old-category'),
+        isNull,
+      );
+      expect(await settings.getValue(nasServerUrlKey), 'https://nas.example');
+      expect(await settings.getValue(nasDeviceIdKey), 'phone');
+    },
+  );
+
+  test('cleanup failure blocks bootstrap and retry resumes it after the database reset', () async {
+    await prepareMismatchedFamily();
+    mediaCleanupFails = true;
+    await setup.resetLocalWorkspace(setup.state);
+    expect(setup.state.status, NasSetupStatus.failed);
+    expect(setup.state.message, contains('图片缓存清理未完成'));
+    expect(await db.select(db.products).get(), isEmpty);
+    expect(engine.bootstraps, 0);
+    final settings = SettingsRepository(db);
+    expect(await settings.getValue(syncWorkspaceMediaCleanupKey), isNotNull);
+    expect(await settings.getValue('nas_setup_complete'), isNull);
+
+    mediaCleanupFails = false;
+    await setup.prepare();
+    expect(setup.state.status, NasSetupStatus.ready);
+    expect(mediaCleanups, 2);
+    expect(engine.bootstraps, 1);
+    expect(await settings.getValue(syncWorkspaceMediaCleanupKey), isNull);
+  });
+
+  test(
+    'reset confirmation for another family cannot clear local records',
+    () async {
+      await prepareMismatchedFamily();
+      final confirmation = setup.state;
+      account.select(family: 'different-family');
+      await setup.resetLocalWorkspace(confirmation);
+      expect(
+        (await SyncWorkspaceRepository(db).readOwner())!.familyId,
+        'old-family',
+      );
+      expect(await db.select(db.products).get(), hasLength(1));
+      expect(await db.select(db.syncOutbox).get(), hasLength(1));
+      expect(engine.bootstraps, 0);
     },
   );
   for (final report in [
