@@ -145,11 +145,22 @@ func (c *Client) Execute(ctx context.Context, baseURL, accessToken string, invoc
 		return homeassistant.CommandResult{}, err
 	}
 	var states []stateResponse
-	status, err := c.request(ctx, http.MethodPost, baseURL, accessToken, []string{"api", "services", domain, service}, payload, &states)
+	var response any = &states
+	isRoutine := invocation.Command == homeassistant.CommandActivateScene || invocation.Command == homeassistant.CommandRunScript
+	if isRoutine {
+		// HA acceptance is independent of any state changes returned by the
+		// service. A scene or script can affect more than its own entity.
+		response = nil
+	}
+	status, err := c.request(ctx, http.MethodPost, baseURL, accessToken, []string{"api", "services", domain, service}, payload, response)
 	if err != nil {
 		return homeassistant.CommandResult{}, err
 	}
 	if status < 200 || status >= 300 {
+		if isRoutine && (status == http.StatusBadRequest || status == http.StatusUnauthorized ||
+			status == http.StatusForbidden || status == http.StatusNotFound) {
+			return homeassistant.CommandResult{Accepted: false}, nil
+		}
 		return homeassistant.CommandResult{Accepted: false}, statusError(status)
 	}
 	for _, state := range states {

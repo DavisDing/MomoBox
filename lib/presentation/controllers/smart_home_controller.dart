@@ -702,15 +702,17 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
         state.staleEntityIds.contains(id) || _isStale(remoteState.fetchedAt)) {
       return '设备状态已过期，请进入家居页刷新后再试。';
     }
-    if (remoteState.state == 'unknown' || remoteState.state == 'unavailable') {
+    if ((remoteState.state == 'unknown' && !_isRoutine(command)) ||
+        remoteState.state == 'unavailable') {
       return '设备当前离线或状态未知，未发送控制请求。';
     }
     return null;
   }
 
   bool _supportsCommand(NasHaEntity entity, NasHaCommand command) {
-    // Keep the existing low-risk device boundary. In particular, a scene or
-    // script must never be treated as a power switch (nor a lock/cover/etc.).
+    if (_isRoutine(command)) {
+      return _routineCommand(entity) == command;
+    }
     if (!const {'light', 'switch', 'climate', 'media_player'}.contains(entity.domain)) {
       return false;
     }
@@ -734,10 +736,37 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
             has([nasHaCommandValue(command), 'media_playback', 'play_pause']);
       case NasHaCommand.activateScene:
       case NasHaCommand.runScript:
-        // The current smart-home page has no confirmed scene/script flow.
         return false;
     }
   }
+
+  bool _isRoutine(NasHaCommand command) =>
+      command == NasHaCommand.activateScene || command == NasHaCommand.runScript;
+
+  NasHaCommand? _routineCommand(NasHaEntity entity) => switch (entity.domain) {
+    'scene' => NasHaCommand.activateScene,
+    'script' => NasHaCommand.runScript,
+    _ => null,
+  };
+
+  List<({String id, String target, bool isScene, String? unavailable})>
+  get homeRoutines => [
+    for (final entity in state.entities)
+      if (_routineCommand(entity) case final command?)
+        if (entity.isVisible && entity.isControllable)
+          if (_permissionFor(entity) case NasHaEntityPermission(
+              canView: true, canControl: true, :final allowedCommands,
+            ) when allowedCommands.contains(nasHaCommandValue(command)))
+          (
+            id: _key(entity.integrationId, entity.entityId),
+            target: _assistantDeviceTarget(entity),
+            isScene: command == NasHaCommand.activateScene,
+            unavailable: commandUnavailableReason(
+              _key(entity.integrationId, entity.entityId),
+              command: command,
+            ),
+          ),
+  ];
 
   String? powerUnavailableReason(String id, {required bool turnOn}) =>
       commandUnavailableReason(
@@ -762,6 +791,13 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
           'temperatureMin': _entityFor(device.id)?.temperatureMin,
           'temperatureMax': _entityFor(device.id)?.temperatureMax,
         },
+      for (final routine in homeRoutines)
+        if (routine.unavailable == null)
+          {
+            'id': routine.id,
+            'name': routine.target,
+            'commands': [routine.isScene ? 'activate_scene' : 'run_script'],
+          },
     ])}';
   }
 
@@ -801,6 +837,9 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
           throw StateError('设备不支持该模式。');
         }
         parameters = NasHaHvacModeParameters(value);
+      case NasHaCommand.activateScene:
+      case NasHaCommand.runScript:
+        if (value != null) throw StateError('场景和脚本不接受参数。');
       default:
         break;
     }
@@ -812,6 +851,8 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
       'set_hvac_mode': '设置空调模式',
       'play': '播放',
       'pause': '暂停',
+      'activate_scene': '激活场景',
+      'run_script': '运行脚本',
     };
     final target = _assistantDeviceTarget(entity);
     final ambiguous =
@@ -819,12 +860,15 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
             .where((other) => _assistantDeviceTarget(other) == target)
             .length >
         1;
+    final detail = _isRoutine(command)
+        ? 'Home Assistant 将执行其中配置的操作。'
+        : '操作前状态：${_localizedState(state.entityStates[action.id]?.state ?? 'unknown')}。';
     return (
       command: command,
       parameters: parameters,
       description:
           '${labels[nasHaCommandValue(command)]}$target'
-          '${value == null ? '' : '：$value'}。\n操作前状态：${_localizedState(state.entityStates[action.id]?.state ?? 'unknown')}。'
+          '${value == null ? '' : '：$value'}。\n$detail'
           '${ambiguous ? '\n设备标识：${entity.entityId}' : ''}',
     );
   }
@@ -850,6 +894,7 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
     );
     if (!mounted) throw StateError('设备连接已变化，请核实设备状态。');
     if (state.commandError != null) throw StateError(state.commandError!);
+    if (_isRoutine(prepared.command)) return _routineReceipt;
     if (state.staleEntityIds.contains(action.id)) {
       throw StateError('命令已接受，设备状态仍待核实。');
     }
@@ -904,6 +949,19 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
         ? '\n亮度：${brightnessPercent.round().clamp(0, 100)}%。'
         : '';
     return '$summary\n设备反馈：${_localizedState(remote.state)}（${remote.state}）。$brightness';
+  }
+
+  static const _routineReceipt = 'Home Assistant 已接受调用。请在 HA 中查看相关设备的实际状态。';
+
+  Future<String> invokeRoutine(String id) async {
+    final entity = _entityFor(id);
+    final command = entity == null ? null : _routineCommand(entity);
+    if (command == null) return '未找到可调用的场景或脚本。';
+    final unavailable = commandUnavailableReason(id, command: command);
+    if (unavailable != null) return unavailable;
+    await _sendCommandForDevice(id, command);
+    if (!mounted) return '连接已变化，请在 Home Assistant 核实调用结果。';
+    return state.commandError ?? _routineReceipt;
   }
 
   /// Set an explicit target instead of assuming that every HA power entity
@@ -1008,6 +1066,10 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
         _commandFailure('NAS 返回的控制回执不匹配，未确认成功。');
         return;
       }
+      if (_isRoutine(command)) {
+        state = state.copyWith(message: _routineReceipt);
+        return;
+      }
       final remoteState = result.state ??
           await _repository.fetchEntityState(
             integrationId: entity.integrationId,
@@ -1041,9 +1103,19 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
         final denied = {...state.accessDeniedEntityIds, id};
         state = state.copyWith(accessDeniedEntityIds: Set<String>.unmodifiable(denied));
       }
-      _commandFailure(_friendlyCommandError(error));
+      final unknown = error.code == 'HA_COMMAND_RESULT_UNKNOWN' ||
+          error.kind == NasApiErrorKind.network ||
+          error.kind == NasApiErrorKind.timeout ||
+          (error.kind == NasApiErrorKind.server && error.code != 'HA_UNAVAILABLE');
+      _commandFailure(_isRoutine(command) && unknown
+          ? '场景或脚本调用结果未知。请先在 Home Assistant 核实，再决定是否重新调用。'
+          : _friendlyCommandError(error));
     } catch (error) {
-      if (mounted) _commandFailure('控制请求失败，设备状态未修改。');
+      if (mounted) {
+        _commandFailure(_isRoutine(command)
+            ? '场景或脚本调用结果未知，请在 Home Assistant 核实。'
+            : '控制请求失败，设备状态未修改。');
+      }
     } finally {
       if (mounted && state.isCommandLoading) {
         state = state.copyWith(
@@ -1077,6 +1149,9 @@ class SmartHomeController extends StateNotifier<SmartHomeState> {
   }
 
   String _friendlyCommandError(NasApiError error) {
+    if (error.code == 'HA_COMMAND_RESULT_UNKNOWN') {
+      return '控制请求结果未知，请先核实设备状态再操作。';
+    }
     if (error.code == 'HA_UNSUPPORTED_COMMAND' ||
         error.code == 'unsupported_command') {
       return 'NAS 拒绝了控制请求：设备不支持此命令，未确认成功。';

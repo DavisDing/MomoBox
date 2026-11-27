@@ -59,11 +59,11 @@ func (r *AutomationRepository) SaveConsumableGroup(ctx context.Context, group ho
     var saved homeassistant.ConsumableGroup
     err = tx.QueryRowContext(ctx, `
 INSERT INTO ha_consumable_groups (id, family_id, name, description, created_by_user_id, created_at, updated_at, deleted_at)
-VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2::uuid, $3, $4, $5::uuid, COALESCE(NULLIF($6, '')::timestamptz, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP, NULL)
+VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2::uuid, $3, $4, $5::uuid, COALESCE($6::timestamptz, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP, NULL)
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, updated_at = CURRENT_TIMESTAMP, deleted_at = NULL
 WHERE ha_consumable_groups.family_id = EXCLUDED.family_id
 RETURNING id::text, family_id::text, name, description, created_by_user_id::text, created_at, updated_at`,
-        group.ID, group.FamilyID, strings.TrimSpace(group.Name), group.Description, group.CreatedByUserID, group.CreatedAt).Scan(
+        group.ID, group.FamilyID, strings.TrimSpace(group.Name), group.Description, group.CreatedByUserID, sql.NullTime{Time: group.CreatedAt, Valid: !group.CreatedAt.IsZero()}).Scan(
         &saved.ID, &saved.FamilyID, &saved.Name, &saved.Description, &saved.CreatedByUserID, &saved.CreatedAt, &saved.UpdatedAt)
     if err != nil { return homeassistant.ConsumableGroup{}, fmt.Errorf("save HA consumable group: %w", err) }
     if _, err := tx.ExecContext(ctx, `DELETE FROM ha_consumable_group_items WHERE family_id = $1::uuid AND group_id = $2::uuid`, saved.FamilyID, saved.ID); err != nil { return homeassistant.ConsumableGroup{}, fmt.Errorf("replace HA group items: %w", err) }
@@ -129,11 +129,11 @@ func (r *AutomationRepository) SaveConsumableRecipe(ctx context.Context, recipe 
     var saved homeassistant.ConsumableRecipe
     err = tx.QueryRowContext(ctx, `
 INSERT INTO ha_consumable_recipes (id, family_id, name, description, created_by_user_id, created_at, updated_at, deleted_at)
-VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2::uuid, $3, $4, $5::uuid, COALESCE(NULLIF($6, '')::timestamptz, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP, NULL)
+VALUES (COALESCE(NULLIF($1, '')::uuid, gen_random_uuid()), $2::uuid, $3, $4, $5::uuid, COALESCE($6::timestamptz, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP, NULL)
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, updated_at = CURRENT_TIMESTAMP, deleted_at = NULL
 WHERE ha_consumable_recipes.family_id = EXCLUDED.family_id
 RETURNING id::text, family_id::text, name, description, created_by_user_id::text, created_at, updated_at`,
-        recipe.ID, recipe.FamilyID, strings.TrimSpace(recipe.Name), recipe.Description, recipe.CreatedByUserID, recipe.CreatedAt).Scan(
+        recipe.ID, recipe.FamilyID, strings.TrimSpace(recipe.Name), recipe.Description, recipe.CreatedByUserID, sql.NullTime{Time: recipe.CreatedAt, Valid: !recipe.CreatedAt.IsZero()}).Scan(
         &saved.ID, &saved.FamilyID, &saved.Name, &saved.Description, &saved.CreatedByUserID, &saved.CreatedAt, &saved.UpdatedAt)
     if err != nil { return homeassistant.ConsumableRecipe{}, fmt.Errorf("save HA consumable recipe: %w", err) }
     if _, err := tx.ExecContext(ctx, `DELETE FROM ha_consumable_recipe_groups WHERE family_id = $1::uuid AND recipe_id = $2::uuid`, saved.FamilyID, saved.ID); err != nil { return homeassistant.ConsumableRecipe{}, fmt.Errorf("replace HA recipe groups: %w", err) }
@@ -212,8 +212,8 @@ func (r *AutomationRepository) SaveLinkageRule(ctx context.Context, rule homeass
 	if err != nil {
 		return homeassistant.LinkageRule{}, automationError(homeassistant.CodeInvalidArgument, "complete_state is invalid", err)
 	}
-	if start == complete {
-		return homeassistant.LinkageRule{}, automationError(homeassistant.CodeInvalidArgument, "start_state and complete_state must differ", nil)
+	if start != "running" || complete != "completed" {
+		return homeassistant.LinkageRule{}, automationError(homeassistant.CodeInvalidArgument, "start_state must be running and complete_state must be completed", nil)
 	}
 	if strings.TrimSpace(rule.Name) == "" || strings.TrimSpace(rule.IntegrationID) == "" || strings.TrimSpace(rule.EntityID) == "" || strings.TrimSpace(rule.ApplianceDomain) == "" || strings.TrimSpace(rule.RecipeID) == "" {
 		return homeassistant.LinkageRule{}, automationError(homeassistant.CodeInvalidArgument, "linkage rule references are required", nil)
@@ -232,8 +232,9 @@ func (r *AutomationRepository) SaveLinkageRule(ctx context.Context, rule homeass
 	// This prevents a valid UUID from another family being attached accidentally.
 	var entityRowID string
 	var entityFamilyID string
+	var entityDomain string
 	if err := tx.QueryRowContext(ctx, `
-SELECT e.id::text, e.family_id::text
+SELECT e.id::text, e.family_id::text, e.domain
 FROM ha_entities e
 JOIN ha_integrations i ON i.id = e.integration_id AND i.family_id = e.family_id
 WHERE e.entity_id = $1
@@ -241,7 +242,8 @@ WHERE e.entity_id = $1
   AND e.family_id = $3::uuid
   AND i.family_id = $3::uuid
   AND e.deleted_at IS NULL
-  AND i.deleted_at IS NULL`, strings.TrimSpace(rule.EntityID), rule.IntegrationID, rule.FamilyID).Scan(&entityRowID, &entityFamilyID); err != nil {
+  AND i.deleted_at IS NULL
+FOR UPDATE OF e`, strings.TrimSpace(rule.EntityID), rule.IntegrationID, rule.FamilyID).Scan(&entityRowID, &entityFamilyID, &entityDomain); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return homeassistant.LinkageRule{}, notFound("HA rule integration or entity", err)
 		}
@@ -249,6 +251,24 @@ WHERE e.entity_id = $1
 	}
 	if entityFamilyID != rule.FamilyID {
 		return homeassistant.LinkageRule{}, automationError(homeassistant.CodeForbidden, "entity is outside the current family", nil)
+	}
+	if entityDomain != strings.TrimSpace(rule.ApplianceDomain) {
+		return homeassistant.LinkageRule{}, automationError(homeassistant.CodeInvalidArgument, "appliance_domain must match the discovered entity domain", nil)
+	}
+	if rule.Enabled {
+		var conflict bool
+		err := tx.QueryRowContext(ctx, `
+SELECT EXISTS (
+    SELECT 1 FROM ha_linkage_rules
+    WHERE family_id = $1::uuid AND integration_id = $2::uuid AND entity_id = $3::uuid
+      AND id::text <> $4 AND enabled AND deleted_at IS NULL
+)`, rule.FamilyID, rule.IntegrationID, entityRowID, rule.ID).Scan(&conflict)
+		if err != nil {
+			return homeassistant.LinkageRule{}, fmt.Errorf("check active HA linkage rule: %w", err)
+		}
+		if conflict {
+			return homeassistant.LinkageRule{}, automationError(homeassistant.CodeInvalidArgument, "this entity already has an enabled linkage rule", nil)
+		}
 	}
 	var recipeFamilyID string
 	if err := tx.QueryRowContext(ctx, `
@@ -389,7 +409,11 @@ func (r *AutomationRepository) ProcessEvent(ctx context.Context, familyID string
 	defer rollback(tx)
 
 	var rule homeassistant.LinkageRule
-	err = tx.QueryRowContext(ctx, ruleSelect+` WHERE r.family_id = $1::uuid AND i.id = $2::uuid AND e.entity_id = $3 AND r.appliance_domain = $4 AND r.enabled AND r.deleted_at IS NULL FOR UPDATE`, familyID, event.IntegrationID, event.EntityID, event.Domain).Scan(
+	err = tx.QueryRowContext(ctx, ruleSelect+`
+WHERE r.family_id = $1::uuid AND i.id = $2::uuid AND e.entity_id = $3 AND r.appliance_domain = $4
+  AND r.enabled AND r.deleted_at IS NULL AND i.enabled AND i.deleted_at IS NULL AND e.deleted_at IS NULL
+  AND ($5 = '' OR (r.id::text = $5 AND r.updated_at <= $6))
+FOR UPDATE OF r`, familyID, event.IntegrationID, event.EntityID, event.Domain, event.ObservedRuleID, event.ObservedStartAt).Scan(
 		&rule.ID, &rule.FamilyID, &rule.Name, &rule.IntegrationID, &rule.EntityID,
 		&rule.ApplianceDomain, &rule.StartState, &rule.CompleteState, &rule.RecipeID,
 		&rule.Enabled, &rule.RequiresConfirmation, &rule.CreatedByUserID,

@@ -93,6 +93,8 @@ type HAEvent struct {
 	PreviousState  string
 	OccurredAt     time.Time
 	Attributes     map[string]any
+	ObservedRuleID string
+	ObservedStartAt time.Time
 }
 
 type ApplianceRun struct {
@@ -237,7 +239,7 @@ func (s *Service) SaveLinkageRule(ctx context.Context, actor Actor, rule Linkage
 	if err := validateAutomationManager(actor); err != nil { return LinkageRule{}, err }
 	if err := validateRule(actor.FamilyID, rule); err != nil { return LinkageRule{}, err }
 	repo, err := s.automationRepository(); if err != nil { return LinkageRule{}, err }
-	if rule.ID == "" { rule.ID = newID(); rule.CreatedAt = s.now() }
+	if rule.ID == "" { rule.CreatedAt = s.now() }
 	rule.FamilyID = actor.FamilyID; rule.CreatedByUserID = actor.UserID; rule.UpdatedAt = s.now()
 	return repo.SaveLinkageRule(ctx, rule)
 }
@@ -250,30 +252,34 @@ func (s *Service) ListLinkageSuggestions(ctx context.Context, actor Actor, statu
 
 func (s *Service) ProcessHAEvent(ctx context.Context, actor Actor, event HAEvent) (EventProcessResult, error) {
 	if err := validateActor(actor); err != nil { return EventProcessResult{}, err }
+	return s.processTrustedHAEvent(ctx, actor.FamilyID, event)
+}
+
+func (s *Service) processTrustedHAEvent(ctx context.Context, familyID string, event HAEvent) (EventProcessResult, error) {
 	var err error
 	event, err = NormalizeHAEvent(event)
 	if err != nil { return EventProcessResult{}, businessError(CodeInvalidArgument, err.Error(), err) }
-	if err := validateTrustedEvent(ctx, actor, event, s.now()); err != nil {
+	if err := validateTrustedEvent(ctx, familyID, event, s.now()); err != nil {
 		return EventProcessResult{}, err
 	}
 	if err := s.readyFor(true, false, true, false, false, false, false); err != nil { return EventProcessResult{},err }
-	integration, err := s.Integrations.Get(ctx, actor.FamilyID, event.IntegrationID)
+	integration, err := s.Integrations.Get(ctx, familyID, event.IntegrationID)
 	if err != nil {
 		return EventProcessResult{}, err
 	}
-	if integration.FamilyID != actor.FamilyID || !integration.Enabled {
+	if integration.FamilyID != familyID || !integration.Enabled {
 		return EventProcessResult{}, businessError(CodeForbidden, "event integration is unavailable", nil)
 	}
-	entity, err := s.Entities.Get(ctx, actor.FamilyID, event.IntegrationID, event.EntityID)
+	entity, err := s.Entities.Get(ctx, familyID, event.IntegrationID, event.EntityID)
 	if err != nil {
 		return EventProcessResult{}, err
 	}
-	if entity.FamilyID != actor.FamilyID || entity.IntegrationID != event.IntegrationID || entity.Domain != event.Domain {
+	if entity.FamilyID != familyID || entity.IntegrationID != event.IntegrationID || entity.Domain != event.Domain {
 		return EventProcessResult{}, businessError(CodeForbidden, "event entity is outside the trusted integration", nil)
 	}
 	repo, err := s.automationRepository()
 	if err != nil { return EventProcessResult{}, err }
-	return repo.ProcessEvent(ctx, actor.FamilyID, event, s.now())
+	return repo.ProcessEvent(ctx, familyID, event, s.now())
 }
 
 func (s *Service) ResolveLinkageSuggestion(ctx context.Context, actor Actor, suggestionID string, decision SuggestionDecision) (LinkageSuggestion, error) {
@@ -309,8 +315,8 @@ func validateRecipe(familyID string, recipe ConsumableRecipe) error {
 func validateRule(familyID string, rule LinkageRule) error {
 	if rule.FamilyID != "" && rule.FamilyID != familyID { return businessError(CodeForbidden, "rule is outside the current family", nil) }
 	for key, value := range map[string]string{"name": rule.Name, "integration_id": rule.IntegrationID, "entity_id": rule.EntityID, "appliance_domain": rule.ApplianceDomain, "start_state": rule.StartState, "complete_state": rule.CompleteState, "recipe_id": rule.RecipeID} { if strings.TrimSpace(value) == "" { return businessError(CodeInvalidArgument, fmt.Sprintf("%s is required", key), nil) } }
-	if _, err := NormalizeHAState(rule.StartState); err != nil { return businessError(CodeInvalidArgument, "start_state must be running/active/on", err) }
-	if _, err := NormalizeHAState(rule.CompleteState); err != nil { return businessError(CodeInvalidArgument, "complete_state must be completed/complete/finished/off", err) }
+	if state, err := NormalizeHAState(rule.StartState); err != nil || state != "running" { return businessError(CodeInvalidArgument, "start_state must be running/active/on", err) }
+	if state, err := NormalizeHAState(rule.CompleteState); err != nil || state != "completed" { return businessError(CodeInvalidArgument, "complete_state must be completed/complete/finished/off", err) }
 	if !rule.RequiresConfirmation { return businessError(CodeInvalidArgument, "requires_confirmation must remain true in the first release", nil) }
 	return nil
 }

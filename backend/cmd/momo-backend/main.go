@@ -345,6 +345,7 @@ func serve(ctx context.Context) error {
 		base:       haRepositories.Integrations,
 		automation: hapostgres.NewAutomationRepository(db),
 	}
+	haClient := hahttp.New(nil)
 	haDomainService := homeassistant.NewService(
 		haIntegrationRepository,
 		haRepositories.Devices,
@@ -352,7 +353,7 @@ func serve(ctx context.Context) error {
 		haRepositories.Permissions,
 		haRepositories.Audit,
 		tokenCipher,
-		hahttp.New(nil),
+		haClient,
 	)
 	haDomainService.Executions = hapostgres.NewCommandExecutionRepository(db)
 	haService := &attributedHomeAssistantService{service: haDomainService}
@@ -384,6 +385,27 @@ func serve(ctx context.Context) error {
 			return platform.ReadMigrationSchema(ctx, db)
 		})
 	}
+
+	doors, err := homeassistant.ParseNightDoors(os.Getenv("MOMO_HA_NIGHT_DOORS"))
+	if err != nil {
+		return err
+	}
+	monitor := homeassistant.EventMonitor{
+		Service: haDomainService,
+		Store:   hapostgres.NewEventRepository(db),
+		Client:  haClient,
+		Doors:   doors,
+	}
+	monitorCtx, stopMonitor := context.WithCancel(ctx)
+	monitorDone := make(chan struct{})
+	go func() {
+		defer close(monitorDone)
+		monitor.Run(monitorCtx)
+	}()
+	defer func() {
+		stopMonitor()
+		<-monitorDone
+	}()
 
 	fmt.Printf("momo-backend %s listening on %s\n", cfg.AppVersion, cfg.HTTPAddr)
 	return serveHTTP(ctx, server.HTTPServer, httpShutdownTimeout)

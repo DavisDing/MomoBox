@@ -26,6 +26,7 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
   Widget build(BuildContext context) {
     final homeState = ref.watch(smartHomeControllerProvider);
     final controller = ref.read(smartHomeControllerProvider.notifier);
+    final routines = controller.homeRoutines;
 
     return Scaffold(
       body: SafeArea(
@@ -71,6 +72,37 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
                 _buildUnconfiguredState(context)
               else ...[
                   _buildRoomsAndDevices(context, ref, homeState.devices),
+                  if (routines.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    _buildSectionHeader(
+                      context,
+                      title: '场景与脚本',
+                      icon: Icons.auto_awesome_outlined,
+                    ),
+                    const SizedBox(height: 10),
+                    MomoCard(
+                      padding: EdgeInsets.zero,
+                      child: Column(
+                        children: [
+                          for (final routine in routines)
+                            ListTile(
+                              title: Text(routine.target),
+                              subtitle: routine.unavailable == null
+                                  ? null
+                                  : Text(routine.unavailable!),
+                              trailing: TextButton(
+                                onPressed: routine.unavailable == null
+                                    ? () => _confirmRoutine(
+                                          routine.id, routine.target, routine.isScene,
+                                        )
+                                    : null,
+                                child: Text(routine.isScene ? '激活场景' : '运行脚本'),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height:16),
                   // 耗材联动建议与日志入口 (洗衣机耗材、制冰机等)
                   _buildSectionHeader(
@@ -89,6 +121,31 @@ class _SmartHomeScreenState extends ConsumerState<SmartHomeScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _confirmRoutine(String id, String target, bool isScene) async {
+    final label = isScene ? '激活场景' : '运行脚本';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('$label $target？'),
+        content: const Text('Home Assistant 将执行其中配置的操作。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(label),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+    final receipt = await ref.read(smartHomeControllerProvider.notifier).invokeRoutine(id);
+    if (!mounted) return;
+    showAppSnackBar(context, SnackBar(content: Text(receipt)));
   }
 
   Widget _buildStateNotice(BuildContext context, SmartHomeState state) {

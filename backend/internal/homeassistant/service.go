@@ -473,7 +473,9 @@ func (s *Service) ExecuteCommand(ctx context.Context, actor Actor, integrationID
 		}
 		return CommandDTO{}, permissionErr
 	}
-	if !permission.CanControl || !entity.IsControllable || !commandInPermission(req.Command, permission.AllowedCommands) {
+	isRoutine := req.Command == CommandActivateScene || req.Command == CommandRunScript
+	if !permission.CanControl || !entity.IsControllable || !commandInPermission(req.Command, permission.AllowedCommands) ||
+		(isRoutine && (!permission.CanView || !entity.IsVisible)) {
 		if auditErr := s.appendAudit(ctx, actor, entity, req, AuditDenied, string(CodeForbidden)); auditErr != nil {
 			return CommandDTO{}, auditErr
 		}

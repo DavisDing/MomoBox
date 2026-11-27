@@ -25,6 +25,76 @@ const _entityId = 'light.living_room';
 const _deviceId = 'ha::$_entityId';
 
 void main() {
+  group('已授权场景与脚本', () {
+    for (final (domain, command, label) in [
+      ('scene', NasHaCommand.activateScene, '激活场景'),
+      ('script', NasHaCommand.runScript, '运行脚本'),
+    ]) {
+      final entityId = '$domain.goodnight';
+      final commandValue = nasHaCommandValue(command);
+      final action = AiInventoryAction(kind: 'device_control', arguments: {
+        'id': 'ha::$entityId', 'command': commandValue,
+      });
+      _FakeHaRepository repository() => _FakeHaRepository()
+        ..entities = [_entity(entityId: entityId, domain: domain, name: '晚安')]
+        ..permissions = [_permission(entityId: entityId, commands: [commandValue])]
+        ..remoteState = _state(entityId: entityId, value: 'unknown')
+        ..result = _result(entityId: entityId, command: commandValue, withState: false);
+
+      testWidgets('$label 先确认，再显示 HA 接受回执', (tester) async {
+        final remote = repository();
+        final controller = await _controller(remote);
+        await _pumpHome(tester, controller, screen: const SmartHomeScreen());
+        final page = find.byKey(const PageStorageKey('smart-home-page'));
+        await tester.scrollUntilVisible(
+          find.text(label),
+          200,
+          scrollable: find.descendant(of: page, matching: find.byType(Scrollable)).first,
+        );
+        await tester.tap(find.text(label));
+        await tester.pumpAndSettle();
+        expect(find.text('$label 「晚安」？'), findsOneWidget);
+        expect(remote.commands, isEmpty);
+        await tester.tap(find.text('取消'));
+        await tester.pumpAndSettle();
+        expect(remote.commands, isEmpty);
+        await tester.tap(find.text(label));
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(FilledButton, label));
+        await tester.pumpAndSettle();
+        expect(remote.commands, [command]);
+        expect(find.textContaining('Home Assistant 已接受调用'), findsWidgets);
+        expect(find.byType(Switch), findsNothing);
+        await _unmountHome(tester);
+      });
+
+      test('助手只建议已授权的$label，接受回执不读取下游设备', () async {
+        final remote = repository();
+        final controller = await _controller(remote);
+        addTearDown(controller.dispose);
+        expect(await controller.assistantContext(), contains(commandValue));
+        expect(await controller.describeAssistantCommand(action), contains('$label「晚安」'));
+        expect(remote.commands, isEmpty);
+        final stateReads = remote.stateReads;
+        expect(await controller.executeAssistantCommand(action), contains('Home Assistant 已接受调用'));
+        expect(remote.stateReads, stateReads);
+        remote.commandFailure = NasApiError(
+          kind: NasApiErrorKind.conflict,
+          code: 'HA_COMMAND_RESULT_UNKNOWN',
+          message: 'unknown',
+        );
+        await expectLater(controller.executeAssistantCommand(action), throwsStateError);
+        expect(controller.state.commandError, contains('调用结果未知'));
+        expect(remote.commands, [command, command]);
+        remote.permissions = [_permission(entityId: entityId, canControl: false)];
+        await controller.refresh();
+        expect(await controller.assistantContext(), isNot(contains(commandValue)));
+        await expectLater(controller.executeAssistantCommand(action), throwsStateError);
+        expect(remote.commands, [command, command]);
+      });
+    }
+  });
+
   group('助手控制的实际状态回复', () {
     const action = AiInventoryAction(kind: 'device_control', arguments: {
       'id': _deviceId, 'command': 'turn_on',

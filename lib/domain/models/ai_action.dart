@@ -69,7 +69,7 @@ class AiInventoryAction {
 
   static const deviceCommands = {
     'turn_on', 'turn_off', 'set_brightness', 'set_temperature', 'set_hvac_mode',
-    'play', 'pause',
+    'play', 'pause', 'activate_scene', 'run_script',
   };
 
   String? string(String key) => arguments[key] as String?;
@@ -197,7 +197,7 @@ class AiInventoryAction {
         if (command == 'set_brightness' && (value is! int || value < 0 || value > 100)) return null;
         if (command == 'set_temperature' && (value is! num || !value.isFinite || value < -100 || value > 200)) return null;
         if (command == 'set_hvac_mode' && !text('value')) return null;
-        if (['turn_on', 'turn_off', 'play', 'pause'].contains(command) && value != null) return null;
+        if (['turn_on', 'turn_off', 'play', 'pause', 'activate_scene', 'run_script'].contains(command) && value != null) return null;
       }
       return AiInventoryAction(
         kind: kind, productId: (data['productId'] as String?) ?? '',

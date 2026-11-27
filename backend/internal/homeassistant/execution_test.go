@@ -89,6 +89,38 @@ func TestUntrustedOrCrossIntegrationEventsAreRejected(t *testing.T) {
 	}
 }
 
+func TestSceneRequiresExplicitGrantForCurrentRole(t *testing.T) {
+	integration := contractIntegration("family", "ha")
+	entity := contractEntity("family", integration.ID, "scene.goodnight")
+	entity.Domain = "scene"
+	ownerGrant := contractPermission("family", integration.ID, entity.EntityID, RoleOwner, CommandActivateScene)
+	memberGrant := contractPermission("family", integration.ID, entity.EntityID, RoleMember, CommandActivateScene)
+	memberGrant.CanView = false
+	service, _, _, permissions, _, _, client := contractService(integration, entity, ownerGrant, memberGrant)
+	service.Executions = &memoryExecutionRepo{}
+	actor := Actor{UserID: "member", FamilyID: "family", Role: RoleMember}
+	request := CommandRequest{RequestID: contractRequestID, Command: CommandActivateScene}
+	ctx := context.Background()
+	if _, err := service.ExecuteCommand(ctx, actor, integration.ID, entity.EntityID, request); businessCode(t, err) != CodeForbidden || client.executeCalls != 0 {
+		t.Fatalf("scene was allowed without view permission: %v", err)
+	}
+	key := permissionKey(actor.FamilyID, integration.ID, entity.EntityID, actor.Role)
+	memberGrant.CanView = true
+	memberGrant.AllowedCommands = []Command{CommandTurnOn}
+	permissions.items[key] = memberGrant
+	if _, err := service.ExecuteCommand(ctx, actor, integration.ID, entity.EntityID, request); businessCode(t, err) != CodeForbidden || client.executeCalls != 0 {
+		t.Fatalf("scene activation borrowed another role's command grant: %v", err)
+	}
+	memberGrant.AllowedCommands = []Command{CommandActivateScene}
+	permissions.items[key] = memberGrant
+	for i := 0; i < 2; i++ {
+		receipt, err := service.ExecuteCommand(ctx, actor, integration.ID, entity.EntityID, request)
+		if err != nil || !receipt.Accepted || receipt.State != nil || client.executeCalls != 1 {
+			t.Fatalf("unexpected scene receipt: %#v, %v", receipt, err)
+		}
+	}
+}
+
 func TestHAURLRejectsMetadataButAllowsLANAndLoopback(t *testing.T) {
 	for _, url := range []string{"http://169.254.169.254", "http://[::ffff:169.254.169.254]", "http://100.100.100.200", "http://[fd00:ec2::254]", "http://metadata.google.internal", "http://0.0.0.0"} {
 		if err := ValidateBaseURL(url); err == nil {

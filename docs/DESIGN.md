@@ -535,7 +535,7 @@ operation为entity_upsert、entity_delete、inventory_command、home_assistant_c
 
 - `GET /health`：DB连通200/503、2秒probe；`GET /version`：app/api/schema版本；不泄漏配置/密钥，不宣称迁移或业务就绪。
 - `/home-assistant/integrations`及单integration的test/discover；entities列表、单实体state/commands；permissions。实体目标需integration_id+entity_id与家庭权限同时匹配，commands只接受typed白名单。
-- 耗材组、配方、联动规则/建议/事件已有后端路由；scene/script与App配置、HA事件来源/监听和库存闭环仍按缺口追踪，路由存在不证明全链路完成。
+- NAS 使用已配置集成的 WebSocket 订阅指定实体的状态变化。夜间门磁按家庭时区调用已配置的 Companion 通知动作，洗衣启动与完成复用耗材建议和库存确认流程。场景与脚本复用角色授权及命令回执，家居页或助手确认后调用。配置与实机验收见 [HA 联动说明](nas/07-home-assistant-linkage.md)。
 - 当前无NAS `/barcode`、`/ai/chat`、`/ai/ollama/status`或media presign/complete；不实现代理，不把历史示例当待补接口。
 
 ## 8.4 错误、重试及隐私

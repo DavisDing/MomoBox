@@ -175,9 +175,14 @@ void main() {
       {'kind': 'set_font_scale', 'value': 99},
       {'kind': 'device_control', 'id': 'lock.test', 'command': 'unlock'},
       {'kind': 'device_control', 'id': 'light.test', 'command': 'set_brightness', 'value': -1},
+      {'kind': 'device_control', 'id': 'scene.test', 'command': 'activate_scene', 'value': 'extra'},
+      {'kind': 'device_control', 'id': 'script.test', 'command': 'run_script', 'service_data': {}},
       {'kind': 'open_page', 'page': 'https://untrusted.example'},
     ]) {
       expect(AiInventoryAction.parse(jsonEncode({'action': data})), isNull, reason: '$data');
+    }
+    for (final command in ['activate_scene', 'run_script']) {
+      expect(action({'kind': 'device_control', 'id': 'ha::entity', 'command': command}).string('command'), command);
     }
     final draft = action({'kind': 'intake', 'name': '牛奶', 'quantity': 2,
       'productionDate': '2026-10-21', 'expiryDate': '2026-10-28', 'location': '冰箱'}).intakeDraft;

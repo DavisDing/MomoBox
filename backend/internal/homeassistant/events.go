@@ -79,9 +79,9 @@ type trustedEventSource struct{ familyID, integrationID string }
 func TrustedEventContext(ctx context.Context, familyID, integrationID string) context.Context {
 	return context.WithValue(ctx, trustedEventKey{}, trustedEventSource{familyID, integrationID})
 }
-func validateTrustedEvent(ctx context.Context, actor Actor, event HAEvent, now time.Time) error {
+func validateTrustedEvent(ctx context.Context, familyID string, event HAEvent, now time.Time) error {
 	source, ok := ctx.Value(trustedEventKey{}).(trustedEventSource)
-	if !ok || source.familyID != actor.FamilyID || source.integrationID != event.IntegrationID {
+	if !ok || source.familyID != familyID || source.integrationID != event.IntegrationID {
 		return businessError(CodeForbidden, "Home Assistant events require a trusted integration adapter", nil)
 	}
 	if event.OccurredAt.IsZero() || event.OccurredAt.Before(now.Add(-5*time.Minute)) || event.OccurredAt.After(now.Add(time.Minute)) {
