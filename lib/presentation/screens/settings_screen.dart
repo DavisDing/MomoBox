@@ -686,17 +686,38 @@ class _BarcodeSettingsScreenState extends ConsumerState<BarcodeSettingsScreen> {
 
 class AiSettingsScreen extends ConsumerWidget {
   const AiSettingsScreen({super.key});
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) => Scaffold(
-    appBar:MomoAppBar.adaptive(context,title:const Text('AI 模型与权限')),
-    body:ListView(padding:const EdgeInsets.all(16),children:[
-      SwitchListTile.adaptive(title:const Text('允许 AI 提议应用操作'),
-        subtitle:const Text('所有写操作仍须逐次确认。关闭后只读。'),
-        value:ref.watch(aiInventoryPermissionProvider).valueOrNull ?? false,
-        onChanged:(value)=>ref.read(settingsServiceProvider).setValue('ai_allow_inventory_writes',value.toString())),
-      const SizedBox(height: 16),
-      const NasAiModels(),
-    ]));
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selected = ref.watch(selectedAiModelProvider).valueOrNull ?? '';
+    return Scaffold(
+      appBar: MomoAppBar.adaptive(context, title: const Text('AI 模型与权限')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          SwitchListTile.adaptive(
+            title: const Text('允许 AI 提议应用操作'),
+            subtitle: const Text('所有写操作仍须逐次确认。关闭后只读。'),
+            value: ref.watch(aiInventoryPermissionProvider).valueOrNull ?? false,
+            onChanged: (value) => ref
+                .read(settingsServiceProvider)
+                .setValue('ai_allow_inventory_writes', value.toString()),
+          ),
+          const SizedBox(height: 16),
+          ListTile(
+            title: const Text('AI 模型'),
+            subtitle: Text(
+              selected.isEmpty ? 'NAS 默认模型' : selected,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => NasAiModels.show(context),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class BackupSettingsScreen extends ConsumerStatefulWidget {

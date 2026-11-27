@@ -6,6 +6,7 @@ import '../../data/nas/nas_api_error.dart';
 
 class NasAiModels extends ConsumerStatefulWidget {
   const NasAiModels({super.key});
+
   @override
   ConsumerState<NasAiModels> createState() => _NasAiModelsState();
 
@@ -13,22 +14,32 @@ class NasAiModels extends ConsumerStatefulWidget {
     context: context,
     useSafeArea: true,
     isScrollControlled: true,
-    builder: (context) => Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: const FractionallySizedBox(
-        heightFactor: .7,
-        child: SingleChildScrollView(
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          child: NasAiModels(),
+    builder:
+        (context) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.viewInsetsOf(context).bottom,
+          ),
+          child: LayoutBuilder(
+            builder:
+                (context, constraints) => ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: constraints.maxHeight * .7,
+                  ),
+                  child: const SafeArea(top: false, child: NasAiModels()),
+                ),
+          ),
         ),
-      ),
-    ),
   );
 }
 
 class _NasAiModelsState extends ConsumerState<NasAiModels> {
+  static const _shortCatalogLimit = 6;
+
   final _searchController = TextEditingController();
   String _query = '';
+  bool _showAll = false;
+  bool _saving = false;
+  String? _saveError;
 
   @override
   void dispose() {
@@ -36,84 +47,169 @@ class _NasAiModelsState extends ConsumerState<NasAiModels> {
     super.dispose();
   }
 
+  Future<void> _selectModel(String? model) async {
+    if (model == null || _saving) return;
+    final identity = ref.read(syncWorkspaceIdentityProvider);
+    if (identity == null) {
+      setState(() => _saveError = '家庭工作区尚未就绪，暂时无法切换模型。');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _saveError = null;
+    });
+    try {
+      await ref
+          .read(settingsRepositoryProvider)
+          .setValue(nasAiSelectionKey(identity), model);
+    } catch (_) {
+      if (mounted) setState(() => _saveError = '模型选择未保存，请重试。');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final models = ref.watch(nasAiModelsProvider);
-    final selected = ref.watch(selectedAiModelProvider).valueOrNull;
-    final filtered = models.valueOrNull?.where((model) =>
-        model.id.toLowerCase().contains(_query)).toList() ?? [];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        ListTile(
-          title: const Text('NAS AI 模型'),
-          trailing: IconButton(
-            tooltip: '刷新模型列表',
-            onPressed:
-                models.isLoading
-                    ? null
-                    : () => ref.invalidate(nasAiModelsProvider),
-            icon: const Icon(Icons.refresh),
-          ),
-        ),
-        if (models.isLoading)
-          const LinearProgressIndicator()
-        else if (models.hasError)
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(_modelFailureMessage(models.error!)),
-          )
-        else ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                labelText: '搜索模型',
-                prefixIcon: const Icon(Icons.search_rounded),
-                suffixIcon: _query.isEmpty ? null : IconButton(
-                  tooltip: '清除模型搜索',
-                  icon: const Icon(Icons.close_rounded),
-                  onPressed: () {
-                    _searchController.clear();
-                    setState(() => _query = '');
-                  },
+    final selected = ref.watch(selectedAiModelProvider).valueOrNull ?? '';
+    final catalog = models.valueOrNull ?? const [];
+    final results =
+        _query.isEmpty
+            ? catalog
+            : catalog
+                .where((model) => model.id.toLowerCase().contains(_query))
+                .toList();
+    final canToggleCatalog =
+        _query.isEmpty && catalog.length > _shortCatalogLimit;
+
+    return RadioGroup<String>(
+      groupValue: selected,
+      onChanged: _selectModel,
+      child: CustomScrollView(
+        shrinkWrap: true,
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        slivers: [
+          SliverList.list(
+            children: [
+              ListTile(
+                title: const Text('选择 AI 模型'),
+                subtitle:
+                    selected.isEmpty
+                        ? null
+                        : Text(
+                          '当前模型 · $selected',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                trailing: IconButton(
+                  tooltip: '刷新模型列表',
+                  onPressed:
+                      models.isLoading
+                          ? null
+                          : () => ref.invalidate(nasAiModelsProvider),
+                  icon: const Icon(Icons.refresh),
                 ),
               ),
-              onChanged: (value) => setState(() => _query = value.trim().toLowerCase()),
-            ),
-          ),
-          if (_query.isNotEmpty && filtered.isEmpty)
-            const Padding(padding: EdgeInsets.all(16), child: Text('没有匹配的模型')),
-          if (selected?.isNotEmpty == true &&
-              !models.value!.any((model) => model.id == selected))
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('原选模型已不可用，请重新选择。'),
-            ),
-          RadioGroup<String>(
-            groupValue: selected ?? '',
-            onChanged: (model) async {
-              final identity = ref.read(syncWorkspaceIdentityProvider);
-              if (identity == null || model == null) return;
-              await ref
-                  .read(settingsRepositoryProvider)
-                  .setValue(nasAiSelectionKey(identity), model);
-            },
-            child: Column(
-              children: [
-                const RadioListTile<String>(value: '', title: Text('NAS 默认模型')),
-                for (final model in filtered)
-                  RadioListTile<String>(
-                    value: model.id,
-                    title: Text(model.id),
-                    subtitle: model.isDefault ? const Text('NAS 默认') : null,
+              if (models.isLoading)
+                const LinearProgressIndicator()
+              else if (models.hasError)
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(_modelFailureMessage(models.error!)),
+                )
+              else ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: TextField(
+                    controller: _searchController,
+                    textInputAction: TextInputAction.search,
+                    onTapOutside:
+                        (_) => FocusManager.instance.primaryFocus?.unfocus(),
+                    decoration: InputDecoration(
+                      labelText: '搜索模型',
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      suffixIcon:
+                          _searchController.text.isEmpty
+                              ? null
+                              : IconButton(
+                                tooltip: '清除模型搜索',
+                                icon: const Icon(Icons.close_rounded),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() => _query = '');
+                                },
+                              ),
+                    ),
+                    onChanged:
+                        (value) =>
+                            setState(() => _query = value.trim().toLowerCase()),
+                  ),
+                ),
+                if (selected.isNotEmpty &&
+                    !catalog.any((model) => model.id == selected))
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Text('原选模型已不可用，请重新选择。'),
+                  ),
+                if (_saveError != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    child: Text(
+                      _saveError!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                RadioListTile<String>(
+                  value: '',
+                  title: const Text('NAS 默认模型'),
+                  enabled: !_saving,
+                ),
+                if (_query.isNotEmpty && results.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('没有匹配的模型'),
+                  ),
+                if (canToggleCatalog)
+                  Semantics(
+                    expanded: _showAll,
+                    child: ListTile(
+                      title: Text('全部模型（${catalog.length}）'),
+                      trailing: Icon(
+                        _showAll ? Icons.expand_less : Icons.expand_more,
+                      ),
+                      onTap: () => setState(() => _showAll = !_showAll),
+                    ),
                   ),
               ],
-            ),
+            ],
           ),
+          if (!models.isLoading &&
+              !models.hasError &&
+              (!canToggleCatalog || _showAll))
+            SliverList.builder(
+              itemCount: results.length,
+              itemBuilder: (context, index) {
+                final model = results[index];
+                return RadioListTile<String>(
+                  key: ValueKey(model.id),
+                  value: model.id,
+                  title: Text(model.id),
+                  subtitle: model.isDefault ? const Text('NAS 默认') : null,
+                  enabled: !_saving,
+                );
+              },
+            ),
         ],
-      ],
+      ),
     );
   }
 }

@@ -20,12 +20,14 @@ class ChatMessage {
     required this.role,
     required this.content,
     required this.timestamp,
+    this.isReceipt = false,
   });
 
   final String id;
   final String role; // 'user', 'assistant', 'system'
   final String content;
   final DateTime timestamp;
+  final bool isReceipt;
 }
 
 class AiAssistantService {
@@ -160,7 +162,10 @@ ${AiIntakeContract.assistant}
 ${buffer.toString()}
 ''';
 
-    final recentMessages = history.length <= 6 ? history : history.sublist(history.length - 6);
+    final textHistory = history.where((message) => !message.isReceipt).toList();
+    final recentMessages = textHistory.length <= 6
+        ? textHistory
+        : textHistory.sublist(textHistory.length - 6);
     final recentHistory = recentMessages.map((m) => {'role': m.role, 'content': m.content}).toList();
 
     try {

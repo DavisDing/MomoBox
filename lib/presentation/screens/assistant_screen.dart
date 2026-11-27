@@ -11,10 +11,12 @@ import '../../application/ai_assistant_service.dart';
 import '../../application/ai_conversation_store.dart';
 import '../../application/ai_inventory_action_service.dart';
 import '../controllers/providers.dart';
+import '../widgets/app_feedback.dart';
 import '../widgets/intake_sheet.dart';
 import '../widgets/momo_floating_dock.dart';
 import '../widgets/momo_mobile_layout.dart';
 import '../widgets/momo_components.dart';
+import '../widgets/receipt_intake_flow.dart';
 import 'alerts_screen.dart';
 import 'home_assistant_settings_screen.dart';
 import 'inventory_screen.dart';
@@ -37,11 +39,14 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
   String get _currentSessionId => _store.currentId;
   bool get _isLoading => !_store.ready || _store.isLoading;
   final _textController = TextEditingController();
+  final _composerFocus = FocusNode();
   // Conversation entry always starts at the newest message. Do not restore an
   // older reading position from the route's PageStorage when returning here.
   final _scrollController = ScrollController(keepScrollOffset: false);
 
   bool _checkingConsent = false;
+  bool _handlingReceipt = false;
+  String? _receiptProgress;
 
   AiSession get _currentSession {
     return _sessions.firstWhere(
@@ -53,6 +58,7 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
   List<ChatMessage> get _messages => _currentSession.messages;
 
   void _createNewSession() {
+    _composerFocus.unfocus();
     _store.create();
     _scrollToBottom();
   }
@@ -79,6 +85,7 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
   }
 
   void _switchSession(String sessionId) {
+    _composerFocus.unfocus();
     _store.select(sessionId);
     _scrollToBottom();
   }
@@ -91,6 +98,7 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
 
   @override
   void dispose() {
+    _composerFocus.dispose();
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -114,7 +122,8 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
 
   Future<void> _sendMessage([String? presetText]) async {
     final text = (presetText ?? _textController.text).trim();
-    if (text.isEmpty || _isLoading || _checkingConsent) return;
+    if (text.isEmpty || _isLoading || _checkingConsent || _handlingReceipt) return;
+    _composerFocus.unfocus();
     _checkingConsent = true;
     try {
       final settings = ref.read(settingsRepositoryProvider);
@@ -149,6 +158,98 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
     _scrollToBottom();
     await operation;
     if (mounted) _scrollToBottom();
+  }
+
+  Future<void> _sendReceipt() async {
+    if (_isLoading || _checkingConsent || _handlingReceipt) return;
+    _composerFocus.unfocus();
+    if (ref.read(nasAppAccessProvider) != NasAppAccess.connected) {
+      showAppSnackBar(context, const SnackBar(content: Text('请连接家庭 NAS 后识别小票。')));
+      return;
+    }
+    final store = _store;
+    final origin = store.current;
+    final workspace = ref.read(syncWorkspaceIdentityProvider)?.encode();
+    bool canContinue() =>
+        mounted &&
+        identical(store, _store) &&
+        store.currentId == origin.id &&
+        store.sessions.contains(origin) &&
+        workspace == ref.read(syncWorkspaceIdentityProvider)?.encode() &&
+        (ModalRoute.of(context)?.isCurrent ?? true);
+
+    void addMessage(String text, {bool fromUser = false}) {
+      store.addReceiptMessage(origin, text, fromUser: fromUser);
+      if (mounted && store.currentId == origin.id) _scrollToBottom();
+    }
+
+    setState(() => _handlingReceipt = true);
+    var sent = false;
+    try {
+      final image = await pickReceiptImage(context);
+      if (!mounted || image == null || !canContinue()) return;
+      final confirmed = await confirmReceiptImage(context, image);
+      if (!mounted || confirmed != true || !canContinue()) return;
+      sent = true;
+      addMessage('购物小票图片', fromUser: true);
+      setState(() => _receiptProgress = '正在识别小票文字…');
+      final items = await recognizeReceipt(
+        context,
+        image: image,
+        media: ref.read(mediaServiceProvider),
+        ai: ref.read(aiDraftServiceProvider),
+        canContinue: canContinue,
+        onParsing: () => setState(() => _receiptProgress = '正在提取小票商品…'),
+        onCleanupFailure: () => addMessage(receiptCleanupWarning),
+      );
+      if (mounted) setState(() => _receiptProgress = null);
+      if (items == null) {
+        addMessage('小票识别已取消。');
+        return;
+      }
+      addMessage([
+        '识别到 ${items.length} 项商品',
+        for (final item in items)
+          '• ${item.name}${item.quantity == null ? '（数量待核对）' : ' × ${item.quantity}'}',
+      ].join('\n'));
+      if (!mounted || !canContinue()) return;
+      final actions = ref.read(aiInventoryActionServiceProvider);
+      final inventory = ref.read(inventoryServiceProvider);
+      final allowed = await actions.proposalsAllowed;
+      if (!mounted || !canContinue()) return;
+      if (!allowed) {
+        addMessage('AI 操作建议已关闭。可以在库存页手动入库。');
+        return;
+      }
+      final count = await reviewReceiptIntake(
+        context,
+        items: items,
+        inventory: inventory,
+        canContinue: canContinue,
+        beforeWrite: actions.checkPermission,
+      );
+      addMessage(count == null ? '已取消入库。' : '已批量入库 $count 项。');
+    } on ReceiptRecognitionException catch (error) {
+      if (sent) {
+        addMessage(error.message);
+      } else if (mounted) {
+        showAppSnackBar(context, SnackBar(content: Text(error.message)));
+      }
+    } catch (_) {
+      const message = '小票处理未完成，请检查库存、AI 权限和 NAS 连接。';
+      if (sent) {
+        addMessage(message);
+      } else if (mounted) {
+        showAppSnackBar(context, const SnackBar(content: Text(message)));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _handlingReceipt = false;
+          _receiptProgress = null;
+        });
+      }
+    }
   }
 
   Future<void> _confirmInventoryAction(ChatMessage message) async {
@@ -298,7 +399,8 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
     final theme = Theme.of(context);
 
     final welcome = _messages.length == 1 && _messages.first.content.startsWith('你好呀！');
-    final content = SafeArea(
+    final content = LayoutBuilder(
+      builder: (context, constraints) => SafeArea(
           left: false, right: false,
           bottom: false,
           child: Column(
@@ -366,6 +468,7 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
               Expanded(
                 child: ListView.builder(
                   controller: _scrollController,
+                  keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                   reverse: !welcome,
                   padding: MomoMobileLayout.pageInsets(context).add(const EdgeInsets.only(bottom: 16)),
                   itemCount: _messages.length,
@@ -373,7 +476,7 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                     if (welcome) return _buildWelcome(theme);
                     final msg = _messages[_messages.length - 1 - index];
                     final isUser = msg.role == 'user';
-                    final action = isUser ? null : AiInventoryAction.parse(msg.content);
+                    final action = isUser || msg.isReceipt ? null : AiInventoryAction.parse(msg.content);
                     return Align(
                       key: ValueKey(msg.id),
                       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
@@ -393,7 +496,9 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            if (!isUser)
+                            if (isUser && msg.isReceipt)
+                              const Icon(Icons.receipt_long_outlined, size: 20),
+                            if (!isUser && !msg.isReceipt)
                               AssistantMessageBody(content: msg.content)
                             else
                               SelectableText(
@@ -422,7 +527,7 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                 ),
               ),
 
-              if (_isLoading && _store.storageError == null)
+              if (_receiptProgress != null || (_isLoading && _store.storageError == null))
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 6),
                   child: Row(
@@ -434,52 +539,77 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                         child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.primary),
                       ),
                       const SizedBox(width: 8),
-                      Flexible(child: Text('${palette.mascotName} 正在思考…', style: theme.textTheme.bodySmall)),
+                      Flexible(child: Text(_receiptProgress ?? '${palette.mascotName} 正在思考…', style: theme.textTheme.bodySmall)),
                     ],
                   ),
                 ),
 
-              // 底部输入栏
-              Padding(
-                padding: MomoMobileLayout.pageInsets(context).add(const EdgeInsets.only(top: 8, bottom: 12)),
-                child: MomoCard(
-                  margin: EdgeInsets.zero, borderRadius: 22,
-                  padding: const EdgeInsets.fromLTRB(14, 10, 8, 8),
-                  child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _textController,
-                        decoration: InputDecoration(
-                          hintText: '问问家里的事…',
-                          hintStyle: const TextStyle(fontSize: MomoTextSize.body),
-                          border: InputBorder.none, enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none, filled: false,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                          isDense: true,
-                        ),
-                        minLines: 1,
-                        maxLines: MediaQuery.sizeOf(context).height - MediaQuery.viewInsetsOf(context).bottom > 480 ? 3 : 1,
-                        onSubmitted: (_) => _sendMessage(),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton.filled(
-                      tooltip: '发送消息',
-                      icon: const Icon(Icons.arrow_upward_rounded, size: 20),
-                      onPressed: _isLoading ? null : () => _sendMessage(),
-                    ),
-                  ],
-                  ),
-                ),
-              ),
+              _buildComposer(constraints.maxHeight),
             ],
           ),
-        );
+        ),
+    );
     return Scaffold(body: Padding(
       padding: EdgeInsets.only(bottom: MomoDockInsets.bottomOf(context)),
       child: content,
     ));
+  }
+
+  Widget _buildComposer(double availableHeight) {
+    final disabled = _isLoading || _handlingReceipt;
+    return Padding(
+      padding: MomoMobileLayout.pageInsets(context).add(
+        const EdgeInsets.only(top: 8, bottom: 12),
+      ),
+      child: MomoCard(
+        margin: EdgeInsets.zero,
+        borderRadius: 22,
+        padding: const EdgeInsets.fromLTRB(14, 10, 8, 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            IconButton(
+              tooltip: '发送小票图片',
+              icon: const Icon(Icons.add_photo_alternate_outlined),
+              onPressed: disabled ? null : _sendReceipt,
+            ),
+            Expanded(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: (availableHeight / 3).clamp(48.0, double.infinity),
+                ),
+                child: TextField(
+                  controller: _textController,
+                  focusNode: _composerFocus,
+                  // Read-only SelectableText bubbles have their own tap region.
+                  groupId: _composerFocus,
+                  onTapOutside: (_) => _composerFocus.unfocus(),
+                  decoration: const InputDecoration(
+                    hintText: '问问家里的事…',
+                    hintStyle: TextStyle(fontSize: MomoTextSize.body),
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    filled: false,
+                    contentPadding: EdgeInsets.symmetric(vertical: 10),
+                    isDense: true,
+                  ),
+                  minLines: 1,
+                  maxLines: 5,
+                  onSubmitted: (_) => _sendMessage(),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton.filled(
+              tooltip: '发送消息',
+              icon: const Icon(Icons.arrow_upward_rounded, size: 20),
+              onPressed: disabled ? null : () => _sendMessage(),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildWelcome(ThemeData theme) => Padding(
@@ -500,7 +630,7 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
         leading: Icon(entry.$1, color: theme.colorScheme.primary),
         title: Text(entry.$2, style: theme.textTheme.bodyMedium),
         trailing: const Icon(Icons.north_east_rounded, size: 16),
-        onTap: _isLoading ? null : () => _sendMessage(entry.$2))),
+        onTap: _isLoading || _handlingReceipt ? null : () => _sendMessage(entry.$2))),
     ]),
   );
 

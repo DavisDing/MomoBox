@@ -9,7 +9,8 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:uuid/uuid.dart';
 import 'app_feedback.dart';
 import 'momo_components.dart';
-import 'receipt_intake_review.dart';
+import 'product_match_confirmation.dart';
+import 'receipt_intake_flow.dart';
 
 import '../../domain/inventory/expiry_rules.dart';
 import '../../domain/inventory/product_categories.dart';
@@ -478,87 +479,34 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
   }
 
   Future<void> _scanReceipt() async {
-    final source = await showModalBottomSheet<ImageSource>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Wrap(children: [
-          ListTile(
-            leading: const Icon(Icons.camera_alt_outlined),
-            title: const Text('拍摄购物小票'),
-            onTap: () => Navigator.pop(context, ImageSource.camera),
-          ),
-          ListTile(
-            leading: const Icon(Icons.photo_library_outlined),
-            title: const Text('从相册选择小票'),
-            onTap: () => Navigator.pop(context, ImageSource.gallery),
-          ),
-        ]),
-      ),
-    );
-    if (source == null || !mounted) return;
-    final media = ref.read(mediaServiceProvider);
-    MediaAsset? receipt;
+    if (_parsingAi) return;
     setState(() => _parsingAi = true);
     try {
-      final image = await _picker.pickImage(source: source, imageQuality: 100);
-      if (image == null || !mounted) return;
-      receipt = await media.attachImage(
-        source: image,
-        entityType: 'intake_draft',
-        entityId: const Uuid().v4(),
-        type: MediaAssetType.productImage,
+      final image = await pickReceiptImage(context);
+      if (!mounted || image == null) return;
+      final items = await recognizeReceipt(
+        context,
+        image: image,
+        media: ref.read(mediaServiceProvider),
+        ai: ref.read(aiDraftServiceProvider),
+        canContinue: () => mounted,
+        onCleanupFailure: () {
+          if (mounted) _message(receiptCleanupWarning);
+        },
       );
-      final text = await media.runOcr(receipt);
-      if (!mounted) return;
-      if (text.trim().isEmpty) {
-        _message('小票上未识别到文字，请重新拍摄。');
-        return;
-      }
-      if (await _confirmAiUpload(text.length, receipt: true) != true || !mounted) return;
-      final items = await ref.read(aiDraftServiceProvider).parseReceiptText(text);
-      if (!mounted) return;
-      final drafts = await showDialog<List<IntakeDraft>>(
-        context: context,
-        builder: (_) => ReceiptIntakeReview(items),
+      if (!mounted || items == null) return;
+      final count = await reviewReceiptIntake(
+        context,
+        items: items,
+        inventory: ref.read(inventoryServiceProvider),
+        canContinue: () => mounted,
       );
-      if (!mounted || drafts == null) return;
-      final inventory = ref.read(inventoryServiceProvider);
-      final plans = <({IntakeDraft draft, String? mergeProductId})>[];
-      for (final draft in drafts) {
-        final matches = await inventory.findMatchingProducts(draft);
-        if (!mounted) return;
-        String? mergeProductId;
-        if (matches.isNotEmpty) {
-          final decision = await _showMatchConfirmation(matches, draftName: draft.name);
-          if (!mounted || decision.choice == _MatchChoice.cancel) return;
-          mergeProductId = decision.candidate?.id;
-        }
-        plans.add((draft: draft, mergeProductId: mergeProductId));
-      }
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('确认批量入库'),
-          content: Text('将 ${plans.length} 项已核对的商品分别记为新批次。'),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
-            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('确认入库')),
-          ],
-        ),
-      );
-      if (confirmed != true || !mounted) return;
-      await inventory.intakeBatch(plans);
-      if (mounted) _message('已批量入库 ${plans.length} 项。');
-    } catch (error) {
-      if (mounted) _message('小票入库失败：$error');
+      if (mounted && count != null) _message('已批量入库 $count 项。');
+    } on ReceiptRecognitionException catch (error) {
+      if (mounted) _message(error.message);
+    } catch (_) {
+      if (mounted) _message('小票入库未完成，请检查库存和 NAS 连接。');
     } finally {
-      if (receipt != null) {
-        try {
-          await media.delete(receipt);
-        } catch (_) {
-          if (mounted) _message('小票临时图片暂未清理，可稍后在存储管理中清理。');
-        }
-      }
       if (mounted) setState(() => _parsingAi = false);
     }
   }
@@ -587,14 +535,12 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
     }
   }
 
-  Future<bool?> _confirmAiUpload(int textLength, {bool receipt = false}) => showDialog<bool>(
+  Future<bool?> _confirmAiUpload(int textLength) => showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('确认发送 OCR 文本？'),
           content: Text(
-            receipt
-                ? '将由 NAS 把小票 OCR 文本（约 $textLength 字）发送给已配置的 AI。文字可能包含商家或付款信息。AI 只生成可编辑清单。'
-                : '将仅发送 OCR 文本（约 $textLength 字），由 NAS 调用其配置的 AI 服务，不向模型发送原图。只生成可编辑草稿，不会自动入库。',
+            '将仅发送 OCR 文本（约 $textLength 字），由 NAS 调用其配置的 AI 服务，不向模型发送原图。只生成可编辑草稿，不会自动入库。',
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
@@ -719,11 +665,12 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
       );
       final service = ref.read(inventoryServiceProvider);
       final matches = await service.findMatchingProducts(draft);
+      if (!mounted) return;
       String? mergeProductId;
       if (matches.isNotEmpty) {
-        final decision = await _showMatchConfirmation(matches);
-        if (!mounted || decision.choice == _MatchChoice.cancel) return;
-        if (decision.choice == _MatchChoice.merge) mergeProductId = decision.candidate!.id;
+        final decision = await showProductMatchConfirmation(context, matches);
+        if (!mounted || decision.choice == MatchChoice.cancel) return;
+        if (decision.choice == MatchChoice.merge) mergeProductId = decision.candidate!.id;
       }
       if (!mounted) return;
       await widget.beforeIntake?.call();
@@ -762,86 +709,6 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
       if (mounted) setState(() => _saving = false);
     }
   }
-
-  Future<_MatchDecision> _showMatchConfirmation(
-    List<ProductMatchCandidate> matches, {
-    String? draftName,
-  }) async {
-    var selectedIndex = 0;
-    final decision = await showDialog<_MatchDecision>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          final selected = matches[selectedIndex];
-          return AlertDialog(
-            title: const Text('发现相似商品'),
-            content: SizedBox(
-              width: 420,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(draftName == null
-                        ? '请选择如何处理本次入库：'
-                        : '请选择如何入库「$draftName」。'),
-                    const SizedBox(height: 10),
-                    RadioGroup<int>(
-                      groupValue: selectedIndex,
-                      onChanged: (value) {
-                        if (value != null) setDialogState(() => selectedIndex = value);
-                      },
-                      child: Column(
-                        children: [
-                          for (var index = 0; index < matches.length; index++)
-                            RadioListTile<int>(
-                              value: index,
-                              contentPadding: EdgeInsets.zero,
-                              title: Text(matches[index].name),
-                              subtitle: Text(_matchDescription(matches[index])),
-                            ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text('当前选择：${selected.name}', style: Theme.of(context).textTheme.bodySmall),
-                    const SizedBox(height: 12),
-                    const Text('合并只会为已有商品新增一个独立批次；不会静默修改原商品信息。'),
-                  ],
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext, const _MatchDecision(_MatchChoice.cancel)),
-                child: const Text('取消'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext, const _MatchDecision(_MatchChoice.create)),
-                child: const Text('新建独立商品'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(
-                  dialogContext,
-                  _MatchDecision(_MatchChoice.merge, candidate: selected),
-                ),
-                child: const Text('合并到已有商品'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-    return decision ?? const _MatchDecision(_MatchChoice.cancel);
-  }
-
-  String _matchDescription(ProductMatchCandidate candidate) => [
-        candidate.category,
-        candidate.brand,
-        candidate.specification,
-        candidate.barcode,
-      ].whereType<String>().where((value) => value.trim().isNotEmpty).join(' · ');
 
   void _message(String message) {
     ScaffoldMessenger.of(context)
@@ -1653,14 +1520,6 @@ class _CandidateLine extends StatelessWidget {
         padding: const EdgeInsets.only(bottom: 4),
         child: Text('$label：${value == null || value!.trim().isEmpty ? '未识别' : value}'),
       );
-}
-
-enum _MatchChoice { merge, create, cancel }
-
-class _MatchDecision {
-  const _MatchDecision(this.choice, {this.candidate});
-  final _MatchChoice choice;
-  final ProductMatchCandidate? candidate;
 }
 
 class _DateField extends StatelessWidget {

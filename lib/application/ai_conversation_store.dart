@@ -31,6 +31,7 @@ class AiSession {
                 'role': m.role,
                 'content': m.content,
                 'timestamp': m.timestamp.toIso8601String(),
+                if (m.isReceipt) 'isReceipt': true,
               },
             )
             .toList(),
@@ -48,6 +49,7 @@ class AiSession {
                 role: m['role'] as String,
                 content: m['content'] as String,
                 timestamp: DateTime.parse(m['timestamp'] as String),
+                isReceipt: m['isReceipt'] == true,
               ),
             )
             .toList(),
@@ -248,6 +250,21 @@ class AiConversationStore extends ChangeNotifier {
       sessions.removeWhere((s) => s.id == id);
     }
     if (!sessions.any((s) => s.id == currentId)) currentId = sessions.first.id;
+    _saveAndNotify();
+  }
+
+  void addReceiptMessage(AiSession origin, String content, {bool fromUser = false}) {
+    if (_disposed || !ready || !sessions.contains(origin)) return;
+    if (fromUser && (origin.title == '新对话' || origin.title.startsWith('新会话'))) {
+      origin.title = '识别购物小票';
+    }
+    origin.messages.add(ChatMessage(
+      id: const Uuid().v4(),
+      role: fromUser ? 'user' : 'assistant',
+      content: content,
+      timestamp: DateTime.now(),
+      isReceipt: true,
+    ));
     _saveAndNotify();
   }
 
