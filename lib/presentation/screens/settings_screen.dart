@@ -71,7 +71,6 @@ class SettingsScreen extends StatelessWidget {
 
 enum SettingsCategory {
   appearance('外观与显示', Icons.palette_outlined),
-  intelligence('AI 用量', Icons.analytics_outlined),
   household('连接与服务', Icons.hub_outlined),
   data('数据与隐私', Icons.shield_outlined);
 
@@ -106,15 +105,6 @@ class SettingsCategoryScreen extends ConsumerWidget {
           ),
         ]),
       ],
-      SettingsCategory.intelligence => [
-        _SettingsGroup(title: 'AI 助手', children: [
-          _SettingsLink(
-            icon: Icons.analytics_outlined,
-            title: 'AI 用量与日志汇总',
-            destination: (_) => const AiUsageScreen(),
-          ),
-        ]),
-      ],
       SettingsCategory.household => [
         _SettingsGroup(title: '连接', children: [
           _SettingsLink(
@@ -125,7 +115,13 @@ class SettingsCategoryScreen extends ConsumerWidget {
           _SettingsLink(
             icon: Icons.hub_outlined,
             title: 'Home Assistant 连接配置',
-            destination: (_) => const HomeAssistantSettingsScreen(),
+            destination: (context) => HomeAssistantSettingsScreen(
+              onOpenNasSettings: () => _openSettingsPage(
+                context,
+                (_) => const NasSettingsScreen(),
+                replaceCurrent: true,
+              ),
+            ),
           ),
           _SettingsLink(
             icon: Icons.qr_code_scanner,
@@ -153,6 +149,11 @@ class SettingsCategoryScreen extends ConsumerWidget {
             title: '数据备份与迁移',
             destination: (_) => const BackupSettingsScreen(),
           ),
+          _SettingsLink(
+            icon: Icons.storage_outlined,
+            title: '数据存储与空间管理',
+            destination: (_) => const StorageManagementScreen(),
+          ),
         ]),
         _SettingsGroup(title: '隐私与诊断', children: [
           _SettingsLink(
@@ -167,10 +168,16 @@ class SettingsCategoryScreen extends ConsumerWidget {
           ),
         ]),
         _SettingsGroup(title: '用量与应用', children: [
-          _SettingsLink(icon: SettingsCategory.intelligence.icon,
-            title: SettingsCategory.intelligence.title,
-            destination: (_) => const SettingsCategoryScreen(category: SettingsCategory.intelligence)),
-          _SettingsLink(icon: Icons.info_outline, title: '关于与存储信息', destination: (_) => const AboutSettingsScreen()),
+          _SettingsLink(
+            icon: Icons.analytics_outlined,
+            title: 'AI 用量与日志',
+            destination: (_) => const AiUsageScreen(),
+          ),
+          _SettingsLink(
+            icon: Icons.info_outline,
+            title: '关于应用',
+            destination: (_) => const AboutSettingsScreen(),
+          ),
         ]),
       ],
     };
@@ -256,7 +263,11 @@ class _SettingsLink extends StatelessWidget {
   }
 }
 
-void _openSettingsPage(BuildContext context, WidgetBuilder destination) {
+void _openSettingsPage(
+  BuildContext context,
+  WidgetBuilder destination, {
+  bool replaceCurrent = false,
+}) {
   final reduceMotion = MediaQuery.disableAnimationsOf(context) ||
       MediaQuery.accessibleNavigationOf(context);
   Widget page(BuildContext context) => ColoredBox(
@@ -274,7 +285,12 @@ void _openSettingsPage(BuildContext context, WidgetBuilder destination) {
               FadeTransition(opacity: animation, child: child),
         )
       : MaterialPageRoute<void>(builder: page);
-  Navigator.of(context, rootNavigator: true).push(route);
+  final navigator = Navigator.of(context, rootNavigator: true);
+  if (replaceCurrent) {
+    navigator.pushReplacement(route);
+  } else {
+    navigator.push(route);
+  }
 }
 
 class DiagnosticExportScreen extends StatefulWidget {
@@ -1600,16 +1616,6 @@ class _AboutSettingsScreenState extends ConsumerState<AboutSettingsScreen> {
                       ),
                   ],
                 ],
-              ),
-            ),
-          ),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.storage_outlined),
-              title: const Text('数据存储与空间管理'),
-              trailing: const Icon(Icons.arrow_forward_ios, size: 14),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const StorageManagementScreen()),
               ),
             ),
           ),

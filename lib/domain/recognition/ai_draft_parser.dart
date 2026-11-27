@@ -6,6 +6,8 @@ import '../inventory/product_categories.dart';
 import '../models/recognition_models.dart';
 import 'ai_intake_limits.dart';
 
+typedef ReceiptLine = ({String name, int? quantity, String category});
+
 class AiDraftParser {
   const AiDraftParser();
 
@@ -15,6 +17,38 @@ class AiDraftParser {
     'month': ShelfLifeUnit.months,
   };
   static const datePrecisions = {'day', 'month', 'unknown'};
+  static const maxReceiptItems = 30;
+
+  List<ReceiptLine> parseReceipt(String content) {
+    final decoded = jsonDecode(_jsonObject(content));
+    if (decoded is Map && decoded['truncated'] == true) {
+      throw const FormatException('小票商品太多，请分段拍摄。');
+    }
+    final items = decoded is Map ? decoded['items'] : null;
+    if (items is! List || items.isEmpty || items.length > maxReceiptItems) {
+      throw const FormatException('未识别到可用的小票商品，或商品太多，请分段拍摄。');
+    }
+    return items.map((item) {
+      if (item is! Map ||
+          item.keys.any((key) => !const {'name', 'quantity', 'category'}.contains(key))) {
+        throw const FormatException('小票商品格式无效。');
+      }
+      final name = stringOrNull(item['name']);
+      final quantity = item['quantity'];
+      if (name == null || name.runes.length > 255) {
+        throw const FormatException('小票商品缺少可用名称。');
+      }
+      if (quantity != null &&
+          (quantity is! int || quantity < 1 || quantity > AiIntakeLimits.maxQuantity)) {
+        throw const FormatException('小票商品数量必须为有效的正整数件数。');
+      }
+      return (
+        name: name,
+        quantity: quantity as int?,
+        category: ProductCategories.validateAiCategory(item['category']) ?? ProductCategories.fallback,
+      );
+    }).toList(growable: false);
+  }
 
   IntakeDraftSuggestion parse(String content) {
     final decoded = jsonDecode(_jsonObject(content));

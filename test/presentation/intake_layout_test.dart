@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:momo_box/app/momo_theme.dart';
 import 'package:momo_box/application/ai_draft_service.dart';
+import 'package:momo_box/domain/recognition/ai_draft_parser.dart';
 import 'package:momo_box/domain/models/ai_action.dart';
 import 'package:momo_box/domain/models/inventory_models.dart';
 import 'package:momo_box/domain/models/recognition_models.dart';
@@ -264,6 +265,10 @@ class _CategoryDraftService implements AiDraftService {
 
   @override
   String createRequestToken() => 'category-test';
+
+  @override
+  Future<List<ReceiptLine>> parseReceiptText(String text) =>
+      throw UnsupportedError('This fake is used for packaging OCR.');
 
   @override
   Future<IntakeDraftSuggestion> parseOcrText(String text, {String? requestToken}) async {

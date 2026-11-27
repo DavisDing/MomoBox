@@ -13,7 +13,9 @@ import '../controllers/nas_account_controller.dart';
 import 'nas_settings_screen.dart';
 
 class HomeAssistantSettingsScreen extends ConsumerStatefulWidget {
-  const HomeAssistantSettingsScreen({super.key});
+  const HomeAssistantSettingsScreen({super.key, this.onOpenNasSettings});
+
+  final VoidCallback? onOpenNasSettings;
 
   @override
   ConsumerState<HomeAssistantSettingsScreen> createState() => _HomeAssistantSettingsScreenState();
@@ -261,9 +263,10 @@ class _HomeAssistantSettingsScreenState extends ConsumerState<HomeAssistantSetti
                 children: [
                   Text(setupRequirement),
                   TextButton.icon(
-                    onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                      builder: (_) => const NasSettingsScreen(),
-                    )),
+                    onPressed: widget.onOpenNasSettings ??
+                        () => Navigator.of(context).push(MaterialPageRoute<void>(
+                          builder: (_) => const NasSettingsScreen(),
+                        )),
                     icon: const Icon(Icons.family_restroom),
                     label: const Text('前往 NAS 与家庭设置'),
                   ),

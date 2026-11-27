@@ -6,6 +6,7 @@ import '../domain/inventory/reminder_rules.dart';
 import '../domain/models/ai_action.dart';
 import '../domain/models/chore_models.dart';
 import '../domain/models/inventory_models.dart';
+import '../domain/models/meal_plan.dart';
 import '../domain/models/product_details_patch.dart';
 import 'chore_service.dart';
 import 'inventory_service.dart';
@@ -42,6 +43,16 @@ class AiInventoryActionService {
   Future<void> checkPermission() async {
     if (!await proposalsAllowed) throw StateError('AI 操作建议已关闭，请先在 AI 设置中开启。');
   }
+
+  bool get supportsMealShopping => _shopping != null;
+
+  Future<MealAssessment> assessMeal(
+    MealPlan meal, {
+    List<InventoryItem>? inventory,
+  }) async => meal.assess(
+    inventory ?? await _inventory.loadInventory(),
+    await _shopping?.readEntries() ?? const [],
+  );
 
   Future<String> contextSnapshot() async {
     final buffer = StringBuffer();
@@ -94,6 +105,20 @@ class AiInventoryActionService {
         return '打开可编辑入库草稿：「${draft.name}」${draft.quantity} 件。'
             '分类：${draft.category}。'
             '核对日期及相似商品后，点击“确认入库”才会写入。';
+      case 'consume_many':
+        final lines = <String>[];
+        for (final item in a.consumeActions) {
+          lines.add((await _prepare(item)).description);
+        }
+        return lines.join('\n\n');
+      case 'meal_shop':
+      case 'restock_shop':
+        if (_shopping == null) throw StateError('采购服务不可用。');
+        final assessment = await assessMeal(MealPlan.parse(a.arguments['meal']));
+        if (assessment.purchases.isEmpty) {
+          throw StateError('库存或采购清单已有足够数量，无需重复加入。');
+        }
+        return assessment.purchaseReview;
       case 'shopping_add':
         if (_shopping == null) throw StateError('采购服务不可用。');
         final items = await _inventory.watchInventory().first;
@@ -169,6 +194,20 @@ class AiInventoryActionService {
     return prepared.description;
   }
 
+  Future<({String description, List<String> items})> describePurchasePlan(
+    AiInventoryAction action,
+  ) async {
+    final description = await describe(action);
+    final assessment = await assessMeal(MealPlan.parse(action.arguments['meal']));
+    if (_previews[action] != assessment.fingerprint) {
+      throw StateError('库存或采购清单已变化，请重新确认。');
+    }
+    return (
+      description: description,
+      items: [for (final line in assessment.purchases) '${line.name} × ${line.toBuy} 件'],
+    );
+  }
+
   /// Version information stays separate from the readable confirmation text.
   /// Equal names/quantities must not hide replacement of a batch or reminder.
   Future<String> _fingerprint(AiInventoryAction action) async {
@@ -183,7 +222,7 @@ class AiInventoryActionService {
       case 'consume':
       case 'replenish':
       case 'discard':
-        final items = await _inventory.watchInventory().first;
+        final items = await _inventory.loadInventory();
         final item = items.where((item) => item.id == action.productId).firstOrNull;
         return jsonEncode(item == null ? null : {
           'id': item.id, 'name': item.name,
@@ -192,10 +231,17 @@ class AiInventoryActionService {
             'production': b.productionDate?.toIso8601String(), 'expiry': b.expiryDate?.toIso8601String(),
           }],
         });
+      case 'consume_many':
+        return jsonEncode([
+          for (final item in action.consumeActions) await _fingerprint(item),
+        ]);
       case 'reminder_acknowledge':
         if (_reminders == null) return '';
         final candidate = (await _pendingReminders()).where((c) => c.key == action.id).firstOrNull;
         return candidate?.fingerprint ?? '';
+      case 'meal_shop':
+      case 'restock_shop':
+        return (await assessMeal(MealPlan.parse(action.arguments['meal']))).fingerprint;
       case 'shopping_add':
         if (_shopping == null) return '';
         final candidates = (await _shopping.readEntries()).where((entry) =>
@@ -245,7 +291,7 @@ class AiInventoryActionService {
     // Intake was revalidated with AiIntakeLimits above and returns here.
     // The later technical ceiling applies only to consume/replenish actions.
     if (appDescription != null) return (description: appDescription, remaining: null);
-    final items = await _inventory.watchInventory().first;
+    final items = await _inventory.loadInventory();
     final item = items.where((item) => item.id == action.productId).firstOrNull;
     if (item == null) throw StateError('商品不存在或已删除，请重新提问。');
     if (!['consume', 'replenish', 'discard'].contains(action.kind)) {
@@ -298,6 +344,7 @@ class AiInventoryActionService {
   Future<String> executeWithResult(
     AiInventoryAction action, {
     required String confirmedDescription,
+    Set<int>? purchaseSelection,
   }) async {
     // Revalidate permission and identity immediately before invoking existing
     // transactional rules. UI confirmation is mandatory at the caller.
@@ -331,6 +378,22 @@ class AiInventoryActionService {
             action.quantity!,
           );
         }
+      case 'consume_many':
+        return _inventory.confirmInventoryChanges(() async {
+          await checkPermission();
+          if (confirmedSnapshot != await _fingerprint(action)) {
+            throw StateError('库存或批次已变化，请重新确认。');
+          }
+          final items = action.consumeActions;
+          for (final item in items) {
+            if (item.batchId == null) {
+              await _inventory.consume(item.productId, item.quantity!);
+            } else {
+              await _inventory.consumeBatch(item.productId, item.batchId!, item.quantity!);
+            }
+          }
+          return '已记录 ${items.length} 种物品的消耗。';
+        });
       case 'replenish':
         await _inventory.replenishBatch(action.batchId!, action.quantity!);
       case 'discard':
@@ -338,6 +401,39 @@ class AiInventoryActionService {
           action.batchId!,
           expectedRemainingQuantity: prepared.remaining,
         );
+      case 'meal_shop':
+      case 'restock_shop':
+        final shopping = _shopping!;
+        final meal = MealPlan.parse(action.arguments['meal']);
+        return shopping.confirmPurchases(() async {
+          await checkPermission();
+          final assessment = await assessMeal(meal);
+          if (assessment.fingerprint != confirmedSnapshot ||
+              assessment.purchaseReview != confirmedDescription) {
+            throw StateError('库存或采购清单已变化，请重新确认。');
+          }
+          final options = assessment.purchases.toList();
+          if (purchaseSelection != null && (purchaseSelection.isEmpty ||
+              purchaseSelection.any((index) => index < 0 || index >= options.length))) {
+            throw StateError('请重新选择要加入采购清单的项目。');
+          }
+          final purchases = [
+            for (var index = 0; index < options.length; index++)
+              if (purchaseSelection == null || purchaseSelection.contains(index)) options[index],
+          ];
+          for (final line in purchases) {
+            final existing = line.pendingEntries.where((entry) => entry.productId != null).firstOrNull ??
+                line.pendingEntries.firstOrNull;
+            await shopping.addOrMerge(
+              itemName: existing?.itemName ?? line.name,
+              targetQuantity: line.toBuy,
+              reason: action.kind == 'meal_shop' ? '做饭缺料：${meal.dish}' : '家庭补货建议',
+              productId: existing == null ? line.product?.id : existing.productId,
+              category: line.product?.category,
+            );
+          }
+          return '已将 ${purchases.length} 项加入采购清单。';
+        });
       case 'shopping_add':
         await _shopping!.addOrMerge(
           itemName: action.string('name')!,

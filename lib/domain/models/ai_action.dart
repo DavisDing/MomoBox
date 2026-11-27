@@ -5,6 +5,7 @@ import '../inventory/product_categories.dart';
 import '../recognition/ai_intake_limits.dart';
 import 'chore_models.dart';
 import 'inventory_models.dart';
+import 'meal_plan.dart';
 import 'product_details_patch.dart';
 
 /// A proposal only. The legacy name also covers the assistant's other app actions.
@@ -35,12 +36,15 @@ class AiInventoryAction {
     'product_update': {'productId', 'name', 'category', 'brand', 'specification',
       'location', 'barcode'},
     'consume': {'productId', 'quantity', 'batchId'},
+    'consume_many': {'items'},
     'replenish': {'productId', 'batchId', 'quantity'},
     'discard': {'productId', 'batchId'},
     'intake': {'name', 'category', 'quantity', 'brand', 'specification', 'barcode',
       'location', 'batchNo', 'productionDate', 'expiryDate', 'shelfLifeAmount',
       'shelfLifeUnit', 'lowStockThreshold'},
     'shopping_add': {'name', 'quantity', 'productId', 'category', 'reason'},
+    'meal_shop': {'meal'},
+    'restock_shop': {'meal'},
     'shopping_complete': {'id', 'completed'},
     'shopping_delete': {'id'},
     'reminder_acknowledge': {'id'},
@@ -70,6 +74,7 @@ class AiInventoryAction {
 
   String? string(String key) => arguments[key] as String?;
   String get id => string('id')!;
+  bool get isPurchasePlan => kind == 'meal_shop' || kind == 'restock_shop';
 
   Map<String, Object?> toJson() => {
     ...arguments,
@@ -101,6 +106,23 @@ class AiInventoryAction {
       bool text(String key) => data[key] is String &&
           (data[key] as String).trim().isNotEmpty && (data[key] as String).length <= maxTextLength;
       bool integer(String key) => data[key] is int && (data[key] as int) > 0;
+      if (kind == 'meal_shop' || kind == 'restock_shop') {
+        data = {...data, 'meal': MealPlan.parse(data['meal']).toJson()};
+      }
+      if (kind == 'consume_many') {
+        final items = data['items'];
+        if (items is! List || items.length < 2 || items.length > 12) return null;
+        final ids = <String>{};
+        final validated = <Map<String, Object?>>[];
+        for (final item in items) {
+          if (item is! Map || item.containsKey('kind')) return null;
+          final action = fromJson({'kind': 'consume', ...Map<String, Object?>.from(item)},
+            onError: onError);
+          if (action == null || !ids.add(action.productId)) return null;
+          validated.add(Map.unmodifiable(action.toJson()..remove('kind')));
+        }
+        data = {...data, 'items': List.unmodifiable(validated)};
+      }
       // Preserve category diagnostics before generic text checks can erase them.
       if (kind == 'product_update') {
         if (!text('productId')) return null;
@@ -218,6 +240,11 @@ class AiInventoryAction {
       orElse: () => ShelfLifeUnit.days), dateSource: 'ai',
   );
 
+  List<AiInventoryAction> get consumeActions => [
+    for (final item in arguments['items'] as List)
+      fromJson({'kind': 'consume', ...Map<String, Object?>.from(item as Map)})!,
+  ];
+
   static String displayText(String text) {
     String? validationError;
     final action = parse(text, onError: (message) => validationError = message);
@@ -243,6 +270,10 @@ class AiInventoryAction {
       }
       lines.add('尚未执行，核对草稿后确认入库。');
       return lines.join('\n');
+    }
+    if (action?.isPurchasePlan == true) {
+      final envelope = jsonDecode(text) as Map;
+      if (envelope['reply'] is String) return envelope['reply'] as String;
     }
     if (action != null) return '操作建议已生成，尚未执行。请查看具体内容后确认。';
     try {

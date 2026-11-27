@@ -10,6 +10,7 @@ import '../../domain/inventory/calendar_date.dart';
 import '../../domain/models/inventory_models.dart';
 import '../../domain/models/product_details_patch.dart';
 import '../../domain/models/sync_models.dart';
+import '../../domain/recognition/product_barcode.dart';
 import 'sync_outbox_repository.dart';
 import 'reminder_repository.dart';
 import 'calendar_date_repository.dart';
@@ -215,29 +216,39 @@ class InventoryRepository {
 
   Future<List<ProductMatchCandidate>> findMatchingProducts(IntakeDraft draft) async {
     final barcode = _trimToNull(draft.barcode);
+    if (barcode != null) return findProductsByBarcode(barcode);
     final products = await (_database.select(_database.products)
           ..where((product) => product.deletedAt.isNull()))
         .get();
     return products
         .where((product) {
-          if (barcode != null) return _trimToNull(product.barcode) == barcode;
           return product.name.trim().toLowerCase() == draft.name.trim().toLowerCase() &&
               product.category == draft.category &&
               _sameText(product.brand, draft.brand) &&
               _sameText(product.specification, draft.specification);
         })
-        .map(
-          (product) => ProductMatchCandidate(
-            id: product.id,
-            name: product.name,
-            category: product.category,
-            brand: product.brand,
-            specification: product.specification,
-            barcode: product.barcode,
-          ),
-        )
+        .map(_matchCandidate)
         .toList(growable: false);
   }
+
+  Future<List<ProductMatchCandidate>> findProductsByBarcode(String barcode) async {
+    final numbers = ProductBarcode.equivalents(barcode.trim());
+    final products = await (_database.select(_database.products)
+      ..where((row) => row.deletedAt.isNull() & row.barcode.trim().isIn(numbers)))
+        .get();
+    return products.map(_matchCandidate).toList(growable: false);
+  }
+
+  static ProductMatchCandidate _matchCandidate(ProductRecord product) =>
+      ProductMatchCandidate(
+        id: product.id,
+        name: product.name,
+        category: product.category,
+        brand: product.brand,
+        specification: product.specification,
+        barcode: product.barcode,
+        location: product.location,
+      );
 
   Future<void> updateProductDetails(
     String productId,

@@ -9,11 +9,13 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:uuid/uuid.dart';
 import 'app_feedback.dart';
 import 'momo_components.dart';
+import 'receipt_intake_review.dart';
 
 import '../../domain/inventory/expiry_rules.dart';
 import '../../domain/inventory/product_categories.dart';
 import '../../domain/models/inventory_models.dart';
 import '../../domain/models/recognition_models.dart';
+import '../../domain/recognition/product_barcode.dart';
 import '../controllers/providers.dart';
 
 class _IntakeDraftMemory {
@@ -249,29 +251,106 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
     }
   }
 
+  int _barcodeRequest = 0;
+
   Future<void> _scanBarcode() async {
     if (_saving || _recognizing || _parsingAi) return;
-    final barcode = await Navigator.of(context).push<String>(
+    final request = ++_barcodeRequest;
+    final scan = await Navigator.of(context).push<ProductBarcode>(
       MaterialPageRoute(
         fullscreenDialog: true,
         builder: (_) => const _BarcodeScannerScreen(),
       ),
     );
-    if (barcode == null || !mounted) return;
+    if (scan == null || !mounted) return;
+    final barcode = scan.number;
     setState(() => _barcode.text = barcode);
+    bool isCurrent() => mounted && request == _barcodeRequest &&
+        !_saving && !_recognizing && !_parsingAi && _barcode.text.trim() == barcode;
     try {
+      if (scan.hasBatchData && await _showScannedBatch(scan) == true && isCurrent()) {
+        setState(() {
+          if (scan.batchNo != null) _batchNo.text = scan.batchNo!;
+          if (scan.productionDate != null) _productionDate = scan.productionDate;
+          if (scan.expiryDate != null) _expiryDate = scan.expiryDate;
+          if (scan.productionDate != null || scan.expiryDate != null) {
+            _dateSource = 'barcode';
+            _datePrecision = scan.datePrecision;
+          }
+        });
+      }
+      if (!isCurrent()) return;
+      final savedProducts = await ref.read(inventoryServiceProvider).findProductsByBarcode(barcode);
+      if (!isCurrent()) return;
+      if (savedProducts.isNotEmpty) {
+        final product = savedProducts.length == 1
+            ? savedProducts.single
+            : await _chooseSavedBarcodeProduct(savedProducts);
+        if (product == null || !isCurrent()) return;
+        final result = BarcodeLookupResult(
+          barcode: barcode,
+          source: '家庭库存',
+          name: product.name,
+          brand: product.brand,
+          specification: product.specification,
+          category: product.category,
+        );
+        if (await _showBarcodeResult(result) == true && isCurrent()) {
+          _applyBarcodeResult(result);
+        }
+        return;
+      }
       final result = await ref.read(barcodeLookupServiceProvider).lookup(barcode);
-      if (!mounted) return;
+      if (!isCurrent()) return;
       if (result == null) {
-        _message('已识别条码；未命中本地缓存或未配置可用的条码 API，请继续手动填写。');
+        _message('已识别条码。可拍包装补充资料，或手动填写。');
         return;
       }
       final apply = await _showBarcodeResult(result);
-      if (apply == true && mounted) _applyBarcodeResult(result);
+      if (apply == true && isCurrent()) _applyBarcodeResult(result);
     } catch (error) {
-      if (mounted) _message('条码已填写；信息查询失败：$error');
+      if (isCurrent()) _message('条码已填写；信息查询失败：$error');
     }
   }
+
+  Future<bool?> _showScannedBatch(ProductBarcode scan) => showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('条码中的批次资料'),
+      scrollable: true,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _CandidateLine('批号', scan.batchNo),
+          _CandidateLine('生产日期', scan.productionDate?.toIso8601String().split('T').first),
+          _CandidateLine('到期日期', scan.expiryDate?.toIso8601String().split('T').first),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('暂不使用')),
+        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('填入草稿')),
+      ],
+    ),
+  );
+
+  Future<ProductMatchCandidate?> _chooseSavedBarcodeProduct(
+    List<ProductMatchCandidate> products,
+  ) => showDialog<ProductMatchCandidate>(
+    context: context,
+    builder: (context) => SimpleDialog(
+      title: const Text('选择同码物品'),
+      children: [
+        for (final product in products)
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, product),
+            child: Text([
+              product.name, product.brand, product.specification, product.location,
+            ].nonNulls.join(' · ')),
+          ),
+      ],
+    ),
+  );
 
   Future<bool?> _showBarcodeResult(BarcodeLookupResult result) => showDialog<bool>(
         context: context,
@@ -299,7 +378,8 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
       );
 
   void _applyBarcodeResult(BarcodeLookupResult result) {
-    final category = ProductCategories.canonical(result.category);
+    final category = result.source == '家庭库存'
+        ? result.category : ProductCategories.canonical(result.category);
     setState(() {
       if (result.name != null) _name.text = result.name!;
       if (result.brand != null) _brand.text = result.brand!;
@@ -397,6 +477,92 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
     }
   }
 
+  Future<void> _scanReceipt() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Wrap(children: [
+          ListTile(
+            leading: const Icon(Icons.camera_alt_outlined),
+            title: const Text('拍摄购物小票'),
+            onTap: () => Navigator.pop(context, ImageSource.camera),
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library_outlined),
+            title: const Text('从相册选择小票'),
+            onTap: () => Navigator.pop(context, ImageSource.gallery),
+          ),
+        ]),
+      ),
+    );
+    if (source == null || !mounted) return;
+    final media = ref.read(mediaServiceProvider);
+    MediaAsset? receipt;
+    setState(() => _parsingAi = true);
+    try {
+      final image = await _picker.pickImage(source: source, imageQuality: 100);
+      if (image == null || !mounted) return;
+      receipt = await media.attachImage(
+        source: image,
+        entityType: 'intake_draft',
+        entityId: const Uuid().v4(),
+        type: MediaAssetType.productImage,
+      );
+      final text = await media.runOcr(receipt);
+      if (!mounted) return;
+      if (text.trim().isEmpty) {
+        _message('小票上未识别到文字，请重新拍摄。');
+        return;
+      }
+      if (await _confirmAiUpload(text.length, receipt: true) != true || !mounted) return;
+      final items = await ref.read(aiDraftServiceProvider).parseReceiptText(text);
+      if (!mounted) return;
+      final drafts = await showDialog<List<IntakeDraft>>(
+        context: context,
+        builder: (_) => ReceiptIntakeReview(items),
+      );
+      if (!mounted || drafts == null) return;
+      final inventory = ref.read(inventoryServiceProvider);
+      final plans = <({IntakeDraft draft, String? mergeProductId})>[];
+      for (final draft in drafts) {
+        final matches = await inventory.findMatchingProducts(draft);
+        if (!mounted) return;
+        String? mergeProductId;
+        if (matches.isNotEmpty) {
+          final decision = await _showMatchConfirmation(matches, draftName: draft.name);
+          if (!mounted || decision.choice == _MatchChoice.cancel) return;
+          mergeProductId = decision.candidate?.id;
+        }
+        plans.add((draft: draft, mergeProductId: mergeProductId));
+      }
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('确认批量入库'),
+          content: Text('将 ${plans.length} 项已核对的商品分别记为新批次。'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('确认入库')),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      await inventory.intakeBatch(plans);
+      if (mounted) _message('已批量入库 ${plans.length} 项。');
+    } catch (error) {
+      if (mounted) _message('小票入库失败：$error');
+    } finally {
+      if (receipt != null) {
+        try {
+          await media.delete(receipt);
+        } catch (_) {
+          if (mounted) _message('小票临时图片暂未清理，可稍后在存储管理中清理。');
+        }
+      }
+      if (mounted) setState(() => _parsingAi = false);
+    }
+  }
+
   Future<void> _parseAiDraft(List<MediaAsset> assets) async {
     final text = assets
         .where((asset) => asset.hasOcrText)
@@ -421,12 +587,14 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
     }
   }
 
-  Future<bool?> _confirmAiUpload(int textLength) => showDialog<bool>(
+  Future<bool?> _confirmAiUpload(int textLength, {bool receipt = false}) => showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('确认发送 OCR 文本？'),
           content: Text(
-            '将仅发送 OCR 文本（约 $textLength 字），由 NAS 调用其配置的 AI 服务，不向模型发送原图。只生成可编辑草稿，不会自动入库。',
+            receipt
+                ? '将由 NAS 把小票 OCR 文本（约 $textLength 字）发送给已配置的 AI。文字可能包含商家或付款信息。AI 只生成可编辑清单。'
+                : '将仅发送 OCR 文本（约 $textLength 字），由 NAS 调用其配置的 AI 服务，不向模型发送原图。只生成可编辑草稿，不会自动入库。',
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
@@ -595,7 +763,10 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
     }
   }
 
-  Future<_MatchDecision> _showMatchConfirmation(List<ProductMatchCandidate> matches) async {
+  Future<_MatchDecision> _showMatchConfirmation(
+    List<ProductMatchCandidate> matches, {
+    String? draftName,
+  }) async {
     var selectedIndex = 0;
     final decision = await showDialog<_MatchDecision>(
       context: context,
@@ -612,7 +783,9 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('请选择如何处理本次入库：'),
+                    Text(draftName == null
+                        ? '请选择如何处理本次入库：'
+                        : '请选择如何入库「$draftName」。'),
                     const SizedBox(height: 10),
                     RadioGroup<int>(
                       groupValue: selectedIndex,
@@ -743,6 +916,16 @@ class _IntakeSheetState extends ConsumerState<IntakeSheet> {
                     onAi: () => _parseAiDraft(assets),
                     onDelete: _deleteAsset,
                   ),
+                  if (widget.initialDraft == null && widget.onIntake == null &&
+                      widget.initialName == null)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: _saving || _recognizing || _parsingAi ? null : _scanReceipt,
+                        icon: const Icon(Icons.receipt_long_outlined),
+                        label: const Text('识别小票'),
+                      ),
+                    ),
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _name,
@@ -1145,15 +1328,35 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen>
 
   void _onDetect(BarcodeCapture capture) {
     if (_completed) return;
+    final value = _readCapture(capture);
+    if (value == null) return;
+    _completed = true;
+    unawaited(_stopCamera());
+    Navigator.of(context).pop(value);
+  }
+
+  ProductBarcode? _readCapture(BarcodeCapture capture) {
+    ProductBarcode? first;
     for (final barcode in capture.barcodes) {
-      final value = barcode.rawValue?.trim();
-      if (value != null && RegExp(r'^\d{8,14}$').hasMatch(value)) {
-        _completed = true;
-        unawaited(_stopCamera());
-        Navigator.of(context).pop(value);
-        return;
+      final elementString = barcode.format == BarcodeFormat.dataMatrix ||
+          barcode.format == BarcodeFormat.code128 || barcode.format == BarcodeFormat.qrCode;
+      final bytes = switch (barcode.rawDecodedBytes) {
+        DecodedBarcodeBytes(:final bytes) => bytes,
+        DecodedVisionBarcodeBytes(:final bytes) => bytes,
+        null => null,
+      };
+      final decoded = bytes == null ? null : String.fromCharCodes(bytes);
+      final value = ProductBarcode.parse(
+        decoded?.contains('\u001d') == true ? decoded : barcode.rawValue,
+        elementString: elementString,
+      ) ?? ProductBarcode.parse(decoded, elementString: elementString);
+      if (value == null) continue;
+      first ??= value;
+      if (value.hasBatchData && ProductBarcode.equivalents(value.number).contains(first.number)) {
+        return value;
       }
     }
+    return first;
   }
 
   void _onBarcodeError(Object error, StackTrace stackTrace) {
@@ -1229,15 +1432,11 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen>
       setState(() => _isAnalyzing = true);
 
       final capture = await _controller.analyzeImage(file.path);
-      if (capture != null && capture.barcodes.isNotEmpty) {
-        for (final barcode in capture.barcodes) {
-          final value = barcode.rawValue?.trim();
-          if (value != null && RegExp(r'^\d{8,14}$').hasMatch(value)) {
-            _completed = true;
-            if (mounted) Navigator.of(context).pop(value);
-            return;
-          }
-        }
+      final value = capture == null ? null : _readCapture(capture);
+      if (value != null) {
+        _completed = true;
+        if (mounted) Navigator.of(context).pop(value);
+        return;
       }
       if (mounted) {
         showAppSnackBar(context,

@@ -162,7 +162,9 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
     setState(() => store.actionReceipts[message.id] = '等待确认');
     bool executing = false;
     try {
-      final description = await service.describe(action);
+      final purchasePlan = action.isPurchasePlan
+          ? await service.describePurchasePlan(action) : null;
+      final description = purchasePlan?.description ?? await service.describe(action);
       if (!mounted) return;
       if (action.kind == 'intake') {
         await showModalBottomSheet<void>(
@@ -208,18 +210,29 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
         }
         return;
       }
-      final confirmed = await showDialog<bool>(
-        context: context,
-        animationStyle: MediaQuery.disableAnimationsOf(context) ||
-                MediaQuery.accessibleNavigationOf(context)
-            ? AnimationStyle.noAnimation
-            : null,
-        builder: (_) => AssistantActionReviewDialog(
-          kind: action.kind,
-          description: description,
-        ),
-      );
-      if (confirmed != true || !store.sessions.contains(origin)) return;
+      final Set<int>? purchaseSelection;
+      if (purchasePlan != null) {
+        purchaseSelection = await showDialog<Set<int>>(
+          context: context,
+          builder: (_) => AssistantPurchaseReviewDialog(items: purchasePlan.items),
+        );
+        if (purchaseSelection == null) return;
+      } else {
+        purchaseSelection = null;
+        final confirmed = await showDialog<bool>(
+          context: context,
+          animationStyle: MediaQuery.disableAnimationsOf(context) ||
+                  MediaQuery.accessibleNavigationOf(context)
+              ? AnimationStyle.noAnimation
+              : null,
+          builder: (_) => AssistantActionReviewDialog(
+            kind: action.kind,
+            description: description,
+          ),
+        );
+        if (confirmed != true) return;
+      }
+      if (!store.sessions.contains(origin)) return;
       store.actionReceipts[message.id] = '执行中／中断后请核实结果，勿重复提交';
       await store.save();
       executing = true;
@@ -232,7 +245,8 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
         ));
         completionMessage = '已打开${AiInventoryAction.pages[action.string('page')]}页面；具体操作以页面结果为准。';
       } else {
-        completionMessage = await service.executeWithResult(action, confirmedDescription: description);
+        completionMessage = await service.executeWithResult(action,
+          confirmedDescription: description, purchaseSelection: purchaseSelection);
       }
       store.actionReceipts[message.id] = action.kind == 'open_page' ? '已打开页面' : '已执行';
       if (store.sessions.contains(origin)) {
@@ -359,6 +373,7 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                     if (welcome) return _buildWelcome(theme);
                     final msg = _messages[_messages.length - 1 - index];
                     final isUser = msg.role == 'user';
+                    final action = isUser ? null : AiInventoryAction.parse(msg.content);
                     return Align(
                       key: ValueKey(msg.id),
                       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
@@ -389,8 +404,11 @@ class _AssistantScreenState extends ConsumerState<AssistantScreen> {
                                   height: 1.5,
                                 ),
                               ),
-                            if (!isUser && AiInventoryAction.parse(msg.content) != null)
+                            if (action != null)
                               AssistantActionEntry(
+                                label: action.isPurchasePlan
+                                    ? '加入采购清单'
+                                    : '查看并确认操作',
                                 receipt: _store.actionReceipts[msg.id],
                                 onPressed: _store.actionReceipts.containsKey(msg.id) ||
                                     !(ref.watch(aiInventoryPermissionProvider).valueOrNull ?? false)

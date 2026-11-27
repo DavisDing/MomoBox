@@ -13,6 +13,9 @@ class InventoryService {
     return _repository.findMatchingProducts(draft);
   }
 
+  Future<List<ProductMatchCandidate>> findProductsByBarcode(String barcode) =>
+      _repository.findProductsByBarcode(barcode);
+
   Future<String> intake(IntakeDraft draft, {String? mergeProductId}) {
     _validateDraft(draft);
     final isCalculatedExpiry =
@@ -50,7 +53,20 @@ class InventoryService {
     );
   }
 
+  Future<void> intakeBatch(
+    List<({IntakeDraft draft, String? mergeProductId})> entries,
+  ) => confirmInventoryChanges(() async {
+    for (final entry in entries) {
+      await intake(entry.draft, mergeProductId: entry.mergeProductId);
+    }
+  });
+
+  Future<T> confirmInventoryChanges<T>(Future<T> Function() write) =>
+      _repository.database.transaction(write);
+
   Stream<List<InventoryItem>> watchInventory() => _repository.watchInventory();
+
+  Future<List<InventoryItem>> loadInventory() => _repository.loadInventory();
 
   Future<List<StockMovement>> loadMovements(String productId) =>
       _repository.loadMovements(productId);

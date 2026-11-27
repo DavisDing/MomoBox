@@ -130,7 +130,7 @@ void main() {
     await _pumpForUi(tester);
     expect(find.byType(MomoFloatingCapsuleDock), findsNothing);
     final categoryScroll = find.descendant(of: find.byType(SettingsCategoryScreen), matching: find.byType(Scrollable)).first;
-    final about = find.text('关于与存储信息');
+    final about = find.text('关于应用');
     await tester.scrollUntilVisible(about, 240, scrollable: categoryScroll);
     await _pumpForUi(tester);
     await tester.tap(about);

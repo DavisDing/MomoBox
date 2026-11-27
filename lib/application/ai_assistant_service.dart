@@ -1,13 +1,18 @@
 import 'ai_inventory_action_service.dart';
 import 'dart:async';
+import 'dart:convert';
+import 'dart:math' as math;
 
 import '../data/repositories/inventory_repository.dart';
 import '../data/repositories/settings_repository.dart';
 import '../domain/models/ai_usage_models.dart';
+import '../domain/models/meal_plan.dart';
 import '../domain/recognition/ai_intake_contract.dart';
 import 'ai_request_superseded.dart';
 import 'ai_fallback_executor.dart';
 import 'ai_usage_service.dart';
+import 'barcode_lookup_service.dart';
+import 'inventory_statistics_service.dart';
 
 class ChatMessage {
   const ChatMessage({
@@ -30,12 +35,18 @@ class AiAssistantService {
     AiUsageService? usageService,
     required AiFallbackExecutor fallbackExecutor,
     AiInventoryActionService? actionService,
+    BarcodeLookupService? barcodeLookup,
+    InventoryStatisticsService? statistics,
   })  : _actionService = actionService,
+        _barcodeLookup = barcodeLookup,
+        _statistics = statistics,
         _usageService = usageService ?? AiUsageService(_settings),
         _fallbackExecutor = fallbackExecutor;
 
   final SettingsRepository _settings;
   final AiInventoryActionService? _actionService;
+  final BarcodeLookupService? _barcodeLookup;
+  final InventoryStatisticsService? _statistics;
   final InventoryRepository _inventoryRepository;
   final AiUsageService _usageService;
   final AiFallbackExecutor _fallbackExecutor;
@@ -80,7 +91,7 @@ class AiAssistantService {
     } else {
       for (final item in inventory) {
         buffer.writeln(
-          '- 商品ID: ${item.id}, 商品名: ${item.name}, 分类: ${item.category}, 品牌: ${item.brand ?? "无"}, 规格: ${item.specification ?? "无"}, 存放位置: ${item.location ?? "未指定"}, 总余量: ${item.totalStock} ${item.unit}',
+          '- 商品ID: ${item.id}, 商品名: ${item.name}, 分类: ${item.category}, 品牌: ${item.brand ?? "无"}, 规格: ${item.specification ?? "无"}, 存放位置: ${item.location ?? "未指定"}, 总余量: ${item.totalStock} ${item.unit}，可用 ${item.availableQuantity} ${item.unit}',
         );
         for (final b in item.batches) {
           final exp = b.expiryDate != null ? b.expiryDate!.toIso8601String().substring(0, 10) : '未记录';
@@ -110,6 +121,11 @@ class AiAssistantService {
 你的职责是查询真实家庭数据，并协助用户完成 App 已有业务操作。
 必须返回一个 JSON 对象，不用代码围栏包裹整个对象：{"reply":"回答或追问","action":null}。
 reply 字符串可使用 Markdown 标题、粗体、列表、引用、表格和代码块，内容保持简洁；JSON 中的换行与引号须正确转义。action 仍须按下面的合法参数表生成，不能放进 reply 代码块冒充可执行操作。
+用户本轮明确要求用一串 8–14 位数字查询商品时，返回 {"reply":"","action":null,"barcodeLookup":"用户本轮提供的完整条码"}，应用会查询家庭和已启用的数据源。不得猜你记忆中的商品，或把编号当作库存写入。
+用户说想做某道菜、某顿饭或询问缺哪些食材时，返回 {"reply":"","action":null,"meal":{"dish":"菜名与份量（未指定时可明确写约2人份）","ingredients":[{"name":"食材名","amount":"预计用量与单位","quantity":可比较的正整数件数,"productId":"明确匹配的真实库存商品ID"}]}}。
+每种必要食材只列一次，最多 ${MealPlan.maxIngredients} 种。同一商品 ID 仅可出现一次。包括主要食材和必要调料，不把可选配料列为缺料。用户指定的食材优先。不要猜 ID，有多个可能匹配的商品请先追问。只有菜谱用量与库存每件代表同一单位时才返回 quantity，例如按个记录的鸡蛋 3 个。若库存每件可能是一盒、一袋，或注明成组规格且不能与菜谱直接比较，省略 quantity。克、毫升、勺、把等保留在 amount，除非用户明确给出等价的购买件数。库存核对、采购去重和采购确认均由应用处理，模型不得为做饭直接返回写入 action。
+用户询问近期该补哪些库存或出门买什么且没有指定要做的菜时，返回 {"reply":"","action":null,"restock":true}，应用根据过去 30 天消耗、低库存阈值和待采购量计算未来 7 天补货。不得自编统计或采购结果。
+用户问临期物品先用什么或想优先用临期食材做饭时，返回 {"reply":"","action":null,"expiryUse":{"days":7,"ideas":[{"dish":"菜名","productIds":["会用到的真实库存食品ID"]}]}}。days 是用户指定的天数（1–60），未指定按 7 天。最多建议 4 道菜，每道菜都要用到至少一种在该天数内到期的可用食材；所有必需食材都能在当前库存中匹配时才建议。应用负责校验库存和列出准确的批次与日期。
 ${allowInventory ? '''用户允许生成操作建议。每轮最多一个 action，始终由应用展示内容、等待用户确认后执行。
 只有本轮用户明确要求变更或打开页面时才生成 action；名称歧义、数量/批次不明时必须追问。
 支持以下 action（字段名严格遵循这里列出的格式，不要添加工具名或 SQL）：
@@ -120,6 +136,7 @@ ${AiIntakeContract.assistant}
 用户说“添加一包薯片”，应生成 name=薯片、quantity=1、category=零食饮料 的 intake 草稿。独立包装的包/袋/盒/瓶可按一份商品计一件；不要把片数、克数、毫升或不明确的散装数量换算为件。用户明确提供的品牌、规格、位置等预填；未知可选字段按参数表省略或返回 null，不输出空字符串，不编造品牌、规格、批号、日期，也不因这些可选字段缺失阻止打开草稿。
 - 修改已有物品资料 {"kind":"product_update","productId":"真实商品ID","category":"合法分类","brand":"品牌","specification":"规格","location":"存放位置"}；还支持 name/barcode，至少提供一个要改的字段。未要求修改的字段必须省略；明确清空品牌/规格/位置/条码时才传 null，名称/分类不能清空。分类使用上方 category.enum，不支持任意新分类。此动作只改资料，不改数量、批次日期或单位。应用会展示修改前后值并逐次确认；用户要求纠正分类等资料时使用本动作，不要再声称无法修改或改用 open_page 冒充完成。对象有重名或不确定时先追问，不猜商品ID。
 - 消耗 {"kind":"consume","productId":"真实ID","quantity":正整数}；可选 batchId 指定批次，不传则 FEFO。
+- 一句话明确要记录多种物品消耗时，返回 {"kind":"consume_many","items":[{"productId":"真实ID","quantity":正整数},{"productId":"另一真实ID","quantity":正整数}]}；2–12 种不同商品，每项可选 batchId。不明确的商品或数量先追问，不生成部分扣减建议。
 - 补充已有批次 {"kind":"replenish","productId":"真实ID","batchId":"真实批次ID","quantity":正整数}；日期不同请用 intake 新增批次。
 - 报废 {"kind":"discard","productId":"真实ID","batchId":"真实批次ID"}。
 - 加采购 {"kind":"shopping_add","name":"名称","quantity":正整数}；可选 productId/category/reason。与现有采购相同会累加，不能假设替换数量。
@@ -164,9 +181,178 @@ ${buffer.toString()}
       );
 
       ensureCurrent();
-      return response.content.trim();
+      final content = response.content.trim();
+      Object? decoded;
+      try {
+        decoded = jsonDecode(content);
+      } on FormatException {
+        return content;
+      }
+      if (decoded is! Map) return content;
+      if (decoded['barcodeLookup'] != null) {
+        final reply = await _lookupBarcode(decoded['barcodeLookup'], question);
+        ensureCurrent();
+        return jsonEncode({'reply': reply});
+      }
+      if (decoded['meal'] == null) {
+        if (decoded['expiryUse'] != null) {
+          final reply = await _expiryUse(decoded['expiryUse']);
+          ensureCurrent();
+          return jsonEncode({'reply': reply});
+        }
+        if (decoded['restock'] == true) {
+          final reply = await _restock(allowInventory: allowInventory);
+          ensureCurrent();
+          return jsonEncode(reply);
+        }
+        if (decoded['action'] case {'kind': 'meal_shop' || 'restock_shop'}) {
+          return jsonEncode({'reply': '请告诉我想做的菜，我可以按库存列出缺料。'});
+        }
+        return content;
+      }
+      try {
+        final meal = MealPlan.parse(decoded['meal']);
+        final latestInventory = await _inventoryRepository.loadInventory();
+        final assessment = _actionService == null
+            ? meal.assess(latestInventory, const [])
+            : await _actionService.assessMeal(meal, inventory: latestInventory);
+        ensureCurrent();
+        return jsonEncode({
+          'reply': assessment.markdown,
+          'action': allowInventory &&
+                  _actionService?.supportsMealShopping == true &&
+                  assessment.purchases.isNotEmpty
+              ? {'kind': 'meal_shop', 'meal': meal.toJson()}
+              : null,
+        });
+      } on FormatException catch (error) {
+        return jsonEncode({'reply': error.message});
+      }
     } on AiRequestSupersededException {
       rethrow;
+    }
+  }
+
+  Future<String> _expiryUse(Object? raw) async {
+    final rawDays = raw is Map ? raw['days'] : null;
+    final days = rawDays is int && rawDays >= 1 && rawDays <= 60 ? rawDays : 7;
+    final inventory = await _inventoryRepository.loadInventory();
+    final expiring = [
+      for (final item in inventory)
+        for (final batch in item.activeBatches)
+          if (batch.daysUntilExpiry case final int remaining when remaining >= 0 && remaining <= days)
+            (item: item, batch: batch, remaining: remaining),
+    ]..sort((left, right) => left.remaining.compareTo(right.remaining));
+    if (expiring.isEmpty) return '未来 $days 天内没有已记录的可用批次到期。';
+
+    const foodCategories = {'食品生鲜', '粮油调味', '冷冻速食', '零食饮料'};
+    final usableFoods = {
+      for (final item in inventory)
+        if (item.availableQuantity > 0 && foodCategories.contains(item.category))
+          item.id: item.name,
+    };
+    final expiringIds = expiring.map((line) => line.item.id).toSet();
+    final ideas = <String>[];
+    final suggestions = raw is Map ? raw['ideas'] : null;
+    if (suggestions is List) {
+      for (final suggestion in suggestions.take(4)) {
+        final dish = suggestion is Map ? suggestion['dish'] : null;
+        final ids = suggestion is Map ? suggestion['productIds'] : null;
+        if (dish is! String || dish.trim().isEmpty || dish.runes.length > 100 ||
+            dish.contains(RegExp(r'[\r\n]')) || ids is! List || ids.isEmpty ||
+            ids.length > 12 || !ids.every(usableFoods.containsKey) ||
+            !ids.any(expiringIds.contains)) {
+          continue;
+        }
+        ideas.add('- ${dish.trim()}（${ids.toSet().map((id) => usableFoods[id]).join('、')}）');
+      }
+    }
+    return [
+      '**未来 $days 天先用这些**',
+      ...expiring.take(12).map((line) {
+        final date = line.batch.expiryDate!.toIso8601String().split('T').first;
+        final batch = line.batch.batchNo;
+        return '- ${line.item.name}${batch == null ? '' : ' · 批号 $batch'}，'
+            '${line.batch.remainingQuantity} ${line.item.unit}，$date 到期';
+      }),
+      if (expiring.length > 12) '还有 ${expiring.length - 12} 个批次可在提醒页查看。',
+      if (ideas.isNotEmpty) ...['\n**可以做**', ...ideas],
+    ].join('\n');
+  }
+
+  Future<Map<String, Object?>> _restock({required bool allowInventory}) async {
+    final statistics = _statistics;
+    final actionService = _actionService;
+    if (statistics == null || actionService == null) {
+      return {'reply': '当前无法读取补货数据，请稍后重试。'};
+    }
+    final history = await statistics.load(days: 30);
+    final consumed = {for (final row in history.products) row.productId: row.consumed};
+    final inventory = await _inventoryRepository.loadInventory();
+    final targets = <({String id, String name, int quantity, int gap, int consumed})>[];
+    for (final item in inventory.where((item) => item.unit == '件')) {
+      final used = consumed[item.id] ?? 0;
+      final target = math.min(MealPlan.maxQuantity,
+        math.max(item.lowStockThreshold + 1, (used * 7 / 30).ceil()));
+      final gap = target - item.availableQuantity;
+      if (gap <= 0) continue;
+      targets.add((id: item.id, name: item.name, quantity: target, gap: gap, consumed: used));
+    }
+    targets.sort((left, right) {
+      final order = right.gap.compareTo(left.gap);
+      return order == 0 ? left.name.compareTo(right.name) : order;
+    });
+    if (targets.isEmpty) return {'reply': '根据当前库存和过去 30 天的消耗，暂无需要补货的物品。'};
+    final plan = MealPlan.restock(targets.map((item) =>
+      (id: item.id, name: item.name, quantity: item.quantity, consumed: item.consumed)));
+    final assessment = await actionService.assessMeal(plan, inventory: inventory);
+    final purchases = assessment.purchases.toList();
+    final visible = purchases.take(MealPlan.maxIngredients).toList();
+    final visiblePlan = MealPlan.restock(visible.map((line) => (
+      id: line.product!.id,
+      name: line.name,
+      quantity: line.ingredient.quantity!,
+      consumed: consumed[line.product!.id] ?? 0,
+    )));
+    return {
+      'reply': MealAssessment(assessment.dish, visible).restockMarkdown +
+          (purchases.length > visible.length
+              ? '\n\n还有 ${purchases.length - visible.length} 项，本次优先列出缺口最大的 ${visible.length} 项。'
+              : ''),
+      'action': allowInventory && actionService.supportsMealShopping &&
+              visible.isNotEmpty
+          ? {'kind': 'restock_shop', 'meal': visiblePlan.toJson()} : null,
+    };
+  }
+
+  Future<String> _lookupBarcode(Object? value, String question) async {
+    final barcodes = RegExp(r'(?<!\d)\d{8,14}(?!\d)').allMatches(question)
+        .map((match) => match[0]).toSet();
+    if (value is! String || !barcodes.contains(value)) {
+      return '请在问题里写出要查询的完整条码。';
+    }
+    final products = await _inventoryRepository.findProductsByBarcode(value);
+    if (products.isNotEmpty) {
+      return [
+        '条码 `$value` 在家庭库存中对应',
+        for (final product in products)
+          '- ${[product.name, product.brand, product.specification].nonNulls.join(' · ')}',
+      ].join('\n');
+    }
+    try {
+      final match = await _barcodeLookup?.lookup(value);
+      if (match == null) {
+        return '家庭库存和可用条码库未找到 `$value` 的商品资料。可以拍包装识别，或手动补录。';
+      }
+      return [
+        '条码 `$value` 的资料（外部条码库）',
+        if (match.name != null) '- 名称：${match.name}',
+        if (match.brand != null) '- 品牌：${match.brand}',
+        if (match.specification != null) '- 规格：${match.specification}',
+        if (match.category != null) '- 分类：${match.category}',
+      ].join('\n');
+    } catch (_) {
+      return '暂时无法查询条码 `$value`。可以拍包装识别，或稍后重试。';
     }
   }
 

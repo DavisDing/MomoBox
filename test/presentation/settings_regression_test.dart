@@ -15,6 +15,32 @@ import 'package:momo_box/presentation/screens/settings_screen.dart';
 import 'package:momo_box/presentation/screens/assistant_screen.dart';
 
 void main() {
+  testWidgets('数据与隐私直接打开存储管理并一级返回', (tester) async {
+    final storage = _ControlledStorage();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [storageManagementServiceProvider.overrideWithValue(storage)],
+        child: const MaterialApp(home: SettingsScreen()),
+      ),
+    );
+    await tester.tap(find.text('数据与隐私'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('数据存储与空间管理'));
+    await tester.pumpAndSettle();
+    expect(find.byType(StorageManagementScreen), findsOneWidget);
+    expect(storage.loadCalls, 1);
+
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<SettingsCategoryScreen>(find.byType(SettingsCategoryScreen)).category,
+      SettingsCategory.data,
+    );
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+    expect(find.byType(SettingsScreen), findsOneWidget);
+  });
+
   testWidgets('窄屏 AI 周期选择不显示勾选，不发生溢出', (tester) async {
     await tester.binding.setSurfaceSize(const Size(320, 720));
     addTearDown(() => tester.binding.setSurfaceSize(null));

@@ -49,6 +49,7 @@ class ProductMatchCandidate {
     required this.brand,
     required this.specification,
     required this.barcode,
+    this.location,
   });
 
   final String id;
@@ -57,6 +58,7 @@ class ProductMatchCandidate {
   final String? brand;
   final String? specification;
   final String? barcode;
+  final String? location;
 }
 
 /// Effective policy shared by inventory presentation and notification rules.

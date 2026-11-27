@@ -2017,3 +2017,9 @@ AssistantActionEntry复用次级MomoCapsuleButton，保留原生按钮的焦点/
 默认和 `with-postgres` Compose 固定官方 `postgres:19.0-alpine3.24` 多架构 digest，挂载新卷 `postgres19_data:/var/lib/postgresql`，使用镜像自身的版本化 `PGDATA`。后端 CI 改用 `postgres:latest`，跟踪外部部署所用标签；两种外部模板均不启动数据库。显式 managed/external 运维使用固定 PG19 客户端，仍核对实际服务器主版本和库/角色；清理旧版本白名单及预设，不改变现有权限规则、SQL schema 或 migration checksum。旧卷不挂载，不在启动时进行跨版本迁移或清理。
 
 自带数据库的 Compose 和共享运维脚本通过 TCP 检测正式实例就绪。运维启动 PostgreSQL 时复用已有容器和挂载，默认入口核对服务器为 PG19；应用更新完成后单独启动后端服务。
+
+## 63. 设置导航压平
+
+对应 REQUIREMENT 第45节。「数据与隐私」直接打开 AiUsageScreen、StorageManagementScreen 和 AboutSettingsScreen。复用各页面原有操作，移除 AI 用量中转分类以及关于页的存储跳转。
+
+「连接与服务」为 Home Assistant 提供同级切换回调，复用根导航的安全区和转场，在需要配置 NAS 时替换当前页。家居等独立入口继续使用原有返回路径。

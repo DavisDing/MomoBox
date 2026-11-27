@@ -18,6 +18,7 @@ import 'package:momo_box/presentation/controllers/nas_setup_controller.dart';
 import 'package:momo_box/presentation/controllers/providers.dart';
 import 'package:momo_box/presentation/screens/home_assistant_settings_screen.dart';
 import 'package:momo_box/presentation/screens/nas_settings_screen.dart';
+import 'package:momo_box/presentation/screens/settings_screen.dart';
 import 'package:momo_box/services/nas_credentials_service.dart';
 import 'package:momo_box/services/local_network_permission_service.dart';
 
@@ -270,9 +271,14 @@ void main() {
     }
   }
 
-  for (final role in [null, 'member', 'owner']) {
+  for (final (role, fromSettings) in [
+    (null, false),
+    (null, true),
+    ('member', false),
+    ('owner', false),
+  ]) {
     testWidgets(
-      'HA setup guides family prerequisites and restricts management: $role',
+      'HA setup guides family prerequisites and restricts management: $role, from settings: $fromSettings',
       (tester) async {
         var haCalls = 0;
         final fixture = _Fixture((request) async {
@@ -303,10 +309,20 @@ void main() {
               ),
               nasAccountProvider.overrideWith((ref) => fixture.account),
             ],
-            child: const MaterialApp(home: HomeAssistantSettingsScreen()),
+            child: MaterialApp(
+              home: fromSettings
+                  ? const SettingsScreen()
+                  : const HomeAssistantSettingsScreen(),
+            ),
           ),
         );
         await tester.pumpAndSettle();
+        if (fromSettings) {
+          await tester.tap(find.text('连接与服务'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Home Assistant 连接配置'));
+          await tester.pumpAndSettle();
+        }
         final save = tester.widget<FilledButton>(
           find.widgetWithText(FilledButton, '保存配置'),
         );
@@ -318,6 +334,14 @@ void main() {
           await tester.tap(find.text('前往 NAS 与家庭设置'));
           await tester.pumpAndSettle();
           expect(find.byType(NasSettingsScreen), findsOneWidget);
+          await tester.tap(find.byType(BackButton));
+          await tester.pumpAndSettle();
+          if (fromSettings) {
+            expect(find.byType(SettingsCategoryScreen), findsOneWidget);
+            expect(find.byType(HomeAssistantSettingsScreen), findsNothing);
+          } else {
+            expect(find.byType(HomeAssistantSettingsScreen), findsOneWidget);
+          }
         } else if (role == 'member') {
           expect(find.textContaining('仅家庭创建者或管理员'), findsOneWidget);
         } else {

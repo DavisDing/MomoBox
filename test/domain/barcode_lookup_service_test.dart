@@ -150,7 +150,7 @@ void main() {
     expect(requestedHosts, ['primary.example', 'secondary.example']);
   });
 
-  test('主服务明确返回未找到时不继续调用副服务', () async {
+  test('主服务明确返回未找到时仍尝试其他已启用的资料库', () async {
     final database = AppDatabase.forTesting(NativeDatabase.memory());
     addTearDown(database.close);
     final requestedHosts = <String>[];
@@ -172,14 +172,16 @@ void main() {
       ],
       client: MockClient((request) async {
         requestedHosts.add(request.url.host);
-        return http.Response(jsonEncode({'found': false}), 200);
+        return request.url.host == 'primary.example'
+            ? http.Response(jsonEncode({'found': false}), 200)
+            : http.Response.bytes(utf8.encode(jsonEncode({'name': '副服务找到的商品'})), 200);
       }),
     );
 
     final result = await service.lookup('6901234567890');
 
-    expect(result, isNull);
-    expect(requestedHosts, ['primary.example']);
+    expect(result?.name, '副服务找到的商品');
+    expect(requestedHosts, ['primary.example', 'secondary.example']);
   });
 
   test('规范配置时保留已选主服务且不启用仅保存的接口', () {

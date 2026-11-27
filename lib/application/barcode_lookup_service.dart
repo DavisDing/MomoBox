@@ -106,6 +106,7 @@ class BarcodeLookupService {
     final enabled = await _settings.getValue(enabledKey);
     if (enabled != 'true') return null;
 
+    var hasMiss = false;
     try {
       final response = await _executor.execute(
         configs: await _resolveFallbackConfigs(),
@@ -114,10 +115,12 @@ class BarcodeLookupService {
         endpointOf: (config) => config.endpoint,
         noConfigMessage: '没有可用的条码服务，请检查主/副/兜底服务配置。',
         allFailedMessage: '所有已配置的条码服务均不可用，请稍后重试或手动填写。',
-        call: (config) => _lookupFromEndpoint(config, barcode),
-        // A request completed successfully even when the product is not in the
-        // selected public database. Do not try another source for a confirmed miss.
-        isValidResult: (_) => true,
+        call: (config) async {
+          final result = await _lookupFromEndpoint(config, barcode);
+          hasMiss = hasMiss || result == null;
+          return result;
+        },
+        isValidResult: (result) => result != null,
       );
       final result = response.value;
       if (result == null) return null;
@@ -127,6 +130,7 @@ class BarcodeLookupService {
       );
       return result;
     } on FailoverException<BarcodeEndpointConfig> catch (error) {
+      if (hasMiss) return null;
       throw StateError(error.message);
     }
   }

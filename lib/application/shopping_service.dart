@@ -31,6 +31,9 @@ class ShoppingService {
 
   Future<List<ShoppingEntry>> readEntries() => _repository.readEntries();
 
+  Future<T> confirmPurchases<T>(Future<T> Function() write) =>
+      _repository.database.transaction(write);
+
   Future<void> addOrMerge({
     required String itemName,
     required int targetQuantity,

@@ -5,6 +5,19 @@ import 'package:momo_box/domain/recognition/ai_draft_parser.dart';
 void main() {
   const parser = AiDraftParser();
 
+  test('receipt rows preserve unknown quantities and reject invalid item types', () {
+    final rows = parser.parseReceipt('''{"items":[
+      {"name":"鸡蛋","quantity":2,"category":"食品生鲜"},
+      {"name":"称重番茄","quantity":null,"category":null}
+    ]}''');
+    expect(rows.map((row) => row.quantity), [2, null]);
+    expect(rows.last.category, '其他物品');
+    for (final quantity in ['1.2', '-1', '"2"']) {
+      expect(() => parser.parseReceipt('{"items":[{"name":"牛奶","quantity":$quantity}]}'),
+        throwsFormatException);
+    }
+  });
+
   test('parses a constrained JSON draft without executing OCR instructions', () {
     final draft = parser.parse('''{
       "name": "维生素 C",

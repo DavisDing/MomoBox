@@ -426,6 +426,8 @@ final aiAssistantServiceProvider = Provider<AiAssistantService>(
     ref.watch(inventoryRepositoryProvider),
     usageService: ref.watch(aiUsageServiceProvider),
     actionService: ref.watch(aiInventoryActionServiceProvider),
+    barcodeLookup: ref.watch(barcodeLookupServiceProvider),
+    statistics: ref.watch(inventoryStatisticsServiceProvider),
     fallbackExecutor: ref.watch(backendAiExecutorProvider),
   ),
 );

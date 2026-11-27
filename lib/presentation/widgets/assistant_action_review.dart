@@ -9,11 +9,13 @@ class AssistantActionEntry extends StatelessWidget {
   const AssistantActionEntry({
     required this.receipt,
     required this.onPressed,
+    this.label = '查看并确认操作',
     super.key,
   });
 
   final String? receipt;
   final VoidCallback? onPressed;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
@@ -24,7 +26,7 @@ class AssistantActionEntry extends StatelessWidget {
       child: status == null
           ? MomoCapsuleButton(
               onPressed: onPressed,
-              label: '查看并确认操作',
+              label: label,
               icon: const Icon(Icons.fact_check_outlined, size: 18),
               isPrimary: false,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -76,6 +78,7 @@ class AssistantActionReviewDialog extends StatelessWidget {
     final (title, icon) = switch (kind) {
       'product_update' => ('确认修改物品资料', Icons.edit_outlined),
       'device_control' => ('确认控制设备', Icons.devices_outlined),
+      'consume_many' => ('确认记录消耗', Icons.inventory_2_outlined),
       _ => ('确认操作', destructive
           ? Icons.delete_outline_rounded : Icons.fact_check_outlined),
     };
@@ -172,4 +175,48 @@ class AssistantActionReviewDialog extends StatelessWidget {
       ),
     );
   }
+}
+
+class AssistantPurchaseReviewDialog extends StatefulWidget {
+  const AssistantPurchaseReviewDialog({required this.items, super.key});
+
+  final List<String> items;
+
+  @override
+  State<AssistantPurchaseReviewDialog> createState() => _AssistantPurchaseReviewDialogState();
+}
+
+class _AssistantPurchaseReviewDialogState extends State<AssistantPurchaseReviewDialog> {
+  late final _selected = {for (var index = 0; index < widget.items.length; index++) index};
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('加入采购清单'),
+    scrollable: true,
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var index = 0; index < widget.items.length; index++)
+          CheckboxListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(widget.items[index]),
+            value: _selected.contains(index),
+            onChanged: (value) => setState(() {
+              if (value == true) {
+                _selected.add(index);
+              } else {
+                _selected.remove(index);
+              }
+            }),
+          ),
+      ],
+    ),
+    actions: [
+      TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+      FilledButton(
+        onPressed: _selected.isEmpty ? null : () => Navigator.pop(context, Set<int>.of(_selected)),
+        child: const Text('确认加入'),
+      ),
+    ],
+  );
 }
